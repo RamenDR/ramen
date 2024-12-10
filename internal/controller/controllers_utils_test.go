@@ -173,6 +173,76 @@ func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key typ
 	Expect(retryErr).NotTo(HaveOccurred())
 }
 
+func drclusterConfigConditionExpectEventually(
+	apiReader client.Reader,
+	drclusterConfig *ramen.DRClusterConfig,
+	reasonMatcher,
+	messageMatcher gomegaTypes.GomegaMatcher,
+) {
+	drclusterConfigConditionExpect(
+		apiReader,
+		drclusterConfig,
+		metav1.ConditionTrue,
+		reasonMatcher,
+		messageMatcher,
+		ramen.DRClusterConfigConfigurationProcessed,
+		false,
+	)
+}
+
+func drclusterConfigConditionExpect(
+	apiReader client.Reader,
+	drclusterConfig *ramen.DRClusterConfig,
+	status metav1.ConditionStatus,
+	reasonMatcher,
+	messageMatcher gomegaTypes.GomegaMatcher,
+	conditionType string,
+	always bool,
+) {
+	testFunc := func() []metav1.Condition {
+		Expect(apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: drclusterConfig.Namespace,
+			Name:      drclusterConfig.Name,
+		}, drclusterConfig)).To(Succeed())
+
+		return drclusterConfig.Status.Conditions
+	}
+
+	matchElements := MatchElements(
+		func(element interface{}) string {
+			cond, ok := element.(metav1.Condition)
+			if !ok {
+				return ""
+			}
+
+			return cond.Type
+		},
+		IgnoreExtras,
+		Elements{
+			conditionType: MatchAllFields(Fields{
+				`Type`:               Ignore(),
+				`Status`:             Equal(status),
+				`ObservedGeneration`: Equal(drclusterConfig.Generation),
+				`LastTransitionTime`: Ignore(),
+				`Reason`:             reasonMatcher,
+				`Message`:            messageMatcher,
+			}),
+		},
+	)
+
+	switch always {
+	case false:
+		Eventually(testFunc, timeout, interval).Should(matchElements)
+	case true:
+		Consistently(testFunc, timeout, interval).Should(matchElements)
+	}
+
+	// TODO: Validate finaliziers and labels
+	if status == metav1.ConditionFalse {
+		return
+	}
+}
+
 func drclusterConditionExpectEventually(
 	apiReader client.Reader,
 	drcluster *ramen.DRCluster,
