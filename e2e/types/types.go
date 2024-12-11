@@ -15,7 +15,6 @@ type Deployer interface {
 	GetName() string
 	// GetNamespace return the namespace for the ramen resources, or empty string if not using a special namespace.
 	GetNamespace() string
-	IsWorkloadSupported(Workload) bool
 	// Return true for OCM discovered application, false for OCM managed applications.
 	IsDiscovered() bool
 }
@@ -28,6 +27,9 @@ type Workload interface {
 	GetAppName() string
 	GetPath() string
 	GetRevision() string
+
+	// SupportsDeployer returns tue if this workload is compatible with deployer.
+	SupportsDeployer(Deployer) bool
 
 	// TODO: replace client with cluster.
 	Health(ctx Context, client client.Client, namespace string) error

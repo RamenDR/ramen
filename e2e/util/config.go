@@ -11,9 +11,10 @@ import (
 )
 
 type PVCSpec struct {
-	Name             string
-	StorageClassName string
-	AccessModes      string
+	Name                 string
+	StorageClassName     string
+	AccessModes          string
+	UnsupportedDeployers []string
 }
 type TestConfig struct {
 	ChannelName      string

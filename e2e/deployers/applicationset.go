@@ -80,15 +80,11 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 }
 
 func (a ApplicationSet) GetName() string {
-	return "Appset"
+	return "appset"
 }
 
 func (a ApplicationSet) GetNamespace() string {
 	return util.ArgocdNamespace
-}
-
-func (a ApplicationSet) IsWorkloadSupported(w types.Workload) bool {
-	return true
 }
 
 func (a ApplicationSet) IsDiscovered() bool {
