@@ -58,6 +58,9 @@ const (
 
 	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
 	DoNotDeletePVCAnnotationVal = "true"
+
+	// Force DRPC reconcile to be enabled
+	ReconciliationUnpaused = "drplacementcontrol.ramendr.openshift.io/reconciliationUnpaused"
 )
 
 var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
@@ -150,6 +153,16 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.recordFailure(ctx, drpc, nil, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
+	}
+
+	// Workaround: to add drplacementcontrol.ramendr.openshift.io/is-cg-enabled annotation
+	// for the application workload that is DR protected from the UI.
+	if !schedulingEnabled(drpc, ramenConfig) {
+		logger.Info("DRPC is reconcile is paused, To continue the reconsile, " +
+			"either add drplacementcontrol.ramendr.openshift.io/reconciliationUnpaused: 'true' " +
+			"annotation or update StartDRPCReconciliationPaused on the ramen configMap.")
+
+		return ctrl.Result{}, nil
 	}
 
 	var placementObj client.Object
@@ -2466,4 +2479,9 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	otherDrpolicyClusters := rmnutil.DRPolicyClusterNamesAsASet(otherDrpolicy)
 
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
+}
+
+func schedulingEnabled(drpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig) bool {
+	force := drpc.GetAnnotations()[ReconciliationUnpaused]
+	return !ramenConfig.StartDRPCReconciliationPaused && force == "true"
 }
