@@ -36,15 +36,15 @@ func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log 
 
 	timeout := getTimeoutValue(hook)
 
+	pollInterval := 100 * time.Microsecond
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	pollInterval := 100
-
-	ticker := time.NewTicker(time.Duration(pollInterval * int(time.Millisecond)))
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	for pollInterval < timeout {
+	for int(pollInterval.Seconds()) < timeout {
 		select {
 		case <-ctx.Done():
 			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
@@ -53,6 +53,7 @@ func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log 
 			res := true
 			if len(objs) == 0 {
 				pollInterval = pollInterval * 2
+				ticker.Reset(time.Duration(pollInterval))
 				res = false
 				continue
 			}
