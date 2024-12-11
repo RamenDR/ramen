@@ -51,7 +51,6 @@ func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log 
 			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
 		case <-ticker.C:
 			objs, err := getResourcesList(k8sClient, hook)
-
 			if err != nil {
 				return false, err // Some other error occurred, return it
 			}
@@ -129,10 +128,10 @@ func getResourcesList(k8sClient client.Client, hook *kubeobjects.HookSpec) ([]cl
 }
 
 func getResourcesUsingLabelSelector(c client.Client, hook *kubeobjects.HookSpec,
-	objList client.ObjectList) ([]client.Object, error) {
+	objList client.ObjectList,
+) ([]client.Object, error) {
 	filteredObjs := make([]client.Object, 0)
 	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
-
 	if err != nil {
 		return filteredObjs, fmt.Errorf("error during labelSelector to selector conversion")
 	}
@@ -151,7 +150,8 @@ func getResourcesUsingLabelSelector(c client.Client, hook *kubeobjects.HookSpec,
 }
 
 func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
-	objList client.ObjectList) ([]client.Object, error) {
+	objList client.ObjectList,
+) ([]client.Object, error) {
 	filteredObjs := make([]client.Object, 0)
 
 	var err error
@@ -165,7 +165,6 @@ func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
 			}),
 		}
 		err = c.List(context.Background(), objList, listOps)
-
 		if err != nil {
 			return filteredObjs, err
 		}
@@ -177,13 +176,11 @@ func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
 			Namespace: hook.Namespace,
 		}
 		re, err := regexp.Compile(hook.NameSelector)
-
 		if err != nil {
 			return filteredObjs, err
 		}
 
 		err = c.List(context.Background(), objList, listOps)
-
 		if err != nil {
 			return filteredObjs, err
 		}
