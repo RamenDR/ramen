@@ -5,6 +5,8 @@ package workloads
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -35,6 +37,10 @@ func (w Deployment) GetPath() string {
 
 func (w Deployment) GetRevision() string {
 	return w.Revision
+}
+
+func (w Deployment) SupportsDeployer(d types.Deployer) bool {
+	return !slices.Contains(w.PVCSpec.UnsupportedDeployers, strings.ToLower(d.GetName()))
 }
 
 func (w Deployment) Kustomize() string {

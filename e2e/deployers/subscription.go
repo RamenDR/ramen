@@ -15,7 +15,7 @@ const McsbName = ClusterSetName
 type Subscription struct{}
 
 func (s Subscription) GetName() string {
-	return "Subscr"
+	return "subscr"
 }
 
 func (s Subscription) GetNamespace() string {
@@ -84,10 +84,6 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 	}
 
 	return util.DeleteNamespace(util.Ctx.Hub.Client, namespace, log)
-}
-
-func (s Subscription) IsWorkloadSupported(w types.Workload) bool {
-	return true
 }
 
 func (s Subscription) IsDiscovered() bool {

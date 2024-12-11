@@ -9,3 +9,5 @@ pvcspecs:
   - name: cephfs
     storageclassname: rook-cephfs
     accessmodes: ReadWriteMany
+    unsupportedDeployers:
+      - disapp

@@ -15,7 +15,7 @@ import (
 type DiscoveredApp struct{}
 
 func (d DiscoveredApp) GetName() string {
-	return "Disapp"
+	return "disapp"
 }
 
 func (d DiscoveredApp) GetNamespace() string {
@@ -112,10 +112,6 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	log.Info("Workload undeployed")
 
 	return nil
-}
-
-func (d DiscoveredApp) IsWorkloadSupported(w types.Workload) bool {
-	return w.GetName() != "Deploy-cephfs"
 }
 
 func (d DiscoveredApp) IsDiscovered() bool {
