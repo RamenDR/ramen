@@ -11,6 +11,7 @@ import (
 )
 
 type PVCSpec struct {
+	Name             string
 	StorageClassName string
 	AccessModes      string
 }
