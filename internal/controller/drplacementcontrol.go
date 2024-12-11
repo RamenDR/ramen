@@ -398,6 +398,9 @@ func (d *DRPCInstance) isValidFailoverTarget(cluster string) bool {
 
 	vrg, err := d.reconciler.MCVGetter.GetVRGFromManagedCluster(d.instance.Name, d.vrgNamespace, cluster, annotations)
 	if err != nil {
+		d.log.Info("Failed to get VRG from managed cluster", "name", d.instance.Name, "namespace", d.vrgNamespace,
+			"cluster", cluster, "annotations", annotations, "error", err)
+
 		return false
 	}
 

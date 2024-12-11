@@ -32,7 +32,7 @@ defaults:
 jobs:
   lint:
     name: Linters
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -67,7 +67,7 @@ jobs:
 
   golangci:
     name: Golangci Lint
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         directory: [., api, e2e]
@@ -98,7 +98,7 @@ jobs:
 
   unit-test:
     name: Unit tests
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -113,7 +113,7 @@ jobs:
 
   build-image:
     name: Build image
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -139,7 +139,7 @@ jobs:
   deploy-check:
     name: Check artifacts and operator deployment
     needs: [build-image]
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -216,7 +216,7 @@ jobs:
       (github.ref == 'refs/heads/main' ||
        startsWith(github.ref, 'refs/heads/release-') ||
        startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Download image artifact
         uses: actions/download-artifact@v4
