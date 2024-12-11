@@ -131,8 +131,8 @@ func getResourcesUsingLabelSelector(c client.Client, hook *kubeobjects.HookSpec,
 	objList client.ObjectList,
 ) ([]client.Object, error) {
 	filteredObjs := make([]client.Object, 0)
-	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
 
+	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
 	if err != nil {
 		return filteredObjs, fmt.Errorf("error during labelSelector to selector conversion")
 	}
@@ -165,8 +165,8 @@ func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
 				"metadata.name": hook.NameSelector, // needs exact matching with the name
 			}),
 		}
-		err = c.List(context.Background(), objList, listOps)
 
+		err = c.List(context.Background(), objList, listOps)
 		if err != nil {
 			return filteredObjs, err
 		}
@@ -177,8 +177,8 @@ func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
 		listOps := &client.ListOptions{
 			Namespace: hook.Namespace,
 		}
-		re, err := regexp.Compile(hook.NameSelector)
 
+		re, err := regexp.Compile(hook.NameSelector)
 		if err != nil {
 			return filteredObjs, err
 		}
