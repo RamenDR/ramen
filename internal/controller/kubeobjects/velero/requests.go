@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -249,11 +250,11 @@ func backupDummyStatusProcessAndRestore(
 		velero.BackupPhaseUploading,
 		velero.BackupPhaseUploadingPartialFailure,
 		velero.BackupPhaseDeleting:
-		return nil, kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
+		return nil, util.OperationInProgress("backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation:
 		return nil, errors.New("backup" + string(backup.Status.Phase))
 	default:
-		return nil, kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
+		return nil, util.OperationInProgress("backup.status.phase absent")
 	}
 }
 
@@ -283,13 +284,13 @@ func restoreStatusProcess(
 		return nil
 	case velero.RestorePhaseNew,
 		velero.RestorePhaseInProgress:
-		return kubeobjects.RequestProcessingErrorCreate("restore" + string(restore.Status.Phase))
+		return util.OperationInProgress("restore" + string(restore.Status.Phase))
 	case velero.RestorePhaseFailed,
 		velero.RestorePhaseFailedValidation,
 		velero.RestorePhasePartiallyFailed:
 		return errors.New("restore" + string(restore.Status.Phase))
 	default:
-		return kubeobjects.RequestProcessingErrorCreate("restore.status.phase absent")
+		return util.OperationInProgress("restore.status.phase absent")
 	}
 }
 
@@ -399,13 +400,13 @@ func backupRealStatusProcess(
 		velero.BackupPhaseUploading,
 		velero.BackupPhaseUploadingPartialFailure,
 		velero.BackupPhaseDeleting:
-		return kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
+		return util.OperationInProgress("backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation,
 		velero.BackupPhasePartiallyFailed,
 		velero.BackupPhaseFailed:
 		return errors.New("backup" + string(backup.Status.Phase))
 	default:
-		return kubeobjects.RequestProcessingErrorCreate("backup.status.phase absent")
+		return util.OperationInProgress("backup.status.phase absent")
 	}
 }
 
