@@ -3,6 +3,5 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-echo "Running tests..."
-
-go test -timeout 0 -v "$@"
+go test -c -o e2e
+./e2e -test.timeout 0 -test.v "$@" 2>&1 | tee e2e.log
