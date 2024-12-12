@@ -729,6 +729,10 @@ func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster s
 	return drpc
 }
 
+func updateDRPC(drpc *rmn.DRPlacementControl) {
+	Expect(k8sClient.Update(context.TODO(), drpc)).Should(Succeed())
+}
+
 //nolint:unparam
 func deleteUserPlacementRule(name, namespace string) {
 	userPlacementRule := getLatestUserPlacementRule(name, namespace)
@@ -2772,6 +2776,80 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			deleteDRClustersAsync()
 		})
 	})
+
+	Context("Disable DRPlacementControl Reconciler", func() {
+		var userPlacementRule1 *plrv1.PlacementRule
+
+		Specify("DRClusters", func() {
+			populateDRClusters()
+		})
+
+		When("Application deployed for the first time", func() {
+			It("Should not have any drpc status", func() {
+				createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))
+				createManagedClusters(asyncClusters)
+				createDRClustersAsync()
+				createDRPolicyAsync()
+				ramenConfig.StartDRPCReconciliationPaused = true
+				configMapUpdate()
+				DeferCleanup(func() {
+					ramenConfig.StartDRPCReconciliationPaused = false
+					configMapUpdate()
+				})
+
+				var placementObj client.Object
+				placementObj, _ = CreatePlacementAndDRPC(
+					DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster, UsePlacementRule)
+				userPlacementRule1 = placementObj.(*plrv1.PlacementRule)
+				Expect(userPlacementRule1).NotTo(BeNil())
+				drpc := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(drpc.Status.Phase == "").Should(BeTrue())
+			})
+
+		})
+
+		When("Update ramen config to override DRPC reconcile", func() {
+			It("Should have some drpc status after reconcile", func() {
+				ramenConfig.StartDRPCReconciliationPaused = true
+				configMapUpdate()
+				DeferCleanup(func() {
+					ramenConfig.StartDRPCReconciliationPaused = false
+					configMapUpdate()
+				})
+				drpc := getLatestDRPC(DefaultDRPCNamespace)
+				drpc.Annotations = map[string]string{controllers.ReconciliationUnpaused: "true"}
+				updateDRPC(drpc)
+				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)
+			})
+		})
+
+		When("Deleting DRPolicy with DRPC references", func() {
+			It("Should retain the deleted DRPolicy in the API server", func() {
+				By("\n\n*** DELETE drpolicy ***\n\n")
+				deleteDRPolicyAsync()
+			})
+		})
+
+		When("Deleting user PlacementRule", func() {
+			It("Should cleanup DRPC", func() {
+				By("\n\n*** DELETE User PlacementRule ***\n\n")
+				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+			})
+		})
+
+		When("Deleting DRPC", func() {
+			It("Should delete all VRGs", func() {
+				deleteDRPC()
+				waitForCompletion("deleted")
+				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
+			})
+		})
+
+		Specify("delete drclusters", func() {
+			deleteDRClustersAsync()
+		})
+	})
+
 })
 
 func getVRGManifestWorkCount() int {

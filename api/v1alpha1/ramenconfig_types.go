@@ -191,6 +191,10 @@ type RamenConfig struct {
 
 	// RamenOpsNamespace is the namespace where resources for unmanaged apps are created
 	RamenOpsNamespace string `json:"ramenOpsNamespace,omitempty"`
+
+	// StartDRPCReconciliationPaused is a flag to pause all the DRPC reconcile temporarily.
+	// This flag can be overridden by the annotation drplacementcontrol.ramendr.openshift.io/reconciliationUnpaused
+	StartDRPCReconciliationPaused bool `json:"startDRPCReconciliationPaused,omitempty"`
 }
 
 func init() {
