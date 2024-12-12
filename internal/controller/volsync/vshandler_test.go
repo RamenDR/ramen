@@ -793,22 +793,21 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				Context("When no running pod is mounting the PVC to be protected", func() {
-					It("Should return a nil replication source and no RS should be created", func() {
+					It("Should return a replication source and a RS should be created", func() {
 						// Run another reconcile - we have the psk secret now but the pvc is not in use by
 						// a running pod
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).To(BeNil())
+						Expect(rs).ToNot(BeNil())
 
-						// ReconcileRS should not have created the replication source - since the secret isn't there
+						// ReconcileRS should have created the replication source - since the secret isn't there
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).ShouldNot(BeNil())
+						}, 1*time.Second, interval).Should(BeNil())
 					})
 				})
-
 				Context("When the PVC to be protected is mounted by a pod that is NOT in running phase", func() {
 					JustBeforeEach(func() {
 						// Create PVC and pod that is mounting it - pod phase will be "Pending"
@@ -816,18 +815,28 @@ var _ = Describe("VolSync_Handler", func() {
 							capacity, map[string]string{"a": "b"}, corev1.PodPending, false)
 					})
 
-					It("Should return a nil replication source and no RS should be created", func() {
+					It("Should return a replication source and RS should be created", func() {
 						// Run another reconcile - a pod is mounting the PVC but it is not in running phase
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).To(BeNil())
+						Expect(rs).ToNot(BeNil())
 
-						// ReconcileRS should not have created the RS - since the pod is not in running phase
+						// RS should be created with name=PVCName
+						Eventually(func() error {
+							return k8sClient.Get(ctx, types.NamespacedName{
+								Name:      rsSpec.ProtectedPVC.Name,
+								Namespace: testNamespace.GetName(),
+							}, createdRS)
+						}, maxWait, interval).Should(Succeed())
+
+						Expect(createdRS.Spec.RsyncTLS.StorageClassName).To(Equal(rsSpec.ProtectedPVC.StorageClassName))
+
+						// ReconcileRS should have created the RS - though the pod is not in running phase
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).ShouldNot(BeNil())
+						}, 1*time.Second, interval).Should(BeNil())
 					})
 				})
 
@@ -844,13 +853,20 @@ var _ = Describe("VolSync_Handler", func() {
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).To(BeNil())
+						Expect(rs).ToNot(BeNil())
 
-						// ReconcileRS should not have created the RS - since the pod is not Ready
+						// RS should be created with name=PVCName
+						Eventually(func() error {
+							return k8sClient.Get(ctx, types.NamespacedName{
+								Name:      rsSpec.ProtectedPVC.Name,
+								Namespace: testNamespace.GetName(),
+							}, createdRS)
+						}, maxWait, interval).Should(Succeed())
+						// ReconcileRS should have created the RS - though the pod is not Ready
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).ShouldNot(BeNil())
+						}, 1*time.Second, interval).Should(BeNil())
 					})
 				})
 
