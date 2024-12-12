@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-echo "Running tests..."
+# This executable can be used without checking out ramen source.
+go test -c -o ramen-e2e
 
-go test -timeout 0 -v "$@"
+# With an executable -test.timeout is disabled by default.
+./ramen-e2e -test.v "$@"
