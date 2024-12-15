@@ -14,6 +14,9 @@ import (
 	"go.uber.org/zap"
 )
 
+// Make it easier to manage namespaces created by the tests.
+const appNamespacePrefix = "e2e-"
+
 type Context struct {
 	workload types.Workload
 	deployer types.Deployer
@@ -44,12 +47,16 @@ func (c *Context) Name() string {
 	return c.name
 }
 
-func (c *Context) Namespace() string {
+func (c *Context) ManagementNamespace() string {
 	if ns := c.deployer.GetNamespace(); ns != "" {
 		return ns
 	}
 
-	return c.name
+	return c.AppNamespace()
+}
+
+func (c *Context) AppNamespace() string {
+	return appNamespacePrefix + c.name
 }
 
 func (c *Context) Logger() *zap.SugaredLogger {
@@ -59,8 +66,8 @@ func (c *Context) Logger() *zap.SugaredLogger {
 // Validated return an error if the combination of deployer and workload is not supported.
 // TODO: validate that the workload is compatible with the clusters.
 func (c *Context) Validate() error {
-	if !c.deployer.IsWorkloadSupported(c.workload) {
-		return fmt.Errorf("workload %q not supported by deployer %q", c.workload.GetName(), c.deployer.GetName())
+	if !c.workload.SupportsDeployer(c.deployer) {
+		return fmt.Errorf("workload %q does not support deployer %q", c.workload.GetName(), c.deployer.GetName())
 	}
 
 	return nil

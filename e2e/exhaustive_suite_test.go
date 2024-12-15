@@ -5,7 +5,6 @@ package e2e_test
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -29,34 +28,19 @@ var (
 	Workloads      = []types.Workload{}
 	subscription   = &deployers.Subscription{}
 	appset         = &deployers.ApplicationSet{}
-	discoveredApps = &deployers.DiscoveredApps{}
+	discoveredApps = &deployers.DiscoveredApp{}
 	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
 )
-
-func generateSuffix(storageClassName string) string {
-	suffix := storageClassName
-
-	if strings.ToLower(storageClassName) == "rook-ceph-block" {
-		suffix = "rbd"
-	}
-
-	if strings.ToLower(storageClassName) == "rook-cephfs" {
-		suffix = "cephfs"
-	}
-
-	return suffix
-}
 
 func generateWorkloads([]types.Workload) {
 	pvcSpecs := util.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
 		// add storageclass name to deployment name
-		suffix := generateSuffix(pvcSpec.StorageClassName)
 		deployment := &workloads.Deployment{
 			Path:     GITPATH,
 			Revision: GITREVISION,
 			AppName:  APPNAME,
-			Name:     fmt.Sprintf("Deploy-%s", suffix),
+			Name:     fmt.Sprintf("Deploy-%s", pvcSpec.Name),
 			PVCSpec:  pvcSpec,
 		}
 		Workloads = append(Workloads, deployment)

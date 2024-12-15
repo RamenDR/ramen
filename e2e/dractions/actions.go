@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/client-go/util/retry"
@@ -27,23 +26,23 @@ const (
 // nolint:funlen
 func EnableProtection(ctx types.Context) error {
 	d := ctx.Deployer()
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return EnableProtectionDiscoveredApps(ctx)
 	}
 
 	w := ctx.Workload()
 	name := ctx.Name()
-	namespace := ctx.Namespace()
+	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 
-	log.Info("Protecting workload")
+	log.Infof("Protecting workload in namespace %q", managementNamespace)
 
 	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
 
-	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, namespace, placementName)
+	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, managementNamespace, placementName)
 	if err != nil {
 		return err
 	}
@@ -54,7 +53,7 @@ func EnableProtection(ctx types.Context) error {
 	log.Info("Annotating placement")
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := getPlacement(util.Ctx.Hub.Client, namespace, placementName)
+		placement, err := getPlacement(util.Ctx.Hub.Client, managementNamespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -73,55 +72,55 @@ func EnableProtection(ctx types.Context) error {
 
 	log.Info("Creating drpc")
 
-	drpc := generateDRPC(name, namespace, clusterName, drPolicyName, placementName, appname)
+	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
 	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
-	// this is the application namespace in drclusters to add the annotation
-	nsToAnnotate := name
-	if err := util.CreateNamespaceAndAddAnnotation(nsToAnnotate); err != nil {
+	// For volsync based replication we must create the cluster namespaces with special annotation.
+	if err := util.CreateNamespaceAndAddAnnotation(ctx.AppNamespace()); err != nil {
 		return err
 	}
 
-	return waitDRPCReady(ctx, util.Ctx.Hub.Client, namespace, drpcName)
+	return waitDRPCReady(ctx, util.Ctx.Hub.Client, managementNamespace, drpcName)
 }
 
 // remove DRPC
 // update placement annotation
 func DisableProtection(ctx types.Context) error {
 	d := ctx.Deployer()
-	log := ctx.Logger()
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return DisableProtectionDiscoveredApps(ctx)
 	}
 
-	log.Info("Unprotecting workload")
-
 	name := ctx.Name()
-	namespace := ctx.Namespace()
+	managementNamespace := ctx.ManagementNamespace()
+	log := ctx.Logger()
+
+	log.Infof("Unprotecting workload in namespace %q", managementNamespace)
+
 	drpcName := name
 	client := util.Ctx.Hub.Client
 
 	log.Info("Deleting drpc")
 
-	if err := deleteDRPC(client, namespace, drpcName); err != nil {
+	if err := deleteDRPC(client, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
-	return waitDRPCDeleted(ctx, client, namespace, drpcName)
+	return waitDRPCDeleted(ctx, client, managementNamespace, drpcName)
 }
 
 func Failover(ctx types.Context) error {
 	d := ctx.Deployer()
-	log := ctx.Logger()
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return FailoverDiscoveredApps(ctx)
 	}
 
-	log.Info("Failing over workload")
+	managementNamespace := ctx.ManagementNamespace()
+	log := ctx.Logger()
+
+	log.Infof("Failing over workload in namespace %q", managementNamespace)
 
 	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver)
 }
@@ -132,31 +131,32 @@ func Failover(ctx types.Context) error {
 // Update DRPC
 func Relocate(ctx types.Context) error {
 	d := ctx.Deployer()
-	log := ctx.Logger()
-
-	if _, isDiscoveredApps := d.(*deployers.DiscoveredApps); isDiscoveredApps {
+	if d.IsDiscovered() {
 		return RelocateDiscoveredApps(ctx)
 	}
 
-	log.Info("Relocating workload")
+	managementNamespace := ctx.ManagementNamespace()
+	log := ctx.Logger()
+
+	log.Infof("Relocating workload in namespace %q", managementNamespace)
 
 	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated)
 }
 
 func failoverRelocate(ctx types.Context, action ramen.DRAction, state ramen.DRState) error {
 	drpcName := ctx.Name()
-	namespace := ctx.Namespace()
+	managementNamespace := ctx.ManagementNamespace()
 	client := util.Ctx.Hub.Client
 
-	if err := waitAndUpdateDRPC(ctx, client, namespace, drpcName, action); err != nil {
+	if err := waitAndUpdateDRPC(ctx, client, managementNamespace, drpcName, action); err != nil {
 		return err
 	}
 
-	if err := waitDRPCPhase(ctx, client, namespace, drpcName, state); err != nil {
+	if err := waitDRPCPhase(ctx, client, managementNamespace, drpcName, state); err != nil {
 		return err
 	}
 
-	return waitDRPCReady(ctx, client, namespace, drpcName)
+	return waitDRPCReady(ctx, client, managementNamespace, drpcName)
 }
 
 func waitAndUpdateDRPC(

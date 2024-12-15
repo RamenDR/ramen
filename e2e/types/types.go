@@ -15,7 +15,8 @@ type Deployer interface {
 	GetName() string
 	// GetNamespace return the namespace for the ramen resources, or empty string if not using a special namespace.
 	GetNamespace() string
-	IsWorkloadSupported(Workload) bool
+	// Return true for OCM discovered application, false for OCM managed applications.
+	IsDiscovered() bool
 }
 
 type Workload interface {
@@ -27,6 +28,9 @@ type Workload interface {
 	GetPath() string
 	GetRevision() string
 
+	// SupportsDeployer returns tue if this workload is compatible with deployer.
+	SupportsDeployer(Deployer) bool
+
 	// TODO: replace client with cluster.
 	Health(ctx Context, client client.Client, namespace string) error
 }
@@ -37,6 +41,13 @@ type Context interface {
 	Deployer() Deployer
 	Workload() Workload
 	Name() string
-	Namespace() string
+
+	// Namespace for OCM and Ramen resources (Subscription, ApplicationSet, DRPC, VRG) on the hub and managed clusters.
+	// Depending on the deployer, it may be the same as AppNamespace().
+	ManagementNamespace() string
+
+	// Namespace for application resources on the managed clusters.
+	AppNamespace() string
+
 	Logger() *zap.SugaredLogger
 }

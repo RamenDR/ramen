@@ -15,6 +15,6 @@ const (
 	defaultChannelNamespace = "ramen-samples"
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 
-	ArgocdNamespace = "argocd"
-	RamenOpsNs      = "ramen-ops"
+	ArgocdNamespace   = "argocd"
+	RamenOpsNamespace = "ramen-ops"
 )
