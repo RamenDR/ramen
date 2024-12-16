@@ -53,7 +53,7 @@ var testCasesData = []testCases{
 	},
 }
 
-func TestXYZ(t *testing.T) {
+func TestEvaluateCheckHookExp(t *testing.T) {
 	for i, tt := range testCasesData {
 		test := tt
 
