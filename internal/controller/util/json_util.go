@@ -62,14 +62,14 @@ func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log 
 				continue
 			}
 
-			return evaluateCheckHookForObjects(objs, hook, log)
+			return EvaluateCheckHookForObjects(objs, hook, log)
 		}
 	}
 
 	return false, nil
 }
 
-func evaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
+func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
 	finalRes := true
 
 	var errOut error
