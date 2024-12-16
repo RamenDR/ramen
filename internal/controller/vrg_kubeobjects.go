@@ -550,7 +550,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 	s3StoreAccessor s3StoreAccessor, sourceVrgNamespaceName, sourceVrgName string,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	groupNumber int, recoverGroup kubeobjects.RecoverSpec,
-	veleroNamespaceName string, labels map[string]string, log logr.Logger,
+	labels map[string]string, log logr.Logger,
 ) (kubeobjects.Request, bool, func() (kubeobjects.Request, error), func(kubeobjects.Request)) {
 	vrg := v.instance
 	annotations := map[string]string{}
@@ -569,7 +569,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 					s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
 					s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 					s3StoreAccessor.CACertificates,
-					recoverGroup.Spec, veleroNamespaceName,
+					recoverGroup.Spec, v.veleroNamespaceName(),
 					captureName,
 					labels, annotations)
 			},
@@ -593,7 +593,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
 				s3StoreAccessor.VeleroNamespaceSecretKeyRef,
 				s3StoreAccessor.CACertificates,
-				recoverGroup, veleroNamespaceName,
+				recoverGroup, v.veleroNamespaceName(),
 				captureName, captureRequest,
 				recoverName,
 				labels, annotations)
@@ -630,7 +630,6 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	log logr.Logger,
 ) error {
-	veleroNamespaceName := v.veleroNamespaceName()
 	labels := util.OwnerLabels(v.instance)
 
 	captureRequests, err := v.getCaptureRequests()
@@ -662,7 +661,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		} else {
 			if err := v.executeRecoverGroup(result, s3StoreAccessor,
 				captureToRecoverFromIdentifier, captureRequests,
-				recoverRequests, veleroNamespaceName, labels, groupNumber, rg,
+				recoverRequests, labels, groupNumber, rg,
 				requests, log1); err != nil {
 				return err
 			}
@@ -673,13 +672,13 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	duration := time.Since(startTime.Time)
 	log.Info("Kube objects recovered", "groups", len(groups), "start", startTime, "duration", duration)
 
-	return v.kubeObjectsRecoverRequestsDelete(result, veleroNamespaceName, labels)
+	return v.kubeObjectsRecoverRequestsDelete(result, v.veleroNamespaceName(), labels)
 }
 
 func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	captureRequests, recoverRequests map[string]kubeobjects.Request,
-	veleroNamespaceName string, labels map[string]string, groupNumber int,
+	labels map[string]string, groupNumber int,
 	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger,
 ) error {
 	sourceVrgName := v.instance.Name
@@ -688,7 +687,7 @@ func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s
 		captureRequests, recoverRequests, s3StoreAccessor,
 		sourceVrgNamespaceName, sourceVrgName,
 		captureToRecoverFromIdentifier,
-		groupNumber, rg, veleroNamespaceName, labels, log1,
+		groupNumber, rg, labels, log1,
 	)
 
 	var err error
