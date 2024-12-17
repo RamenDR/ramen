@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,71 +15,271 @@ import (
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/util/jsonpath"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	defaultTimeoutValue       = 300
-	pollInterval              = 100
 	expectedNumberOfJSONPaths = 2
+	podType                   = "pod"
+	deploymentType            = "deployment"
+	statefulsetType           = "statefulset"
+	pInterval                 = 100
 )
 
-func getJSONObject(k8sClient client.Client, hook *kubeobjects.HookSpec) (client.Object, error) {
-	var obj client.Object
-
-	switch hook.SelectResource {
-	case "pod":
-		obj = &corev1.Pod{}
-	case "deployment":
-		obj = &appsv1.Deployment{}
-	case "statefulset":
-		obj = &appsv1.StatefulSet{}
-	default:
-		return obj, fmt.Errorf("unsupported resource type %s", hook.SelectResource)
+func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
+	if hook.LabelSelector == nil && hook.NameSelector == "" {
+		return false, fmt.Errorf("either nameSelector or labelSelector should be provided to get resources")
 	}
 
-	err := k8sClient.Get(context.Background(),
-		types.NamespacedName{Name: hook.NameSelector, Namespace: hook.Namespace},
-		obj)
-
-	return obj, err
-}
-
-func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
 	timeout := getTimeoutValue(hook)
+
+	pollInterval := pInterval * time.Microsecond
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	ticker := time.NewTicker(pollInterval * time.Millisecond)
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	for {
+	for int(pollInterval.Seconds()) < timeout {
 		select {
 		case <-ctx.Done():
 			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
 		case <-ticker.C:
-			obj, err := getJSONObject(k8sClient, hook)
+			objs, err := getResourcesList(k8sClient, hook)
 			if err != nil {
-				if k8serrors.IsNotFound(err) {
-					// Resource not found, continue polling
-					continue
-				}
-
 				return false, err // Some other error occurred, return it
 			}
 
-			res, err := EvaluateCheckHookExp(hook.Chk.Condition, obj)
-			if err != nil {
-				continue // This may mean that expression is not evaluated
+			if len(objs) == 0 {
+				pollInterval *= 2
+				ticker.Reset(pollInterval)
+
+				continue
 			}
 
-			return res, nil
+			return EvaluateCheckHookForObjects(objs, hook, log)
 		}
 	}
+
+	return false, nil
+}
+
+func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
+	finalRes := true
+
+	var err error
+
+	for _, obj := range objs {
+		res, err := EvaluateCheckHookExp(hook.Chk.Condition, obj)
+		finalRes = finalRes && res
+
+		if err != nil {
+			log.Info("error executing check hook", "for", hook.Name, "with error", err)
+
+			return false, err
+		}
+
+		log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
+			obj.GetName(), "in ns", obj.GetNamespace(), "with execution result", res)
+	}
+
+	return finalRes, err
+}
+
+func getResourcesList(k8sClient client.Client, hook *kubeobjects.HookSpec) ([]client.Object, error) {
+	resourceList := make([]client.Object, 0)
+
+	var objList client.ObjectList
+
+	switch hook.SelectResource {
+	case podType:
+		objList = &corev1.PodList{}
+	case deploymentType:
+		objList = &appsv1.DeploymentList{}
+	case statefulsetType:
+		objList = &appsv1.StatefulSetList{}
+	default:
+		return resourceList, fmt.Errorf("unsupported resource type %s", hook.SelectResource)
+	}
+
+	if hook.NameSelector != "" {
+		objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sClient, hook, objList)
+		if err != nil {
+			return resourceList, err
+		}
+
+		resourceList = append(resourceList, objsUsingNameSelector...)
+	}
+
+	if hook.LabelSelector != nil {
+		objsUsingLabelSelector, err := getResourcesUsingLabelSelector(k8sClient, hook, objList)
+		if err != nil {
+			return resourceList, err
+		}
+
+		resourceList = append(resourceList, objsUsingLabelSelector...)
+	}
+
+	return resourceList, nil
+}
+
+func getResourcesUsingLabelSelector(c client.Client, hook *kubeobjects.HookSpec,
+	objList client.ObjectList,
+) ([]client.Object, error) {
+	filteredObjs := make([]client.Object, 0)
+
+	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
+	if err != nil {
+		return filteredObjs, fmt.Errorf("error during labelSelector to selector conversion")
+	}
+
+	listOps := &client.ListOptions{
+		Namespace:     hook.Namespace,
+		LabelSelector: selector,
+	}
+
+	err = c.List(context.Background(), objList, listOps)
+	if err != nil {
+		return filteredObjs, err
+	}
+
+	return getObjectsBasedOnType(objList), nil
+}
+
+func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
+	objList client.ObjectList,
+) ([]client.Object, error) {
+	filteredObjs := make([]client.Object, 0)
+
+	var err error
+
+	if isValidK8sName(hook.NameSelector) {
+		// use nameSelector for Matching field
+		listOps := &client.ListOptions{
+			Namespace: hook.Namespace,
+			FieldSelector: fields.SelectorFromSet(fields.Set{
+				"metadata.name": hook.NameSelector, // needs exact matching with the name
+			}),
+		}
+
+		err = c.List(context.Background(), objList, listOps)
+		if err != nil {
+			return filteredObjs, err
+		}
+
+		return getObjectsBasedOnType(objList), nil
+	} else if isValidRegex(hook.NameSelector) {
+		// after listing without the fields selector, match with the regex for filtering
+		listOps := &client.ListOptions{
+			Namespace: hook.Namespace,
+		}
+
+		re, err := regexp.Compile(hook.NameSelector)
+		if err != nil {
+			return filteredObjs, err
+		}
+
+		err = c.List(context.Background(), objList, listOps)
+		if err != nil {
+			return filteredObjs, err
+		}
+
+		return getObjectsBasedOnTypeAndRegex(objList, re), nil
+	}
+
+	return filteredObjs, fmt.Errorf("nameSelector is neither distinct name nor regex")
+}
+
+// Based on the type of resource, slice of objects is returned.
+func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
+	objs := make([]client.Object, 0)
+
+	switch v := objList.(type) {
+	case *corev1.PodList:
+		for _, pod := range v.Items {
+			objs = append(objs, &pod)
+		}
+	case *appsv1.DeploymentList:
+		for _, dep := range v.Items {
+			objs = append(objs, &dep)
+		}
+	case *appsv1.StatefulSetList:
+		for _, ss := range v.Items {
+			objs = append(objs, &ss)
+		}
+	}
+
+	return objs
+}
+
+// Based on the type of resource and regex match, slice of objects is returned.
+func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	switch v := objList.(type) {
+	case *corev1.PodList:
+		objs = getMatchingPods(v, re)
+	case *appsv1.DeploymentList:
+		objs = getMatchingDeployments(v, re)
+	case *appsv1.StatefulSetList:
+		objs = getMatchingStatefulSets(v, re)
+	}
+
+	return objs
+}
+
+func getMatchingPods(pList *corev1.PodList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, pod := range pList.Items {
+		if re.MatchString(pod.Name) {
+			objs = append(objs, &pod)
+		}
+	}
+
+	return objs
+}
+
+func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, pod := range dList.Items {
+		if re.MatchString(pod.Name) {
+			objs = append(objs, &pod)
+		}
+	}
+
+	return objs
+}
+
+func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, pod := range ssList.Items {
+		if re.MatchString(pod.Name) {
+			objs = append(objs, &pod)
+		}
+	}
+
+	return objs
+}
+
+func isValidK8sName(nameSelector string) bool {
+	regex := `^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`
+	re := regexp.MustCompile(regex)
+
+	return re.MatchString(nameSelector)
+}
+
+func isValidRegex(nameSelector string) bool {
+	_, err := regexp.Compile(nameSelector)
+
+	return err == nil
 }
 
 func getTimeoutValue(hook *kubeobjects.HookSpec) int {

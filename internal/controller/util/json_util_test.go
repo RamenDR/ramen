@@ -14,9 +14,10 @@ import (
 type testCases struct {
 	jsonPathExprs string
 	result        bool
+	jsonText      []byte
 }
 
-var jsonText1 = []byte(`{
+var jsonDeployment = []byte(`{
     "kind": "Deployment",
     "spec": {
         "progressDeadlineSeconds": 600,
@@ -38,29 +39,76 @@ var jsonText1 = []byte(`{
     }
     }`)
 
+var jsonPod = []byte(`{
+		"kind": "Pod",
+		"spec": {
+			"progressDeadlineSeconds": 600,
+			"replicas": 1,
+			"revisionHistoryLimit": 10
+		},
+		"status": {
+			"replicas": 1,
+			"conditions": [
+				{
+					"status": "True",
+					"type": "Progressing"
+				},
+				{
+					"status": "True",
+					"type": "Available"
+				}
+			]
+		}
+		}`)
+
+var jsonStatefulset = []byte(`{
+			"kind": "Statefulset",
+			"spec": {
+				"progressDeadlineSeconds": 600,
+				"replicas": 1,
+				"revisionHistoryLimit": 10
+			},
+			"status": {
+				"replicas": 1,
+				"conditions": [
+					{
+						"status": "True",
+						"type": "Progressing"
+					},
+					{
+						"status": "True",
+						"type": "Available"
+					}
+				]
+			}
+			}`)
+
 var testCasesData = []testCases{
 	{
 		jsonPathExprs: "{$.status.conditions[0].status} == True",
 		result:        true,
+		jsonText:      jsonDeployment,
 	},
 	{
 		jsonPathExprs: "{$.spec.replicas} == 1",
 		result:        true,
+		jsonText:      jsonPod,
 	},
 	{
 		jsonPathExprs: "{$.status.conditions[0].status} == {True}",
 		result:        false,
+		jsonText:      jsonStatefulset,
 	},
 }
 
-func TestXYZ(t *testing.T) {
+func TestEvaluateCheckHookExp(t *testing.T) {
 	for i, tt := range testCasesData {
 		test := tt
 
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var jsonData map[string]interface{}
 
-			err := json.Unmarshal(jsonText1, &jsonData)
+			err := json.Unmarshal(tt.jsonText, &jsonData)
 			if err != nil {
 				t.Error(err)
 			}
