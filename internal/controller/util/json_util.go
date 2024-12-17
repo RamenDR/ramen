@@ -80,11 +80,13 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 
 		if err != nil {
 			log.Info("error executing check hook", "for", hook.Name, "with error", err)
+
 			return false, err
-		} else {
-			log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
-				obj.GetName(), "in ns", obj.GetNamespace(), "with execution result", res)
 		}
+
+		log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
+			obj.GetName(), "in ns", obj.GetNamespace(), "with execution result", res)
+
 	}
 
 	return finalRes, err
