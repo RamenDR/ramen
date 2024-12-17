@@ -86,7 +86,6 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 
 		log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
 			obj.GetName(), "in ns", obj.GetNamespace(), "with execution result", res)
-
 	}
 
 	return finalRes, err
