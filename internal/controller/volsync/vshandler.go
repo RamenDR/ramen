@@ -408,13 +408,9 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 		return nil, err
 	}
 
-	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(storageClass)
-	if err != nil {
-		return nil, err
-	}
+	v.ModifyRSSpecForCephFS(&rsSpec, storageClass)
 
-	// Fix for CephFS (replication source only) - may need different storageclass and access modes
-	err = v.ModifyRSSpecForCephFS(&rsSpec, storageClass)
+	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(storageClass)
 	if err != nil {
 		return nil, err
 	}
@@ -1338,60 +1334,13 @@ func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
 // For CephFS only, there is a problem where restoring a PVC from snapshot can be very slow when there are a lot of
 // files - on every replication cycle we need to create a PVC from snapshot in order to get a point-in-time copy of
 // the source PVC to sync with the replicationdestination.
-// This workaround follows the instructions here:
-// https://github.com/ceph/ceph-csi/blob/devel/docs/cephfs-snapshot-backed-volumes.md
-//
-// Steps:
-// 1. If the storageclass detected is cephfs, create a new storageclass with backingSnapshot: "true" parameter
-// (or reuse if it already exists).  If not cephfs, return and do not modify rsSpec.
-// 2. Modify rsSpec to use the new storageclass and also update AccessModes to 'ReadOnlyMany' as per the instructions
-// above.
+// If CephFS PVC, modify rsSpec AccessModes to use 'ReadOnlyMany'.
 func (v *VSHandler) ModifyRSSpecForCephFS(rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	storageClass *storagev1.StorageClass,
-) error {
-	if storageClass.Provisioner != v.defaultCephFSCSIDriverName {
-		return nil // No workaround required
+) {
+	if storageClass.Provisioner == v.defaultCephFSCSIDriverName {
+		rsSpec.ProtectedPVC.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
 	}
-
-	v.log.Info("CephFS storageclass detected on source PVC, creating replicationsource with read-only "+
-		" PVC from snapshot", "storageClassName", storageClass.GetName())
-
-	// Create/update readOnlyPVCStorageClass
-	readOnlyPVCStorageClass := &storagev1.StorageClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: storageClass.GetName() + "-vrg",
-		},
-	}
-
-	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, readOnlyPVCStorageClass, func() error {
-		// Do not update the storageclass if it already exists - Provisioner and Parameters are immutable anyway
-		if readOnlyPVCStorageClass.CreationTimestamp.IsZero() {
-			readOnlyPVCStorageClass.Provisioner = storageClass.Provisioner
-
-			// Copy other parameters from the original storage class
-			// Note - not copying volumebindingmode or reclaim policy from the source storageclass will leave defaults
-			readOnlyPVCStorageClass.Parameters = map[string]string{}
-			for k, v := range storageClass.Parameters {
-				readOnlyPVCStorageClass.Parameters[k] = v
-			}
-
-			// Set backingSnapshot parameter to true
-			readOnlyPVCStorageClass.Parameters["backingSnapshot"] = "true"
-		}
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("%w", err)
-	}
-
-	v.log.Info("StorageClass for readonly cephfs PVC createOrUpdate Complete", "op", op)
-
-	// Update the rsSpec with access modes and the special storageclass
-	rsSpec.ProtectedPVC.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
-	rsSpec.ProtectedPVC.StorageClassName = &readOnlyPVCStorageClass.Name
-
-	return nil
 }
 
 func (v *VSHandler) GetVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
@@ -1821,19 +1770,8 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 ) {
 	v.log.Info("Reconciling localRS", "RD", rd.GetName())
 
-	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
-	if err != nil {
-		return nil, err
-	}
-
 	rsSpec := &ramendrv1alpha1.VolSyncReplicationSourceSpec{
 		ProtectedPVC: rdSpec.ProtectedPVC,
-	}
-
-	// Fix for CephFS (replication source only) - may need different storageclass and access modes
-	err = v.ModifyRSSpecForCephFS(rsSpec, storageClass)
-	if err != nil {
-		return nil, err
 	}
 
 	pvc, err := v.setupLocalRS(rd, rdSpec, snapshotRef)
@@ -1983,16 +1921,21 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	}
 
 	// In all other cases, we have to create a RO PVC.
-	return v.createReadOnlyPVCFromSnapshot(rd, rdSpec, snapshotRef, restoreSize)
+	return v.createPVCFromSnapshot(rd, rdSpec, snapshotRef, restoreSize)
 }
 
-func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
+func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 	snapRestoreSize *resource.Quantity,
 ) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvcName", rd.GetName(), "snapshotRef", snapshotRef,
 		"snapRestoreSize", snapRestoreSize)
+
+	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		return nil, err
+	}
 
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2016,6 +1959,11 @@ func (v *VSHandler) createReadOnlyPVCFromSnapshot(rd *volsyncv1alpha1.Replicatio
 		}
 
 		accessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
+
+		// Use the protectedPVC accessModes when csi driver is not the default (openshift-storage.cephfs.csi.ceph.com)
+		if storageClass.Provisioner != v.defaultCephFSCSIDriverName {
+			accessModes = rdSpec.ProtectedPVC.AccessModes
+		}
 
 		if pvc.CreationTimestamp.IsZero() { // set immutable fields
 			pvc.Spec.AccessModes = accessModes
