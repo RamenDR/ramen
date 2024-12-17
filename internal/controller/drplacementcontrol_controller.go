@@ -1275,7 +1275,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 ) error {
 	log.Info("Updating DRPC status")
 
-	r.updateResourceCondition(ctx, drpc, userPlacement)
+	r.updateResourceCondition(ctx, drpc, userPlacement, log)
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
@@ -1317,18 +1317,18 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 //
 //nolint:funlen
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
+	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
 ) {
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
+	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, userPlacement)
 	if err != nil {
-		r.Log.Info("Failed to select VRG namespace", "error", err)
+		log.Info("Failed to select VRG namespace", "error", err)
 
 		return
 	}
 
-	clusterName := r.clusterForVRGStatus(drpc, userPlacement, r.Log)
+	clusterName := r.clusterForVRGStatus(drpc, userPlacement, log)
 	if clusterName == "" {
-		r.Log.Info("Unable to determine managed cluster from which to inspect VRG, " +
+		log.Info("Unable to determine managed cluster from which to inspect VRG, " +
 			"skipping processing ResourceConditions")
 
 		return
@@ -1341,14 +1341,14 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace,
 		clusterName, annotations)
 	if err != nil {
-		r.Log.Info("Failed to get VRG from managed cluster. Trying s3 store...", "errMsg", err.Error())
+		log.Info("Failed to get VRG from managed cluster. Trying s3 store...", "errMsg", err.Error())
 
 		// The VRG from the s3 store might be stale, however, the worst case should be at most around 1 minute.
 		vrg = GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
-			GetAvailableS3Profiles(ctx, r.Client, drpc, r.Log),
-			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, r.Log)
+			GetAvailableS3Profiles(ctx, r.Client, drpc, log),
+			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, log)
 		if vrg == nil {
-			r.Log.Info("Failed to get VRG from s3 store")
+			log.Info("Failed to get VRG from s3 store")
 
 			drpc.Status.ResourceConditions = rmn.VRGConditions{}
 
@@ -1358,7 +1358,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		}
 
 		if vrg.ResourceVersion < drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion {
-			r.Log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
+			log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
 			// if the VRG resourceVersion is less, then leave the DRPC ResourceConditions.ResourceMeta.ResourceVersion as is.
 			return
 		}
