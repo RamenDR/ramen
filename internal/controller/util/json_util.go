@@ -72,7 +72,7 @@ func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log 
 func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
 	finalRes := true
 
-	var errOut error
+	var err error
 
 	for _, obj := range objs {
 		res, err := EvaluateCheckHookExp(hook.Chk.Condition, obj)
@@ -80,14 +80,14 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 
 		if err != nil {
 			log.Info("error executing check hook", "for", hook.Name, "with error", err)
-			errOut = err
+			return false, err
 		} else {
 			log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
 				obj.GetName(), "in ns", obj.GetNamespace(), "with execution result", res)
 		}
 	}
 
-	return finalRes, errOut
+	return finalRes, err
 }
 
 func getResourcesList(k8sClient client.Client, hook *kubeobjects.HookSpec) ([]client.Object, error) {
