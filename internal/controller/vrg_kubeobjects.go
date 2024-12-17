@@ -518,6 +518,12 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3ProfileName stri
 		return nil
 	}
 
+	if v.instance.Spec.Action == "" {
+		v.log.Info("Skipping kube objects restore in fresh deployment case")
+
+		return nil
+	}
+
 	sourceVrg, err := v.getVRGFromS3Profile(s3ProfileName)
 	if err != nil {
 		return fmt.Errorf("kube objects source VRG get error: %v", err)
