@@ -252,10 +252,12 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				},
 				storageClassForTest)).To(Succeed())
 
-			//
-			// Call ModifyRSSpecForCephFS
-			//
-			Expect(vsHandler.ModifyRSSpecForCephFS(&testRsSpec, storageClassForTest)).To(Succeed())
+			vsHandler.ModifyRSSpecForCephFS(&testRsSpec, storageClassForTest)
+
+			Expect(testRsSpec.ProtectedPVC.AccessModes).To(Equal(
+				[]corev1.PersistentVolumeAccessMode{
+					corev1.ReadOnlyMany,
+				}))
 		})
 
 		Context("When the source PVC is not using a cephfs storageclass", func() {
