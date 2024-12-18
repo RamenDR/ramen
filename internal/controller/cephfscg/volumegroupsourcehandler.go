@@ -246,10 +246,14 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 				volumeGroupSnapshot.Namespace+"/"+pvcVSRef.PersistentVolumeClaimRef.Name, err)
 		}
 
-		restoreStorageClass, err := GetRestoreStorageClass(ctx, h.Client,
-			*pvc.Spec.StorageClassName, h.DefaultCephFSCSIDriverName)
+		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get Restore Storage Class from PVC %s: %w", pvc.Name+"/"+pvc.Namespace, err)
+			return nil, err
+		}
+
+		restoreAccessModes := []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
+		if storageClass.Provisioner != h.DefaultCephFSCSIDriverName {
+			restoreAccessModes = pvc.Spec.AccessModes
 		}
 
 		RestoredPVCNamespacedName := types.NamespacedName{
@@ -258,7 +262,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		}
 		if err := h.RestoreVolumesFromSnapshot(
 			ctx, pvcVSRef.VolumeSnapshotRef.Name, pvc, RestoredPVCNamespacedName,
-			restoreStorageClass.GetName(), owner); err != nil {
+			restoreAccessModes, owner); err != nil {
 			return nil, fmt.Errorf("failed to restore volumes from snapshot %s: %w",
 				pvcVSRef.VolumeSnapshotRef.Name+"/"+pvc.Namespace, err)
 		}
@@ -286,7 +290,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 	vsName string,
 	pvc *corev1.PersistentVolumeClaim,
 	restoredPVCNamespacedname types.NamespacedName,
-	restoreStorageClassName string,
+	restoreAccessModes []corev1.PersistentVolumeAccessMode,
 	owner metav1.Object,
 ) error {
 	logger := h.Logger.WithName("RestoreVolumesFromSnapshot").
@@ -351,8 +355,8 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 		}
 
 		if restoredPVC.CreationTimestamp.IsZero() { // set immutable fields
-			restoredPVC.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany}
-			restoredPVC.Spec.StorageClassName = &restoreStorageClassName
+			restoredPVC.Spec.AccessModes = restoreAccessModes
+			restoredPVC.Spec.StorageClassName = pvc.Spec.StorageClassName
 			restoredPVC.Spec.DataSource = &snapshotRef
 		}
 
@@ -424,7 +428,6 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			}
 			replicationSource.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 				ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
-					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany},
 					CopyMethod:  volsyncv1alpha1.CopyMethodDirect,
 				},
 
