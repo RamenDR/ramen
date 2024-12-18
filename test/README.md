@@ -144,7 +144,8 @@ environment.
        virtctl
    ```
 
-   lima version 1.0.0 or later is required.
+   lima version 1.0.0 or later is required, latest version is
+   recommended.
 
 1. Install the `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
@@ -164,19 +165,25 @@ environment.
 
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-1. Install `socket_vmnet` from source
+1. Install `socket_vmnet`
 
    > [!IMPORTANT]
-   > Do not install socket_vmnet from brew, it is insecure.
+   > You must install the socket_vmnet launchd service, we don't manage
+   > socket_vment with Lima.
 
    ```
-   git clone https://github.com/lima-vm/socket_vmnet.git
-   cd socket_vmnet
-   sudo make PREFIX=/opt/socket_vmnet install.bin
-   sudo make PREFIX=/opt/socket_vmnet install.launchd
+   VERSION="$(curl -fsSL https://api.github.com/repos/lima-vm/socket_vmnet/releases/latest | jq -r .tag_name)"
+   FILE="socket_vmnet-${VERSION:1}-$(uname -m).tar.gz"
+   SERVICE_ID="io.github.lima-vm.socket_vmnet"
+   curl -OSL "https://github.com/lima-vm/socket_vmnet/releases/download/${VERSION}/${FILE}"
+   sudo tar Cxzvf / "${FILE}" opt/socket_vmnet
+   sudo cp "/opt/socket_vmnet/share/doc/socket_vmnet/launchd/$SERVICE_ID.plist" "/Library/LaunchDaemons/$SERVICE_ID.plist"
+   sudo launchctl bootstrap system "/Library/LaunchDaemons/$SERVICE_ID.plist"
+   sudo launchctl enable system/$SERVICE_ID
+   sudo launchctl kickstart -kp system/$SERVICE_ID
    ```
 
-   For more info see [Installing socket_vmnet from source](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-source)
+   For more info see [Installing socket_vmnet from binary](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-binary)
 
 ## Testing that drenv is healthy
 
