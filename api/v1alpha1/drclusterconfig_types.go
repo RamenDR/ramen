@@ -21,11 +21,20 @@ type DRClusterConfigSpec struct {
 	// provider reconcilers
 	ReplicationSchedules []string `json:"replicationSchedules,omitempty"`
 
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ClusterID is immutable"
 	// ClusterID would carry the ManagedCluster identity from the ManagedCluster claim value for `id.k8s.io`
 	ClusterID string `json:"clusterID,omitempty"`
 
 	// TODO: PeerClusters []ClusterID; to decide if we really need this!
 }
+
+type DRClusterConfigState string
+
+const (
+	DRClusterConfigFailed = DRClusterConfigState("Failed")
+	DRClusterConfigReady  = DRClusterConfigState("Ready")
+)
 
 // DRClusterConfigStatus defines the observed state of DRClusterConfig
 type DRClusterConfigStatus struct {
@@ -33,6 +42,12 @@ type DRClusterConfigStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// TODO: handle no status for this resource, and remove required RBAC/kubebuilder artifacts for the same
+
+	Phase DRClusterConfigState `json:"phase,omitempty"`
+
+	// ObservedGeneration is the last generation change the operator has dealt with
+	//+optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 //+kubebuilder:object:root=true
