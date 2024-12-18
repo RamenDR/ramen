@@ -113,15 +113,6 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		return mover.InProgress(), err
 	}
 
-	m.Logger.Info("Restore PVCs from volume group snapshot")
-
-	restoredPVCs, err := m.VolumeGroupHandler.RestoreVolumesFromVolumeGroupSnapshot(ctx, m.ReplicationGroupSource)
-	if err != nil {
-		m.Logger.Error(err, "Failed to restore volume group snapshot")
-
-		return mover.InProgress(), err
-	}
-
 	m.Logger.Info("Create ReplicationSource for each Restored PVC")
 	vrgName := m.ReplicationGroupSource.GetLabels()[volsync.VRGOwnerNameLabel]
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
@@ -141,6 +132,15 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		return mover.InProgress(), nil
 	}
 
+	m.Logger.Info("Restore PVCs from volume group snapshot")
+
+	restoredPVCs, err := m.VolumeGroupHandler.RestoreVolumesFromVolumeGroupSnapshot(ctx, m.ReplicationGroupSource)
+	if err != nil {
+		m.Logger.Error(err, "Failed to restore volume group snapshot")
+
+		return mover.InProgress(), err
+	}
+	
 	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource)
 	if err != nil {
