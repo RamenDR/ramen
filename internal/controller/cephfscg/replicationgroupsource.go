@@ -140,7 +140,7 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 
 		return mover.InProgress(), err
 	}
-	
+
 	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource)
 	if err != nil {

@@ -146,7 +146,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	return nil
 }
 
-// CleanVolumeGroupSnapshot delete restored pvc, replicationsource and VolumeGroupSnapshot
+// CleanVolumeGroupSnapshot delete restored pvc and VolumeGroupSnapshot
 //
 //nolint:funlen
 func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
@@ -214,36 +214,38 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	return nil
 }
 
-// RestoreVolumesFromVolumeGroupSnapshot restore VolumeGroupSnapshot to PVCs
+// RestoreVolumesFromVolumeGroupSnapshot restores VolumeGroupSnapshot to PVCs
+//
+//nolint:funlen,cyclop
 func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 	ctx context.Context, owner metav1.Object,
 ) ([]RestoredPVC, error) {
 	logger := h.Logger.WithName("RestoreVolumesFromVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{}
+	vgs := &vgsv1alphfa1.VolumeGroupSnapshot{}
 	if err := h.Client.Get(ctx,
 		types.NamespacedName{Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace},
-		volumeGroupSnapshot); err != nil {
+		vgs); err != nil {
 		return nil, fmt.Errorf("failed to get volume group snapshot: %w", err)
 	}
 
-	if volumeGroupSnapshot.Status == nil || volumeGroupSnapshot.Status.ReadyToUse == nil ||
-		(volumeGroupSnapshot.Status.ReadyToUse != nil && !*volumeGroupSnapshot.Status.ReadyToUse) {
+	if vgs.Status == nil || vgs.Status.ReadyToUse == nil ||
+		(vgs.Status.ReadyToUse != nil && !*vgs.Status.ReadyToUse) {
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
 
 	restoredPVCs := []RestoredPVC{}
 
-	for _, pvcVSRef := range volumeGroupSnapshot.Status.PVCVolumeSnapshotRefList {
+	for _, pvcVSRef := range vgs.Status.PVCVolumeSnapshotRefList {
 		logger.Info("Get PVCName from volume snapshot",
 			"PVCName", pvcVSRef.PersistentVolumeClaimRef.Name, "VolumeSnapshotName", pvcVSRef.VolumeSnapshotRef.Name)
 
 		pvc, err := util.GetPVC(ctx, h.Client,
-			types.NamespacedName{Name: pvcVSRef.PersistentVolumeClaimRef.Name, Namespace: volumeGroupSnapshot.Namespace})
+			types.NamespacedName{Name: pvcVSRef.PersistentVolumeClaimRef.Name, Namespace: vgs.Namespace})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get PVC from VGS %s: %w",
-				volumeGroupSnapshot.Namespace+"/"+pvcVSRef.PersistentVolumeClaimRef.Name, err)
+				vgs.Namespace+"/"+pvcVSRef.PersistentVolumeClaimRef.Name, err)
 		}
 
 		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
@@ -428,7 +430,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			}
 			replicationSource.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 				ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
-					CopyMethod:  volsyncv1alpha1.CopyMethodDirect,
+					CopyMethod: volsyncv1alpha1.CopyMethodDirect,
 				},
 
 				KeySecret: &h.VolsyncKeySecretName,
