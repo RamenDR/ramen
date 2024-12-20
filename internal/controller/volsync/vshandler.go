@@ -319,7 +319,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, err
 	}
 
-	pvcOk, err := v.validatePVCBeforeRS(rsSpec, runFinalSync)
+	pvcOk, err := v.validatePVCForFinalSync(rsSpec, runFinalSync)
 	if !pvcOk || err != nil {
 		// Return the replicationSource if it already exists
 		existingRS, getRSErr := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name), rsSpec.ProtectedPVC.Namespace)
@@ -350,16 +350,10 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	return false, replicationSource, err
 }
 
-// Need to validate that our PVC is no longer in use before proceeding
-// If in final sync and the source PVC no longer exists, this could be from
-// a 2nd call to runFinalSync and we may have already cleaned up the PVC - so if pvc does not
-// exist, treat the same as not in use - continue on with reconcile of the RS (and therefore
-// check status to confirm final sync is complete)
-func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
+// Validate that the PVC is no longer in use before proceeding with the final sync.
+func (v *VSHandler) validatePVCForFinalSync(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool) (bool, error,
 ) {
-	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
-
 	if runFinalSync {
 		// If runFinalSync, check the PVC and make sure it's not mounted to a pod
 		// as we want the app to be quiesced/removed before running final sync
@@ -373,41 +367,8 @@ func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicatio
 
 			return false, nil
 		}
-
-		return true, nil // Good to proceed - PVC is not in use, not mounted to node (or does not exist-should not happen)
 	}
 
-	// Not running final sync - if we have not yet created an RS for this PVC, then make sure a pod has mounted
-	// the PVC and is in "Running" state before attempting to create an RS.
-	// This is a best effort to confirm the app that is using the PVC is started before trying to replicate the PVC.
-	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name), rsSpec.ProtectedPVC.Namespace)
-	if err != nil && kerrors.IsNotFound(err) {
-		l.Info("ReplicationSource does not exist yet. " +
-			"validating that the PVC to be protected is in use by a ready pod ...")
-		// RS does not yet exist - consider PVC is ok if it's mounted and in use by running pod
-		inUseByReadyPod, err := v.pvcExistsAndInUse(util.ProtectedPVCNamespacedName(rsSpec.ProtectedPVC),
-			true /* Check mounting pod is Ready */)
-		if err != nil {
-			return false, err
-		}
-
-		if !inUseByReadyPod {
-			l.Info("PVC is not in use by ready pod, not creating RS yet ...")
-
-			return false, nil
-		}
-
-		l.Info("PVC is use by ready pod, proceeding to create RS ...")
-
-		return true, nil
-	}
-
-	if err != nil {
-		// Err looking up the RS, return it
-		return false, err
-	}
-
-	// Replication source already exists, no need for any pvc checking
 	return true, nil
 }
 
