@@ -108,7 +108,7 @@ func TestEvaluateCheckHookExp(t *testing.T) {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var jsonData map[string]interface{}
 
-			err := json.Unmarshal(tt.jsonText, &jsonData)
+			err := json.Unmarshal(test.jsonText, &jsonData)
 			if err != nil {
 				t.Error(err)
 			}

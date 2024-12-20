@@ -202,15 +202,18 @@ func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 	switch v := objList.(type) {
 	case *corev1.PodList:
 		for _, pod := range v.Items {
-			objs = append(objs, &pod)
+			podCopy := pod
+			objs = append(objs, &podCopy)
 		}
 	case *appsv1.DeploymentList:
 		for _, dep := range v.Items {
-			objs = append(objs, &dep)
+			depCopy := dep
+			objs = append(objs, &depCopy)
 		}
 	case *appsv1.StatefulSetList:
 		for _, ss := range v.Items {
-			objs = append(objs, &ss)
+			ssCopy := ss
+			objs = append(objs, &ssCopy)
 		}
 	}
 
