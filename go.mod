@@ -8,7 +8,7 @@ toolchain go1.22.7
 replace github.com/ramendr/ramen/api => ./api
 
 require (
-	github.com/aws/aws-sdk-go v1.44.289
+	github.com/aws/aws-sdk-go v1.55.5
 	github.com/backube/volsync v0.7.1
 	github.com/csi-addons/kubernetes-csi-addons v0.10.1-0.20240924092040-c11db0b867a1
 	github.com/go-logr/logr v1.4.2
