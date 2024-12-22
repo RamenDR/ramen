@@ -16,8 +16,8 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.0.0
 	github.com/onsi/ginkgo/v2 v2.22.1
 	github.com/onsi/gomega v1.36.1
-	github.com/operator-framework/api v0.17.6
-	github.com/prometheus/client_golang v1.20.4
+	github.com/operator-framework/api v0.27.0
+	github.com/prometheus/client_golang v1.20.5
 	github.com/ramendr/ramen/api v0.0.0-20240924121439-b7cba82de417
 	github.com/ramendr/recipe v0.0.0-20240918115450-667b9d79599f
 	github.com/stolostron/multicloud-operators-foundation v0.0.0-20220824091202-e9cd9710d009
