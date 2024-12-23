@@ -21,7 +21,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	viewv1beta1 "github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
+	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
