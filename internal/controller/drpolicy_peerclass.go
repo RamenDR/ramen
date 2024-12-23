@@ -10,8 +10,8 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	"github.com/stolostron/multicloud-operators-foundation/pkg/apis/view/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
+	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
