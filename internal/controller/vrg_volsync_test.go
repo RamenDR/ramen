@@ -58,6 +58,10 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 	var testCtx context.Context
 	var cancel context.CancelFunc
 
+	vrgAsyncPeerClasses := func() []ramendrv1alpha1.PeerClass {
+		return []ramendrv1alpha1.PeerClass{peerClass(testStorageClassName, sIDs)}
+	}
+
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
 
@@ -82,10 +86,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 		testMatchLabels := map[string]string{
 			"ramentest": "backmeup",
 		}
-		vrgAsyncPeerClasses := func() []ramendrv1alpha1.PeerClass {
-			return []ramendrv1alpha1.PeerClass{peerClass(testStorageClassName, sIDs)}
-		}
-
+		
 		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
 
 		Context("When VRG created on primary", func() {
@@ -122,8 +123,8 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
 
 				createSecret(testVsrg.GetName(), testNamespace.Name)
-				createSC()
-				createVSC()
+				createSC(testStorageClassName, scLabels())
+				createVSC(testVolumeSnapshotClass, vscLabels())
 			})
 
 			Context("When no matching PVCs are bound", func() {
@@ -149,7 +150,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 
 					// Create some PVCs that are bound
 					for i := 0; i < 3; i++ {
-						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(),
+						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(), testStorageClassName,
 							testMatchLabels, pvcAnnotations)
 						boundPvcs = append(boundPvcs, *newPvc)
 					}
@@ -262,6 +263,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 						ReplicationState: ramendrv1alpha1.Secondary,
 						Async: &ramendrv1alpha1.VRGAsyncSpec{
 							SchedulingInterval: "1h",
+							PeerClasses: vrgAsyncPeerClasses(),
 						},
 						PVCSelector: metav1.LabelSelector{
 							MatchLabels: testMatchLabels,
@@ -283,8 +285,8 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
 
 				createSecret(testVrg.GetName(), testNamespace.Name)
-				createSC()
-				createVSC()
+				createSC(testStorageClassName, scLabels())
+				createVSC(testVolumeSnapshotClass, vscLabels())
 			})
 
 			Context("When RDSpec entries are added to vrg spec", func() {
@@ -395,11 +397,149 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 			})
 		})
 	})
+
+
+	Describe("Setup without SIDs and PeerClasses", func() {
+		testMatchLabels := map[string]string{
+			"ramentest": "backmeup",
+		}
+		
+		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
+
+		Context("When VRG created", func() {
+			JustBeforeEach(func() {
+				testVsrg = &ramendrv1alpha1.VolumeReplicationGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "test-vrg-east-",
+						Namespace:    testNamespace.GetName(),
+					},
+					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+						ReplicationState: ramendrv1alpha1.Primary,
+						Async: &ramendrv1alpha1.VRGAsyncSpec{
+							SchedulingInterval: "1h",
+						},
+						PVCSelector: metav1.LabelSelector{
+							MatchLabels: testMatchLabels,
+						},
+						S3Profiles: []string{s3Profiles[0].S3ProfileName},
+						VolSync:    ramendrv1alpha1.VolSyncSpec{},
+					},
+				}
+
+				Expect(k8sClient.Create(testCtx, testVsrg)).To(Succeed())
+
+				Eventually(func() []string {
+					err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVsrg), testVsrg)
+					if err != nil {
+						return []string{}
+					}
+
+					return testVsrg.GetFinalizers()
+				}, testMaxWait, testInterval).Should(
+					ContainElement("volumereplicationgroups.ramendr.openshift.io/vrg-protection"))
+
+				createSecret(testVsrg.GetName(), testNamespace.Name)
+				createSC("sc1", map[string]string{})
+				createVSC("vsc1", map[string]string{})
+			})
+
+			Context("When matching PVCs are bound", func() {
+				var boundPvcs []corev1.PersistentVolumeClaim
+
+				pvcAnnotations := map[string]string{
+					"apps.open-cluster-management.io/hosting-subscription": "sub-name",
+					"apps.open-cluster-management.io/reconcile-option":     "merge",
+					volsync.ACMAppSubDoNotDeleteAnnotation:                 volsync.ACMAppSubDoNotDeleteAnnotationVal,
+					"pv.kubernetes.io/bind-completed":                      "yes",
+					"volume.kubernetes.io/storage-provisioner":             "provisioner",
+				}
+
+				JustBeforeEach(func() {
+					// Reset for each test
+					boundPvcs = []corev1.PersistentVolumeClaim{}
+
+					// Create some PVCs that are bound
+					for i := 0; i < 3; i++ {
+						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(), "sc1",
+							testMatchLabels, pvcAnnotations)
+						boundPvcs = append(boundPvcs, *newPvc)
+					}
+
+					Eventually(func() int {
+						err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVsrg), testVsrg)
+						if err != nil {
+							return 0
+						}
+
+						return len(testVsrg.Status.ProtectedPVCs)
+					}, testMaxWait, testInterval).Should(Equal(len(boundPvcs)))
+				})
+
+				It("Should find the bound PVCs and report in Status", func() {
+					// Check the volsync pvcs
+					foundBoundPVC0 := false
+					foundBoundPVC1 := false
+					foundBoundPVC2 := false
+					for _, vsPvc := range testVsrg.Status.ProtectedPVCs {
+						switch vsPvc.Name {
+						case boundPvcs[0].GetName():
+							foundBoundPVC0 = true
+						case boundPvcs[1].GetName():
+							foundBoundPVC1 = true
+						case boundPvcs[2].GetName():
+							foundBoundPVC2 = true
+						}
+					}
+					Expect(foundBoundPVC0).To(BeTrue())
+					Expect(foundBoundPVC1).To(BeTrue())
+					Expect(foundBoundPVC2).To(BeTrue())
+				})
+
+				Context("When RSSpec entries are added to vrg spec", func() {
+					It("Should create ReplicationSources for each", func() {
+						allRSs := &volsyncv1alpha1.ReplicationSourceList{}
+						Eventually(func() int {
+							Expect(k8sClient.List(testCtx, allRSs,
+								client.InNamespace(testNamespace.GetName()))).To(Succeed())
+
+							return len(allRSs.Items)
+						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
+
+						rs0 := &volsyncv1alpha1.ReplicationSource{}
+						Expect(k8sClient.Get(testCtx, types.NamespacedName{
+							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName(),
+						}, rs0)).To(Succeed())
+						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
+						Expect(rs0.Spec.Trigger).NotTo(BeNil())
+						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+
+						rs1 := &volsyncv1alpha1.ReplicationSource{}
+						Expect(k8sClient.Get(testCtx, types.NamespacedName{
+							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName(),
+						}, rs1)).To(Succeed())
+						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
+						Expect(rs1.Spec.Trigger).NotTo(BeNil())
+						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+
+						rs2 := &volsyncv1alpha1.ReplicationSource{}
+						Expect(k8sClient.Get(testCtx, types.NamespacedName{
+							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName(),
+						}, rs2)).To(Succeed())
+						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
+						Expect(rs2.Spec.Trigger).NotTo(BeNil())
+						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+					})
+				})
+			})
+		})
+	})
+
+
 })
 
 //nolint:funlen
-func createPVCBoundToRunningPod(ctx context.Context, namespace string,
-	labels map[string]string, annotations map[string]string,
+func createPVCBoundToRunningPod(ctx context.Context, namespace, scName string,
+	labels map[string]string, annotations map[string]string,  
 ) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
@@ -408,7 +548,7 @@ func createPVCBoundToRunningPod(ctx context.Context, namespace string,
 		corev1.ReadWriteOnce,
 	}
 
-	storageClassName := testStorageClassName
+	storageClassName := scName
 
 	pvc := &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{},
@@ -486,13 +626,16 @@ func createSecret(vrgName, namespace string) {
 	Expect(secret.GetName()).NotTo(BeEmpty())
 }
 
-func createSC() {
+func createSC(storageClassName string, scLabels map[string]string) {
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   testStorageClassName,
-			Labels: scLabels(),
+			Name: storageClassName,
 		},
 		Provisioner: "manual.storage.com",
+	}
+
+	if len(scLabels) != 0 {
+		sc.ObjectMeta.Labels = scLabels
 	}
 
 	err := k8sClient.Create(context.TODO(), sc)
@@ -506,14 +649,17 @@ func createSC() {
 		"failed to create/get StorageClass %s", sc.Name)
 }
 
-func createVSC() {
+func createVSC(vscName string, vscLabels map[string]string) {
 	vsc := &snapv1.VolumeSnapshotClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   testVolumeSnapshotClass,
-			Labels: vscLabels(),
+			Name: vscName,
 		},
 		Driver:         "manual.storage.com",
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+	}
+
+	if len(vscLabels) != 0 {
+		vsc.ObjectMeta.Labels = vscLabels
 	}
 
 	err := k8sClient.Create(context.TODO(), vsc)
