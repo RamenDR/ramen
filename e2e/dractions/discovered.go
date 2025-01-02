@@ -47,6 +47,17 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
+
+	if v, ok := ctx.Deployer().(deployers.DiscoveredApp); ok {
+		if v.IncludeRecipe {
+			recipeName := name + "-recipe"
+			drpc.Spec.KubeObjectProtection.RecipeRef = &ramen.RecipeRef{
+				Namespace: appNamespace,
+				Name:      recipeName,
+			}
+		}
+	}
+
 	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
