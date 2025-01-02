@@ -25,11 +25,16 @@ const (
 )
 
 var (
-	Workloads      = []types.Workload{}
-	subscription   = &deployers.Subscription{}
-	appset         = &deployers.ApplicationSet{}
-	discoveredApps = &deployers.DiscoveredApp{}
-	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
+	Workloads                 = []types.Workload{}
+	subscription              = &deployers.Subscription{}
+	appset                    = &deployers.ApplicationSet{}
+	discoveredApps            = &deployers.DiscoveredApp{}
+	discoveredAppsWithoutHook = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: false}
+	discoveredAppsWithHook    = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: true}
+	Deployers                 = []types.Deployer{
+		subscription, appset, discoveredApps, discoveredAppsWithoutHook,
+		discoveredAppsWithHook,
+	}
 )
 
 func generateWorkloads([]types.Workload) {
