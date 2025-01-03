@@ -72,6 +72,7 @@ jobs:
 
     - name: Run e2e tests
       run: |
+        cat e2e/config.yaml.sample >> e2e/config.yaml
         cat ~/.config/drenv/rdr/config.yaml >> e2e/config.yaml
         make e2e-rdr
 
