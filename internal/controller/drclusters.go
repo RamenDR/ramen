@@ -130,6 +130,8 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 		olmClusterRole,
 		olmRoleBinding(drClusterOperatorNamespaceName),
 		operatorGroup(drClusterOperatorNamespaceName),
+		drClusterConfigRole,
+		drClusterConfigRoleBinding,
 		drClusterOperatorConfigMap,
 	), nil
 }
