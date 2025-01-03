@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -1245,6 +1246,8 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 			AutoResync:             v.autoResync(state),
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(volRep)
 
 	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
 		// This is to keep existing behavior of ramen.

@@ -29,6 +29,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -306,6 +307,8 @@ func (r *DRClusterConfigReconciler) ensureClusterClaim(
 			Name: claimName(prefix, name),
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(cc)
 
 	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, cc, func() error {
 		util.NewResourceUpdater(cc).AddLabel(drCConfigOwnerLabel, drCConfigOwnerName)

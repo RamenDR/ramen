@@ -11,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	corev1 "k8s.io/api/core/v1"
@@ -118,6 +119,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 		},
 	}
 
+	core.ObjectCreatedByRamenSetLabel(rgd)
+
 	_, err := ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgd, func() error {
 		if err := ctrl.SetControllerReference(c.instance, rgd, c.Client.Scheme()); err != nil {
 			return err
@@ -203,6 +206,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 			Namespace: replicationGroupSourceNamespace,
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(rgs)
 
 	_, err = ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgs, func() error {
 		if err := ctrl.SetControllerReference(c.instance, rgs, c.Client.Scheme()); err != nil {

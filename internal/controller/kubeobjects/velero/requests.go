@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -467,6 +468,9 @@ func backupRequestCreate(
 		caCertificates,
 		labels,
 	)
+
+	core.ObjectCreatedByRamenSetLabel(backupLocation)
+
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
 	}
