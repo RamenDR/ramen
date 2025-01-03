@@ -13,6 +13,7 @@ import (
 	vgsv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 
@@ -126,6 +127,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 			return err
 		}
 
+		core.ObjectCreatedByRamenSetLabel(volumeGroupSnapshot)
 		util.AddLabel(volumeGroupSnapshot, util.RGSOwnerLabel, owner.GetName())
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNameAnnotation, owner.GetName())
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
@@ -354,6 +356,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 			return err
 		}
 
+		core.ObjectCreatedByRamenSetLabel(restoredPVC)
 		util.AddLabel(restoredPVC, util.RGSOwnerLabel, owner.GetName())
 		util.AddAnnotation(restoredPVC, volsync.OwnerNameAnnotation, owner.GetName())
 		util.AddAnnotation(restoredPVC, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
@@ -440,6 +443,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 				Namespace: replicationSourceNamepspace,
 			},
 		}
+
 		rdService := getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
@@ -447,6 +451,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 				return err
 			}
 
+			core.ObjectCreatedByRamenSetLabel(replicationSource)
 			util.AddLabel(replicationSource, util.RGSOwnerLabel, owner.GetName())
 			util.AddAnnotation(replicationSource, volsync.OwnerNameAnnotation, owner.GetName())
 			util.AddAnnotation(replicationSource, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())

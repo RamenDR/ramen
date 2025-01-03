@@ -1097,6 +1097,8 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
+	recipecore.ObjectCreatedByRamenSetLabel(clonedPlRule)
+
 	userPlRule.DeepCopyInto(clonedPlRule)
 
 	clonedPlRule.Name = clonedPlRuleName
@@ -1702,6 +1704,8 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 		clrapiv1beta1.PlacementLabel:    placement.GetName(),
 		rmnutil.ExcludeFromVeleroBackup: "true",
 	}
+
+	recipecore.ObjectCreatedByRamenSetLabel(plDecision)
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
