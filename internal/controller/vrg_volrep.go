@@ -1241,11 +1241,14 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 			v.instance.Name, err)
 	}
 
+	labels := rmnutil.OwnerLabels(v.instance)
+	labels[rmnutil.CreatedByRamenLabel] = "true"
+
 	volRep := &volrep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
-			Labels:    rmnutil.OwnerLabels(v.instance),
+			Labels:    labels,
 		},
 		Spec: volrep.VolumeReplicationSpec{
 			DataSource: corev1.TypedLocalObjectReference{

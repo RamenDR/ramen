@@ -25,6 +25,8 @@ const (
 
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
+
+	CreatedByRamenLabel = "ramendr.openshift.io/resource-created-by-ramen"
 )
 
 type ResourceUpdater struct {
@@ -220,6 +222,10 @@ func CreateRamenOpsNamespace(ctx context.Context, k8sClient client.Client, ramen
 
 func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, namespace string) error {
 	ns := &corev1.Namespace{}
+
+	labels := make(map[string]string)
+	labels[CreatedByRamenLabel] = "true"
+	ns.ObjectMeta.Labels = labels
 
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)
 	if err != nil {

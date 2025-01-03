@@ -126,6 +126,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 			return err
 		}
 
+		util.AddLabel(volumeGroupSnapshot, util.CreatedByRamenLabel, "true")
 		util.AddLabel(volumeGroupSnapshot, util.RGSOwnerLabel, owner.GetName())
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNameAnnotation, owner.GetName())
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
@@ -327,6 +328,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromSnapshot(
 			return err
 		}
 
+		util.AddLabel(restoredPVC, util.CreatedByRamenLabel, "true")
 		util.AddLabel(restoredPVC, util.RGSOwnerLabel, owner.GetName())
 		util.AddAnnotation(restoredPVC, volsync.OwnerNameAnnotation, owner.GetName())
 		util.AddAnnotation(restoredPVC, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
@@ -413,6 +415,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 				Namespace: replicationSourceNamepspace,
 			},
 		}
+
 		rdService := getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
@@ -420,6 +423,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 				return err
 			}
 
+			util.AddLabel(replicationSource, util.CreatedByRamenLabel, "true")
 			util.AddLabel(replicationSource, util.RGSOwnerLabel, owner.GetName())
 			util.AddAnnotation(replicationSource, volsync.OwnerNameAnnotation, owner.GetName())
 			util.AddAnnotation(replicationSource, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())

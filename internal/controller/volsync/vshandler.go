@@ -214,6 +214,9 @@ func (v *VSHandler) createOrUpdateRD(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
 			Namespace: rdSpec.ProtectedPVC.Namespace,
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -439,6 +442,9 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      getReplicationSourceName(rsSpec.ProtectedPVC.Name),
 			Namespace: rsSpec.ProtectedPVC.Namespace,
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -1370,6 +1376,9 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rdSpec.ProtectedPVC.Name,
 			Namespace: rdSpec.ProtectedPVC.Namespace,
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -1536,6 +1545,9 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rdSpec.ProtectedPVC.Name,
 			Namespace: rdSpec.ProtectedPVC.Namespace,
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -2100,6 +2112,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			}
 		}
 
+		util.AddLabel(lrd, util.CreatedByRamenLabel, "true")
 		util.AddLabel(lrd, VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrd, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
@@ -2173,6 +2186,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			}
 		}
 
+		util.AddLabel(lrs, util.CreatedByRamenLabel, "true")
 		util.AddLabel(lrs, VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrs, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
@@ -2318,6 +2332,9 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      snapshotRef.Name,
 			Namespace: rd.GetNamespace(),
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 

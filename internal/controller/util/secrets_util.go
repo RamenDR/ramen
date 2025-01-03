@@ -189,6 +189,9 @@ func newPlacementRuleBinding(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				CreatedByRamenLabel: "true",
+			},
 		},
 		PlacementRef: gppv1.PlacementSubject{
 			APIGroup: plrv1.Resource("PlacementRule").Group,
@@ -217,6 +220,9 @@ func newPlacementRule(name string, namespace string,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				CreatedByRamenLabel: "true",
+			},
 		},
 		Spec: plrv1.PlacementRuleSpec{
 			GenericPlacementFields: plrv1.GenericPlacementFields{
@@ -359,6 +365,9 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 			Namespace: namespace,
 			Annotations: map[string]string{
 				PolicyTriggerAnnotation: triggerValue,
+			},
+			Labels: map[string]string{
+				CreatedByRamenLabel: "true",
 			},
 		},
 		Spec: gppv1.PolicySpec{
