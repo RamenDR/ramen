@@ -437,7 +437,7 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 //     any further and it can be skipped. The pvc will go away eventually.
 func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	if pvc.Status.Phase != corev1.ClaimBound {
-		log.Info("Skipping handling of VR as PersistentVolumeClaim is not bound", "pvcPhase", pvc.Status.Phase)
+		log.Info("Skipping handling of VR as PVC is not bound", "pvcPhase", pvc.Status.Phase)
 
 		msg := "PVC not bound yet"
 		// v.updateProtectedPVCCondition(pvc.Name, VRGConditionReasonProgressing, msg)
@@ -451,7 +451,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
 	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && rmnutil.ResourceIsDeleted(pvc) {
-		log.Info("Skipping PersistentVolumeClaim, as it is marked for deletion and not yet protected")
+		log.Info("Skipping PVC, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
 		// v.updateProtectedPVCCondition(pvc.Name, VRGConditionReasonProgressing, msg)
