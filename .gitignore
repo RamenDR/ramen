@@ -7,6 +7,9 @@
 /bin
 /testbin/*
 
+# config files
+/e2e/config.yaml
+
 # Test binary, build with `go test -c`
 *.test
 
