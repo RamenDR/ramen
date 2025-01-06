@@ -62,6 +62,25 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 		return []ramendrv1alpha1.PeerClass{peerClass(testStorageClassName, sIDs)}
 	}
 
+	testCapacity := func(capacity string) corev1.ResourceList {
+		return corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse(capacity),
+		}
+	}
+
+	protectedPVC := func(storageClassName, testPVCName string, testCapacity corev1.ResourceList,
+		testAccessModes []corev1.PersistentVolumeAccessMode,
+	) ramendrv1alpha1.ProtectedPVC {
+		return ramendrv1alpha1.ProtectedPVC{
+			Name:               testPVCName,
+			Namespace:          testNamespace.GetName(),
+			ProtectedByVolSync: true,
+			StorageClassName:   &storageClassName,
+			AccessModes:        testAccessModes,
+			Resources:          corev1.VolumeResourceRequirements{Requests: testCapacity},
+		}
+	}
+
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
 
@@ -86,7 +105,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 		testMatchLabels := map[string]string{
 			"ramentest": "backmeup",
 		}
-		
+
 		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
 
 		Context("When VRG created on primary", func() {
@@ -212,29 +231,9 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 							return len(allRSs.Items)
 						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
 
-						rs0 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName(),
-						}, rs0)).To(Succeed())
-						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
-						Expect(rs0.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
-
-						rs1 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName(),
-						}, rs1)).To(Succeed())
-						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
-						Expect(rs1.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
-
-						rs2 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName(),
-						}, rs2)).To(Succeed())
-						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
-						Expect(rs2.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+						for _, boundPVC := range boundPvcs {
+							verifyReplicationSourceCreated(testCtx, &volsyncv1alpha1.ReplicationSource{}, boundPVC, testNamespace)
+						}
 					})
 				})
 			})
@@ -263,7 +262,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 						ReplicationState: ramendrv1alpha1.Secondary,
 						Async: &ramendrv1alpha1.VRGAsyncSpec{
 							SchedulingInterval: "1h",
-							PeerClasses: vrgAsyncPeerClasses(),
+							PeerClasses:        vrgAsyncPeerClasses(),
 						},
 						PVCSelector: metav1.LabelSelector{
 							MatchLabels: testMatchLabels,
@@ -292,41 +291,22 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 			Context("When RDSpec entries are added to vrg spec", func() {
 				storageClassName := testStorageClassName
 
-				testCapacity0 := corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("1Gi"),
-				}
-				testCapacity1 := corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("20Gi"),
-				}
-
 				rd0 := &volsyncv1alpha1.ReplicationDestination{}
 				rd1 := &volsyncv1alpha1.ReplicationDestination{}
 
 				JustBeforeEach(func() {
 					// Update the vrg spec with some RDSpec entries
 					Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVrg), testVrg)).To(Succeed())
+
 					testVrg.Spec.VolSync.RDSpec = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 						{
-							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-								Name:               "testingpvc-a",
-								Namespace:          testNamespace.GetName(),
-								ProtectedByVolSync: true,
-								StorageClassName:   &storageClassName,
-								AccessModes:        testAccessModes,
-
-								Resources: corev1.VolumeResourceRequirements{Requests: testCapacity0},
-							},
+							ProtectedPVC: protectedPVC(storageClassName,
+								"testingpvc-a", testCapacity("1Gi"), testAccessModes),
 						},
-						{
-							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-								Name:               "testingpvc-b",
-								Namespace:          testNamespace.GetName(),
-								ProtectedByVolSync: true,
-								StorageClassName:   &storageClassName,
-								AccessModes:        testAccessModes,
 
-								Resources: corev1.VolumeResourceRequirements{Requests: testCapacity1},
-							},
+						{
+							ProtectedPVC: protectedPVC(storageClassName,
+								"testingpvc-b", testCapacity("20Gi"), testAccessModes),
 						},
 					}
 
@@ -398,13 +378,14 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 		})
 	})
 
-
 	Describe("Setup without SIDs and PeerClasses", func() {
 		testMatchLabels := map[string]string{
 			"ramentest": "backmeup",
 		}
-		
+
 		var testVsrg *ramendrv1alpha1.VolumeReplicationGroup
+
+		PVCCount := 3
 
 		Context("When VRG created", func() {
 			JustBeforeEach(func() {
@@ -459,7 +440,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					boundPvcs = []corev1.PersistentVolumeClaim{}
 
 					// Create some PVCs that are bound
-					for i := 0; i < 3; i++ {
+					for i := 0; i < PVCCount; i++ {
 						newPvc := createPVCBoundToRunningPod(testCtx, testNamespace.GetName(), "sc1",
 							testMatchLabels, pvcAnnotations)
 						boundPvcs = append(boundPvcs, *newPvc)
@@ -505,41 +486,19 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 							return len(allRSs.Items)
 						}, testMaxWait, testInterval).Should(Equal(len(testVsrg.Status.ProtectedPVCs)))
 
-						rs0 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[0].GetName(), Namespace: testNamespace.GetName(),
-						}, rs0)).To(Succeed())
-						Expect(rs0.Spec.SourcePVC).To(Equal(boundPvcs[0].GetName()))
-						Expect(rs0.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs0.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
-
-						rs1 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[1].GetName(), Namespace: testNamespace.GetName(),
-						}, rs1)).To(Succeed())
-						Expect(rs1.Spec.SourcePVC).To(Equal(boundPvcs[1].GetName()))
-						Expect(rs1.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs1.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
-
-						rs2 := &volsyncv1alpha1.ReplicationSource{}
-						Expect(k8sClient.Get(testCtx, types.NamespacedName{
-							Name: boundPvcs[2].GetName(), Namespace: testNamespace.GetName(),
-						}, rs2)).To(Succeed())
-						Expect(rs2.Spec.SourcePVC).To(Equal(boundPvcs[2].GetName()))
-						Expect(rs2.Spec.Trigger).NotTo(BeNil())
-						Expect(*rs2.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
+						for _, boundPVC := range boundPvcs {
+							verifyReplicationSourceCreated(testCtx, &volsyncv1alpha1.ReplicationSource{}, boundPVC, testNamespace)
+						}
 					})
 				})
 			})
 		})
 	})
-
-
 })
 
 //nolint:funlen
 func createPVCBoundToRunningPod(ctx context.Context, namespace, scName string,
-	labels map[string]string, annotations map[string]string,  
+	labels map[string]string, annotations map[string]string,
 ) *corev1.PersistentVolumeClaim {
 	capacity := corev1.ResourceList{
 		corev1.ResourceStorage: resource.MustParse("1Gi"),
@@ -671,4 +630,15 @@ func createVSC(vscName string, vscLabels map[string]string) {
 
 	Expect(err).NotTo(HaveOccurred(),
 		"failed to create/get StorageClass %s", vsc.Name)
+}
+
+func verifyReplicationSourceCreated(testCtx context.Context, rs *volsyncv1alpha1.ReplicationSource,
+	boundPVC corev1.PersistentVolumeClaim, ns *corev1.Namespace,
+) {
+	Expect(k8sClient.Get(testCtx, types.NamespacedName{
+		Name: boundPVC.GetName(), Namespace: ns.GetName(),
+	}, rs)).To(Succeed())
+	Expect(rs.Spec.SourcePVC).To(Equal(boundPVC.GetName()))
+	Expect(rs.Spec.Trigger).NotTo(BeNil())
+	Expect(*rs.Spec.Trigger.Schedule).To(Equal("0 */1 * * *")) // scheduling interval was set to 1h
 }
