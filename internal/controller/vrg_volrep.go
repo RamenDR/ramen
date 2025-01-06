@@ -58,7 +58,7 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
 //
-//nolint:funlen,gocognit
+//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 	readyForVRProtectionPVCs := make([]corev1.PersistentVolumeClaim, 0)
 
@@ -122,6 +122,17 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 			v.requeue()
 
 			continue
+		}
+
+		if rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+			if err := v.uploadVGRandVGRCtoS3Stores(pvc, log); err != nil {
+				log.Info("Requeuing due to failure to upload VGR and VGRC objects to S3 store(s)",
+					"errorValue", err)
+
+				v.requeue()
+
+				continue
+			}
 		}
 
 		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
@@ -427,7 +438,8 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 
 	// Annotate that PVC protection is complete, skip if being deleted
 	if !rmnutil.ResourceIsDeleted(pvc) {
-		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
+		if err := v.addAnnotationForResource(pvc, "PersistentVolumeClaim", pvcVRAnnotationProtectedKey,
+			pvcVRAnnotationProtectedValue, log); err != nil {
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
 			msg := "Failed to add protected annotatation to PVC"
@@ -572,19 +584,39 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 
 	// if not retained, retain PV, and add an annotation to denote this is updated for VR needs
 	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
-	if pv.ObjectMeta.Annotations == nil {
-		pv.ObjectMeta.Annotations = map[string]string{}
+
+	return v.addAnnotationForResource(pv, "PersistentVolume", pvVRAnnotationRetentionKey,
+		pvVRAnnotationRetentionValue, log)
+}
+
+func (v *VRGInstance) addAnnotationForResource(resource client.Object, resourceType, annotationKey,
+	annotationValue string, log logr.Logger,
+) error {
+	annotations := resource.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
 	}
 
-	pv.ObjectMeta.Annotations[pvVRAnnotationRetentionKey] = pvVRAnnotationRetentionValue
+	// Check if the annotation is already set
+	if currentValue, exists := annotations[annotationKey]; exists && currentValue == annotationValue {
+		log.Info(fmt.Sprintf("%s annotation already set to the desired value", resourceType), "resource", resource.GetName())
 
-	if err := v.reconciler.Update(v.ctx, pv); err != nil {
-		log.Error(err, "Failed to update PersistentVolume reclaim policy")
-
-		return fmt.Errorf("failed to update PersistentVolume resource (%s) reclaim policy for"+
-			" PersistentVolumeClaim resource (%s/%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
+		return nil
 	}
+
+	resource.GetAnnotations()[annotationKey] = annotationValue
+	resource.SetAnnotations(annotations)
+
+	if err := v.reconciler.Update(v.ctx, resource); err != nil {
+		log.Error(err, fmt.Sprintf("Failed to update %s annotation", resourceType))
+
+		return fmt.Errorf("failed to update %s (%s/%s) annotation (%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			resourceType, resource.GetNamespace(), resource.GetName(), annotationKey,
+			v.instance.Namespace, v.instance.Name, err)
+	}
+
+	log.Info(fmt.Sprintf("%s (%s/%s) annotation (%s) successfully updated to %s",
+		resourceType, resource.GetNamespace(), resource.GetName(), annotationKey, annotationValue))
 
 	return nil
 }
@@ -616,6 +648,41 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 	}
 
 	if pv.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pv.Generation) {
+		return false
+	}
+
+	return true
+}
+
+func (v *VRGInstance) isVGRandVGRCArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	vgrHasAnnotation := false
+	vgrcHasAnnotation := false
+
+	vgr, err := v.getVGRFromPVC(pvc)
+	if err != nil {
+		log.Error(err, "Failed to get VGR to check if archived")
+
+		return false
+	}
+
+	vgrDesiredValue := v.generateArchiveAnnotation(vgr.Generation)
+	if v, ok := vgr.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == vgrDesiredValue) {
+		vgrHasAnnotation = true
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		log.Error(err, "Failed to get VGRC to check if archived")
+
+		return false
+	}
+
+	vgrcDesiredValue := v.generateArchiveAnnotation(vgrc.Generation)
+	if v, ok := vgrc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == vgrcDesiredValue) {
+		vgrcHasAnnotation = true
+	}
+
+	if !vgrHasAnnotation || !vgrcHasAnnotation {
 		return false
 	}
 
@@ -677,6 +744,107 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	v.log.Info(msg)
 	v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 		VRGConditionReasonUploaded, msg)
+
+	return nil
+}
+
+// Upload VGRCs and VGRs to the list of S3 stores in the VRG spec
+func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
+	if v.isVGRandVGRCArchivedAlready(pvc, log) {
+		msg := fmt.Sprintf("VGR and VGRC cluster data already protected for PVC %s", pvc.Name)
+		v.log.Info(msg)
+
+		return nil
+	}
+
+	// Error out if VRG has no S3 profiles
+	numProfilesToUpload := len(v.instance.Spec.S3Profiles)
+	if numProfilesToUpload == 0 {
+		msg := "Error uploading VGR and VGRC cluster data because VRG spec has no S3 profiles"
+		v.log.Info(msg)
+
+		return fmt.Errorf("error uploading cluster data of VGR and VGRC %s because VRG spec has no S3 profiles",
+			pvc.Name)
+	}
+
+	s3Profiles, err := v.UploadVGRandVGRCtoS3Stores(pvc, log)
+	if err != nil {
+		return fmt.Errorf("failed to upload VGR/VGRC with error (%w). Uploaded to %v S3 profile(s)", err, s3Profiles)
+	}
+
+	numProfilesUploaded := len(s3Profiles)
+
+	if numProfilesUploaded != numProfilesToUpload {
+		// Merely defensive as we don't expect to reach here
+		msg := fmt.Sprintf("uploaded VGR/VGRC cluster data to only  %d of %d S3 profile(s): %v",
+			numProfilesUploaded, numProfilesToUpload, s3Profiles)
+		v.log.Info(msg)
+
+		return errors.New(msg)
+	}
+
+	if err := v.addArchivedAnnotationForVGRandVGRC(pvc, log); err != nil {
+		return err
+	}
+
+	msg := fmt.Sprintf("Done uploading VGR/VGRC cluster data to %d of %d S3 profile(s): %v",
+		numProfilesUploaded, numProfilesToUpload, s3Profiles)
+	v.log.Info(msg)
+
+	return nil
+}
+
+func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+	if s3ProfileName == "" {
+		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for PVC %s", pvc.Name)
+	}
+
+	objectStore, err := v.getObjectStorer(s3ProfileName)
+	if err != nil {
+		return fmt.Errorf("error getting object store, failed to protect cluster data for PVC %s, %w", pvc.Name, err)
+	}
+
+	vgr, err := v.getVGRFromPVC(pvc)
+	if err != nil {
+		return fmt.Errorf("error getting VGR for PVC, failed to protect cluster data for VGR %s to s3Profile %s, %w",
+			vgr.Name, s3ProfileName, err)
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		return fmt.Errorf("error getting VGRC for VGR, failed to protect cluster data for VGRC %s to s3Profile %s, %w",
+			vgrc.Name, s3ProfileName, err)
+	}
+
+	return v.UploadVGRAndVGRCtoS3(s3ProfileName, objectStore, vgr, &vgrc)
+}
+
+func (v *VRGInstance) UploadVGRAndVGRCtoS3(s3ProfileName string, objectStore ObjectStorer,
+	vgr *volrep.VolumeGroupReplication, vgrc *volrep.VolumeGroupReplicationContent,
+) error {
+	if err := UploadVGRC(objectStore, v.s3KeyPrefix(), vgrc.Name, *vgrc); err != nil {
+		var aerr awserr.Error
+		if errors.As(err, &aerr) {
+			// Treat any aws error as a persistent error
+			v.cacheObjectStorer(s3ProfileName, nil,
+				fmt.Errorf("persistent error while uploading to s3 profile %s, will retry later", s3ProfileName))
+		}
+
+		err := fmt.Errorf("error uploading VGRC to s3Profile %s, failed to protect cluster data for VGRC %s, %w",
+			s3ProfileName, vgrc.Name, err)
+
+		return err
+	}
+
+	vgrNamespacedName := types.NamespacedName{Namespace: vgr.Namespace, Name: vgr.Name}
+	vgrNamespacedNameString := vgrNamespacedName.String()
+
+	if err := UploadVGR(objectStore, v.s3KeyPrefix(), vgrNamespacedNameString, *vgr); err != nil {
+		err := fmt.Errorf("error uploading VGR to s3Profile %s, failed to protect cluster data for VGR %s, %w",
+			s3ProfileName, vgrNamespacedNameString, err)
+
+		return err
+	}
 
 	return nil
 }
@@ -749,6 +917,64 @@ func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	}
 
 	return succeededProfiles, nil
+}
+
+func (v *VRGInstance) UploadVGRandVGRCtoS3Stores(pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+) ([]string, error) {
+	succeededProfiles := []string{}
+	// Upload the VGR and VGRC to all the S3 profiles in the VRG spec
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		err := v.UploadVGRandVGRCtoS3Store(s3ProfileName, pvc)
+		if err != nil {
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonUploadFailed, err.Error())
+
+			return succeededProfiles, err
+		}
+
+		succeededProfiles = append(succeededProfiles, s3ProfileName)
+	}
+
+	return succeededProfiles, nil
+}
+
+func (v *VRGInstance) getVGRCFromVGR(vgr *volrep.VolumeGroupReplication) (volrep.VolumeGroupReplicationContent, error) {
+	vgrc := volrep.VolumeGroupReplicationContent{}
+
+	vgrcName := vgr.Spec.VolumeGroupReplicationContentName
+	vgrcObjectKey := client.ObjectKey{
+		Name: vgrcName,
+	}
+
+	if err := v.reconciler.Get(v.ctx, vgrcObjectKey, &vgrc); err != nil {
+		return vgrc, fmt.Errorf("failed to get VGRC %v from VGR %v, %w",
+			vgrcObjectKey, client.ObjectKeyFromObject(vgr), err)
+	}
+
+	return vgrc, nil
+}
+
+func (v *VRGInstance) getVGRFromPVC(pvc *corev1.PersistentVolumeClaim) (*volrep.VolumeGroupReplication, error) {
+	var volRep client.Object
+
+	vrNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	err := v.getVolumeReplication(pvc, vrNamespacedName, &volRep)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update VGR (%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			volRep.GetName(), pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	vgr, ok := volRep.(*volrep.VolumeGroupReplication)
+	if !ok {
+		return nil, fmt.Errorf("failed to update VGR (%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			volRep.GetName(), pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	return vgr, nil
 }
 
 func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.PersistentVolume, error) {
@@ -2088,40 +2314,12 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName,
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, cr, log)
 }
 
-func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
-	if pvc.ObjectMeta.Annotations == nil {
-		pvc.ObjectMeta.Annotations = map[string]string{}
-	}
-
-	pvc.ObjectMeta.Annotations[pvcVRAnnotationProtectedKey] = pvcVRAnnotationProtectedValue
-
-	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-		// TODO: Should we set the PVC condition to error?
-		// msg := "Failed to add protected annotatation to PVC"
-		// v.updateProtectedPVCCondition(pvc.Name, PVCError, msg)
-		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
-
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
-			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Namespace, pvc.Name, pvcVRAnnotationProtectedKey, v.instance.Namespace, v.instance.Name, err)
-	}
-
-	return nil
-}
-
 func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
-	if pvc.ObjectMeta.Annotations == nil {
-		pvc.ObjectMeta.Annotations = map[string]string{}
-	}
+	value := v.generateArchiveAnnotation(pvc.Generation)
 
-	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pvc.Generation)
-
-	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
-
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
-			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	err := v.addAnnotationForResource(pvc, "PersistentVolumeClaim", pvcVRAnnotationArchivedKey, value, log)
+	if err != nil {
+		return err
 	}
 
 	pv, err := v.getPVFromPVC(pvc)
@@ -2133,20 +2331,119 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 			pv.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
 	}
 
-	if pv.ObjectMeta.Annotations == nil {
-		pv.ObjectMeta.Annotations = map[string]string{}
+	value = v.generateArchiveAnnotation(pv.Generation)
+
+	return v.addAnnotationForResource(&pv, "PersistentVolume", pvcVRAnnotationArchivedKey, value, log)
+}
+
+func (v *VRGInstance) addArchivedAnnotationForVGRandVGRC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
+	vgr, err := v.getVGRFromPVC(pvc)
+	if err != nil {
+		log.Error(err, "Failed to get VGR to add archived annotation")
+
+		return fmt.Errorf("failed to update VGR (%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			vgr.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
 	}
 
-	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
-	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
-		log.Error(err, "Failed to update PersistentVolume annotation")
+	value := v.generateArchiveAnnotation(vgr.Generation)
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
+	err = v.addAnnotationForResource(vgr, "VolumeGroupReplication", pvcVRAnnotationArchivedKey, value, log)
+	if err != nil {
+		return err
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		log.Error(err, "Failed to get VGRC to add archived annotation")
+
+		return fmt.Errorf("failed to update VGRC (%s) annotation (%s) belonging to"+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			vgrc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	value = v.generateArchiveAnnotation(vgrc.Generation)
+
+	return v.addAnnotationForResource(&vgrc, "VolumeGroupReplicationContent", pvcVRAnnotationArchivedKey, value, log)
+}
+
+func (v *VRGInstance) restoreVGRsAndVGRCsForVolRep(result *ctrl.Result) error {
+	v.log.Info("Restoring VolRep VGRs and VGRCs")
+
+	if len(v.instance.Spec.S3Profiles) == 0 {
+		v.log.Info("No S3 profiles configured")
+
+		result.Requeue = true
+
+		return fmt.Errorf("no S3Profiles configured")
+	}
+
+	v.log.Info(fmt.Sprintf("Restoring VGRs and VGRCs to this managed cluster. ProfileList: %v",
+		v.instance.Spec.S3Profiles))
+
+	err := v.restoreVGRsAndVGRCsFromS3(result)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to restore VGRs and VGRCs using profile list (%v)", v.instance.Spec.S3Profiles)
+		v.log.Info(errMsg)
+
+		return fmt.Errorf("%s: %w", errMsg, err)
 	}
 
 	return nil
+}
+
+func (v *VRGInstance) restoreVGRsAndVGRCsFromS3(result *ctrl.Result) error {
+	err := errors.New("s3Profiles empty")
+	NoS3 := false
+
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		if s3ProfileName == NoS3StoreAvailable {
+			v.log.Info("NoS3 available to fetch")
+
+			NoS3 = true
+
+			continue
+		}
+
+		var objectStore ObjectStorer
+
+		objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
+			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
+		if err != nil {
+			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
+
+			continue
+		}
+
+		var vgrcCount, vgrCount int
+
+		// Restore all VGRCs found in the s3 store. If any failure, the next profile will be retried
+		vgrcCount, err = v.restoreVGRCsFromObjectStore(objectStore, s3ProfileName)
+		if err != nil {
+			continue
+		}
+
+		vgrCount, err = v.restoreVGRsFromObjectStore(objectStore, s3ProfileName)
+
+		if err != nil || vgrcCount != vgrCount {
+			v.log.Info(fmt.Sprintf("Warning: Mismatch in VGRC/VGR count %d/%d (%v)",
+				vgrcCount, vgrCount, err))
+
+			continue
+		}
+
+		v.log.Info(fmt.Sprintf("Restored %d VGRCs and %d VGRs using profile %s", vgrcCount, vgrCount, s3ProfileName))
+
+		return nil
+	}
+
+	if NoS3 {
+		return nil
+	}
+
+	result.Requeue = true
+
+	return err
 }
 
 // s3KeyPrefix returns the S3 key prefix of cluster data of this VRG.
@@ -2307,6 +2604,64 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 
 		msg := fmt.Sprintf("when restoring PV cluster data, detected conflicting claimKey %s in PVs %s and %s",
 			claimKey, prevPV.Name, thisPV.Name)
+		v.log.Info(msg)
+
+		return errors.New(msg)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) restoreVGRCsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
+	vgrcList, err := downloadVGRCs(objectStore, v.s3KeyPrefix())
+	if err != nil {
+		v.log.Error(err, fmt.Sprintf("error fetching VGRC cluster data from S3 profile %s", s3ProfileName))
+
+		return 0, err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d VGRCs in s3 store using profile %s", len(vgrcList), s3ProfileName))
+
+	if err = v.checkVGRCClusterData(vgrcList); err != nil {
+		errMsg := fmt.Sprintf("Error found in VGRC cluster data in S3 store %s", s3ProfileName)
+		v.log.Info(errMsg)
+		v.log.Error(err, fmt.Sprintf("Resolve VGRC conflict in the S3 store %s to deploy the application", s3ProfileName))
+
+		return 0, fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	return restoreClusterDataObjects(v, vgrcList, "VGRC", cleanupVGRCForRestore, v.validateExistingVGRC)
+}
+
+func (v *VRGInstance) restoreVGRsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
+	vgrList, err := downloadVGRs(objectStore, v.s3KeyPrefix())
+	if err != nil {
+		v.log.Error(err, fmt.Sprintf("error fetching VGR cluster data from S3 profile %s", s3ProfileName))
+
+		return 0, err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d VGRs in s3 store using profile %s", len(vgrList), s3ProfileName))
+
+	return restoreClusterDataObjects(v, vgrList, "VGR", cleanupVGRForRestore, v.validateExistingVGR)
+}
+
+func (v *VRGInstance) checkVGRCClusterData(vgrcList []volrep.VolumeGroupReplicationContent) error {
+	vgrcMap := map[string]volrep.VolumeGroupReplicationContent{}
+	// Scan the VGRCs and create a map of VGRCs that have conflicting volumeGroupReplicationRef
+	for _, thisVGRC := range vgrcList {
+		vgrRef := thisVGRC.Spec.VolumeGroupReplicationRef
+		vgrKey := fmt.Sprintf("%s/%s", vgrRef.Namespace, vgrRef.Name)
+
+		prevVGRC, found := vgrcMap[vgrKey]
+		if !found {
+			vgrcMap[vgrKey] = thisVGRC
+
+			continue
+		}
+
+		msg := fmt.Sprintf("when restoring VGRC cluster data, detected conflicting vgrKey %s in VGRCs %s and %s",
+			vgrKey, prevVGRC.Name, thisVGRC.Name)
 		v.log.Info(msg)
 
 		return errors.New(msg)
@@ -2482,6 +2837,65 @@ func (v *VRGInstance) validateExistingPVC(pvc *corev1.PersistentVolumeClaim) err
 	return nil
 }
 
+func (v *VRGInstance) validateExistingVGRC(vgrc *volrep.VolumeGroupReplicationContent) error {
+	log := v.log.WithValues("VGRC", vgrc.Name)
+
+	existingVGRC := &volrep.VolumeGroupReplicationContent{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: vgrc.Name}, existingVGRC); err != nil {
+		return fmt.Errorf("failed to get existing VGRC %s (%w)", vgrc.Name, err)
+	}
+
+	if rmnutil.ResourceIsDeleted(existingVGRC) {
+		return fmt.Errorf("existing VGRC %s is being deleted", existingVGRC.Name)
+	}
+
+	var vgr volrep.VolumeGroupReplication
+
+	vgrNamespacedName := types.NamespacedName{
+		Name:      vgrc.Spec.VolumeGroupReplicationRef.Name,
+		Namespace: vgrc.Spec.VolumeGroupReplicationRef.Namespace,
+	}
+
+	if err := v.reconciler.Get(v.ctx, vgrNamespacedName, &vgr); err != nil {
+		return fmt.Errorf("found VGRC %s referring to VGR %s, but failed to find VGR: %w",
+			existingVGRC.Name, vgrNamespacedName.String(), err)
+	}
+
+	if rmnutil.ResourceIsDeleted(&vgr) {
+		return fmt.Errorf("existing VGRC %s refers to VGR %s with deletion timestamp non-zero %v", existingVGRC.Name,
+			vgrNamespacedName.String(), vgr.DeletionTimestamp)
+	}
+
+	log.Info(fmt.Sprintf("VGRC %s exists and refers to VGR %s", vgrc.Name, vgrNamespacedName.String()))
+
+	return nil
+}
+
+func (v *VRGInstance) validateExistingVGR(vgr *volrep.VolumeGroupReplication) error {
+	existingVGR := &volrep.VolumeGroupReplication{}
+	vgrNSName := types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}
+
+	err := v.reconciler.Get(v.ctx, vgrNSName, existingVGR)
+	if err != nil {
+		return fmt.Errorf("failed to get existing VGR %s (%w)", vgrNSName.String(), err)
+	}
+
+	if rmnutil.ResourceIsDeleted(existingVGR) {
+		return fmt.Errorf("existing VGR %s is being deleted", vgrNSName.String())
+	}
+
+	if existingVGR.Spec.VolumeGroupReplicationContentName != vgr.Spec.VolumeGroupReplicationContentName {
+		return fmt.Errorf("VGR %s exists and refers to a different VGRC %s than VGRC %s desired",
+			vgrNSName.String(), existingVGR.Spec.VolumeGroupReplicationContentName,
+			vgr.Spec.VolumeGroupReplicationContentName)
+	}
+
+	v.log.Info(fmt.Sprintf("VGR %s exists and refers to desired VGRC %s", vgrNSName.String(),
+		existingVGR.Spec.VolumeGroupReplicationContentName))
+
+	return nil
+}
+
 // pvMatches checks if the PVs fields match presuming x is bound to a PVC. Used to detect PVCs that were not
 // deleted, and hence PVC and PV is retained and available for use
 //
@@ -2618,6 +3032,22 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 	pvc.ObjectMeta.Finalizers = []string{}
 	pvc.ObjectMeta.ResourceVersion = ""
 	pvc.ObjectMeta.OwnerReferences = nil
+
+	return nil
+}
+
+func cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+	vgrc.ResourceVersion = ""
+	vgrc.Spec.VolumeGroupReplicationRef = nil
+
+	return nil
+}
+
+func cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) error {
+	vgr.ObjectMeta.Annotations = PruneAnnotations(vgr.GetAnnotations())
+	vgr.ObjectMeta.Finalizers = []string{}
+	vgr.ObjectMeta.ResourceVersion = ""
+	vgr.ObjectMeta.OwnerReferences = nil
 
 	return nil
 }
