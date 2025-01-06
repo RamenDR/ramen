@@ -4,8 +4,10 @@
 package controllers
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -14,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
@@ -47,6 +50,14 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 
 				continue
 			}
+		}
+
+		if err := v.uploadVGRandVGRCtoS3Stores(vgrNamespacedName, log); err != nil {
+			log.Error(err, "Requeuing due to failure to upload VGR object to S3 store(s)")
+
+			v.requeue()
+
+			continue
 		}
 	}
 }
@@ -111,6 +122,193 @@ func (v *VRGInstance) reconcileVGRAsSecondary(vrNamespacedName types.NamespacedN
 	}
 
 	return requeueResult, ready, !skip
+}
+
+func (v *VRGInstance) addAnnotationForResource(resource client.Object, resourceType, annotationKey,
+	annotationValue string, log logr.Logger,
+) error {
+	annotations := resource.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	// Check if the annotation is already set
+	if currentValue, exists := annotations[annotationKey]; exists && currentValue == annotationValue {
+		log.Info(fmt.Sprintf("%s annotation already set to the desired value", resourceType), "resource", resource.GetName())
+
+		return nil
+	}
+
+	annotations[annotationKey] = annotationValue
+	resource.SetAnnotations(annotations)
+
+	if err := v.reconciler.Update(v.ctx, resource); err != nil {
+		return fmt.Errorf("failed to update %s (%s/%s) annotation (%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			resourceType, resource.GetNamespace(), resource.GetName(), annotationKey,
+			v.instance.Namespace, v.instance.Name, err)
+	}
+
+	log.Info(fmt.Sprintf("%s (%s/%s) annotation (%s) successfully updated to %s",
+		resourceType, resource.GetNamespace(), resource.GetName(), annotationKey, annotationValue))
+
+	return nil
+}
+
+func (v *VRGInstance) isVGRandVGRCArchivedAlready(vgr *volrep.VolumeGroupReplication, log logr.Logger) bool {
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		log.Error(err, "Failed to get VGRC to check if archived")
+
+		return false
+	}
+
+	if vgr.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(vgr.Generation) {
+		return false
+	}
+
+	if vgrc.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(vgrc.Generation) {
+		return false
+	}
+
+	return true
+}
+
+// Upload VGRCs and VGRs to the list of S3 stores in the VRG spec
+func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	vgr := &volrep.VolumeGroupReplication{}
+
+	err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr)
+	if err != nil {
+		return fmt.Errorf("failed to get VGR (%w)", err)
+	}
+
+	if v.isVGRandVGRCArchivedAlready(vgr, log) {
+		msg := fmt.Sprintf("VGR %s cluster data already protected", vgr.Name)
+		v.log.Info(msg)
+
+		return nil
+	}
+
+	// Error out if VRG has no S3 profiles
+	numProfilesToUpload := len(v.instance.Spec.S3Profiles)
+	if numProfilesToUpload == 0 {
+		msg := "Error uploading VGR and VGRC cluster data because VRG spec has no S3 profiles"
+		v.log.Info(msg)
+
+		return fmt.Errorf("error uploading cluster data of VGR and VGRC %s because VRG spec has no S3 profiles",
+			vgr.Name)
+	}
+
+	s3Profiles, err := v.UploadVGRandVGRCtoS3Stores(vgr, log)
+	if err != nil {
+		return fmt.Errorf("failed to upload VGR/VGRC with error (%w). Uploaded to %v S3 profile(s)", err, s3Profiles)
+	}
+
+	numProfilesUploaded := len(s3Profiles)
+
+	if numProfilesUploaded != numProfilesToUpload {
+		// Merely defensive as we don't expect to reach here
+		msg := fmt.Sprintf("uploaded VGR/VGRC cluster data to only  %d of %d S3 profile(s): %v",
+			numProfilesUploaded, numProfilesToUpload, s3Profiles)
+		v.log.Info(msg)
+
+		return errors.New(msg)
+	}
+
+	if err := v.addArchivedAnnotationForVGRandVGRC(vgr, log); err != nil {
+		return err
+	}
+
+	msg := fmt.Sprintf("Done uploading VGR/VGRC cluster data to %d of %d S3 profile(s): %v",
+		numProfilesUploaded, numProfilesToUpload, s3Profiles)
+	v.log.Info(msg)
+
+	return nil
+}
+
+func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volrep.VolumeGroupReplication) error {
+	if s3ProfileName == "" {
+		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for VGR %s", vgr.Name)
+	}
+
+	objectStore, err := v.getObjectStorer(s3ProfileName)
+	if err != nil {
+		return fmt.Errorf("error getting object store, failed to protect cluster data for VGR %s, %w", vgr.Name, err)
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		return fmt.Errorf("error getting VGRC for VGR, failed to protect cluster data for VGRC %s to s3Profile %s, %w",
+			vgrc.Name, s3ProfileName, err)
+	}
+
+	return v.UploadVGRAndVGRCtoS3(s3ProfileName, objectStore, vgr, &vgrc)
+}
+
+func (v *VRGInstance) UploadVGRAndVGRCtoS3(s3ProfileName string, objectStore ObjectStorer,
+	vgr *volrep.VolumeGroupReplication, vgrc *volrep.VolumeGroupReplicationContent,
+) error {
+	if err := UploadVGRC(objectStore, v.s3KeyPrefix(), vgrc.Name, *vgrc); err != nil {
+		var aerr awserr.Error
+		if errors.As(err, &aerr) {
+			// Treat any aws error as a persistent error
+			v.cacheObjectStorer(s3ProfileName, nil,
+				fmt.Errorf("persistent error while uploading to s3 profile %s, will retry later", s3ProfileName))
+		}
+
+		err := fmt.Errorf("error uploading VGRC to s3Profile %s, failed to protect cluster data for VGRC %s, %w",
+			s3ProfileName, vgrc.Name, err)
+
+		return err
+	}
+
+	vgrNamespacedName := types.NamespacedName{Namespace: vgr.Namespace, Name: vgr.Name}
+	vgrNamespacedNameString := vgrNamespacedName.String()
+
+	if err := UploadVGR(objectStore, v.s3KeyPrefix(), vgrNamespacedNameString, *vgr); err != nil {
+		err := fmt.Errorf("error uploading VGR to s3Profile %s, failed to protect cluster data for VGR %s, %w",
+			s3ProfileName, vgrNamespacedNameString, err)
+
+		return err
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) UploadVGRandVGRCtoS3Stores(vgr *volrep.VolumeGroupReplication,
+	log logr.Logger,
+) ([]string, error) {
+	succeededProfiles := []string{}
+	// Upload the VGR and VGRC to all the S3 profiles in the VRG spec
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		err := v.UploadVGRandVGRCtoS3Store(s3ProfileName, vgr)
+		if err != nil {
+			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
+				rmnutil.EventReasonUploadFailed, err.Error())
+
+			return succeededProfiles, err
+		}
+
+		succeededProfiles = append(succeededProfiles, s3ProfileName)
+	}
+
+	return succeededProfiles, nil
+}
+
+func (v *VRGInstance) getVGRCFromVGR(vgr *volrep.VolumeGroupReplication) (volrep.VolumeGroupReplicationContent, error) {
+	vgrc := volrep.VolumeGroupReplicationContent{}
+
+	vgrcName := vgr.Spec.VolumeGroupReplicationContentName
+	vgrcObjectKey := client.ObjectKey{
+		Name: vgrcName,
+	}
+
+	if err := v.reconciler.Get(v.ctx, vgrcObjectKey, &vgrc); err != nil {
+		return vgrc, fmt.Errorf("failed to get VGRC %v from VGR %v, %w",
+			vgrcObjectKey, client.ObjectKeyFromObject(vgr), err)
+	}
+
+	return vgrc, nil
 }
 
 //nolint:gocognit
@@ -465,4 +663,227 @@ func (v *VRGInstance) deleteVGR(vrNamespacedName types.NamespacedName, log logr.
 	v.log.Info("Deleted VolumeGroupReplication resource %s/%s", vrNamespacedName.Namespace, vrNamespacedName.Name)
 
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, cr, log)
+}
+
+func (v *VRGInstance) addArchivedAnnotationForVGRandVGRC(vgr *volrep.VolumeGroupReplication, log logr.Logger) error {
+	value := v.generateArchiveAnnotation(vgr.Generation)
+
+	err := v.addAnnotationForResource(vgr, "VolumeGroupReplication", pvcVRAnnotationArchivedKey, value, log)
+	if err != nil {
+		return err
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		log.Error(err, "Failed to get VGRC to add archived annotation")
+
+		return fmt.Errorf("failed to update VGRC (%s) annotation (%s) belonging to"+
+			"VolumeReplicationGroup (%s/%s), %w",
+			vgrc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+	}
+
+	value = v.generateArchiveAnnotation(vgrc.Generation)
+
+	return v.addAnnotationForResource(&vgrc, "VolumeGroupReplicationContent", pvcVRAnnotationArchivedKey, value, log)
+}
+
+func (v *VRGInstance) restoreVGRsAndVGRCsForVolRep(result *ctrl.Result) error {
+	if !rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+		return nil
+	}
+
+	v.log.Info("Restoring VolRep VGRs and VGRCs")
+
+	if len(v.instance.Spec.S3Profiles) == 0 {
+		v.log.Info("No S3 profiles configured")
+
+		result.Requeue = true
+
+		return fmt.Errorf("no S3Profiles configured")
+	}
+
+	v.log.Info(fmt.Sprintf("Restoring VGRs and VGRCs to this managed cluster. ProfileList: %v",
+		v.instance.Spec.S3Profiles))
+
+	err := v.restoreVGRsAndVGRCsFromS3(result)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to restore VGRs and VGRCs using profile list (%v)", v.instance.Spec.S3Profiles)
+		v.log.Info(errMsg)
+
+		return fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) restoreVGRsAndVGRCsFromS3(result *ctrl.Result) error {
+	err := errors.New("s3Profiles empty")
+	NoS3 := false
+
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		if s3ProfileName == NoS3StoreAvailable {
+			v.log.Info("NoS3 available to fetch")
+
+			NoS3 = true
+
+			continue
+		}
+
+		var objectStore ObjectStorer
+
+		objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
+			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
+		if err != nil {
+			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
+
+			continue
+		}
+
+		var vgrcCount, vgrCount int
+
+		// Restore all VGRCs found in the s3 store. If any failure, the next profile will be retried
+		vgrcCount, err = v.restoreVGRCsFromObjectStore(objectStore, s3ProfileName)
+		if err != nil {
+			continue
+		}
+
+		vgrCount, err = v.restoreVGRsFromObjectStore(objectStore, s3ProfileName)
+		if err != nil || vgrcCount != vgrCount {
+			v.log.Info(fmt.Sprintf("Warning: Mismatch in VGRC/VGR count %d/%d (%v)",
+				vgrcCount, vgrCount, err))
+
+			continue
+		}
+
+		v.log.Info(fmt.Sprintf("Restored %d VGRCs and %d VGRs using profile %s", vgrcCount, vgrCount, s3ProfileName))
+
+		return nil
+	}
+
+	if NoS3 {
+		return nil
+	}
+
+	result.Requeue = true
+
+	return err
+}
+
+func (v *VRGInstance) restoreVGRCsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
+	vgrcList, err := downloadVGRCs(objectStore, v.s3KeyPrefix())
+	if err != nil {
+		v.log.Error(err, fmt.Sprintf("error fetching VGRC cluster data from S3 profile %s", s3ProfileName))
+
+		return 0, err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d VGRCs in s3 store using profile %s", len(vgrcList), s3ProfileName))
+
+	if err = v.checkVGRCClusterData(vgrcList); err != nil {
+		errMsg := fmt.Sprintf("Error found in VGRC cluster data in S3 store %s", s3ProfileName)
+		v.log.Info(errMsg)
+		v.log.Error(err, fmt.Sprintf("Resolve VGRC conflict in the S3 store %s to deploy the application", s3ProfileName))
+
+		return 0, fmt.Errorf("%s: %w", errMsg, err)
+	}
+
+	return restoreClusterDataObjects(v, vgrcList, "VGRC", cleanupVGRCForRestore, v.validateExistingVGRC)
+}
+
+func (v *VRGInstance) restoreVGRsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
+	vgrList, err := downloadVGRs(objectStore, v.s3KeyPrefix())
+	if err != nil {
+		v.log.Error(err, fmt.Sprintf("error fetching VGR cluster data from S3 profile %s", s3ProfileName))
+
+		return 0, err
+	}
+
+	v.log.Info(fmt.Sprintf("Found %d VGRs in s3 store using profile %s", len(vgrList), s3ProfileName))
+
+	return restoreClusterDataObjects(v, vgrList, "VGR", v.cleanupVGRForRestore, v.validateExistingVGR)
+}
+
+func (v *VRGInstance) checkVGRCClusterData(vgrcList []volrep.VolumeGroupReplicationContent) error {
+	vgrcMap := map[string]volrep.VolumeGroupReplicationContent{}
+	// Scan the VGRCs and create a map of VGRCs that have conflicting volumeGroupReplicationRef
+	for _, thisVGRC := range vgrcList {
+		vgrRef := thisVGRC.Spec.VolumeGroupReplicationRef
+		vgrKey := fmt.Sprintf("%s/%s", vgrRef.Namespace, vgrRef.Name)
+
+		prevVGRC, found := vgrcMap[vgrKey]
+		if !found {
+			vgrcMap[vgrKey] = thisVGRC
+
+			continue
+		}
+
+		msg := fmt.Sprintf("when restoring VGRC cluster data, detected conflicting vgrKey %s in VGRCs %s and %s",
+			vgrKey, prevVGRC.Name, thisVGRC.Name)
+		v.log.Info(msg)
+
+		return errors.New(msg)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) validateExistingVGRC(vgrc *volrep.VolumeGroupReplicationContent) error {
+	existingVGRC := &volrep.VolumeGroupReplicationContent{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: vgrc.Name}, existingVGRC); err != nil {
+		return fmt.Errorf("failed to get existing VGRC %s (%w)", vgrc.Name, err)
+	}
+
+	if rmnutil.ResourceIsDeleted(existingVGRC) {
+		return fmt.Errorf("existing VGRC %s is being deleted", existingVGRC.Name)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) validateExistingVGR(vgr *volrep.VolumeGroupReplication) error {
+	existingVGR := &volrep.VolumeGroupReplication{}
+	vgrNSName := types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}
+
+	err := v.reconciler.Get(v.ctx, vgrNSName, existingVGR)
+	if err != nil {
+		return fmt.Errorf("failed to get existing VGR %s (%w)", vgrNSName.String(), err)
+	}
+
+	if rmnutil.ResourceIsDeleted(existingVGR) {
+		return fmt.Errorf("existing VGR %s is being deleted", vgrNSName.String())
+	}
+
+	if existingVGR.Spec.VolumeGroupReplicationContentName != vgr.Spec.VolumeGroupReplicationContentName {
+		return fmt.Errorf("VGR %s exists and refers to a different VGRC %s than VGRC %s desired",
+			vgrNSName.String(), existingVGR.Spec.VolumeGroupReplicationContentName,
+			vgr.Spec.VolumeGroupReplicationContentName)
+	}
+
+	v.log.Info(fmt.Sprintf("VGR %s exists and refers to desired VGRC %s", vgrNSName.String(),
+		existingVGR.Spec.VolumeGroupReplicationContentName))
+
+	return nil
+}
+
+func cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+	vgrc.ResourceVersion = ""
+	vgrc.Spec.VolumeGroupReplicationRef = nil
+
+	return nil
+}
+
+func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) error {
+	vgr.ObjectMeta.Annotations = PruneAnnotations(vgr.GetAnnotations())
+	vgr.ObjectMeta.Finalizers = []string{}
+	vgr.ObjectMeta.ResourceVersion = ""
+	vgr.ObjectMeta.OwnerReferences = nil
+
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
+		if err := ctrl.SetControllerReference(v.instance, vgr, v.reconciler.Scheme); err != nil {
+			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
+				vgr.GetName(), vgr.GetNamespace(), err)
+		}
+	}
+
+	return nil
 }
