@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -344,6 +345,26 @@ func typedKey(prefix, suffix string, typ reflect.Type) string {
 	return prefix + typ.String() + "/" + suffix
 }
 
+// UploadVGRC uploads the given VGRC to the bucket with a key of
+// "<vgrcKeyPrefix><v1.VolumeGroupReplicationContent/><vgrcKeySuffix>".
+// - vgrcKeyPrefix should have any required delimiters like '/'
+// - OK to call UploadVGRC() concurrently from multiple goroutines safely.
+func UploadVGRC(s ObjectStorer, vgrcKeyPrefix, vgrcKeySuffix string,
+	vgrc volrep.VolumeGroupReplicationContent,
+) error {
+	return uploadTypedObject(s, vgrcKeyPrefix, vgrcKeySuffix, vgrc)
+}
+
+// UploadVGR uploads the given VGR to the bucket with a key of
+// "<vgrKeyPrefix><v1.VolumeGroupReplication/><vgrKeySuffix>".
+// - vgrKeyPrefix should have any required delimiters like '/'
+// - OK to call UploadVGR() concurrently from multiple goroutines safely.
+func UploadVGR(s ObjectStorer, vgrKeyPrefix, vgrKeySuffix string,
+	vgr volrep.VolumeGroupReplication,
+) error {
+	return uploadTypedObject(s, vgrKeyPrefix, vgrKeySuffix, vgr)
+}
+
 // UploadPV uploads the given PV to the bucket with a key of
 // "<pvKeyPrefix><v1.PersistentVolume/><pvKeySuffix>".
 // - pvKeyPrefix should have any required delimiters like '/'
@@ -435,6 +456,28 @@ func (s *s3ObjectStore) UploadObject(key string,
 	}
 
 	return nil
+}
+
+// downloadVGRCs downloads all VGRCs in the bucket.
+// - Downloads VGRCs with the given key prefix.
+// - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
+func downloadVGRCs(s ObjectStorer, vgrcKeyPrefix string) (
+	vgrcList []volrep.VolumeGroupReplicationContent, err error,
+) {
+	err = DownloadTypedObjects(s, vgrcKeyPrefix, &vgrcList)
+
+	return
+}
+
+// downloadVGRs downloads all PVCs in the bucket.
+// - Downloads VGRs with the given key prefix.
+// - If bucket doesn't exists, will return ErrCodeNoSuchBucket "NoSuchBucket"
+func downloadVGRs(s ObjectStorer, vgrKeyPrefix string) (
+	vgrList []volrep.VolumeGroupReplication, err error,
+) {
+	err = DownloadTypedObjects(s, vgrKeyPrefix, &vgrList)
+
+	return
 }
 
 // downloadPVs downloads all PVs in the bucket.

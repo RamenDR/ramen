@@ -660,6 +660,13 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) (int, error) {
 		msg = fmt.Sprintf("Restored %d volsync PVs/PVCs and %d volrep PVs/PVCs", numRestoredForVS, numRestoredForVR)
 	}
 
+	err = v.restoreVGRsAndVGRCsForVolRep(result)
+	if err != nil {
+		v.log.Info("VolRep VGR/VGRC restore failed")
+
+		return numRestoredForVS + numRestoredForVR, fmt.Errorf("failed to restore VGR/VGRC for VolRep (%w)", err)
+	}
+
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
 
 	return numRestoredForVS + numRestoredForVR, nil
