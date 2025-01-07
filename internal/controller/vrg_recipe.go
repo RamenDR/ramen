@@ -79,31 +79,35 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 	ramenConfig ramen.RamenConfig,
 	log logr.Logger,
 ) (PvcSelector, error) {
-	var recipeElements RecipeElements
+	recipeElements, err := RecipeElementsGet(ctx, reader, vrg, ramenConfig, log)
+	if err != nil {
+		return recipeElements.PvcSelector, err
+	}
 
-	return recipeElements.PvcSelector, RecipeElementsGet(
-		ctx, reader, vrg, ramenConfig, log, &recipeElements)
+	return recipeElements.PvcSelector, nil
 }
 
 func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
-	ramenConfig ramen.RamenConfig, log logr.Logger, recipeElements *RecipeElements,
-) error {
+	ramenConfig ramen.RamenConfig, log logr.Logger,
+) (RecipeElements, error) {
+	var recipeElements RecipeElements
+
 	if vrg.Spec.KubeObjectProtection == nil {
-		*recipeElements = RecipeElements{
+		recipeElements = RecipeElements{
 			PvcSelector: getPVCSelector(vrg, ramenConfig, nil, nil),
 		}
 
-		return nil
+		return recipeElements, nil
 	}
 
 	if vrg.Spec.KubeObjectProtection.RecipeRef == nil {
-		*recipeElements = RecipeElements{
+		recipeElements = RecipeElements{
 			PvcSelector:     getPVCSelector(vrg, ramenConfig, nil, nil),
 			CaptureWorkflow: captureWorkflowDefault(vrg, ramenConfig),
 			RecoverWorkflow: recoverWorkflowDefault(vrg, ramenConfig),
 		}
 
-		return nil
+		return recipeElements, nil
 	}
 
 	recipeNamespacedName := types.NamespacedName{
@@ -113,11 +117,11 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 
 	recipe := recipe.Recipe{}
 	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
-		return fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+		return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
 	}
 
 	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
-		return err
+		return recipeElements, fmt.Errorf("recipe %v parameters expansion error: %w", recipeNamespacedName.String(), err)
 	}
 
 	var selector PvcSelector
@@ -128,15 +132,19 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 			recipe.Spec.Volumes.LabelSelector)
 	}
 
-	*recipeElements = RecipeElements{
+	recipeElements = RecipeElements{
 		PvcSelector: selector,
 	}
 
-	if err := recipeWorkflowsGet(recipe, recipeElements, vrg, ramenConfig); err != nil {
-		return err
+	if err := recipeWorkflowsGet(recipe, &recipeElements, vrg, ramenConfig); err != nil {
+		return recipeElements, fmt.Errorf("recipe %v workflows get error: %w", recipeNamespacedName.String(), err)
 	}
 
-	return recipeNamespacesValidate(*recipeElements, vrg, ramenConfig)
+	if err := recipeNamespacesValidate(recipeElements, vrg, ramenConfig); err != nil {
+		return recipeElements, fmt.Errorf("recipe %v namespaces validation error: %w", recipeNamespacedName.String(), err)
+	}
+
+	return recipeElements, nil
 }
 
 func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string,
