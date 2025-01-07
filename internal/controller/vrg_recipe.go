@@ -81,25 +81,12 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 ) (PvcSelector, error) {
 	var recipeElements RecipeElements
 
-	return recipeElements.PvcSelector, recipeVolumesAndOptionallyWorkflowsGet(
-		ctx, reader, vrg, ramenConfig, log, &recipeElements,
-		func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup, ramen.RamenConfig) error {
-			return nil
-		},
-	)
+	return recipeElements.PvcSelector, RecipeElementsGet(
+		ctx, reader, vrg, ramenConfig, log, &recipeElements)
 }
 
 func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig, log logr.Logger, recipeElements *RecipeElements,
-) error {
-	return recipeVolumesAndOptionallyWorkflowsGet(ctx, reader, vrg, ramenConfig, log, recipeElements,
-		recipeWorkflowsGet,
-	)
-}
-
-func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
-	ramenConfig ramen.RamenConfig, log logr.Logger, recipeElements *RecipeElements,
-	workflowsGet func(recipe.Recipe, *RecipeElements, ramen.VolumeReplicationGroup, ramen.RamenConfig) error,
 ) error {
 	if vrg.Spec.KubeObjectProtection == nil {
 		*recipeElements = RecipeElements{
@@ -145,7 +132,7 @@ func recipeVolumesAndOptionallyWorkflowsGet(ctx context.Context, reader client.R
 		PvcSelector: selector,
 	}
 
-	if err := workflowsGet(recipe, recipeElements, vrg, ramenConfig); err != nil {
+	if err := recipeWorkflowsGet(recipe, recipeElements, vrg, ramenConfig); err != nil {
 		return err
 	}
 
