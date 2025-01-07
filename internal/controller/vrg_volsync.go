@@ -554,22 +554,38 @@ func (v *VRGInstance) disownPVCs() error {
 	return nil
 }
 
-// cleanupResources this function deleted all PS, PD and VolumeSnapshots from its owner (VRG)
+// cleanupResources this function deleted all RS, RD and VolumeSnapshots from its owner (VRG)
 func (v *VRGInstance) cleanupResources() error {
 	for idx := range v.volSyncPVCs {
 		pvc := &v.volSyncPVCs[idx]
 
-		if err := v.volSyncHandler.DeleteRS(pvc.Name, pvc.Namespace); err != nil {
+		if err := v.doCleanupResources(pvc.Name, pvc.Namespace); err != nil {
 			return err
 		}
+	}
 
-		if err := v.volSyncHandler.DeleteRD(pvc.Name, pvc.Namespace); err != nil {
-			return err
-		}
+	for idx := range v.instance.Spec.VolSync.RDSpec {
+		protectedPVC := v.instance.Spec.VolSync.RDSpec[idx].ProtectedPVC
 
-		if err := v.volSyncHandler.DeleteSnapshots(pvc.Namespace); err != nil {
+		if err := v.doCleanupResources(protectedPVC.Name, protectedPVC.Namespace); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) doCleanupResources(name, namespace string) error {
+	if err := v.volSyncHandler.DeleteRS(name, namespace); err != nil {
+		return err
+	}
+
+	if err := v.volSyncHandler.DeleteRD(name, namespace); err != nil {
+		return err
+	}
+
+	if err := v.volSyncHandler.DeleteSnapshots(namespace); err != nil {
+		return err
 	}
 
 	return nil
