@@ -25,15 +25,17 @@ const (
 )
 
 var (
-	Workloads                 = []types.Workload{}
-	subscription              = &deployers.Subscription{}
-	appset                    = &deployers.ApplicationSet{}
-	discoveredApps            = &deployers.DiscoveredApp{}
-	discoveredAppsWithoutHook = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: false}
-	discoveredAppsWithHook    = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: true}
-	Deployers                 = []types.Deployer{
+	Workloads                    = []types.Workload{}
+	subscription                 = &deployers.Subscription{}
+	appset                       = &deployers.ApplicationSet{}
+	discoveredApps               = &deployers.DiscoveredApp{}
+	discoveredAppsWithoutHook    = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: false}
+	discoveredAppsWithHook       = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: true}
+	discoveredAppsWithHookAndVol = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: true,
+		IncludeVolumes: true}
+	Deployers = []types.Deployer{
 		subscription, appset, discoveredApps, discoveredAppsWithoutHook,
-		discoveredAppsWithHook,
+		discoveredAppsWithHook, discoveredAppsWithHookAndVol,
 	}
 )
 
