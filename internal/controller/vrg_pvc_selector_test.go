@@ -41,10 +41,12 @@ var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
 		Expect(k8sClient).NotTo(BeNil())
 		vrgTestNamespace = createUniqueNamespace(testCtx)
+		ramenConfig.RamenOpsNamespace = vrgTestNamespace
 	})
 
 	AfterEach(func() {
 		Expect(k8sClient.Delete(testCtx, testNamespace)).To(Succeed())
+		ramenConfig.RamenOpsNamespace = ""
 
 		cancel()
 	})
@@ -164,8 +166,9 @@ func getBaseVRG(namespace string) *ramen.VolumeReplicationGroup {
 			Async: &ramen.VRGAsyncSpec{
 				SchedulingInterval: "5m",
 			},
-			ReplicationState: ramen.Primary,
-			S3Profiles:       []string{"dummy-s3-profile"},
+			ReplicationState:    ramen.Primary,
+			S3Profiles:          []string{"dummy-s3-profile"},
+			ProtectedNamespaces: &[]string{namespace},
 		},
 	}
 }
@@ -200,12 +203,13 @@ func getVRGDefinitionWithKubeObjectProtection(hasPVCSelectorLabels bool, namespa
 	return vrg
 }
 
-func getTestHook() *Recipe.Hook {
+func getTestHook(testNamespace string) *Recipe.Hook {
 	duration := 30
 
 	return &Recipe.Hook{
-		Name: "hook-single",
-		Type: "exec",
+		Name:      "hook-single",
+		Type:      "exec",
+		Namespace: testNamespace,
 		LabelSelector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				"myapp": "testapp",
@@ -267,7 +271,7 @@ func getRecipeDefinition(namespace string) *Recipe.Recipe {
 		Spec: Recipe.RecipeSpec{
 			Groups:  []*Recipe.Group{getTestGroup()},
 			Volumes: getTestVolumeGroup(),
-			Hooks:   []*Recipe.Hook{getTestHook()},
+			Hooks:   []*Recipe.Hook{getTestHook(namespace)},
 			Workflows: []*Recipe.Workflow{
 				{
 					Name: "backup",
@@ -279,7 +283,7 @@ func getRecipeDefinition(namespace string) *Recipe.Recipe {
 							"group": "test-group",
 						},
 						{
-							"hook": "test-hook",
+							"hook": "hook-single/checkpoint",
 						},
 					},
 				},
