@@ -252,10 +252,18 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				},
 				storageClassForTest)).To(Succeed())
 
-			//
-			// Call ModifyRSSpecForCephFS
-			//
-			Expect(vsHandler.ModifyRSSpecForCephFS(&testRsSpec, storageClassForTest)).To(Succeed())
+			vsHandler.ModifyRSSpecForCephFS(&testRsSpec, storageClassForTest)
+			if storageClassForTest.Provisioner == testCephFSStorageDriverName {
+				Expect(testRsSpec.ProtectedPVC.AccessModes).To(Equal(
+					[]corev1.PersistentVolumeAccessMode{
+						corev1.ReadOnlyMany,
+					}))
+			} else {
+				Expect(testRsSpec.ProtectedPVC.AccessModes).To(Equal(
+					[]corev1.PersistentVolumeAccessMode{
+						corev1.ReadWriteMany,
+					}))
+			}
 		})
 
 		Context("When the source PVC is not using a cephfs storageclass", func() {
@@ -270,128 +278,13 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 		})
 
 		Context("When the sourcePVC is using a cephfs storageclass", func() {
-			customBackingSnapshotStorageClassName := testCephFSStorageClassName + "-vrg"
-
 			BeforeEach(func() {
 				// Make sure the source PVC uses the cephfs storageclass
 				testSourcePVC.Spec.StorageClassName = &testCephFSStorageClassName
 			})
 
-			JustBeforeEach(func() {
-				// Common tests - rsSpec should be modified with settings to allow pvc from snapshot
-				// to use our custom cephfs storageclass and ReadOnlyMany accessModes
-				Expect(testRsSpecOrig).NotTo(Equal(testRsSpec))
-
-				// Should use the custom storageclass with backingsnapshot: true parameter
-				Expect(*testRsSpec.ProtectedPVC.StorageClassName).To(Equal(customBackingSnapshotStorageClassName))
-
-				// AccessModes should be updated to ReadOnlyMany
-				Expect(testRsSpec.ProtectedPVC.AccessModes).To(Equal(
-					[]corev1.PersistentVolumeAccessMode{
-						corev1.ReadOnlyMany,
-					}))
-			})
-
-			AfterEach(func() {
-				// Delete the custom storage class that may have been created by test
-				custStorageClass := &storagev1.StorageClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: customBackingSnapshotStorageClassName,
-					},
-				}
-				err := k8sClient.Delete(ctx, custStorageClass)
-				if err != nil {
-					Expect(kerrors.IsNotFound(err)).To(BeTrue())
-				}
-
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(custStorageClass), custStorageClass)
-
-					return kerrors.IsNotFound(err)
-				}, maxWait, interval).Should(BeTrue())
-			})
-
-			Context("When the custom cephfs backing storage class for readonly pvc from snap does not exist", func() {
-				// Delete the custom vrg storageclass if it exists
-				BeforeEach(func() {
-					custStorageClass := &storagev1.StorageClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: customBackingSnapshotStorageClassName,
-						},
-					}
-					err := k8sClient.Delete(ctx, custStorageClass)
-					if err != nil {
-						Expect(kerrors.IsNotFound(err)).To(BeTrue())
-					}
-
-					Eventually(func() bool {
-						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(custStorageClass), custStorageClass)
-
-						return kerrors.IsNotFound(err)
-					}, maxWait, interval).Should(BeTrue())
-				})
-
-				It("ModifyRSSpecForCephFS should modify the rsSpec and create the new storageclass", func() {
-					// RSspec modification checks in the outer context JustBeforeEach()
-
-					newStorageClass := &storagev1.StorageClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: customBackingSnapshotStorageClassName,
-						},
-					}
-
-					Eventually(func() error {
-						return k8sClient.Get(ctx, client.ObjectKeyFromObject(newStorageClass), newStorageClass)
-					}, maxWait, interval).Should(Succeed())
-
-					Expect(newStorageClass.Parameters["backingSnapshot"]).To(Equal("true"))
-
-					// Other parameters from the test cephfs storageclass should be copied over
-					for k, v := range testCephFSStorageClass.Parameters {
-						Expect(newStorageClass.Parameters[k]).To(Equal(v))
-					}
-				})
-			})
-
-			Context("When the custom cephfs backing storage class for readonly pvc from snap exists", func() {
-				var preExistingCustStorageClass *storagev1.StorageClass
-
-				BeforeEach(func() {
-					preExistingCustStorageClass = &storagev1.StorageClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: customBackingSnapshotStorageClassName,
-						},
-						Provisioner: testCephFSStorageDriverName,
-						Parameters: map[string]string{ // Not the same params as our CephFS storageclass for test
-							"different-param-1": "abc",
-							"different-param-2": "def",
-							"backingSnapshot":   "true",
-						},
-					}
-					Expect(k8sClient.Create(ctx, preExistingCustStorageClass)).To(Succeed())
-
-					// Confirm it's created
-					Eventually(func() error {
-						return k8sClient.Get(ctx,
-							client.ObjectKeyFromObject(preExistingCustStorageClass), preExistingCustStorageClass)
-					}, maxWait, interval).Should(Succeed())
-				})
-
-				It("ModifyRSSpecForCephFS should modify the rsSpec but not modify the new custom storageclass", func() {
-					// Load the custom storageclass
-					newStorageClass := &storagev1.StorageClass{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: customBackingSnapshotStorageClassName,
-						},
-					}
-
-					Eventually(func() error {
-						return k8sClient.Get(ctx, client.ObjectKeyFromObject(newStorageClass), newStorageClass)
-					}, maxWait, interval).Should(Succeed())
-
-					// Parameters should match the original, unmodified
-					Expect(newStorageClass.Parameters).To(Equal(preExistingCustStorageClass.Parameters))
-				})
+			It("ModifyRSSpecForCephFS should modify the rsSpec protectedPVC accessModes", func() {
+				Expect(testRsSpecOrig).ToNot(Equal(testRsSpec))
 			})
 		})
 	})
