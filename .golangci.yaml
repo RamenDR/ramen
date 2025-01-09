@@ -47,7 +47,6 @@ linters-settings:
       - name: error-strings
       - name: error-naming
       - name: exported
-      - name: if-return
       - name: increment-decrement
       - name: var-naming
       - name: var-declaration
