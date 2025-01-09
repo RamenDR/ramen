@@ -288,7 +288,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 func (v *VRGInstance) executeHook(hook kubeobjects.HookSpec, log1 logr.Logger) error {
 	if hook.Type == "check" {
-		hookResult, err := util.EvaluateCheckHook(v.reconciler.Client, &hook, log1)
+		hookResult, err := util.EvaluateCheckHook(v.reconciler.APIReader, &hook, log1)
 
 		if err != nil {
 			log1.Error(err, "error occurred during check hook ")

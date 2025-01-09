@@ -30,7 +30,7 @@ const (
 	pInterval                 = 100
 )
 
-func EvaluateCheckHook(k8sClient client.Client, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
+func EvaluateCheckHook(k8sClient client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
 	if hook.LabelSelector == nil && hook.NameSelector == "" {
 		return false, fmt.Errorf("either nameSelector or labelSelector should be provided to get resources")
 	}
@@ -91,7 +91,7 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 	return finalRes, err
 }
 
-func getResourcesList(k8sClient client.Client, hook *kubeobjects.HookSpec) ([]client.Object, error) {
+func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec) ([]client.Object, error) {
 	resourceList := make([]client.Object, 0)
 
 	var objList client.ObjectList
@@ -128,14 +128,14 @@ func getResourcesList(k8sClient client.Client, hook *kubeobjects.HookSpec) ([]cl
 	return resourceList, nil
 }
 
-func getResourcesUsingLabelSelector(c client.Client, hook *kubeobjects.HookSpec,
+func getResourcesUsingLabelSelector(c client.Reader, hook *kubeobjects.HookSpec,
 	objList client.ObjectList,
 ) ([]client.Object, error) {
 	filteredObjs := make([]client.Object, 0)
 
 	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
 	if err != nil {
-		return filteredObjs, fmt.Errorf("error during labelSelector to selector conversion")
+		return filteredObjs, fmt.Errorf("error converting labelSelector to selector")
 	}
 
 	listOps := &client.ListOptions{
@@ -145,13 +145,13 @@ func getResourcesUsingLabelSelector(c client.Client, hook *kubeobjects.HookSpec,
 
 	err = c.List(context.Background(), objList, listOps)
 	if err != nil {
-		return filteredObjs, err
+		return filteredObjs, fmt.Errorf("error listing resources using labelSelector: %w", err)
 	}
 
 	return getObjectsBasedOnType(objList), nil
 }
 
-func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
+func getResourcesUsingNameSelector(c client.Reader, hook *kubeobjects.HookSpec,
 	objList client.ObjectList,
 ) ([]client.Object, error) {
 	filteredObjs := make([]client.Object, 0)
@@ -169,7 +169,7 @@ func getResourcesUsingNameSelector(c client.Client, hook *kubeobjects.HookSpec,
 
 		err = c.List(context.Background(), objList, listOps)
 		if err != nil {
-			return filteredObjs, err
+			return filteredObjs, fmt.Errorf("error listing resources using nameSelector: %w", err)
 		}
 
 		return getObjectsBasedOnType(objList), nil
