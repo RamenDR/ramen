@@ -81,7 +81,7 @@ func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeR
 ) (PvcSelector, error) {
 	recipeElements, err := RecipeElementsGet(ctx, reader, vrg, ramenConfig, log)
 	if err != nil {
-		return recipeElements.PvcSelector, err
+		return PvcSelector{}, err
 	}
 
 	return recipeElements.PvcSelector, nil
