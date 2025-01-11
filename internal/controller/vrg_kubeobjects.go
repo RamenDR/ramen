@@ -820,6 +820,12 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 		for resourceType, resourceName := range resource {
 			captureInstance, err := getResourceAndConvertToCaptureGroup(recipe, resourceType, resourceName)
 			if err != nil {
+				if errors.Is(err, ErrVolumeCaptureNotSupported) {
+					// we only use the volumes group for determining the label selector
+					// ignore it in the capture sequence
+					continue
+				}
+
 				return resources, err
 			}
 
@@ -852,6 +858,12 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 		for resourceType, resourceName := range resource {
 			captureInstance, err := getResourceAndConvertToRecoverGroup(recipe, resourceType, resourceName)
 			if err != nil {
+				if errors.Is(err, ErrVolumeRecoverNotSupported) {
+					// we only use the volumes group for determining the label selector
+					// ignore it in the capture sequence
+					continue
+				}
+
 				return resources, err
 			}
 
@@ -862,6 +874,11 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 	return resources, nil
 }
 
+var (
+	ErrVolumeCaptureNotSupported = errors.New("volume capture not supported")
+	ErrVolumeRecoverNotSupported = errors.New("volume recover not supported")
+)
+
 func getResourceAndConvertToCaptureGroup(
 	recipe Recipe.Recipe, resourceType, name string) (*kubeobjects.CaptureSpec, error,
 ) {
@@ -871,6 +888,10 @@ func getResourceAndConvertToCaptureGroup(
 			if group.Name == name {
 				return convertRecipeGroupToCaptureSpec(*group)
 			}
+		}
+
+		if name == recipe.Spec.Volumes.Name {
+			return nil, ErrVolumeCaptureNotSupported
 		}
 
 		return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)
@@ -902,6 +923,10 @@ func getResourceAndConvertToRecoverGroup(
 			if group.Name == name {
 				return convertRecipeGroupToRecoverSpec(*group)
 			}
+		}
+
+		if name == recipe.Spec.Volumes.Name {
+			return nil, ErrVolumeRecoverNotSupported
 		}
 
 		return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "Recipe.Spec.Group.Name"}, name)

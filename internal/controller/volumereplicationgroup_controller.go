@@ -549,9 +549,10 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		}
 	}
 
-	if err := RecipeElementsGet(
-		v.ctx, v.reconciler.Client, *v.instance, *v.ramenConfig, v.log, &v.recipeElements,
-	); err != nil {
+	var err error
+
+	v.recipeElements, err = RecipeElementsGet(v.ctx, v.reconciler.Client, *v.instance, *v.ramenConfig, v.log)
+	if err != nil {
 		return v.invalid(err, "Failed to get recipe", false)
 	}
 
