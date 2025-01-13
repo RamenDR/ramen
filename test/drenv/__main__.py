@@ -285,6 +285,8 @@ def do_gather(args):
         [p["name"] for p in env["profiles"]],
         directory=args.directory,
         namespaces=args.namespaces,
+        verbose=args.verbose,
+        name=env["name"],
     )
     logging.info(
         "[%s] Environment gathered in %.2f seconds",
