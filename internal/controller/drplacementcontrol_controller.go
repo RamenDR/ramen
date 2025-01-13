@@ -879,7 +879,7 @@ func getPlacementOrPlacementRule(
 	usrPlacement, err = getPlacementRule(ctx, k8sclient, drpc, log)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			// PacementRule not found. Check Placement instead
+			// PlacementRule not found. Check Placement instead
 			usrPlacement, err = getPlacement(ctx, k8sclient, drpc, log)
 		}
 
@@ -2157,7 +2157,7 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 		}
 
 		msg := fmt.Sprintf("Failover is allowed - VRGs count:'%d'. drpcAction:'%s'."+
-			" vrgAction:'%s'. DstCluster:'%s'. vrgOnCluste '%s'",
+			" vrgAction:'%s'. DstCluster:'%s'. vrgOnCluster '%s'",
 			len(vrgs), drpc.Spec.Action, vrg.Spec.Action, dstCluster, clusterName)
 
 		return AllowFailover, msg, nil
