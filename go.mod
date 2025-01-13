@@ -1,8 +1,8 @@
 module github.com/ramendr/ramen
 
-go 1.22.5
+go 1.22.7
 
-toolchain go1.22.7
+toolchain go1.22.9
 
 // This replace should always be here for ease of development.
 replace github.com/ramendr/ramen/api => ./api
@@ -10,7 +10,7 @@ replace github.com/ramendr/ramen/api => ./api
 require (
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/backube/volsync v0.11.0
-	github.com/csi-addons/kubernetes-csi-addons v0.10.1-0.20240924092040-c11db0b867a1
+	github.com/csi-addons/kubernetes-csi-addons v0.11.0
 	github.com/go-logr/logr v1.4.2
 	github.com/google/uuid v1.6.0
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.0.0
@@ -25,9 +25,9 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20241217172543-b2144cdd0a67
 	golang.org/x/time v0.8.0
-	k8s.io/api v0.31.1
+	k8s.io/api v0.31.2
 	k8s.io/apiextensions-apiserver v0.31.1
-	k8s.io/apimachinery v0.31.1
+	k8s.io/apimachinery v0.31.2
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/component-base v0.31.1
 	k8s.io/kube-openapi v0.0.0-20240903163716-9e1beecbcb38
@@ -36,7 +36,7 @@ require (
 	open-cluster-management.io/config-policy-controller v0.15.0
 	open-cluster-management.io/governance-policy-propagator v0.15.0
 	open-cluster-management.io/multicloud-operators-subscription v0.15.0
-	sigs.k8s.io/controller-runtime v0.19.0
+	sigs.k8s.io/controller-runtime v0.19.1
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -99,7 +99,7 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/protobuf v1.35.1 // indirect
+	google.golang.org/protobuf v1.35.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
