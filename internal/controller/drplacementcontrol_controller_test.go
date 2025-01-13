@@ -396,7 +396,7 @@ func setRestorePVsComplete() {
 	restorePVs = true
 }
 
-func setRestorePVsUncomplete() {
+func setRestorePVsIncomplete() {
 	restorePVs = false
 }
 
@@ -1300,7 +1300,7 @@ func getManagedClusterViewCount(homeClusterNamespace string) int {
 }
 
 func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
-	usrPlcementLookupKey := types.NamespacedName{
+	usrPlacementLookupKey := types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
 	}
@@ -1310,10 +1310,10 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	var placementObj client.Object
 
 	Eventually(func() bool {
-		err := k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlRule)
+		err := k8sClient.Get(context.TODO(), usrPlacementLookupKey, usrPlRule)
 		if k8serrors.IsNotFound(err) {
 			usrPlmnt := &clrapiv1beta1.Placement{}
-			err = k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlmnt)
+			err = k8sClient.Get(context.TODO(), usrPlacementLookupKey, usrPlmnt)
 			if err != nil {
 				return false
 			}
@@ -1351,7 +1351,7 @@ func getPlacementDecision(plName, plNamespace string) *clrapiv1beta1.PlacementDe
 
 //nolint:unparam
 func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster string) {
-	usrPlcementLookupKey := types.NamespacedName{
+	usrPlacementLookupKey := types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
 	}
@@ -1361,10 +1361,10 @@ func verifyUserPlacementRuleDecisionUnchanged(name, namespace, homeCluster strin
 	var placementObj client.Object
 
 	Consistently(func() bool {
-		err := k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlRule)
+		err := k8sClient.Get(context.TODO(), usrPlacementLookupKey, usrPlRule)
 		if k8serrors.IsNotFound(err) {
 			usrPlmnt := &clrapiv1beta1.Placement{}
-			err = k8sClient.Get(context.TODO(), usrPlcementLookupKey, usrPlmnt)
+			err = k8sClient.Get(context.TODO(), usrPlacementLookupKey, usrPlmnt)
 			if err != nil {
 				return false
 			}
@@ -1952,7 +1952,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("DRAction changes to Failover", func() {
 			It("Should not failover to Secondary (West1ManagedCluster) till PV manifest is applied", func() {
 				By("\n\n*** Failover - 1\n\n")
-				setRestorePVsUncomplete()
+				setRestorePVsIncomplete()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
 				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
 				// MWs for VRG, NS, DRCluster, and MMode
@@ -2064,7 +2064,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("DRAction changes to Failover using Placement with Subscription", func() {
 			It("Should not failover to Secondary (West1ManagedCluster) till PV manifest is applied", func() {
-				setRestorePVsUncomplete()
+				setRestorePVsIncomplete()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
 				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
 				// MWs for VRG, NS, VRG DRCluster, and MMode
@@ -2140,7 +2140,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("DRAction changes to Failover using Placement", func() {
 			It("Should not failover to Secondary (West1ManagedCluster) till PV manifest is applied", func() {
-				setRestorePVsUncomplete()
+				setRestorePVsIncomplete()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
 				verifyUserPlacementRuleDecisionUnchanged(placement.Name, placement.Namespace, East1ManagedCluster)
 				// MWs for VRG, NS, VRG DRCluster, and MMode
@@ -2223,7 +2223,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("DRAction changes to Failover", func() {
 			It("Should not failover to Secondary (East2ManagedCluster) till PV manifest is applied", func() {
 				By("\n\n*** Failover - 1\n\n")
-				setRestorePVsUncomplete()
+				setRestorePVsIncomplete()
 				fenceCluster(East1ManagedCluster, false)
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, East2ManagedCluster, rmn.ActionFailover)
 				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
@@ -2298,7 +2298,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("DRAction changes to Failover", func() {
 			It("Should not failover to Secondary (East2ManagedCluster) till PV manifest is applied", func() {
 				By("\n\n*** Failover - 1\n\n")
-				setRestorePVsUncomplete()
+				setRestorePVsIncomplete()
 				fenceCluster(East1ManagedCluster, true)
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, East2ManagedCluster, rmn.ActionFailover)
 				verifyUserPlacementRuleDecisionUnchanged(userPlacementRule.Name, userPlacementRule.Namespace, East1ManagedCluster)
@@ -2393,11 +2393,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				clearDRPCStatus()
 				expectedAction := rmn.DRAction("")
 				expectedPhase := rmn.Deployed
-				exptectedPorgression := rmn.ProgressionCompleted
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression := rmn.ProgressionCompleted
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 				resetClusterDown()
-				exptectedCompleted := rmn.ProgressionCompleted
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedCompleted)
+				expectedCompleted := rmn.ProgressionCompleted
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedCompleted)
 			})
 		})
 		//nolint:lll
@@ -2417,8 +2417,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				clearDRPCStatus()
 				expectedAction := rmn.DRAction("")
 				expectedPhase := rmn.WaitForUser
-				exptectedPorgression := rmn.ProgressionActionPaused
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression := rmn.ProgressionActionPaused
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 			})
 		})
 
@@ -2455,8 +2455,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
 				expectedAction := rmn.ActionFailover
 				expectedPhase := rmn.WaitForUser
-				exptectedPorgression := rmn.ProgressionActionPaused
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression := rmn.ProgressionActionPaused
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 				checkConditionAllowFailover(DefaultDRPCNamespace)
 
 				// User intervention is required (simulate user intervention)
@@ -2464,8 +2464,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionFailover)
 				expectedAction = rmn.ActionFailover
 				expectedPhase = rmn.FailedOver
-				exptectedPorgression = rmn.ProgressionCompleted
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression = rmn.ProgressionCompleted
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 				waitForCompletion(string(rmn.FailedOver))
 			})
 		})
@@ -2497,16 +2497,16 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				clearDRPCStatus()
 				expectedAction := rmn.ActionRelocate
 				expectedPhase := rmn.DRState("")
-				exptectedPorgression := rmn.ProgressionStatus("")
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression := rmn.ProgressionStatus("")
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 
 				// User intervention is required (simulate user intervention)
 				resetClusterDown()
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionRelocate)
 				expectedAction = rmn.ActionRelocate
 				expectedPhase = rmn.Relocated
-				exptectedPorgression = rmn.ProgressionCompleted
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression = rmn.ProgressionCompleted
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 				waitForCompletion(string(rmn.Relocated))
 			})
 		})
@@ -2528,8 +2528,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, "")
 				expectedAction := rmn.DRAction("")
 				expectedPhase := rmn.WaitForUser
-				exptectedPorgression := rmn.ProgressionActionPaused
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression := rmn.ProgressionActionPaused
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 				checkConditionAllowFailover(DefaultDRPCNamespace)
 
 				// User intervention is required (simulate user intervention)
@@ -2537,8 +2537,8 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				setDRPCSpecExpectationTo(DefaultDRPCNamespace, East1ManagedCluster, West1ManagedCluster, rmn.ActionRelocate)
 				expectedAction = rmn.ActionRelocate
 				expectedPhase = rmn.Relocated
-				exptectedPorgression = rmn.ProgressionCompleted
-				verifyDRPCStateAndProgression(expectedAction, expectedPhase, exptectedPorgression)
+				expectedPorgression = rmn.ProgressionCompleted
+				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
 				waitForCompletion(string(rmn.Relocated))
 			})
 		})
@@ -2812,7 +2812,7 @@ func verifyRDSpecAfterActionSwitch(primaryCluster, secondaryCluster string, numO
 }
 
 func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rmn.DRState,
-	exptectedPorgression rmn.ProgressionStatus,
+	expectedPorgression rmn.ProgressionStatus,
 ) {
 	var phase rmn.DRState
 
@@ -2823,15 +2823,15 @@ func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rm
 		phase = drpc.Status.Phase
 		progression = drpc.Status.Progression
 
-		return phase == expectedPhase && progression == exptectedPorgression
+		return phase == expectedPhase && progression == expectedPorgression
 	}, timeout, interval).Should(BeTrue(),
-		fmt.Sprintf("Phase has not been updated yet! Phase:%s Expected:%s - progression:%s exptected:%s",
-			phase, expectedPhase, progression, exptectedPorgression))
+		fmt.Sprintf("Phase has not been updated yet! Phase:%s Expected:%s - progression:%s expected:%s",
+			phase, expectedPhase, progression, expectedPorgression))
 
 	drpc := getLatestDRPC(DefaultDRPCNamespace)
 	Expect(drpc.Spec.Action).Should(Equal(expectedAction))
 	Expect(drpc.Status.Phase).Should(Equal(expectedPhase))
-	Expect(drpc.Status.Progression).Should(Equal(exptectedPorgression))
+	Expect(drpc.Status.Progression).Should(Equal(expectedPorgression))
 }
 
 func checkConditionAllowFailover(namespace string) {
