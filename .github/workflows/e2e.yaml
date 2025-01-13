@@ -79,7 +79,7 @@ jobs:
     - name: Gather environment data
       if: failure()
       working-directory: test
-      run: drenv gather --directory ${{ env.GATHER_DIR }} envs/regional-dr.yaml
+      run: drenv gather --directory ${{ env.GATHER_DIR }} envs/regional-dr.yaml --verbose
 
     # Tar manually to work around github limitations with special chracters (:)
     # in file names, and getting much smaller archives comapred with zip (6m vs
