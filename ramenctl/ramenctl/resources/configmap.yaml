@@ -38,6 +38,7 @@ data:
       disabled: $volsync_disabled
     multiNamespace:
       FeatureEnabled: true
+      volsyncSupported: true
     ramenOpsNamespace: ramen-ops
     s3StoreProfiles:
     - s3ProfileName: minio-on-$cluster1
