@@ -80,7 +80,7 @@ jobs:
       if: failure()
       working-directory: test
       # Gathering typically takes less than 15 seconds.
-      timeout_minutes: 3
+      timeout-minutes: 3
       run: drenv gather --directory ${{ env.GATHER_DIR }} envs/regional-dr.yaml
 
     # Tar manually to work around github limitations with special chracters (:)
