@@ -192,7 +192,7 @@ def watch(
     return commands.watch(*cmd, timeout=timeout)
 
 
-def gather(contexts, namespaces=None, directory=None, name="gather"):
+def gather(contexts, namespaces=None, directory=None, name="gather", verbose=False):
     """
     Run kubectl gather plugin, logging gather logs.
     """
@@ -208,6 +208,8 @@ def gather(contexts, namespaces=None, directory=None, name="gather"):
         cmd.extend(("--namespaces", ",".join(namespaces)))
     if directory:
         cmd.extend(("--directory", directory))
+    if verbose:
+        cmd.append("--verbose")
 
     # Redirecting stderr to stdout to get the logs. kubectl-gather does not
     # output anything to stdout.
