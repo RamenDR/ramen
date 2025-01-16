@@ -22,6 +22,7 @@ const (
 	LastSyncDurationSeconds  = "last_sync_duration_seconds"
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
+	DRClusterAvailableStatus = "drcluster_available_status"
 )
 
 type SyncTimeMetrics struct {
@@ -44,6 +45,10 @@ type WorkloadProtectionMetrics struct {
 	WorkloadProtectionStatus prometheus.Gauge
 }
 
+type DRClusterAvailableStatusMetrics struct {
+	DRClusterAvailableStatus prometheus.Gauge
+}
+
 type SyncMetrics struct {
 	SyncTimeMetrics
 	SyncDurationMetrics
@@ -56,6 +61,7 @@ const (
 	ObjNamespace       = "obj_namespace"
 	Policyname         = "policyname"
 	SchedulingInterval = "scheduling_interval"
+	ErrorMessage       = "error_message"
 )
 
 var (
@@ -89,6 +95,12 @@ var (
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
+	}
+
+	dRClusterAvailableStatusLabels = []string{
+		ObjType,      // Name of the type of the resource [drcluster]
+		ObjName,      // Name of the resoure [drcluster-name]
+		ErrorMessage, // ErrorMessage from status.conditions
 	}
 )
 
@@ -136,6 +148,15 @@ var (
 			Help:      "Status regarding workload protection health",
 		},
 		workloadProtectionStatusLabels,
+	)
+
+	drClusterAvailableStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRClusterAvailableStatus,
+			Namespace: metricNamespace,
+			Help:      "DRCluster availability status",
+		},
+		dRClusterAvailableStatusLabels,
 	)
 )
 
@@ -234,6 +255,25 @@ func DeleteWorkloadProtectionStatusMetric(labels prometheus.Labels) bool {
 	return workloadProtectionStatus.Delete(labels)
 }
 
+// drClusterAvailableStatus Metrics
+func DRClusterAvailableStatusLabels(drCluster *rmn.DRCluster, errorMessage string) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:      "DRCluster",
+		ObjName:      drCluster.Name,
+		ErrorMessage: errorMessage,
+	}
+}
+
+func NewDRClusterAvailableStatusMetric(labels prometheus.Labels) DRClusterAvailableStatusMetrics {
+	return DRClusterAvailableStatusMetrics{
+		DRClusterAvailableStatus: drClusterAvailableStatus.With(labels),
+	}
+}
+
+func DeleteDRClusterAvailableStatusMetric(labels prometheus.Labels) bool {
+	return drClusterAvailableStatus.Delete(labels)
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
@@ -241,4 +281,5 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDuration)
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
+	metrics.Registry.MustRegister(drClusterAvailableStatus)
 }
