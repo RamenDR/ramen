@@ -25,11 +25,18 @@ const (
 )
 
 var (
-	Workloads      = []types.Workload{}
-	subscription   = &deployers.Subscription{}
-	appset         = &deployers.ApplicationSet{}
-	discoveredApps = &deployers.DiscoveredApp{}
-	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
+	Workloads                    = []types.Workload{}
+	subscription                 = &deployers.Subscription{}
+	appset                       = &deployers.ApplicationSet{}
+	discoveredApps               = &deployers.DiscoveredApp{}
+	discoveredAppsWithoutHook    = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: false}
+	discoveredAppsWithHook       = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: true}
+	discoveredAppsWithHookAndVol = &deployers.DiscoveredApp{IncludeRecipe: true, IncludeHooks: true,
+		IncludeVolumes: true}
+	Deployers = []types.Deployer{
+		subscription, appset, discoveredApps, discoveredAppsWithoutHook,
+		discoveredAppsWithHook, discoveredAppsWithHookAndVol,
+	}
 )
 
 func generateWorkloads([]types.Workload) {
@@ -57,11 +64,11 @@ func Exhaustive(dt *testing.T) {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
-	t.Cleanup(func() {
+	/*t.Cleanup(func() {
 		if err := util.EnsureChannelDeleted(); err != nil {
 			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
-	})
+	})*/
 
 	generateWorkloads(Workloads)
 
