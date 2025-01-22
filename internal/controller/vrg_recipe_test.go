@@ -460,6 +460,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						}
 
 						recipeVolumesDefine(volumes(nssParameterRef))
+						recipeGroupsDefine(resources(nssParameterRef))
 						vrgRecipeParametersDefine(parameters)
 						recipeHooksDefine(hook(ns0ParameterRef))
 					})
@@ -496,6 +497,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					BeforeEach(func() {
 						nsSlices(1, 2)
 						vrg.Namespace = nsNamesSlice[0]
+						recipeGroupsDefine(resources(vrg.Namespace))
 					})
 					It("includes only the VRG's namespace in its PVC selection", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -510,6 +512,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						nsSlices(1, 2)
 						vrg.Namespace = nsNamesSlice[0]
 						recipeVolumesDefine(volumes(vrg.Namespace))
+						recipeGroupsDefine(resources(vrg.Namespace))
 					})
 					It("includes only it in its PVC selection", func() {
 						Expect(err).ToNot(HaveOccurred())
@@ -549,6 +552,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 							nsSlices(1, 2)
 							Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(r), r)).To(Succeed())
 							recipeVolumesDefine(volumes(vrg.Namespace))
+							recipeGroupsDefine(resources(vrg.Namespace))
+							recipeCaptureWorkflowDefine(allGroupsAllHooksWorkflow())
 							Expect(k8sClient.Update(ctx, r)).To(Succeed())
 						})
 						It("includes only it in its PVC selection", func() {
@@ -587,6 +592,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					Context("recovery hooks in the same namespace", func() {
 						BeforeEach(func() {
 							recipeHooksDefine(hook(vrg.Namespace))
+							recipeGroupsDefine(resources(vrg.Namespace))
+							recipeCaptureWorkflowDefine(allGroupsAllHooksWorkflow())
 						})
 						It("sets DataReady condition's message to something besides a recipe error", func() {
 							Eventually(vrgDataReadyConditionGet).ShouldNot(BeNil())
