@@ -8,6 +8,7 @@ import (
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func EnableProtectionDiscoveredApps(ctx types.Context) error {
@@ -48,13 +49,14 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
 
-	if v, ok := ctx.Deployer().(deployers.DiscoveredApp); ok {
+	if v, ok := ctx.Deployer().(*deployers.DiscoveredApp); ok {
 		if v.IncludeRecipe {
 			recipeName := name + "-recipe"
 			drpc.Spec.KubeObjectProtection.RecipeRef = &ramen.RecipeRef{
 				Namespace: appNamespace,
 				Name:      recipeName,
 			}
+			drpc.Spec.PVCSelector = v1.LabelSelector{}
 		}
 	}
 

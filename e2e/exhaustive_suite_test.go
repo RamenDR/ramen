@@ -64,11 +64,11 @@ func Exhaustive(dt *testing.T) {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
-	t.Cleanup(func() {
+	/*t.Cleanup(func() {
 		if err := util.EnsureChannelDeleted(); err != nil {
 			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
-	})
+	})*/
 
 	generateWorkloads(Workloads)
 

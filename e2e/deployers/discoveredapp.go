@@ -12,10 +12,7 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,124 +102,124 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		log.Info("recipe created on both dr clusters")
 	}
 
-	if d.IncludeHooks && d.IncludeRecipe && d.IncludeVolumes {
-		deployment := getDeployment(appNamespace)
-		err := util.Ctx.C1.Client.Create(context.Background(), deployment)
-		if err != nil {
-			log.Error("error during creation of deployment")
-		}
+	// if d.IncludeHooks && d.IncludeRecipe && d.IncludeVolumes {
+	// 	deployment := getDeployment(appNamespace)
+	// 	err := util.Ctx.C1.Client.Create(context.Background(), deployment)
+	// 	if err != nil {
+	// 		log.Error("error during creation of deployment")
+	// 	}
 
-		pvc := getPvc(appNamespace)
-		err = util.Ctx.C1.Client.Create(context.Background(), pvc)
-		if err != nil {
-			log.Error("error during creation of pvc")
-		}
-	}
+	// 	pvc := getPvc(appNamespace)
+	// 	err = util.Ctx.C1.Client.Create(context.Background(), pvc)
+	// 	if err != nil {
+	// 		log.Error("error during creation of pvc")
+	// 	}
+	// }
 
 	return nil
 }
 
-func getPvc(ns string) *corev1.PersistentVolumeClaim {
-	scName := "rook-ceph-block"
-	return &corev1.PersistentVolumeClaim{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "PersistentVolumeClaim",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "busybox-pvc-vol",
-			Namespace: ns,
-			Labels: map[string]string{
-				"appname": "busybox-vol",
-			},
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("1Gi"),
-				},
-			},
-			StorageClassName: &scName,
-		},
-	}
-}
+// func getPvc(ns string) *corev1.PersistentVolumeClaim {
+// 	scName := "rook-ceph-block"
+// 	return &corev1.PersistentVolumeClaim{
+// 		TypeMeta: metav1.TypeMeta{
+// 			APIVersion: "v1",
+// 			Kind:       "PersistentVolumeClaim",
+// 		},
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:      "busybox-pvc-vol",
+// 			Namespace: ns,
+// 			Labels: map[string]string{
+// 				"appname": "busybox-vol",
+// 			},
+// 		},
+// 		Spec: corev1.PersistentVolumeClaimSpec{
+// 			AccessModes: []corev1.PersistentVolumeAccessMode{
+// 				corev1.ReadWriteOnce,
+// 			},
+// 			Resources: corev1.VolumeResourceRequirements{
+// 				Requests: corev1.ResourceList{
+// 					corev1.ResourceStorage: resource.MustParse("1Gi"),
+// 				},
+// 			},
+// 			StorageClassName: &scName,
+// 		},
+// 	}
+// }
 
-func getDeployment(ns string) *appsv1.Deployment {
-	var i int32 = 1
-	return &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "apps/v1",
-			Kind:       "Deployment",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
-				"appname": "busybox-vol",
-			},
-			Name:      "busybox-vol",
-			Namespace: ns,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &i,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"appname": "busybox-vol",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"appname": "busybox-vol",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Command: []string{
-								"sh",
-								"-c",
-								`emit() {
-						echo "$(date) $1" | tee -a /var/log/ramen.log
-						sync
-					}
-                    trap "emit STOP; exit" TERM
-                    emit START
-                    while true; do
-                        sleep 10 & wait
-                        emit UPDATE
-                    done`,
-							},
-							Image:                    "quay.io/nirsof/busybox:stable",
-							ImagePullPolicy:          "IfNotPresent",
-							Name:                     "logger",
-							TerminationMessagePath:   "/dev/termination-log",
-							TerminationMessagePolicy: "File",
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									MountPath: "/var/log",
-									Name:      "varlog",
-								},
-							},
-						},
-					},
-					DNSPolicy: corev1.DNSClusterFirst,
-					Volumes: []corev1.Volume{
-						{
-							Name: "varlog",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "busybox-pvc-vol",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
+// func getDeployment(ns string) *appsv1.Deployment {
+// 	var i int32 = 1
+// 	return &appsv1.Deployment{
+// 		TypeMeta: metav1.TypeMeta{
+// 			APIVersion: "apps/v1",
+// 			Kind:       "Deployment",
+// 		},
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Labels: map[string]string{
+// 				"appname": "busybox-vol",
+// 			},
+// 			Name:      "busybox-vol",
+// 			Namespace: ns,
+// 		},
+// 		Spec: appsv1.DeploymentSpec{
+// 			Replicas: &i,
+// 			Selector: &metav1.LabelSelector{
+// 				MatchLabels: map[string]string{
+// 					"appname": "busybox-vol",
+// 				},
+// 			},
+// 			Template: corev1.PodTemplateSpec{
+// 				ObjectMeta: metav1.ObjectMeta{
+// 					Labels: map[string]string{
+// 						"appname": "busybox-vol",
+// 					},
+// 				},
+// 				Spec: corev1.PodSpec{
+// 					Containers: []corev1.Container{
+// 						{
+// 							Command: []string{
+// 								"sh",
+// 								"-c",
+// 								`emit() {
+// 						echo "$(date) $1" | tee -a /var/log/ramen.log
+// 						sync
+// 					}
+//                     trap "emit STOP; exit" TERM
+//                     emit START
+//                     while true; do
+//                         sleep 10 & wait
+//                         emit UPDATE
+//                     done`,
+// 							},
+// 							Image:                    "quay.io/nirsof/busybox:stable",
+// 							ImagePullPolicy:          "IfNotPresent",
+// 							Name:                     "logger",
+// 							TerminationMessagePath:   "/dev/termination-log",
+// 							TerminationMessagePolicy: "File",
+// 							VolumeMounts: []corev1.VolumeMount{
+// 								{
+// 									MountPath: "/var/log",
+// 									Name:      "varlog",
+// 								},
+// 							},
+// 						},
+// 					},
+// 					DNSPolicy: corev1.DNSClusterFirst,
+// 					Volumes: []corev1.Volume{
+// 						{
+// 							Name: "varlog",
+// 							VolumeSource: corev1.VolumeSource{
+// 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+// 									ClaimName: "busybox-pvc-vol",
+// 								},
+// 							},
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+// }
 
 // Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApp) Undeploy(ctx types.Context) error {
