@@ -5,7 +5,7 @@
 apiVersion: ceph.rook.io/v1
 kind: CephBlockPool
 metadata:
-  name: replicapool
+  name: $name
   namespace: rook-ceph
 spec:
   replicated:
