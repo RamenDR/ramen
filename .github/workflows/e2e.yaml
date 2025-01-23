@@ -77,7 +77,7 @@ jobs:
         make e2e-rdr
 
     - name: Gather environment data
-      if: failure()
+      if: always()
       working-directory: test
       # Gathering typically takes less than 15 seconds.
       timeout-minutes: 3
@@ -88,11 +88,11 @@ jobs:
     # 12m). This is also useful to collect all files in one archive.
     # https://github.com/actions/upload-artifact/issues/546
     - name: Archive artifacts
-      if: failure()
+      if: always()
       run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/ramen-e2e.log
 
     - name: Upload artifacts
-      if: failure()
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: e2e.${{ env.BUILD_ID }}
