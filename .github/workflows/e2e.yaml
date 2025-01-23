@@ -12,7 +12,7 @@ on:
 env:
   # Limit number of drenv workers.
   MAX_WORKERS: 4
-  GATHER_DIR: gather.${{ github.run_id }}-${{ github.run_attempt }}
+  BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   e2e-rdr:
@@ -81,23 +81,22 @@ jobs:
       working-directory: test
       # Gathering typically takes less than 15 seconds.
       timeout-minutes: 3
-      run: drenv gather --directory ${{ env.GATHER_DIR }} envs/regional-dr.yaml
+      run: drenv gather --directory gather.rdr envs/regional-dr.yaml
 
     # Tar manually to work around github limitations with special chracters (:)
     # in file names, and getting much smaller archives comapred with zip (6m vs
-    # 12m).
+    # 12m). This is also useful to collect all files in one archive.
     # https://github.com/actions/upload-artifact/issues/546
-    - name: Archive gathered data
+    - name: Archive artifacts
       if: failure()
-      working-directory: test
-      run: tar czf ${{ env.GATHER_DIR }}.tar.gz ${{ env.GATHER_DIR }}
+      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/ramen-e2e.log
 
     - name: Upload artifacts
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.GATHER_DIR }}
-        path: test/${{ env.GATHER_DIR }}.tar.gz
+        name: e2e.${{ env.BUILD_ID }}
+        path: e2e.${{ env.BUILD_ID }}.tar.gz
         compression-level: 0
         retention-days: 15
 
