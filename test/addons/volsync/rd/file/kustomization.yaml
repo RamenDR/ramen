@@ -13,7 +13,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/storageClassName
-        value: rook-cephfs
+        value: rook-cephfs-test-fs1
       - op: replace
         path: /spec/accessModes
         value:
@@ -27,7 +27,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rsyncTLS/storageClassName
-        value: rook-cephfs
+        value: rook-cephfs-test-fs1
       - op: replace
         path: /spec/rsyncTLS/volumeSnapshotClassName
         value: csi-cephfsplugin-snapclass
