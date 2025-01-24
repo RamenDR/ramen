@@ -9,16 +9,20 @@ import sys
 import drenv
 from drenv import kubectl
 
+FILE_SYSTEMS = ["test-fs1", "test-fs2"]
+
 
 def deploy(cluster):
+    for file_system in FILE_SYSTEMS:
+        print("Creating CephFS instance")
+        template = drenv.template("filesystem.yaml")
+        yaml = template.substitute(cluster=cluster, name=file_system)
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
 
-    print("Creating CephFS instance")
-    kubectl.apply("--filename=filesystem.yaml", context=cluster)
-
-    print("Creating StorageClass")
-    template = drenv.template("storage-class.yaml")
-    yaml = template.substitute(cluster=cluster)
-    kubectl.apply("--filename=-", input=yaml, context=cluster)
+        print("Creating StorageClass")
+        template = drenv.template("storage-class.yaml")
+        yaml = template.substitute(cluster=cluster, fsname=file_system)
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
 
     print("Creating SnapshotClass")
     template = drenv.template("snapshot-class.yaml")
@@ -27,21 +31,23 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    print("Waiting until CephFS is ready")
-    drenv.wait_for(
-        "cephfilesystem/myfs",
-        output="jsonpath={.status.phase}",
-        namespace="rook-ceph",
-        timeout=120,
-        profile=cluster,
-    )
-    kubectl.wait(
-        "cephfilesystem/myfs",
-        "--for=jsonpath={.status.phase}=Ready",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
-        context=cluster,
-    )
+    print("Waiting until Ceph File Systems are ready")
+
+    for file_system in FILE_SYSTEMS:
+        drenv.wait_for(
+            f"cephfilesystem/{file_system}",
+            output="jsonpath={.status.phase}",
+            namespace="rook-ceph",
+            timeout=120,
+            profile=cluster,
+        )
+        kubectl.wait(
+            f"cephfilesystem/{file_system}",
+            "--for=jsonpath={.status.phase}=Ready",
+            "--namespace=rook-ceph",
+            "--timeout=300s",
+            context=cluster,
+        )
 
 
 if len(sys.argv) != 2:
