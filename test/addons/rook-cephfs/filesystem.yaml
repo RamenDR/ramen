@@ -10,7 +10,7 @@
 apiVersion: ceph.rook.io/v1
 kind: CephFilesystem
 metadata:
-  name: myfs
+  name: $name
   namespace: rook-ceph
 spec:
   metadataPool:

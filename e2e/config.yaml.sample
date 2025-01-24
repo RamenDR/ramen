@@ -16,7 +16,7 @@ pvcspecs:
     storageclassname: rook-ceph-block
     accessmodes: ReadWriteOnce
   - name: cephfs
-    storageclassname: rook-cephfs
+    storageclassname: rook-cephfs-test-fs1
     accessmodes: ReadWriteMany
 
 # Sample cluster configurations:
