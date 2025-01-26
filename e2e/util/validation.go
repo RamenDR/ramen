@@ -16,6 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	ramenSystemNamespace = "ramen-system"
+)
+
 func ValidateRamenHubOperator(k8sClient client.Client) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
@@ -74,7 +78,7 @@ func GetRamenNameSpace(k8sClient client.Client) (string, error) {
 		return "openshift-operators", nil
 	}
 
-	return RamenSystemNamespace, nil
+	return ramenSystemNamespace, nil
 }
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
