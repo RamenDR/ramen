@@ -84,7 +84,7 @@ func CreateNamespaceAndAddAnnotation(namespace string) error {
 		return err
 	}
 
-	if err := AddNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace); err != nil {
+	if err := addNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace); err != nil {
 		return err
 	}
 
@@ -92,10 +92,10 @@ func CreateNamespaceAndAddAnnotation(namespace string) error {
 		return err
 	}
 
-	return AddNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace)
+	return addNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace)
 }
 
-func AddNamespaceAnnotationForVolSync(client client.Client, namespace string) error {
+func addNamespaceAnnotationForVolSync(client client.Client, namespace string) error {
 	key := types.NamespacedName{Name: namespace}
 	objNs := &corev1.Namespace{}
 
