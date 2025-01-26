@@ -16,7 +16,6 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 )
 
 const DefaultDRPolicyName = "dr-policy"
@@ -78,72 +77,6 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 
 		time.Sleep(time.Second)
 	}
-}
-
-func createChannel() error {
-	objChannel := &channelv1.Channel{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetChannelName(),
-			Namespace: GetChannelNamespace(),
-		},
-		Spec: channelv1.ChannelSpec{
-			Pathname: GetGitURL(),
-			Type:     channelv1.ChannelTypeGitHub,
-		},
-	}
-
-	err := Ctx.Hub.Client.Create(context.Background(), objChannel)
-	if err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return err
-		}
-
-		Ctx.Log.Infof("Channel %q already exists", GetChannelName())
-	} else {
-		Ctx.Log.Infof("Created channel %q", GetChannelName())
-	}
-
-	return nil
-}
-
-func deleteChannel() error {
-	channel := &channelv1.Channel{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetChannelName(),
-			Namespace: GetChannelNamespace(),
-		},
-	}
-
-	err := Ctx.Hub.Client.Delete(context.Background(), channel)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-
-		Ctx.Log.Infof("Channel %q not found", GetChannelName())
-	} else {
-		Ctx.Log.Infof("Channel %q is deleted", GetChannelName())
-	}
-
-	return nil
-}
-
-func EnsureChannel() error {
-	// create channel namespace
-	err := CreateNamespace(Ctx.Hub.Client, GetChannelNamespace())
-	if err != nil {
-		return err
-	}
-
-	return createChannel()
-}
-
-func EnsureChannelDeleted() error {
-	if err := deleteChannel(); err != nil {
-		return err
-	}
-
-	return DeleteNamespace(Ctx.Hub.Client, GetChannelNamespace(), Ctx.Log)
 }
 
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.
