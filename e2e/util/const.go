@@ -7,14 +7,8 @@ import "time"
 
 const (
 	RamenSystemNamespace = "ramen-system"
-
-	Timeout       = 600 * time.Second
-	RetryInterval = 5 * time.Second
-
-	defaultChannelName      = "ramen-gitops"
-	defaultChannelNamespace = "ramen-samples"
-	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
-
-	ArgocdNamespace   = "argocd"
-	RamenOpsNamespace = "ramen-ops"
+	Timeout              = 600 * time.Second
+	RetryInterval        = 5 * time.Second
+	ArgocdNamespace      = "argocd"
+	RamenOpsNamespace    = "ramen-ops"
 )

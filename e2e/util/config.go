@@ -10,6 +10,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	defaultChannelName      = "ramen-gitops"
+	defaultChannelNamespace = "ramen-samples"
+	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
+)
+
 type PVCSpec struct {
 	Name                 string
 	StorageClassName     string
