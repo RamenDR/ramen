@@ -12,6 +12,24 @@ import (
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 )
 
+func EnsureChannel() error {
+	// create channel namespace
+	err := CreateNamespace(Ctx.Hub.Client, GetChannelNamespace())
+	if err != nil {
+		return err
+	}
+
+	return createChannel()
+}
+
+func EnsureChannelDeleted() error {
+	if err := deleteChannel(); err != nil {
+		return err
+	}
+
+	return DeleteNamespace(Ctx.Hub.Client, GetChannelNamespace(), Ctx.Log)
+}
+
 func createChannel() error {
 	objChannel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
@@ -58,22 +76,4 @@ func deleteChannel() error {
 	}
 
 	return nil
-}
-
-func EnsureChannel() error {
-	// create channel namespace
-	err := CreateNamespace(Ctx.Hub.Client, GetChannelNamespace())
-	if err != nil {
-		return err
-	}
-
-	return createChannel()
-}
-
-func EnsureChannelDeleted() error {
-	if err := deleteChannel(); err != nil {
-		return err
-	}
-
-	return DeleteNamespace(Ctx.Hub.Client, GetChannelNamespace(), Ctx.Log)
 }
