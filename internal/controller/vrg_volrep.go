@@ -1933,6 +1933,9 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 			v.instance.Name, err)
 	}
 
+	log.Info("Annotated PersistentVolumeClaim", "namespace", pvc.Namespace, "name", pvc.Name, "key",
+		pvcVRAnnotationArchivedKey, "value", pvcAnnotationValue)
+
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		log.Error(err, "Failed to get PV to add archived annotation")
@@ -1955,6 +1958,9 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 			"VolumeReplicationGroup (%s/%s), %w",
 			pvc.Name, pvcVRAnnotationArchivedKey, pvAnnotationValue, v.instance.Namespace, v.instance.Name, err)
 	}
+
+	log.Info("Annotated PersistentVolume", "name", pv.Name, "key", pvcVRAnnotationArchivedKey, "value",
+		pvAnnotationValue)
 
 	return nil
 }
