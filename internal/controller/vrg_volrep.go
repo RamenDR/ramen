@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -573,7 +572,7 @@ func undoPVRetention(pv *corev1.PersistentVolume) {
 }
 
 func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
-	return fmt.Sprintf("%s-%s", pvcVRAnnotationArchivedVersionV1, strconv.Itoa(int(gen)))
+	return fmt.Sprintf("%s-%d", pvcVRAnnotationArchivedVersionV1, gen)
 }
 
 func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
