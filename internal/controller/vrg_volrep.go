@@ -576,9 +576,6 @@ func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
 }
 
 func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
-	pvHasAnnotation := false
-	pvcHasAnnotation := false
-
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		log.Error(err, "Failed to get PV to check if archived")
@@ -586,17 +583,11 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 		return false
 	}
 
-	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
-	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
-		pvcHasAnnotation = true
+	if pvc.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pvc.Generation) {
+		return false
 	}
 
-	pvDesiredValue := v.generateArchiveAnnotation(pv.Generation)
-	if v, ok := pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvDesiredValue) {
-		pvHasAnnotation = true
-	}
-
-	if !pvHasAnnotation || !pvcHasAnnotation {
+	if pv.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pv.Generation) {
 		return false
 	}
 
