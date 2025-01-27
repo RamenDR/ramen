@@ -1921,36 +1921,39 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 		pvc.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pvc.Generation)
+	pvcAnnotationValue := v.generateArchiveAnnotation(pvc.Generation)
+	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = pvcAnnotationValue
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
 
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
+		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s:%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, pvcAnnotationValue, v.instance.Namespace,
+			v.instance.Name, err)
 	}
 
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		log.Error(err, "Failed to get PV to add archived annotation")
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
-			"VolumeReplicationGroup (%s/%s), %w",
-			pv.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+		return fmt.Errorf("failed to get PersistentVolume (%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			pv.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
 	if pv.ObjectMeta.Annotations == nil {
 		pv.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
+	pvAnnotationValue := v.generateArchiveAnnotation(pv.Generation)
+	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = pvAnnotationValue
+
 	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
 		log.Error(err, "Failed to update PersistentVolume annotation")
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s:%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			pvc.Name, pvcVRAnnotationArchivedKey, pvAnnotationValue, v.instance.Namespace, v.instance.Name, err)
 	}
 
 	return nil
