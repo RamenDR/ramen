@@ -53,3 +53,7 @@ ramenctl/build
 # Generated disk images
 *.qcow2
 *.iso
+
+# e2e generated files
+/e2e/ramen-e2e
+/e2e/ramen-e2e.log
