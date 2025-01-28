@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultChannelNamespace = "ramen-samples"
+	defaultChannelNamespace = "e2e-gitops"
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 )
 

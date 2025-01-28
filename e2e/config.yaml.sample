@@ -2,7 +2,7 @@
 
 ---
 # Namespace where the channel CR will be created.
-channelnamespace: "ramen-samples"
+channelnamespace: "e2e-gitops"
 
 # Git repository URL containing application manifests to be deployed on
 # the clusters.
