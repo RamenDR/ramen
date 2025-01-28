@@ -10,7 +10,6 @@ import (
 
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
-	"go.uber.org/zap"
 )
 
 func init() {
@@ -22,12 +21,11 @@ func TestMain(m *testing.M) {
 
 	flag.Parse()
 
-	logger, err := zap.NewDevelopment()
+	log, err := test.CreateLogger()
 	if err != nil {
 		panic(err)
 	}
-
-	log := logger.Sugar()
+	// TODO: Sync the log on exit
 
 	util.Ctx, err = util.NewContext(log, util.ConfigFile)
 	if err != nil {
