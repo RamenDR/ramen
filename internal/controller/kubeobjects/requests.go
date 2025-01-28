@@ -89,6 +89,9 @@ type KubeResourcesSpec struct {
 
 	//+optional
 	IsHook bool `json:"isHook,omitempty"`
+
+	//+optional
+	GroupEssential *bool `json:"essential,omitempty"`
 }
 
 // HookSpec provides spec of either check or exec hook that needs to be executed
