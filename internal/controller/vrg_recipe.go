@@ -14,7 +14,7 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
-	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -24,10 +24,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	WorkflowAnyError       = "any-error"
+	WorkflowEssentialError = "essential-error"
+	WorkflowFullError      = "full-error"
+)
+
 type RecipeElements struct {
 	PvcSelector     PvcSelector
 	CaptureWorkflow []kubeobjects.CaptureSpec
 	RecoverWorkflow []kubeobjects.RecoverSpec
+	CaptureFailOn   string
+	RestoreFailOn   string
 }
 
 func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.CaptureSpec {
@@ -105,6 +113,8 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 			PvcSelector:     getPVCSelector(vrg, ramenConfig, nil, nil),
 			CaptureWorkflow: captureWorkflowDefault(vrg, ramenConfig),
 			RecoverWorkflow: recoverWorkflowDefault(vrg, ramenConfig),
+			CaptureFailOn:   WorkflowAnyError,
+			RestoreFailOn:   WorkflowAnyError,
 		}
 
 		return recipeElements, nil
@@ -115,7 +125,7 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}
 
-	recipe := recipe.Recipe{}
+	recipe := recipev1.Recipe{}
 	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
 		return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
 	}
@@ -147,7 +157,7 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 	return recipeElements, nil
 }
 
-func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string,
+func RecipeParametersExpand(recipe *recipev1.Recipe, parameters map[string][]string,
 	log logr.Logger,
 ) error {
 	spec := &recipe.Spec
@@ -178,27 +188,29 @@ func parametersExpand(s string, parameters map[string][]string) string {
 	})
 }
 
-func recipeWorkflowsGet(recipe recipe.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup,
+func recipeWorkflowsGet(recipe recipev1.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig,
 ) error {
 	var err error
 
-	recipeElements.CaptureWorkflow, err = getCaptureGroups(recipe)
+	recipeElements.CaptureWorkflow, recipeElements.CaptureFailOn, err = getCaptureGroups(recipe)
 	if err != nil && err != ErrWorkflowNotFound {
 		return fmt.Errorf("failed to get groups from capture workflow: %w", err)
 	}
 
 	if err != nil {
 		recipeElements.CaptureWorkflow = captureWorkflowDefault(vrg, ramenConfig)
+		recipeElements.CaptureFailOn = WorkflowAnyError
 	}
 
-	recipeElements.RecoverWorkflow, err = getRecoverGroups(recipe)
+	recipeElements.RecoverWorkflow, recipeElements.RestoreFailOn, err = getRecoverGroups(recipe)
 	if err != nil && err != ErrWorkflowNotFound {
 		return fmt.Errorf("failed to get groups from recovery workflow: %w", err)
 	}
 
 	if err != nil {
 		recipeElements.RecoverWorkflow = recoverWorkflowDefault(vrg, ramenConfig)
+		recipeElements.RestoreFailOn = WorkflowAnyError
 	}
 
 	return nil
@@ -263,7 +275,7 @@ func recipeNamespaceNames(recipeElements RecipeElements) sets.Set[string] {
 
 func recipesWatch(b *builder.Builder, m objectToReconcileRequestsMapper) *builder.Builder {
 	return b.Watches(
-		&recipe.Recipe{},
+		&recipev1.Recipe{},
 		handler.EnqueueRequestsFromMapFunc(m.recipeToVrgReconcileRequestsMapper),
 		builder.WithPredicates(util.CreateOrResourceVersionUpdatePredicate{}),
 	)
