@@ -48,9 +48,9 @@ func createChannel() error {
 			return err
 		}
 
-		Ctx.Log.Infof("Channel %q already exists", GetChannelName())
+		Ctx.Log.Debugf("Channel \"%s/%s\" already exists", GetChannelNamespace(), GetChannelName())
 	} else {
-		Ctx.Log.Infof("Created channel %q", GetChannelName())
+		Ctx.Log.Infof("Created channel \"%s/%s\"", GetChannelNamespace(), GetChannelName())
 	}
 
 	return nil
@@ -70,9 +70,9 @@ func deleteChannel() error {
 			return err
 		}
 
-		Ctx.Log.Infof("Channel %q not found", GetChannelName())
+		Ctx.Log.Debugf("Channel \"%s/%s\" not found", GetChannelNamespace(), GetChannelName())
 	} else {
-		Ctx.Log.Infof("Channel %q is deleted", GetChannelName())
+		Ctx.Log.Infof("Deleted channel \"%s/%s\"", GetChannelNamespace(), GetChannelName())
 	}
 
 	return nil
