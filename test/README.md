@@ -138,6 +138,7 @@ environment.
        helm \
        kubectl \
        kustomize \
+       qemu \
        lima \
        minio-mc \
        velero \
@@ -145,7 +146,7 @@ environment.
    ```
 
    lima version 1.0.0 or later is required, latest version is
-   recommended.
+   recommended. Tested with lima version 1.0.4.
 
 1. Install the `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
