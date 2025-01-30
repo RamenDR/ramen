@@ -1918,7 +1918,7 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 		// v.updateProtectedPVCCondition(pvc.Name, PVCError, msg)
 		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
 
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to"+
+		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
 			pvc.Namespace, pvc.Name, pvcVRAnnotationProtectedKey, v.instance.Namespace, v.instance.Name, err)
 	}
@@ -1936,7 +1936,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
 		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
 
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to"+
+		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
 			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
 	}
@@ -1945,7 +1945,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 	if err != nil {
 		log.Error(err, "Failed to get PV to add archived annotation")
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
 			pv.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
 	}
@@ -1958,7 +1958,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
 		log.Error(err, "Failed to update PersistentVolume annotation")
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to"+
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
 			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
 	}

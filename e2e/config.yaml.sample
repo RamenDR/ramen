@@ -1,7 +1,20 @@
 ---
+# Configuration file for RamenDR E2E testing on Regional DR.
+
+# Name of the channel used for the Channel CR. This channel is used by
+# OCM to pull the application from the specified Git repository.
 channelname: "ramen-gitops"
+
+# Namespace where the channel CR will be created.
 channelnamespace: "ramen-samples"
+
+# Git repository URL containing application manifests to be deployed on
+# the clusters.
 giturl: "https://github.com/RamenDR/ocm-ramen-samples.git"
+
+# List of PVC specifications for workloads.
+# These define storage configurations, such as 'storageClassName' and
+# 'accessModes', and are used to kustomize workloads.
 pvcspecs:
   - name: rbd
     storageclassname: rook-ceph-block
@@ -9,3 +22,14 @@ pvcspecs:
   - name: cephfs
     storageclassname: rook-cephfs
     accessmodes: ReadWriteMany
+
+# Sample cluster configurations:
+# Uncomment and edit the following lines to provide the kubeconfig paths
+# for your test clusters.
+# Clusters:
+#   c1:
+#     kubeconfigpath: /path/to/kubeconfig/c1
+#   c2:
+#     kubeconfigpath: /path/to/kubeconfig/c2
+#   hub:
+#     kubeconfigpath: /path/to/kubeconfig/hub
