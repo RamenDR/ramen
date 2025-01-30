@@ -13,6 +13,15 @@ environment.
 1. Setup a development environment as describe in
    [developer quick start guide](../docs/devel-quick-start.md)
 
+1. Install `libvirt`
+
+   ```
+   sudo dnf install @virtualization
+   ```
+
+   For more info see
+   [Virtualization – Getting Started](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/)
+
 1. Add yourself to the libvirt group (required for minikube kvm2 driver).
 
    ```
