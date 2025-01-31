@@ -13,6 +13,15 @@ environment.
 1. Setup a development environment as describe in
    [developer quick start guide](../docs/devel-quick-start.md)
 
+1. Install `libvirt`
+
+   ```
+   sudo dnf install @virtualization
+   ```
+
+   For more info see
+   [Virtualization – Getting Started](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/)
+
 1. Add yourself to the libvirt group (required for minikube kvm2 driver).
 
    ```
@@ -118,11 +127,13 @@ environment.
 1. Install the `kubectl-gather` plugin
 
    ```
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/v0.5.1/kubectl-gather-v0.5.1-linux-amd64
+   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
+   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    ```
 
+   kubectl-gather version 0.6.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ## Setup on macOS
@@ -138,6 +149,7 @@ environment.
        helm \
        kubectl \
        kustomize \
+       qemu \
        lima \
        minio-mc \
        velero \
@@ -145,7 +157,7 @@ environment.
    ```
 
    lima version 1.0.0 or later is required, latest version is
-   recommended.
+   recommended. Tested with lima version 1.0.4.
 
 1. Install the `clusteradm` tool. See
    [Install clusteradm CLI tool](https://open-cluster-management.io/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
@@ -158,11 +170,13 @@ environment.
 1. Install the `kubectl-gather` plugin
 
    ```
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/v0.5.1/kubectl-gather-v0.5.1-darwin-arm64
+   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
+   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    ```
 
+   kubectl-gather version 0.6.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 1. Install `socket_vmnet`
