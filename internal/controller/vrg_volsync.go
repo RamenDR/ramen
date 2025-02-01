@@ -112,10 +112,18 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 		return
 	}
 
+	*finalSyncPrepared = true
+
 	for _, pvc := range v.volSyncPVCs {
-		requeuePVC := v.reconcilePVCAsVolSyncPrimary(pvc, finalSyncPrepared)
+		var finalSyncForPVCPrepared bool
+
+		requeuePVC := v.reconcilePVCAsVolSyncPrimary(pvc, &finalSyncForPVCPrepared)
 		if requeuePVC {
 			requeue = true
+		}
+
+		if *finalSyncPrepared {
+			*finalSyncPrepared = finalSyncForPVCPrepared
 		}
 	}
 
