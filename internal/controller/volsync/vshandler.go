@@ -497,70 +497,75 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 func (v *VSHandler) setupForFinalSync(rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec, runFinalSync bool) bool {
 	const stop = true
 
+	const proceed = !stop
+
 	rs, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name), rsSpec.ProtectedPVC.Namespace)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			v.log.Error(err, "Failed to get ReplicationSource")
+		if errors.IsNotFound(err) {
+			v.log.Info("ReplicationSource not found, proceeding with setup")
 
-			return stop
+			return proceed
 		}
 
-		return !stop
+		v.log.Error(err, "Failed to retrieve ReplicationSource")
+
+		return stop
 	}
 
+	// If final sync is not triggered, check if it's already prepared
 	if !runFinalSync {
 		if rs.Spec.Trigger != nil && rs.Spec.Trigger.Manual == PrepareForFinalSyncTriggerString {
-			v.log.Info("preparation for final sync already set -- waiting for the runFinalSync flag confirmation")
+			v.log.Info("Final sync preparation detected, waiting for confirmation to proceed")
 
 			return stop
 		}
 
-		return !stop
+		return proceed
 	}
 
-	pvc, err := v.getPVC(types.NamespacedName{
-		Namespace: rsSpec.ProtectedPVC.Namespace,
-		Name:      rsSpec.ProtectedPVC.Name,
-	})
+	pvc, err := v.getPVC(types.NamespacedName{Namespace: rsSpec.ProtectedPVC.Namespace, Name: rsSpec.ProtectedPVC.Name})
 	if err != nil {
-		v.log.Error(err, "Failed to get PVC")
+		v.log.Error(err, "Failed to retrieve application PVC", "pvcName", rsSpec.ProtectedPVC.Name)
 
 		return stop
 	}
 
-	// Ensure the PVC is deleted
+	// Ensure the application PVC is deleted before proceeding with final sync
 	if !util.ResourceIsDeleted(pvc) {
-		v.log.Info(fmt.Sprintf("pvc %s/%s is not deleted. Final sync will not run until PVC is deleted",
-			rsSpec.ProtectedPVC.Namespace, rsSpec.ProtectedPVC.Name))
+		v.log.Info("Final sync will not run until PVC is deleted", "namespace", pvc.Namespace, "name", pvc.Name)
 
 		return stop
 	}
 
-	// Only proceed if the ReplicationSource trigger is set to PrepareForFinalSyncTriggerString
+	// Proceed only if the ReplicationSource trigger is set for final sync
 	if rs.Spec.Trigger != nil && rs.Spec.Trigger.Manual == PrepareForFinalSyncTriggerString {
-		err = v.setupTmpPVCForFinalSync(pvc)
+		requeue, err := v.setupTmpPVCForFinalSync(pvc)
 		if err != nil {
-			v.log.Error(err, "Failed to setup tmpPVC for final sync")
+			v.log.Error(err, "Failed to set up temporary PVC for final sync")
+
+			return stop
+		}
+
+		if requeue {
+			v.log.Info("Waiting for temporary PVC readiness before final sync")
 
 			return stop
 		}
 	}
 
-	return !stop
+	return proceed
 }
 
 // Handles the creation and management of the tmpPVC for final sync
-func (v *VSHandler) setupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) error {
+func (v *VSHandler) setupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvc.Namespace,
 		Name:      getTmpPVCNameForFinalSync(pvc.Name),
 	})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			tmpPVC, err = v.retainPVAndCreateTmpPVC(pvc)
-			if err != nil {
-				return err
-			}
+	if err != nil && errors.IsNotFound(err) {
+		tmpPVC, err = v.retainPVAndCreateTmpPVC(pvc)
+		if err != nil || tmpPVC == nil {
+			return true, err
 		}
 	}
 
@@ -571,11 +576,11 @@ func (v *VSHandler) setupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) e
 		delete(tmpPVC.Annotations, "pv.kubernetes.io/bind-completed")
 
 		if err := v.client.Update(v.ctx, tmpPVC); err != nil {
-			return err
+			return true, err
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 func (v *VSHandler) retainPVAndCreateTmpPVC(pvc *corev1.PersistentVolumeClaim) (*corev1.PersistentVolumeClaim, error) {
@@ -599,7 +604,7 @@ func (v *VSHandler) retainPVAndCreateTmpPVC(pvc *corev1.PersistentVolumeClaim) (
 	if op == ctrlutil.OperationResultCreated {
 		v.log.Info("Tmp PVC created. Waiting before proceeding.", "pvcName", tmpPVC.GetName())
 
-		return tmpPVC, fmt.Errorf("tmp PVC created. Waiting before proceeding")
+		return nil, nil
 	}
 
 	return tmpPVC, nil
