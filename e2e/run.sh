@@ -1,4 +1,7 @@
-#!/bin/sh
+#!/bin/bash
+
+set -eu
+set -o pipefail
 
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
