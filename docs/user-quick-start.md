@@ -141,14 +141,26 @@ enough resources:
    drenv is set up properly
    ```
 
-1. Install `clusteradm` tool. See
-   [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool)
-   for the details.
-   Version v0.8.1 or later is reuired.
+1. Install the `clusteradm` tool
 
-1. Install `subctl` tool, See
-   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/)
-   for the details.
+   ```
+   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash
+   ```
+
+   For more info see
+   [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
+   Version v0.8.1 or later is required.
+
+1. Install the `subctl` tool
+
+   ```
+   curl -Ls https://get.submariner.io | bash
+   sudo install .local/bin/subctl /usr/local/bin/
+   rm .local/bin/subctl
+   ```
+
+   For more info see
+   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
    Version v0.18.0 or later is required.
 
 1. Install the `velero` tool
