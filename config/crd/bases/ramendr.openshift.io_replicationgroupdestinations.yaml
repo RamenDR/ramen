@@ -11,6 +11,8 @@ spec:
     kind: ReplicationGroupDestination
     listKind: ReplicationGroupDestinationList
     plural: replicationgroupdestinations
+    shortNames:
+    - rgd
     singular: replicationgroupdestination
   scope: Namespaced
   versions:
