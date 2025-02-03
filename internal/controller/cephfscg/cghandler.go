@@ -245,7 +245,6 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		return nil, false, err
 	}
-
 	//
 	// For final sync only - check status to make sure the final sync is complete
 	// and also run cleanup (removes PVC we just ran the final sync from)
