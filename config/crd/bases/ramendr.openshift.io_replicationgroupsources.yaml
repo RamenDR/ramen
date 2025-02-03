@@ -11,6 +11,8 @@ spec:
     kind: ReplicationGroupSource
     listKind: ReplicationGroupSourceList
     plural: replicationgroupsources
+    shortNames:
+    - rgs
     singular: replicationgroupsource
   scope: Namespaced
   versions:

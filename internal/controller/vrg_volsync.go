@@ -37,15 +37,20 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 		// as this would result in incorrect information.
 		rdSpec.ProtectedPVC.Conditions = nil
 
-		cg, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
+		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
 		if ok && util.IsCGEnabled(v.instance.Annotations) {
-			v.log.Info("rdSpec has CG label", "Labels", rdSpec.ProtectedPVC.Labels)
-			cephfsCGHandler := cephfscg.NewVSCGHandler(
-				v.ctx, v.reconciler.Client, v.instance,
-				&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cg}},
-				v.volSyncHandler, cg, v.log,
-			)
-			err = cephfsCGHandler.EnsurePVCfromRGD(rdSpec, failoverAction)
+			v.log.Info("The CG label from the primary cluster found in RDSpec", "Label", cgLabelVal)
+			// Get the CG label value for this cluster
+			cgLabelVal, err = v.getCGLabelValue(rdSpec.ProtectedPVC.StorageClassName,
+				rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+			if err == nil {
+				cephfsCGHandler := cephfscg.NewVSCGHandler(
+					v.ctx, v.reconciler.Client, v.instance,
+					&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cgLabelVal}},
+					v.volSyncHandler, cgLabelVal, v.log,
+				)
+				err = cephfsCGHandler.EnsurePVCfromRGD(rdSpec, failoverAction)
+			}
 		} else {
 			// Create a PVC from snapshot or for direct copy
 			err = v.volSyncHandler.EnsurePVCfromRD(rdSpec, failoverAction)
@@ -263,72 +268,22 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	return v.reconcileRDSpecForDeletionOrReplication()
 }
 
-//nolint:gocognit,funlen,cyclop,nestif
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
-	requeue := false
-	rdinCGs := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
+	rdSpecsUsingCG, requeue, err := v.reconcileCGMembership()
+	if err != nil {
+		v.log.Error(err, "Failed to reconcile CG for deletion or replication")
 
-	// TODO: Set the workload status in CG code path later
-	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		cg, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
-		if ok && util.IsCGEnabled(v.instance.Annotations) {
-			v.log.Info("rdSpec has CG label", "Labels", rdSpec.ProtectedPVC.Labels)
-			cephfsCGHandler := cephfscg.NewVSCGHandler(
-				v.ctx, v.reconciler.Client, v.instance,
-				&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cg}},
-				v.volSyncHandler, cg, v.log,
-			)
-
-			rdinCG, err := cephfsCGHandler.GetRDInCG()
-			if err != nil {
-				v.log.Error(err, "Failed to get RD in CG")
-
-				requeue = true
-
-				return requeue
-			}
-
-			if len(rdinCG) > 0 {
-				v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", rdinCG)
-
-				replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
-					v.instance.Name, v.instance.Namespace, rdinCG,
-				)
-				if err != nil {
-					v.log.Error(err, "Failed to create ReplicationGroupDestination")
-
-					requeue = true
-
-					return requeue
-				}
-
-				ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
-				if err != nil {
-					v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
-
-					requeue = true
-
-					return requeue
-				}
-
-				if !ready {
-					v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
-						replicationGroupDestination.Name))
-
-					requeue = true
-				}
-
-				rdinCGs = append(rdinCGs, rdinCG...)
-			}
-		}
+		return requeue
 	}
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec)
+		v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec.ProtectedPVC.Name)
 
-		if util.IsRDExist(rdSpec, rdinCGs) {
-			v.log.Info("Skip Reconcile RD as Secondary as it's in a consistency group",
-				"RDSpec", rdSpec, "RDInCGs", rdinCGs)
+		key := fmt.Sprintf("%s-%s", rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
+
+		_, ok := rdSpecsUsingCG[key]
+		if ok {
+			v.log.Info("Skip Reconcile RD as Secondary as it's in a consistency group", "RDSpec", rdSpec.ProtectedPVC.Name)
 
 			continue
 		}
@@ -355,6 +310,91 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	}
 
 	return requeue
+}
+
+func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error) {
+	groups := map[string][]ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
+
+	rdSpecsUsingCG := make(map[string]struct{})
+
+	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
+		if ok && util.IsCGEnabled(v.instance.Annotations) {
+			v.log.Info("RDSpec contains the CG label from the primary cluster", "Label", cgLabelVal)
+			// Get the CG label value for this cluster
+			cgLabelVal, err := v.getCGLabelValue(rdSpec.ProtectedPVC.StorageClassName,
+				rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+			if err != nil {
+				v.log.Error(err, "Failed to get cgLabelVal")
+
+				return rdSpecsUsingCG, true, err
+			}
+
+			key := fmt.Sprintf("%s-%s", rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
+			rdSpecsUsingCG[key] = struct{}{}
+
+			groups[cgLabelVal] = append(groups[cgLabelVal], rdSpec)
+		}
+	}
+
+	requeue, err := v.createOrUpdateReplicationDestinations(groups)
+
+	return rdSpecsUsingCG, requeue, err
+}
+
+func (v *VRGInstance) createOrUpdateReplicationDestinations(
+	groups map[string][]ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) (bool, error) {
+	requeue := false
+
+	for groupKey := range groups {
+		cephfsCGHandler := cephfscg.NewVSCGHandler(
+			v.ctx, v.reconciler.Client, v.instance,
+			&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: groupKey}},
+			v.volSyncHandler, groupKey, v.log,
+		)
+
+		v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", v.getRDSpecGroupName(groups[groupKey]))
+
+		replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
+			v.instance.Name, v.instance.Namespace, groups[groupKey],
+		)
+		if err != nil {
+			v.log.Error(err, "Failed to create ReplicationGroupDestination")
+
+			requeue = true
+
+			return requeue, err
+		}
+
+		ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
+		if err != nil {
+			v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
+
+			requeue = true
+
+			return requeue, err
+		}
+
+		if !ready {
+			v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
+				replicationGroupDestination.Name))
+
+			requeue = true
+		}
+	}
+
+	return requeue, nil
+}
+
+func (v *VRGInstance) getRDSpecGroupName(rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec) string {
+	names := make([]string, 0, len(rdSpecs))
+
+	for _, rdSpec := range rdSpecs {
+		names = append(names, rdSpec.ProtectedPVC.Name)
+	}
+
+	return strings.Join(names, ",")
 }
 
 func (v *VRGInstance) aggregateVolSyncDataReadyCondition() *metav1.Condition {
