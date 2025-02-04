@@ -112,11 +112,6 @@ func DisableProtection(ctx types.Context) error {
 }
 
 func Failover(ctx types.Context) error {
-	d := ctx.Deployer()
-	if d.IsDiscovered() {
-		return FailoverDiscoveredApps(ctx)
-	}
-
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
@@ -142,7 +137,7 @@ func Failover(ctx types.Context) error {
 
 	log.Infof("Failing over workload from cluster %q to cluster %q", currentCluster, targetCluster)
 
-	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, targetCluster)
+	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
 }
 
 // Determine DRPC
@@ -150,11 +145,6 @@ func Failover(ctx types.Context) error {
 // Relocate to Primary in DRPolicy as the PrimaryCluster
 // Update DRPC
 func Relocate(ctx types.Context) error {
-	d := ctx.Deployer()
-	if d.IsDiscovered() {
-		return RelocateDiscoveredApps(ctx)
-	}
-
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
@@ -180,10 +170,20 @@ func Relocate(ctx types.Context) error {
 
 	log.Infof("Relocating workload from cluster %q to cluster %q", currentCluster, targetCluster)
 
-	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, targetCluster)
+	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
 }
 
-func failoverRelocate(ctx types.Context, action ramen.DRAction, state ramen.DRState, targetCluster string) error {
+func failoverRelocate(ctx types.Context,
+	action ramen.DRAction,
+	state ramen.DRState,
+	currentCluster string,
+	targetCluster string,
+) error {
+	d := ctx.Deployer()
+	if d.IsDiscovered() {
+		return failoverRelocateDiscoveredApps(ctx, action, state, currentCluster, targetCluster)
+	}
+
 	drpcName := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
 	client := util.Ctx.Hub.Client
