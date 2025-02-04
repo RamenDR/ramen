@@ -113,10 +113,6 @@ func DisableProtection(ctx types.Context) error {
 
 func Failover(ctx types.Context) error {
 	d := ctx.Deployer()
-	if d.IsDiscovered() {
-		return FailoverDiscoveredApps(ctx)
-	}
-
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
@@ -142,6 +138,10 @@ func Failover(ctx types.Context) error {
 
 	log.Infof("Failing over workload from cluster %q to cluster %q", currentCluster, targetCluster)
 
+	if d.IsDiscovered() {
+		return failoverRelocateDiscoveredApps(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
+	}
+
 	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, targetCluster)
 }
 
@@ -151,10 +151,6 @@ func Failover(ctx types.Context) error {
 // Update DRPC
 func Relocate(ctx types.Context) error {
 	d := ctx.Deployer()
-	if d.IsDiscovered() {
-		return RelocateDiscoveredApps(ctx)
-	}
-
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
@@ -179,6 +175,10 @@ func Relocate(ctx types.Context) error {
 	}
 
 	log.Infof("Relocating workload from cluster %q to cluster %q", currentCluster, targetCluster)
+
+	if d.IsDiscovered() {
+		return failoverRelocateDiscoveredApps(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
+	}
 
 	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, targetCluster)
 }
