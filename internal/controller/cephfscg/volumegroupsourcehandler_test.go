@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1alpha1"
+	vgsv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,7 +59,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 			err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 			Expect(err).To(BeNil())
 			Eventually(func() []string {
-				volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{}
+				volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
 
 				err := k8sClient.Get(
 					context.TODO(), types.NamespacedName{
@@ -131,10 +131,10 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 			Context("VolumeGroupSnapshot is ready", func() {
 				BeforeEach(func() {
 					CreateStorageClass()
-					CreateVS(anotherVSName)
+					CreateVS(anotherVSName, fmt.Sprintf(cephfscg.VolumeGroupSnapshotNameFormat, rgs.Name), rgs.GetNamespace())
 					UpdateVGS(rgs, anotherVSName, anotherAppPVCName)
 				})
-				It("Should be failed", func() {
+				It("Should not fail", func() {
 					restoredPVCs, err := volumeGroupSourceHandler.RestoreVolumesFromVolumeGroupSnapshot(context.Background(), rgs)
 					Expect(err).To(BeNil())
 					Expect(len(restoredPVCs)).To(Equal(1))
@@ -253,7 +253,7 @@ func GenerateReplicationGroupSource(
 
 func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{}
+		volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
 
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
 			Name:      fmt.Sprintf(cephfscg.VolumeGroupSnapshotNameFormat, rgs.Name),
@@ -264,12 +264,8 @@ func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 		}
 
 		ready := true
-		volumeGroupSnapshot.Status = &vgsv1alphfa1.VolumeGroupSnapshotStatus{
+		volumeGroupSnapshot.Status = &vgsv1beta1.VolumeGroupSnapshotStatus{
 			ReadyToUse: &ready,
-			PVCVolumeSnapshotRefList: []vgsv1alphfa1.PVCVolumeSnapshotPair{{
-				VolumeSnapshotRef:        corev1.LocalObjectReference{Name: vsName},
-				PersistentVolumeClaimRef: corev1.LocalObjectReference{Name: pvcName},
-			}},
 		}
 
 		return k8sClient.Status().Update(context.TODO(), volumeGroupSnapshot)
@@ -346,11 +342,37 @@ func CreateStorageClass() {
 	}, timeout, interval).Should(BeNil())
 }
 
-func CreateVS(name string) {
+func CreateVS(name string, vgsname, vgsnamespace string) {
+	volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
+
+	ownerReferences := []metav1.OwnerReference{}
+
+	if vgsname != "" && vgsnamespace != "" {
+		Expect(k8sClient.Get(
+			context.TODO(), types.NamespacedName{
+				Name:      vgsname,
+				Namespace: vgsnamespace,
+			}, volumeGroupSnapshot)).NotTo(HaveOccurred())
+
+		ownerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: fmt.Sprintf(
+					"%s/%s",
+					vgsv1beta1.SchemeGroupVersion.Group,
+					vgsv1beta1.SchemeGroupVersion.Version,
+				),
+				Kind: "VolumeGroupSnapshot",
+				Name: volumeGroupSnapshot.Name,
+				UID:  volumeGroupSnapshot.UID,
+			},
+		}
+	}
+
 	vs := &snapv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "default",
+			Name:            name,
+			Namespace:       "default",
+			OwnerReferences: ownerReferences,
 		},
 		Spec: snapv1.VolumeSnapshotSpec{
 			Source: snapv1.VolumeSnapshotSource{PersistentVolumeClaimName: &appPVCName},

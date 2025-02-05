@@ -10,7 +10,7 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
-	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1alpha1"
+	vgsv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
@@ -110,7 +110,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CreateOrUpdateVolumeGroupSnapshot")
 	logger.Info("Create or update volume group snapshot")
 
-	volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{
+	volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: h.VolumeGroupSnapshotNamespace,
 			Name:      h.VolumeGroupSnapshotName,
@@ -147,18 +147,16 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 }
 
 // CleanVolumeGroupSnapshot delete restored pvc and VolumeGroupSnapshot
-//
-//nolint:funlen
 func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	ctx context.Context,
 ) error {
 	logger := h.Logger.WithName("CleanVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	volumeGroupSnapshot := &vgsv1alphfa1.VolumeGroupSnapshot{}
+	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
 	if err := h.Client.Get(ctx, types.NamespacedName{
 		Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace,
-	}, volumeGroupSnapshot); err != nil {
+	}, vgs); err != nil {
 		if k8serrors.IsNotFound(err) {
 			logger.Info("Volume group snapshot was already deleted")
 
@@ -170,40 +168,25 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		return err
 	}
 
-	if volumeGroupSnapshot.Status != nil {
-		for _, pvcVSRef := range volumeGroupSnapshot.Status.PVCVolumeSnapshotRefList {
-			logger.Info("Get PVCName from volume snapshot",
-				"vsName", pvcVSRef.VolumeSnapshotRef.Name, "vsNamespace", volumeGroupSnapshot.Namespace)
+	if vgs.Status != nil {
+		volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
+		if err != nil {
+			return err
+		}
 
-			pvc, err := util.GetPVC(ctx, h.Client,
-				types.NamespacedName{Name: pvcVSRef.PersistentVolumeClaimRef.Name, Namespace: volumeGroupSnapshot.Namespace})
+		logger.Info("Clean: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+
+		for idx := range volumeSnapshots {
+			vs := &volumeSnapshots[idx]
+
+			err := h.deleteRestoredPVC(ctx, vs)
 			if err != nil {
-				logger.Error(err, "Failed to get PVC name from volume snapshot",
-					"pvcName", pvcVSRef.PersistentVolumeClaimRef.Name, "vsNamespace", volumeGroupSnapshot.Namespace)
-
-				return err
-			}
-
-			restoredPVCName := fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name)
-			restoredPVCNamespace := pvc.Namespace
-
-			logger.Info("Delete restored PVCs", "PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
-
-			if err := h.Client.Delete(ctx, &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      restoredPVCName,
-					Namespace: restoredPVCNamespace,
-				},
-			}); err != nil && !k8serrors.IsNotFound(err) {
-				logger.Error(err, "Failed to delete restored PVC ",
-					"PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
-
 				return err
 			}
 		}
 	}
 
-	if err := h.Client.Delete(ctx, volumeGroupSnapshot); err != nil && !k8serrors.IsNotFound(err) {
+	if err := h.Client.Delete(ctx, vgs); err != nil && !k8serrors.IsNotFound(err) {
 		logger.Error(err, "Failed to delete volume group snapshot")
 
 		return err
@@ -214,16 +197,53 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	return nil
 }
 
+func (h *volumeGroupSourceHandler) deleteRestoredPVC(ctx context.Context, vs *vsv1.VolumeSnapshot) error {
+	logger := h.Logger.WithName("deleteRestoredPVC").
+		WithValues("VSName", vs.Name).
+		WithValues("VSNamespace", vs.Namespace)
+
+	logger.Info("Get PVCName from volume snapshot",
+		"vsName", vs.Spec.Source.PersistentVolumeClaimName, "vsNamespace", vs.Namespace)
+
+	pvc, err := util.GetPVC(ctx, h.Client,
+		types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vs.Namespace})
+	if err != nil {
+		logger.Error(err, "Failed to get PVC name from volume snapshot",
+			"pvcName", vs.Spec.Source.PersistentVolumeClaimName, "vsNamespace", vs.Namespace)
+
+		return err
+	}
+
+	restoredPVCName := fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name)
+	restoredPVCNamespace := pvc.Namespace
+
+	logger.Info("Delete restored PVC", "name", restoredPVCName, "namespace", restoredPVCNamespace)
+
+	if err := h.Client.Delete(ctx, &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      restoredPVCName,
+			Namespace: restoredPVCNamespace,
+		},
+	}); err != nil && !k8serrors.IsNotFound(err) {
+		logger.Error(err, "Failed to delete restored PVC ",
+			"PVCName", restoredPVCName, "PVCNamespace", restoredPVCNamespace)
+
+		return err
+	}
+
+	return nil
+}
+
 // RestoreVolumesFromVolumeGroupSnapshot restores VolumeGroupSnapshot to PVCs
 //
 //nolint:funlen,cyclop
 func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 	ctx context.Context, owner metav1.Object,
 ) ([]RestoredPVC, error) {
-	logger := h.Logger.WithName("RestoreVolumesFromVolumeGroupSnapshot")
+	logger := h.Logger.WithName("RestoreFromVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	vgs := &vgsv1alphfa1.VolumeGroupSnapshot{}
+	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
 	if err := h.Client.Get(ctx,
 		types.NamespacedName{Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace},
 		vgs); err != nil {
@@ -237,15 +257,22 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 
 	restoredPVCs := []RestoredPVC{}
 
-	for _, pvcVSRef := range vgs.Status.PVCVolumeSnapshotRefList {
+	volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+
+	for _, vs := range volumeSnapshots {
 		logger.Info("Get PVCName from volume snapshot",
-			"PVCName", pvcVSRef.PersistentVolumeClaimRef.Name, "VolumeSnapshotName", pvcVSRef.VolumeSnapshotRef.Name)
+			"PVCName", vs.Spec.Source.PersistentVolumeClaimName, "VolumeSnapshotName", vs.Name)
 
 		pvc, err := util.GetPVC(ctx, h.Client,
-			types.NamespacedName{Name: pvcVSRef.PersistentVolumeClaimRef.Name, Namespace: vgs.Namespace})
+			types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vgs.Namespace})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get PVC from VGS %s: %w",
-				vgs.Namespace+"/"+pvcVSRef.PersistentVolumeClaimRef.Name, err)
+				vgs.Namespace+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
 		}
 
 		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
@@ -263,10 +290,10 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 			Name:      fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name),
 		}
 		if err := h.RestoreVolumesFromSnapshot(
-			ctx, pvcVSRef.VolumeSnapshotRef.Name, pvc, RestoredPVCNamespacedName,
+			ctx, vs.Name, pvc, RestoredPVCNamespacedName,
 			restoreAccessModes, owner); err != nil {
 			return nil, fmt.Errorf("failed to restore volumes from snapshot %s: %w",
-				pvcVSRef.VolumeSnapshotRef.Name+"/"+pvc.Namespace, err)
+				vs.Name+"/"+pvc.Namespace, err)
 		}
 
 		logger.Info("Successfully restore volumes from snapshot",
@@ -275,7 +302,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		restoredPVCs = append(restoredPVCs, RestoredPVC{
 			SourcePVCName:      pvc.Name,
 			RestoredPVCName:    RestoredPVCNamespacedName.Name,
-			VolumeSnapshotName: pvcVSRef.VolumeSnapshotRef.Name,
+			VolumeSnapshotName: vs.Name,
 		})
 	}
 

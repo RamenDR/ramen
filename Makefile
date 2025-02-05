@@ -154,6 +154,9 @@ test-obj: generate manifests envtest ## Run ObjectStorer tests.
 test-vs: generate manifests envtest ## Run VolumeSync tests.
 	 go test ./internal/controller/volsync -coverprofile cover.out
 
+test-vs-cg: generate manifests envtest ## Run VGS VolumeSync tests.
+	 go test ./internal/controller/cephfscg -coverprofile cover.out -ginkgo.focus Volumegroupsourcehandler
+
 test-vrg: generate manifests envtest ## Run VolumeReplicationGroup tests.
 	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroup
 
@@ -192,6 +195,10 @@ test-util-pvc: generate manifests envtest ## Run util-pvc tests.
 
 test-kubeobjects: ## Run kubeobjects tests.
 	 go test ./internal/controller/kubeobjects -coverprofile cover.out  -ginkgo.focus Kubeobjects
+
+test-cephfs-cg: generate manifests envtest ## Run util-pvc tests.
+	 go test ./internal/controller/util -coverprofile cover.out  -ginkgo.focus CephfsCg
+
 
 test-drenv: ## Run drenv tests.
 	$(MAKE) -C test
