@@ -214,6 +214,8 @@ func (r *DRPolicyReconciler) setDRPolicyMetrics(drPolicy *ramen.DRPolicy) error 
 	}
 
 	metric.DRPolicySyncInterval.Set(schedulingIntervalSeconds)
+	r.Log.Info(fmt.Sprintf("metric (%v) set with value: (%f)",
+		DRPolicySyncIntervalSeconds, schedulingIntervalSeconds))
 
 	return nil
 }
