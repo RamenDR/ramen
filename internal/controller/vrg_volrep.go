@@ -2732,6 +2732,8 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 			continue
 		case strings.HasPrefix(key, "volumereplicationgroups.ramendr.openshift.io"):
 			continue
+		case strings.HasPrefix(key, "volsync.backube"):
+			continue
 		}
 
 		result[key] = value

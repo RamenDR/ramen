@@ -1,12 +1,8 @@
+# Configuration for RamenDR End to End testing.
+
 ---
-# Configuration file for RamenDR E2E testing on Regional DR.
-
-# Name of the channel used for the Channel CR. This channel is used by
-# OCM to pull the application from the specified Git repository.
-channelname: "ramen-gitops"
-
 # Namespace where the channel CR will be created.
-channelnamespace: "ramen-samples"
+channelnamespace: "e2e-gitops"
 
 # Git repository URL containing application manifests to be deployed on
 # the clusters.

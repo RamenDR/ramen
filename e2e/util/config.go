@@ -5,14 +5,15 @@ package util
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 const (
-	defaultChannelName      = "ramen-gitops"
-	defaultChannelNamespace = "ramen-samples"
+	defaultChannelNamespace = "e2e-gitops"
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 )
 
@@ -23,26 +24,27 @@ type PVCSpec struct {
 	UnsupportedDeployers []string
 }
 type TestConfig struct {
-	ChannelName      string
+	// User configurable values.
 	ChannelNamespace string
 	GitURL           string
 	Clusters         map[string]struct {
 		KubeconfigPath string
 	}
 	PVCSpecs []PVCSpec
+
+	// Generated values
+	channelName string
 }
 
-var config = &TestConfig{}
+var (
+	resourceNameForbiddenCharacters *regexp.Regexp
+	config                          = &TestConfig{}
+)
 
 //nolint:cyclop
 func ReadConfig(log *zap.SugaredLogger, configFile string) error {
-	viper.SetDefault("ChannelName", defaultChannelName)
 	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
 	viper.SetDefault("GitURL", defaultGitURL)
-
-	if err := viper.BindEnv("ChannelName", "ChannelName"); err != nil {
-		return (err)
-	}
 
 	if err := viper.BindEnv("ChannelNamespace", "ChannelNamespace"); err != nil {
 		return (err)
@@ -84,11 +86,13 @@ func ReadConfig(log *zap.SugaredLogger, configFile string) error {
 		return fmt.Errorf("failed to find pvcs in configuration")
 	}
 
+	config.channelName = resourceName(config.GitURL)
+
 	return nil
 }
 
 func GetChannelName() string {
-	return config.ChannelName
+	return config.channelName
 }
 
 func GetChannelNamespace() string {
@@ -101,4 +105,16 @@ func GetGitURL() string {
 
 func GetPVCSpecs() []PVCSpec {
 	return config.PVCSpecs
+}
+
+// resourceName convert a URL to conventional k8s resource name:
+// "https://github.com/foo/bar.git" -> "https-github-com-foo-bar-git"
+// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+func resourceName(url string) string {
+	return strings.ToLower(resourceNameForbiddenCharacters.ReplaceAllString(url, "-"))
+}
+
+func init() {
+	// Matches one of more forbidden characters, so we can replace them with single replacement character.
+	resourceNameForbiddenCharacters = regexp.MustCompile(`[^\w]+`)
 }

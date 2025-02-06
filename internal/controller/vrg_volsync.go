@@ -112,16 +112,18 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 		return
 	}
 
+	*finalSyncPrepared = true
+
 	for _, pvc := range v.volSyncPVCs {
-		if pvc.Status.Phase != corev1.ClaimBound {
-			v.log.Info("Skipping PVC - PVC is not Bound.", "name", pvc.GetName())
+		var finalSyncForPVCPrepared bool
 
-			continue
-		}
-
-		requeuePVC := v.reconcilePVCAsVolSyncPrimary(pvc)
+		requeuePVC := v.reconcilePVCAsVolSyncPrimary(pvc, &finalSyncForPVCPrepared)
 		if requeuePVC {
 			requeue = true
+		}
+
+		if *finalSyncPrepared {
+			*finalSyncPrepared = finalSyncForPVCPrepared
 		}
 	}
 
@@ -138,7 +140,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 }
 
 //nolint:gocognit,funlen,cyclop,gocyclo,nestif
-func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeClaim) (requeue bool) {
+func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeClaim, finalSyncPrepared *bool,
+) (requeue bool) {
 	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
 		Name:               pvc.Name,
 		Namespace:          pvc.Namespace,
@@ -167,11 +170,17 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	err := v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
+		v.volSyncHandler.IsCopyMethodDirect(),
 		v.instance.Spec.PrepareForFinalSync,
-		v.volSyncHandler.IsCopyMethodDirect())
+		v.instance.Spec.RunFinalSync,
+	)
 	if err != nil {
+		v.log.Info(fmt.Sprintf("Unable to Prepare PVC. We'll retry later. %v", err))
+
 		return true
 	}
+
+	*finalSyncPrepared = true
 
 	cg, ok := pvc.Labels[ConsistencyGroupLabel]
 	if ok && util.IsCGEnabled(v.instance.Annotations) {

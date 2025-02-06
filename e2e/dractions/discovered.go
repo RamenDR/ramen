@@ -88,26 +88,14 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	return deployers.DeleteManagedClusterSetBinding(ctx, deployers.McsbName, managementNamespace)
 }
 
-func FailoverDiscoveredApps(ctx types.Context) error {
-	log := ctx.Logger()
-	managementNamespace := ctx.ManagementNamespace()
-
-	log.Infof("Failing over workload in namespace %q", managementNamespace)
-
-	return failoverRelocateDiscoveredApps(ctx, ramen.ActionFailover, ramen.FailedOver)
-}
-
-func RelocateDiscoveredApps(ctx types.Context) error {
-	log := ctx.Logger()
-	managementNamespace := ctx.ManagementNamespace()
-
-	log.Infof("Relocating workload in namespace %q", managementNamespace)
-
-	return failoverRelocateDiscoveredApps(ctx, ramen.ActionRelocate, ramen.Relocated)
-}
-
 // nolint:funlen,cyclop
-func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction, state ramen.DRState) error {
+func failoverRelocateDiscoveredApps(
+	ctx types.Context,
+	action ramen.DRAction,
+	state ramen.DRState,
+	currentCluster string,
+	targetCluster string,
+) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
@@ -116,11 +104,6 @@ func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction, st
 	drpcName := name
 	client := util.Ctx.Hub.Client
 
-	currentCluster, err := getCurrentCluster(client, managementNamespace, name)
-	if err != nil {
-		return err
-	}
-
 	drPolicyName := util.DefaultDRPolicyName
 
 	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
@@ -128,12 +111,7 @@ func failoverRelocateDiscoveredApps(ctx types.Context, action ramen.DRAction, st
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(client, managementNamespace, drpcName, drpolicy)
-	if err != nil {
-		return err
-	}
-
-	if err := waitAndUpdateDRPC(ctx, client, managementNamespace, drpcName, action); err != nil {
+	if err := waitAndUpdateDRPC(ctx, client, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
 	}
 

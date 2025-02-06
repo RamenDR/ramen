@@ -56,7 +56,7 @@ To run all the tests:
 
 ### Run specific E2E tests
 
-The `-run` option is commonly used when debugging a failing test, developing
+The `-test.run` option is commonly used when debugging a failing test, developing
 a new test, or working on a new deployer or workload. It allows to selectively
 execute specific tests by matching full test names using regular expressions,
 making it easier to focus on specific scenarios.
@@ -69,7 +69,7 @@ available tests.
 Example:
 
 ```sh
-./run.sh -run TestSuites/Exhaustive/subscr-deploy-rbd-busybox
+./run.sh -test.run TestSuites/Exhaustive/subscr-deploy-rbd-busybox
 ```
 
 This command runs the specific test for subscription based RBD busybox application.
@@ -79,7 +79,7 @@ This command runs the specific test for subscription based RBD busybox applicati
 Example:
 
 ```sh
-./run.sh -run //appset
+./run.sh -test.run //appset
 ```
 
 This command runs all tests related to ApplicationSet, covering both RBD and
@@ -90,7 +90,7 @@ CephFS PVC based applications. Useful when focusing on a specific deployer.
 Example:
 
 ```sh
-./run.sh -run //rbd
+./run.sh -test.run //rbd
 ```
 
 This command runs all tests related to RBD PVCs across all deployers.
