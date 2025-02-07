@@ -25,7 +25,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	drpcName := name
 
 	// create mcsb default in ramen-ops ns
-	if err := deployers.CreateManagedClusterSetBinding(deployers.McsbName, managementNamespace); err != nil {
+	if err := deployers.CreateManagedClusterSetBinding(ctx, deployers.McsbName, managementNamespace); err != nil {
 		return err
 	}
 

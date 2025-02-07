@@ -135,8 +135,10 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 			return err
 		}
 
-		log.Info("Placement already Exists")
+		log.Debugf("Placement \"%s/%s\" already Exists", namespace, name)
 	}
+
+	log.Debugf("Created placement \"%s/%s\"", namespace, name)
 
 	return nil
 }

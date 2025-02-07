@@ -35,7 +35,8 @@ const (
 	fMode = 0o600
 )
 
-func CreateManagedClusterSetBinding(name, namespace string) error {
+func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) error {
+	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = namespace
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
@@ -54,7 +55,11 @@ func CreateManagedClusterSetBinding(name, namespace string) error {
 		if !errors.IsAlreadyExists(err) {
 			return err
 		}
+
+		log.Debugf("ManagedClusterSetBinding \"%s/%s\" already exist", namespace, name)
 	}
+
+	log.Debugf("Created ManagedClusterSetBinding \"%s/%s\"", namespace, name)
 
 	return nil
 }
@@ -74,8 +79,10 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 			return err
 		}
 
-		log.Infof("ManagedClusterSetBinding %q not found", name)
+		log.Debugf("ManagedClusterSetBinding \"%s/%s\" not found", namespace, name)
 	}
+
+	log.Debugf("Deleted ManagedClusterSetBinding \"%s/%s\"", namespace, name)
 
 	return nil
 }
@@ -105,8 +112,10 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 			return err
 		}
 
-		log.Info("Placement already Exists")
+		log.Debugf("Placement \"%s/%s\" already Exists", namespace, name)
 	}
+
+	log.Debugf("Created placement \"%s/%s\"", namespace, name)
 
 	return nil
 }
@@ -126,8 +135,10 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 			return err
 		}
 
-		log.Info("Placement not found")
+		log.Debugf("Placement \"%s/%s\" not found", namespace, name)
 	}
+
+	log.Debugf("Deleted placement \"%s/%s\"", namespace, name)
 
 	return nil
 }
