@@ -66,19 +66,19 @@ spec:
           values:
           - my-app
   groups:
-  - includedNamespaces:
-    - my-app-ns
+    - includedNamespaces:
+      - my-app-ns
     name: rg1
     type: resource
-  - includedResourceTypes:
-    - configmaps
-    - secrets
-  - includedNamespaces:
-    - my-app-ns
+    - includedResourceTypes:
+      - configmaps
+      - secrets
+    - includedNamespaces:
+      - my-app-ns
     name: rg2
     type: resource
-  - includedResourceTypes:
-    - deployments
+    - includedResourceTypes:
+      - deployments
   hooks:
   - chks:
     - condition: '{$.spec.replicas} == {$.status.readyReplicas}'
@@ -136,14 +136,21 @@ There are several parts of this example to be aware of:
 4. Groups can be referenced by arbitrary sequences. If they apply to both a Capture/Backup
   Workflow and a Recover/Restore Workflow, the group may be reused.
 5. In order to run Hooks, the relevant Pods and containers must be running before
+4. Groups can be referenced by arbitrary sequences. If they apply to both a Capture/Backup
+  Workflow and a Recover/Restore Workflow, the group may be reused.
+5. In order to run Hooks, the relevant Pods and containers must be running before
    the Hook is executed. This is the responsibility of the user and application,
    and Recipes do not check for valid Pods prior to running a Workflow.
-6. Hooks 
+6. Hooks can be of the following types:
+   a. Check hooks -- These can be used to assess the health of the system before taking backup or
+      after restore.
+   b. Exec hooks -- These can be used to execute some scripts or commands on selected pods in order change
+      the state of the system.
 7. Hooks may use arbitrary commands, but they must be able to run on a valid container
-   found within the app. In the example above, a Pod with container `main` has
+   found within the app. For example, a Pod with container `main` has
    scripts appropriate for running Hooks. Be aware that by default, Hooks will
    attempt to run on all valid Pods and search for the specified container. If
    several Pods exist in the target application, but only some of them use the
-   `main` container, limit where the Hook can run with a `LabelSelector`. In the
-   example above, this is done by adding `shouldRunHook=true` labels to the appropriate
+   `main` container, limit where the Hook can run with a `LabelSelector`. For example, this is done by adding labels to the appropriate
    Pods.
+8. Hooks can have either `labelSelector` or `nameSelector` specified for selecting the resource of interest or both can be mentioned. In case both are defined, OR condition will be applied.
