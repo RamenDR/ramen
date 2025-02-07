@@ -66,15 +66,13 @@ spec:
           values:
           - my-app
   groups:
-    - includedNamespaces:
-      - my-app-ns
+    - includedNamespaces: $ALL_NAMESPACES
     name: rg1
     type: resource
     - includedResourceTypes:
       - configmaps
       - secrets
-    - includedNamespaces:
-      - my-app-ns
+    - includedNamespaces: $ALL_NAMESPACES
     name: rg2
     type: resource
     - includedResourceTypes:
@@ -152,5 +150,14 @@ There are several parts of this example to be aware of:
    attempt to run on all valid Pods and search for the specified container. If
    several Pods exist in the target application, but only some of them use the
    `main` container, limit where the Hook can run with a `LabelSelector`. For example, this is done by adding labels to the appropriate
+   `main` container, limit where the Hook can run with a `LabelSelector`. For example, this is done by adding labels to the appropriate
    Pods.
 8. Hooks can have either `labelSelector` or `nameSelector` specified for selecting the resource of interest or both can be mentioned. In case both are defined, OR condition will be applied.
+9. In the above example, `ALL_NAMESPACES` has been used in the recipe as variable. These are called as recipe parameters and needs to be defined in the DRPC under the section spec.kubeObjectProtection.recipeParameters. For example,
+   ```yaml
+   spec:
+     kubeObjectProtection:
+       recipeParameters:
+         ALL_NAMESPACES:
+         - e2e-disapp-recipe-hooks-deploy-rbd-busybox
+   ```
