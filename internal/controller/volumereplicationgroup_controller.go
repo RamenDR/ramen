@@ -25,7 +25,6 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1251,6 +1250,13 @@ func (v *VRGInstance) shouldRestoreClusterData() bool {
 }
 
 func (v *VRGInstance) shouldRestoreKubeObjects() bool {
+	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
+		msg := "kube objects restore skipped, as VRG is orchestrating final sync"
+		setVRGKubeObjectsReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+
+		return false
+	}
+
 	KubeObjectsRestored := findCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
 	if KubeObjectsRestored != nil {
 		v.log.Info("KubeObjectsReady condition",
@@ -1377,15 +1383,17 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 }
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
-	vrg := v.instance
 	result := ctrl.Result{}
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
-	if vrg.Spec.Action == ramendrv1alpha1.VRGActionRelocate {
-		// TODO: If RDSpec changes, and hence generation changes, a k8s backup would be initiated again as Secondary
-		v.relocate(&result)
-	}
+	// We already have the vrg.spec.state set to Secondary, so the user has been
+	// asked to cleanup the resources and we cannot upload the kube resources
+	// here. This final sync of kube resources should happen before the user is
+	// asked to cleanup the resources. This bug will be fixed in the future
+	// after we reconcile the volsync and volrep processes to be similar.
+	// TODO: Do a final sync of kube resources at the same place where we do the
+	// final sync of the volsync resources.
 
 	// Clear the conditions only if there are no more work as secondary and the RDSpec is not empty.
 	// Note: When using VolSync, we preserve the secondary and we need the status of the VRG to be
@@ -1395,17 +1403,6 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	}
 
 	return result
-}
-
-func (v *VRGInstance) relocate(result *ctrl.Result) {
-	vrg := v.instance
-
-	if clusterDataProtected := meta.FindStatusCondition(vrg.Status.Conditions,
-		VRGConditionTypeClusterDataProtected,
-	); clusterDataProtected != nil && (clusterDataProtected.Status != metav1.ConditionTrue ||
-		clusterDataProtected.ObservedGeneration != vrg.Generation) {
-		v.kubeObjectsProtectSecondary(result)
-	}
 }
 
 func (v *VRGInstance) invalid(err error, msg string, requeue bool) ctrl.Result {
