@@ -43,7 +43,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	err = CreateManagedClusterSetBinding(McsbName, managementNamespace)
+	err = CreateManagedClusterSetBinding(ctx, McsbName, managementNamespace)
 	if err != nil {
 		return err
 	}
