@@ -44,7 +44,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
-	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
+	if err = createDRPC(ctx, util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
@@ -67,7 +67,7 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 
 	client := util.Ctx.Hub.Client
 
-	if err := deleteDRPC(client, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, client, managementNamespace, drpcName); err != nil {
 		return err
 	}
 

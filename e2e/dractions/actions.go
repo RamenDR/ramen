@@ -4,8 +4,6 @@
 package dractions
 
 import (
-	"strings"
-
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -77,7 +75,7 @@ func EnableProtection(ctx types.Context) error {
 	}
 
 	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
-	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
+	if err = createDRPC(ctx, util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
@@ -107,7 +105,7 @@ func DisableProtection(ctx types.Context) error {
 	drpcName := name
 	client := util.Ctx.Hub.Client
 
-	if err := deleteDRPC(client, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, client, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
@@ -216,8 +214,6 @@ func waitAndUpdateDRPC(
 		return err
 	}
 
-	log.Info("Updating drpc " + strings.ToLower(string(action)) + " to " + targetCluster)
-
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		drpc, err := getDRPC(client, namespace, drpcName)
 		if err != nil {
@@ -231,6 +227,13 @@ func waitAndUpdateDRPC(
 			drpc.Spec.PreferredCluster = targetCluster
 		}
 
-		return updateDRPC(client, drpc)
+		if err := updateDRPC(client, drpc); err != nil {
+			return err
+		}
+
+		log.Debugf("Updated drpc \"%s/%s\" with action %q to target cluster %q",
+			namespace, drpcName, action, targetCluster)
+
+		return nil
 	})
 }
