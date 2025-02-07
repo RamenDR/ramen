@@ -64,14 +64,6 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 	)
 }
 
-func (v *VRGInstance) kubeObjectsProtectSecondary(result *ctrl.Result) {
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallySecondary,
-		func() {
-			v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate in-progress")
-		},
-	)
-}
-
 type (
 	captureStartConditionally     func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
 	captureInProgressStatusUpdate func()
@@ -167,24 +159,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 			captureStartOrResume(vrg.GetGeneration(), "start")
 		},
 	)
-}
-
-func kubeObjectsCaptureStartConditionallySecondary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
-	captureStart func(),
-) {
-	generation := v.instance.Generation
-	log := v.log.WithValues("generation", generation)
-
-	if captureStartGeneration == generation {
-		log.Info("Kube objects capture for relocate complete")
-
-		return
-	}
-
-	v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects capture for relocate pending")
-	captureStart()
 }
 
 func kubeObjectsCaptureStartConditionallyPrimary(
