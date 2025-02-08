@@ -779,7 +779,14 @@ func (v *VRGInstance) kubeObjectProtectionDisabled(caller string) bool {
 	vrgDisabled := v.instance.Spec.KubeObjectProtection == nil
 	cmDisabled := v.ramenConfig.KubeObjectProtection.Disabled
 	disabled := vrgDisabled || cmDisabled
-	v.log.Info("Kube object protection", "disabled", disabled, "VRG", vrgDisabled, "configMap", cmDisabled, "for", caller)
+
+	status := "enabled"
+	if disabled {
+		status = "disabled"
+	}
+
+	msg := fmt.Sprintf("Kube object protection configuration is %v for operation %s", status, caller)
+	v.log.Info(msg, "is disabled in vrg", vrgDisabled, "is disabled in configMap", cmDisabled)
 
 	return disabled
 }
