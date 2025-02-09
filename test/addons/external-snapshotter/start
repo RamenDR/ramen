@@ -12,14 +12,14 @@ from drenv import cache
 
 def deploy(cluster):
     print("Deploying crds")
-    path = cache.get("crds", "addons/external-snapshotter-crds-8.1.0.yaml")
+    path = cache.get("crds", "addons/external-snapshotter-crds-8.2.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
     print("Waiting until crds are established")
     kubectl.wait("--for=condition=established", "--filename", path, context=cluster)
 
     print("Deploying snapshot-controller")
-    path = cache.get("controller", "addons/external-snapshotter-controller-8.1.0.yaml")
+    path = cache.get("controller", "addons/external-snapshotter-controller-8.2.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
 
