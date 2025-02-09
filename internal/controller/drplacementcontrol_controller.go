@@ -2374,7 +2374,7 @@ func ensureDRPCValidNamespace(drpc *rmn.DRPlacementControl, ramenConfig *rmn.Ram
 		return nil
 	}
 
-	if drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(drpc) {
 		adminNamespace := drpcAdminNamespaceName(*ramenConfig)
 
 		return fmt.Errorf("drpc in non-admin namespace(%v) cannot have protected namespaces, admin-namespaces: %v",
@@ -2397,7 +2397,7 @@ func drpcsProtectCommonNamespace(drpcProtectedNs []string, otherDRPCProtectedNs 
 func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) ([]string, error) {
-	if drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(drpc) {
 		return *drpc.Spec.ProtectedNamespaces, nil
 	}
 

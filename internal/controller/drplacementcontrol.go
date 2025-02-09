@@ -910,14 +910,17 @@ func (d *DRPCInstance) ensureFailoverActionCompleted(srcCluster string) (bool, e
 	// the user know that they need to clean up the apps.
 	// So set the progression to wait on user to clean up.
 	// If not discovered apps, then we can set the progression to cleaning up.
-	if d.instance.Spec.ProtectedNamespaces != nil &&
-		len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(d.instance) {
 		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 	} else {
 		d.setProgression(rmn.ProgressionCleaningUp)
 	}
 
 	return d.ensureActionCompleted(srcCluster)
+}
+
+func isDiscoveredApp(drpc *rmn.DRPlacementControl) bool {
+	return drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0
 }
 
 func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
@@ -1004,8 +1007,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 		// clean up the apps from the current cluster. So set the progression
 		// to wait on user to clean up. For non-discovered apps, we can set the
 		// progression to clearing placement.
-		if d.instance.Spec.ProtectedNamespaces != nil &&
-			len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+		if isDiscoveredApp(d.instance) {
 			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 		} else {
 			// clear current user PlacementRule's decision
@@ -1025,8 +1027,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 	}
 
 	if !result {
-		if d.instance.Spec.ProtectedNamespaces != nil &&
-			len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+		if isDiscoveredApp(d.instance) {
 			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 		} else {
 			d.setProgression(rmn.ProgressionRunningFinalSync)
@@ -1275,8 +1276,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	// complete in one shot, then coming back to this loop will reset the preferredCluster to secondary again.
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
-		if d.instance.Spec.ProtectedNamespaces != nil &&
-			len(*d.instance.Spec.ProtectedNamespaces) > 0 {
+		if isDiscoveredApp(d.instance) {
 			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 		} else {
 			d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
