@@ -511,16 +511,20 @@ func (v *VRGInstance) getVRGFromS3Profile(s3ProfileName string) (*ramen.VolumeRe
 	return vrg, nil
 }
 
-func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3ProfileName string) error {
-	if v.kubeObjectProtectionDisabled("recovery") {
-		return nil
+func (v *VRGInstance) skipIfS3ProfileIsForTest() bool {
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		if s3ProfileName == NoS3StoreAvailable {
+			v.log.Info("NoS3 available to fetch")
+
+			return true
+		}
 	}
 
-	if v.instance.Spec.Action == "" {
-		v.log.Info("Skipping kube objects restore in fresh deployment case")
+	return false
+}
 
-		return nil
-	}
+func (v *VRGInstance) kubeObjectsRecoverFromS3(result *ctrl.Result, accessor s3StoreAccessor) error {
+	s3ProfileName := accessor.S3ProfileName
 
 	sourceVrg, err := v.getVRGFromS3Profile(s3ProfileName)
 	if err != nil {
@@ -536,6 +540,46 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result, s3ProfileName stri
 	log := v.log.WithValues("number", captureToRecoverFromIdentifier.Number, "profile", s3ProfileName)
 
 	return v.kubeObjectsRecoveryStartOrResume(result, s3ProfileName, captureToRecoverFromIdentifier, log)
+}
+
+func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
+	if v.kubeObjectProtectionDisabled("recovery") {
+		return nil
+	}
+
+	if v.instance.Spec.Action == "" {
+		v.log.Info("Skipping kube objects restore in fresh deployment case")
+
+		return nil
+	}
+
+	if len(v.s3StoreAccessors) == 0 {
+		v.log.Info("No S3 profiles configured")
+
+		result.Requeue = true
+
+		return fmt.Errorf("no S3Profiles configured")
+	}
+
+	if v.skipIfS3ProfileIsForTest() {
+		return nil
+	}
+
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
+		if err := v.kubeObjectsRecoverFromS3(result, s3StoreAccessor); err != nil {
+			v.log.Info("Kube objects restore error", "profile", s3StoreAccessor.S3ProfileName, "error", err)
+
+			continue
+		}
+
+		v.log.Info("Kube objects restore complete", "profile", s3StoreAccessor.S3ProfileName)
+
+		return nil
+	}
+
+	result.Requeue = true
+
+	return fmt.Errorf("kube objects restore error, will retry")
 }
 
 func (v *VRGInstance) findS3StoreAccessor(s3ProfileName string) (s3StoreAccessor, error) {

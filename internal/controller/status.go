@@ -30,6 +30,10 @@ const (
 	// after this condition is true.
 	VRGConditionTypeClusterDataReady = "ClusterDataReady"
 
+	// Kube objects are ready. This condition is used to indicate that all the
+	// Kube objects required for the app to be active in the cluster are ready.
+	VRGConditionTypeKubeObjectsReady = "KubeObjectsReady"
+
 	// PV cluster data is protected.  This condition indicates whether an app,
 	// which is active in a cluster, has all its PV related cluster data
 	// protected from a disaster by uploading it to the required S3 store(s).
@@ -58,6 +62,7 @@ const (
 	VRGConditionReasonDataProtected               = "DataProtected"
 	VRGConditionReasonProgressing                 = "Progressing"
 	VRGConditionReasonClusterDataRestored         = "Restored"
+	VRGConditionReasonKubeObjectsRestored         = "KubeObjectsRestored"
 	VRGConditionReasonError                       = "Error"
 	VRGConditionReasonErrorUnknown                = "UnknownError"
 	VRGConditionReasonUploading                   = "Uploading"
@@ -110,6 +115,14 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeKubeObjectsReady,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -369,6 +382,28 @@ func newVRGClusterDataUnprotectedCondition(observedGeneration int64, reason, mes
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	}
+}
+
+// sets conditions when Kube objects are restored
+func setVRGKubeObjectsReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeKubeObjectsReady,
+		Reason:             VRGConditionReasonKubeObjectsRestored,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when Kube objects failed to restore
+func setVRGKubeObjectsErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeKubeObjectsReady,
+		Reason:             VRGConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
 }
 
 func setStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {

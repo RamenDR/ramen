@@ -5,7 +5,10 @@ package deployers
 
 import (
 	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
+)
+
+const (
+	argocdNamespace = "argocd"
 )
 
 type ApplicationSet struct{}
@@ -86,7 +89,7 @@ func (a ApplicationSet) GetName() string {
 }
 
 func (a ApplicationSet) GetNamespace() string {
-	return util.ArgocdNamespace
+	return argocdNamespace
 }
 
 func (a ApplicationSet) IsDiscovered() bool {

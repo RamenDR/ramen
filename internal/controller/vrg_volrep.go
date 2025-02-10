@@ -2044,7 +2044,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 
 		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
 
-		return pvCount + pvcCount, v.kubeObjectsRecover(result, s3ProfileName)
+		return pvCount + pvcCount, nil
 	}
 
 	if NoS3 {
@@ -2731,6 +2731,8 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 		case strings.HasPrefix(key, "replication.storage.openshift.io"):
 			continue
 		case strings.HasPrefix(key, "volumereplicationgroups.ramendr.openshift.io"):
+			continue
+		case strings.HasPrefix(key, "volsync.backube"):
 			continue
 		}
 

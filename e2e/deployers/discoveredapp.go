@@ -12,6 +12,10 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
+const (
+	ramenOpsNamespace = "ramen-ops"
+)
+
 type DiscoveredApp struct{}
 
 func (d DiscoveredApp) GetName() string {
@@ -19,7 +23,7 @@ func (d DiscoveredApp) GetName() string {
 }
 
 func (d DiscoveredApp) GetNamespace() string {
-	return util.RamenOpsNamespace
+	return ramenOpsNamespace
 }
 
 // Deploy creates a workload on the first managed cluster.

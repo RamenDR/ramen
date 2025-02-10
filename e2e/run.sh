@@ -10,4 +10,4 @@ set -o pipefail
 go test -c -o ramen-e2e
 
 # With an executable -test.timeout is disabled by default.
-./ramen-e2e -test.v "$@" 2>&1 | tee ramen-e2e.log
+./ramen-e2e -test.v "$@"

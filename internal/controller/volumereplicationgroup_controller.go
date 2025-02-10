@@ -368,6 +368,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
@@ -641,9 +642,11 @@ func (v *VRGInstance) clusterDataRestore(result *ctrl.Result) (int, error) {
 	}
 
 	// Only after both succeed, we mark ClusterDataReady as true
-	msg := "Restored PVs and PVCs"
+	var msg string
 	if numRestoredForVS+numRestoredForVR == 0 {
 		msg = "Nothing to restore"
+	} else {
+		msg = fmt.Sprintf("Restored %d volsync PVs/PVCs and %d volrep PVs/PVCs", numRestoredForVS, numRestoredForVR)
 	}
 
 	setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
@@ -1183,6 +1186,22 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	v.reconcileAsPrimary()
 
+	if v.shouldRestoreKubeObjects() {
+		err := v.kubeObjectsRecover(&v.result)
+		if err != nil {
+			v.log.Info("Kube objects restore failed", "error", err)
+			v.errorConditionLogAndSet(err, "Failed to restore kube objects", setVRGKubeObjectsErrorCondition)
+
+			return v.updateVRGStatus(v.result)
+		}
+
+		v.log.Info("Kube objects restored")
+		setVRGKubeObjectsReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, "Kube objects restored")
+	}
+
+	v.kubeObjectsProtectPrimary(&v.result)
+	v.vrgObjectProtect(&v.result)
+
 	// If requeue is false, then VRG was successfully processed as primary.
 	// Hence the event to be generated is Success of type normal.
 	// Expectation is that, if something failed and requeue is true, then
@@ -1224,6 +1243,28 @@ func (v *VRGInstance) shouldRestoreClusterData() bool {
 	return true
 }
 
+func (v *VRGInstance) shouldRestoreKubeObjects() bool {
+	KubeObjectsRestored := findCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
+	if KubeObjectsRestored != nil {
+		v.log.Info("KubeObjectsReady condition",
+			"status", KubeObjectsRestored.Status,
+			"reason", KubeObjectsRestored.Reason,
+			"message", KubeObjectsRestored.Message,
+			"observedGeneration", KubeObjectsRestored.ObservedGeneration,
+			"generation", v.instance.Generation,
+		)
+
+		if KubeObjectsRestored.Status == metav1.ConditionTrue &&
+			KubeObjectsRestored.ObservedGeneration == v.instance.Generation {
+			v.log.Info("VRG's KubeObjectsReady condition found. All kube objects must have already been restored")
+
+			return false
+		}
+	}
+
+	return true
+}
+
 func (v *VRGInstance) reconcileAsPrimary() {
 	var finalSyncPrepared struct {
 		volSync bool
@@ -1232,8 +1273,6 @@ func (v *VRGInstance) reconcileAsPrimary() {
 	vrg := v.instance
 	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
 	v.reconcileVolRepsAsPrimary()
-	v.kubeObjectsProtectPrimary(&v.result)
-	v.vrgObjectProtect(&v.result)
 
 	if vrg.Spec.PrepareForFinalSync {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
