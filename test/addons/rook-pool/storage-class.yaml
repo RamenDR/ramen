@@ -7,7 +7,7 @@ kind: StorageClass
 metadata:
     name: $name
     labels:
-        ramendr.openshift.io/storageid: rook-ceph-$cluster-1
+        ramendr.openshift.io/storageid: $name-$cluster-1
 provisioner: rook-ceph.rbd.csi.ceph.com
 parameters:
     clusterID: rook-ceph

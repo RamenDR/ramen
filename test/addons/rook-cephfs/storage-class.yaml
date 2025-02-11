@@ -11,7 +11,7 @@ kind: StorageClass
 metadata:
   name: rook-cephfs-$fsname
   labels:
-    ramendr.openshift.io/storageid: rook-cephfs-$cluster-1
+    ramendr.openshift.io/storageid: rook-cephfs-$fsname-$cluster-1
 provisioner: rook-ceph.cephfs.csi.ceph.com
 parameters:
   clusterID: rook-ceph
