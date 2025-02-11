@@ -435,7 +435,8 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 		return
 	}
 
-	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded, clusterDataProtectedTrueMessage)
+	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded,
+		kubeObjectsClusterDataProtectedTrueMessage)
 
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,

@@ -78,7 +78,10 @@ const (
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
 )
 
-const clusterDataProtectedTrueMessage = "Kube objects protected"
+const (
+	vrgClusterDataProtectedTrueMessage         = "VRG object protected"
+	kubeObjectsClusterDataProtectedTrueMessage = "Kube objects protected"
+)
 
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
