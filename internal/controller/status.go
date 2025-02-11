@@ -423,7 +423,7 @@ func setStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCon
 	}
 }
 
-func setStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
+func setStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) metav1.Condition {
 	if existingConditions == nil {
 		existingConditions = &[]metav1.Condition{}
 	}
@@ -433,7 +433,7 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
 		*existingConditions = append(*existingConditions, newCondition)
 
-		return
+		return newCondition
 	}
 
 	if existingCondition.Status != newCondition.Status {
@@ -458,6 +458,8 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
 		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	}
+
+	return *existingCondition
 }
 
 func findCondition(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {

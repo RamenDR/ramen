@@ -1559,11 +1559,14 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
 	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
-		v.log.Info(conditionName, "subconditions", subconditions)
-		util.MergeConditions(setStatusCondition,
+		msg := fmt.Sprintf("merging %s condition", conditionName)
+		v.log.Info(msg, "subconditions", subconditions)
+		finalCondition := util.MergeConditions(setStatusCondition,
 			&v.instance.Status.Conditions,
 			[]string{VRGConditionReasonUnused},
 			subconditions...)
+		msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+		v.log.Info(msg, "finalCondition", finalCondition)
 	}
 
 	var volSyncDataReady, volSyncDataProtected, volSyncClusterDataProtected *metav1.Condition
