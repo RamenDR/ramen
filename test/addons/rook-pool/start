@@ -13,32 +13,40 @@ import drenv
 from drenv import kubectl
 
 POOL_NAMES = ["replicapool", "replicapool-2"]
+RBD_VOLUME_SNAPSHOT_CLASSES = ["csi-rbdplugin-snapclass", "csi-rbdplugin-snapclass-2"]
+STORAGE_CLASS_NAMES = ["rook-ceph-block", "rook-ceph-block-2"]
+
+STORAGE_CLASSES_MAP = [
+    {"name": sc, "pool": pool, "vsc": vsc}
+    for sc, pool, vsc in zip(
+        STORAGE_CLASS_NAMES, POOL_NAMES, RBD_VOLUME_SNAPSHOT_CLASSES
+    )
+]
 
 
 def deploy(cluster):
-    storage_classes = [
-        {"name": "rook-ceph-block", "pool": POOL_NAMES[0]},
-        {"name": "rook-ceph-block-2", "pool": POOL_NAMES[1]},
-    ]
-
-    print("Creating StorageClasses")
-    for storage_class in storage_classes:
-        template = drenv.template("storage-class.yaml")
-        yaml = template.substitute(
-            cluster=cluster, name=storage_class["name"], pool=storage_class["pool"]
-        )
-        kubectl.apply("--filename=-", input=yaml, context=cluster)
-
     print("Creating RBD pools")
     for pool in POOL_NAMES:
         template = drenv.template("replica-pool.yaml")
         yaml = template.substitute(cluster=cluster, name=pool)
         kubectl.apply("--filename=-", input=yaml, context=cluster)
 
-    print("Creating SnapshotClass")
-    template = drenv.template("snapshot-class.yaml")
-    yaml = template.substitute(cluster=cluster, scname="rook-ceph-block")
-    kubectl.apply("--filename=-", input=yaml, context=cluster)
+    print("Creating StorageClasses")
+    for storage_class in STORAGE_CLASSES_MAP:
+        template = drenv.template("storage-class.yaml")
+        yaml = template.substitute(
+            cluster=cluster, name=storage_class["name"], pool=storage_class["pool"]
+        )
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
+
+        print("Creating SnapshotClasses")
+        template = drenv.template("snapshot-class.yaml")
+        yaml = template.substitute(
+            cluster=cluster,
+            vscname=storage_class["vsc"],
+            scname=storage_class["name"],
+        )
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
 
 
 def wait(cluster):

@@ -11,7 +11,7 @@ deletionPolicy: Delete
 driver: rook-ceph.cephfs.csi.ceph.com
 kind: VolumeSnapshotClass
 metadata:
-  name: csi-cephfsplugin-snapclass
+  name: $vscname
   labels:
     ramendr.openshift.io/storageid: $scname-$cluster-1
 parameters:
