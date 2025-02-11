@@ -90,11 +90,11 @@ func ConditionAppend(
 
 // MergeConditions merges VRG conditions of the same type to generate a single condition for the Type
 func MergeConditions(
-	conditionSet func(*[]metav1.Condition, metav1.Condition),
+	conditionSet func(*[]metav1.Condition, metav1.Condition) metav1.Condition,
 	conditions *[]metav1.Condition,
 	ignoreReasons []string,
 	subConditions ...*metav1.Condition,
-) {
+) metav1.Condition {
 	trueSubConditions := []*metav1.Condition{}
 	falseSubConditions := []*metav1.Condition{}
 	unknownSubConditions := []*metav1.Condition{}
@@ -114,14 +114,18 @@ func MergeConditions(
 		}
 	}
 
+	var finalCondition metav1.Condition
+
 	switch {
 	case len(falseSubConditions) != 0:
-		conditionSet(conditions, mergedCondition(falseSubConditions, ignoreReasons))
+		finalCondition = conditionSet(conditions, mergedCondition(falseSubConditions, ignoreReasons))
 	case len(unknownSubConditions) != 0:
-		conditionSet(conditions, mergedCondition(unknownSubConditions, ignoreReasons))
+		finalCondition = conditionSet(conditions, mergedCondition(unknownSubConditions, ignoreReasons))
 	case len(trueSubConditions) != 0:
-		conditionSet(conditions, mergedCondition(trueSubConditions, ignoreReasons))
+		finalCondition = conditionSet(conditions, mergedCondition(trueSubConditions, ignoreReasons))
 	}
+
+	return finalCondition
 }
 
 // oldestConditions returns a list of conditions that are the same generation and the oldest among newCondition and
