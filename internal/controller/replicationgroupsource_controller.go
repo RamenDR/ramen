@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	vgsv1alphfa1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1alpha1"
+	vgsv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -156,7 +156,7 @@ func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) er
 		For(&ramendrv1alpha1.ReplicationGroupSource{})
 
 	if r.volumeGroupSnapshotCRsAreWatched {
-		builder.Owns(&vgsv1alphfa1.VolumeGroupSnapshot{})
+		builder.Owns(&vgsv1beta1.VolumeGroupSnapshot{})
 	}
 
 	return builder.Complete(r)

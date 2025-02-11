@@ -108,7 +108,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 				Expect(client.IgnoreAlreadyExists(err)).To(BeNil())
 				CreateStorageClass()
 				CreateVolumeSnapshotClass()
-				CreateVS(vsName)
+				CreateVS(vsName, "", "")
 				UpdateVS(vsName)
 			})
 			It("Should be failed", func() {
