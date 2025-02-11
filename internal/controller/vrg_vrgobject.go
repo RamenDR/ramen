@@ -58,7 +58,7 @@ func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result,
 		log1.Info("VRG Kube object protected")
 
 		vrgLastUploadVersion[v.namespacedName] = vrg.ResourceVersion
-		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, clusterDataProtectedTrueMessage)
+		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, vrgClusterDataProtectedTrueMessage)
 	}
 
 	success()
