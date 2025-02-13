@@ -33,8 +33,8 @@ func CreateLogger() (*zap.SugaredLogger, error) {
 	}
 
 	core := zapcore.NewTee(
-		zapcore.NewCore(logfileEncoder, zapcore.AddSync(logfile), zapcore.DebugLevel),
-		zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stderr), zapcore.InfoLevel),
+		zapcore.NewCore(logfileEncoder, zapcore.Lock(logfile), zapcore.DebugLevel),
+		zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stderr), zapcore.InfoLevel),
 	)
 	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
 
