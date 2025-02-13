@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"time"
 
@@ -38,6 +39,22 @@ const (
 	drCConfigOwnerName     = "ramen"
 
 	maxReconcileBackoff = 5 * time.Minute
+)
+
+// DRClusterConfig condition reasons
+const (
+	DRClusterConfigConditionReasonInitializing = "Initializing"
+
+	DRClusterConfigConditionReasonValidated = "Succeeded"
+
+	DRClusterConfigConditionConfigurationProcessed = "Succeeded"
+	DRClusterConfigConditionConfigurationFailed    = "Failed"
+
+	DRClusterConfigS3Reachable   = "Reachable"
+	DRClusterConfigS3Unreachable = "Unreachable"
+
+	DRClusterConfigConditionReasonError        = "Error"
+	DRClusterConfigConditionReasonErrorUnknown = "UnknownError"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
@@ -77,11 +94,94 @@ func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if util.ResourceIsDeleted(drCConfig) {
-		return r.processDeletion(ctx, log, drCConfig)
+	// save status prior to update and do deepEqual pre returning from processing funcs (in each ones' status.update())
+	savedDrCConfigStatus := &ramen.DRClusterConfigStatus{}
+	drCConfig.Status.DeepCopyInto(savedDrCConfigStatus)
+
+	if savedDrCConfigStatus.Conditions == nil {
+		savedDrCConfigStatus.Conditions = []metav1.Condition{}
 	}
 
-	return r.processCreateOrUpdate(ctx, log, drCConfig)
+	if drCConfig.Status.Conditions == nil {
+		// Set the DRClusterConfig conditions to unknown as nothing is known at this point
+		msg := "Initializing DRClusterConfig"
+		setDRClusterConfigInitialCondition(&drCConfig.Status.Conditions, drCConfig.Generation, msg)
+	}
+
+	var (
+		res ctrl.Result
+		err error
+	)
+
+	if util.ResourceIsDeleted(drCConfig) {
+		res, err = r.processDeletion(ctx, log, drCConfig)
+	} else {
+		res, err = r.processCreateOrUpdate(ctx, log, drCConfig)
+	}
+
+	// Update status
+	if err := r.statusUpdate(ctx, drCConfig, savedDrCConfigStatus); err != nil {
+		r.Log.Info("failed to update status", "failure", err)
+	}
+
+	return res, err
+}
+
+func (r *DRClusterConfigReconciler) statusUpdate(ctx context.Context, obj *ramen.DRClusterConfig,
+	savedStatus *ramen.DRClusterConfigStatus,
+) error {
+	if !reflect.DeepEqual(obj.Status, savedStatus) {
+		if err := r.Client.Status().Update(ctx, obj); err != nil {
+			r.Log.Info(fmt.Sprintf("Failed to update drClusterConfig status (%s/%s/%v)",
+				obj.Name, obj.Namespace, err))
+
+			return fmt.Errorf("failed to update drClusterConfig status (%s/%s)", obj.Name, obj.Namespace)
+		}
+
+		r.Log.Info(fmt.Sprintf("Updated drClusterConfig Status (%s/%s)", obj.Name, obj.Namespace))
+
+		return nil
+	}
+
+	r.Log.Info(fmt.Sprintf("Nothing to update (%s/%s)", obj.Name, obj.Namespace))
+
+	return nil
+}
+
+func setDRClusterConfigInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigValidated,
+		Reason:             DRClusterConfigConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigConfigurationProcessed,
+		Reason:             DRClusterConfigConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	setStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigS3Reachable,
+		Reason:             DRClusterConfigConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+}
+
+func setDRClusterConfigValidatedFalseCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string,
+) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigValidated,
+		Reason:             DRClusterConfigConditionReasonError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
 }
 
 func (r *DRClusterConfigReconciler) GetDRClusterConfig(ctx context.Context) (*ramen.DRClusterConfig, error) {
@@ -110,6 +210,7 @@ func (r *DRClusterConfigReconciler) processDeletion(
 ) (ctrl.Result, error) {
 	if err := r.pruneClusterClaims(ctx, log, []string{}); err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigValidatedFalseCondition(&drCConfig.Status.Conditions, drCConfig.Generation, err.Error())
 
 		return ctrl.Result{Requeue: true}, err
 	}
@@ -168,6 +269,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigValidatedFalseCondition(&drCConfig.Status.Conditions, drCConfig.Generation, err.Error())
 
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
@@ -175,12 +277,14 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	allSurvivors, err := r.CreateClassClaims(ctx, log)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigValidatedFalseCondition(&drCConfig.Status.Conditions, drCConfig.Generation, err.Error())
 
 		return ctrl.Result{Requeue: true}, err
 	}
 
 	if err := r.pruneClusterClaims(ctx, log, allSurvivors); err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigValidatedFalseCondition(&drCConfig.Status.Conditions, drCConfig.Generation, err.Error())
 
 		return ctrl.Result{Requeue: true}, err
 	}
