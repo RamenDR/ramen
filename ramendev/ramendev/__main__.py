@@ -22,12 +22,12 @@ COMMANDS = [
     unconfig,
 ]
 
-log = logging.getLogger("ramenctl")
+log = logging.getLogger("ramendev")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="ramenctl",
+        prog="ramendev",
         description="Control ramen clusters",
     )
 

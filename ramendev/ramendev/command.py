@@ -10,7 +10,7 @@ from drenv import ramen
 RAMEN_NAMESPACE = "ramen-system"
 SOURCE_DIR = "."
 
-log = logging.getLogger("ramenctl")
+log = logging.getLogger("ramendev")
 
 
 def resource(name):

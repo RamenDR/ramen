@@ -9,15 +9,15 @@ with open("README.md", "r") as f:
     long_description = f.read()
 
 setuptools.setup(
-    name="ramenctl",
+    name="ramendev",
     version="0.1.0",
     author="Nir Soffer",
     author_email="nsoffer@redhat.com",
     description="Tool for developing ramen",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/RamenDR/ramen/ramenctl",
-    packages=["ramenctl", "ramenctl.resources"],
+    url="https://github.com/RamenDR/ramen/ramendev",
+    packages=["ramendev", "ramendev.resources"],
     include_package_data=True,
     install_requires=[
         "PyYAML",
@@ -33,6 +33,6 @@ setuptools.setup(
         "Topic :: Software Development :: Testing",
     ],
     entry_points={
-        "console_scripts": ["ramenctl=ramenctl.__main__:main"],
+        "console_scripts": ["ramendev=ramendev.__main__:main"],
     },
 )
