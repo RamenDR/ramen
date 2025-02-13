@@ -15,8 +15,8 @@ $venv/bin/pip install --upgrade pip
 echo "Installing drenv..."
 $venv/bin/pip install -e test
 
-echo "Installing ramenctl..."
-$venv/bin/pip install -e ./ramenctl
+echo "Installing ramendev..."
+$venv/bin/pip install -e ./ramendev
 
 echo "Installing development tools"
 $venv/bin/pip install -r requirements.txt
