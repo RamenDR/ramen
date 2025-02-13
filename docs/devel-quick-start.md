@@ -101,24 +101,24 @@ This builds the image `quay.io/ramendr/ramen-operator:latest`
 ## Deploying the ramen operator
 
 You can either deploy the *Ramen* operator using the make targets or use the
-`ramenctl` tool. For more info on the `ramenctl` tool see
-[ramenctl/README.md](../ramenctl/README.md).
+`ramendev` tool. For more info on the `ramendev` tool see
+[ramendev/README.md](../ramendev/README.md).
 
-- Using `ramenctl`
+- Using `ramendev`
 
-    Ensure python virtual environment is active as `ramenctl` is a python tool.
+    Ensure python virtual environment is active as `ramendev` is a python tool.
 
-    - Deploy the *Ramen* operator in the environment using `ramenctl`.
+    - Deploy the *Ramen* operator in the environment using `ramendev`.
 
      ```sh
-     ramenctl deploy test/envs/regional-dr.yaml
+     ramendev deploy test/envs/regional-dr.yaml
      ```
 
     - Ramen needs to be configured to know about the managed clusters and the s3
    endpoints. Configure the ramen operator for environment.
 
     ```sh
-    ramenctl config test/envs/regional-dr.yaml
+    ramendev config test/envs/regional-dr.yaml
     ```
 
 ## Testing Ramen
@@ -131,6 +131,6 @@ If you want to clean up your environment, you can unconfigure *Ramen* and
 undeploy it.
 
 ```sh
-ramenctl unconfig test/envs/regional-dr.yaml
-ramenctl undeploy test/envs/regional-dr.yaml
+ramendev unconfig test/envs/regional-dr.yaml
+ramendev undeploy test/envs/regional-dr.yaml
 ```
