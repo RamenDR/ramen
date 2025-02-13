@@ -50,7 +50,7 @@ func waitDRPCReady(ctx types.Context, client client.Client, namespace string, dr
 	log := ctx.Logger()
 	startTime := time.Now()
 
-	log.Info("Waiting until drpc is ready")
+	log.Debugf("Waiting until drpc \"%s/%s\" is ready", namespace, drpcName)
 
 	for {
 		drpc, err := getDRPC(client, namespace, drpcName)
@@ -62,7 +62,7 @@ func waitDRPCReady(ctx types.Context, client client.Client, namespace string, dr
 		peerReady := conditionMet(drpc.Status.Conditions, ramen.ConditionPeerReady)
 
 		if available && peerReady && drpc.Status.LastGroupSyncTime != nil {
-			log.Info("drpc is ready")
+			log.Debugf("drpc \"%s/%s\" is ready", namespace, drpcName)
 
 			return nil
 		}
@@ -86,6 +86,8 @@ func waitDRPCPhase(ctx types.Context, client client.Client, namespace, name stri
 	log := ctx.Logger()
 	startTime := time.Now()
 
+	log.Debugf("Waiting until drpc \"%s/%s\" reach phase %q", namespace, name, phase)
+
 	for {
 		drpc, err := getDRPC(client, namespace, name)
 		if err != nil {
@@ -94,7 +96,7 @@ func waitDRPCPhase(ctx types.Context, client client.Client, namespace, name stri
 
 		currentPhase := drpc.Status.Phase
 		if currentPhase == phase {
-			log.Infof("drpc phase is %q", phase)
+			log.Debugf("drpc \"%s/%s\" phase is %q", namespace, name, phase)
 
 			return nil
 		}
@@ -145,16 +147,18 @@ func waitDRPCDeleted(ctx types.Context, client client.Client, namespace string, 
 	log := ctx.Logger()
 	startTime := time.Now()
 
+	log.Debugf("Waiting until drpc \"%s/%s\" is deleted", namespace, name)
+
 	for {
 		_, err := getDRPC(client, namespace, name)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				log.Info("drpc is deleted")
+				log.Debugf("drpc \"%s/%s\" is deleted", namespace, name)
 
 				return nil
 			}
 
-			log.Infof("Failed to get drpc: %s", err)
+			log.Debugf("Failed to get drpc \"%s/%s\": %s", namespace, name, err)
 		}
 
 		if time.Since(startTime) > util.Timeout {
@@ -175,6 +179,8 @@ func waitDRPCProgression(
 	log := ctx.Logger()
 	startTime := time.Now()
 
+	log.Debugf("Waiting until drpc \"%s/%s\" reach progression %q", namespace, name, progression)
+
 	for {
 		drpc, err := getDRPC(client, namespace, name)
 		if err != nil {
@@ -183,7 +189,7 @@ func waitDRPCProgression(
 
 		currentProgression := drpc.Status.Progression
 		if currentProgression == progression {
-			log.Infof("drpc progression is %q", progression)
+			log.Debugf("drpc \"%s/%s\" progression is %q", namespace, name, progression)
 
 			return nil
 		}

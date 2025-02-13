@@ -4,8 +4,6 @@
 package dractions
 
 import (
-	"strings"
-
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -33,9 +31,10 @@ func EnableProtection(ctx types.Context) error {
 	w := ctx.Workload()
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
+	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
 
-	log.Infof("Protecting workload in namespace %q", managementNamespace)
+	log.Infof("Protecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
 
 	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
@@ -48,9 +47,7 @@ func EnableProtection(ctx types.Context) error {
 	}
 
 	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	log.Infof("Workload running on cluster %q", clusterName)
-
-	log.Info("Annotating placement")
+	log.Debugf("Workload running on cluster %q", clusterName)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		placement, err := getPlacement(util.Ctx.Hub.Client, managementNamespace, placementName)
@@ -64,16 +61,21 @@ func EnableProtection(ctx types.Context) error {
 
 		placement.Annotations[OcmSchedulingDisable] = "true"
 
-		return updatePlacement(util.Ctx.Hub.Client, placement)
+		if err := updatePlacement(util.Ctx.Hub.Client, placement); err != nil {
+			return err
+		}
+
+		log.Debugf("Annotated placement \"%s/%s\" with \"%s: %s\"",
+			managementNamespace, placementName, OcmSchedulingDisable, placement.Annotations[OcmSchedulingDisable])
+
+		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	log.Info("Creating drpc")
-
 	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
-	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
+	if err = createDRPC(ctx, util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
@@ -95,16 +97,15 @@ func DisableProtection(ctx types.Context) error {
 
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
+	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
 
-	log.Infof("Unprotecting workload in namespace %q", managementNamespace)
+	log.Infof("Unprotecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
 
 	drpcName := name
 	client := util.Ctx.Hub.Client
 
-	log.Info("Deleting drpc")
-
-	if err := deleteDRPC(client, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, client, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
@@ -213,8 +214,6 @@ func waitAndUpdateDRPC(
 		return err
 	}
 
-	log.Info("Updating drpc " + strings.ToLower(string(action)) + " to " + targetCluster)
-
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		drpc, err := getDRPC(client, namespace, drpcName)
 		if err != nil {
@@ -228,6 +227,13 @@ func waitAndUpdateDRPC(
 			drpc.Spec.PreferredCluster = targetCluster
 		}
 
-		return updateDRPC(client, drpc)
+		if err := updateDRPC(client, drpc); err != nil {
+			return err
+		}
+
+		log.Debugf("Updated drpc \"%s/%s\" with action %q to target cluster %q",
+			namespace, drpcName, action, targetCluster)
+
+		return nil
 	})
 }

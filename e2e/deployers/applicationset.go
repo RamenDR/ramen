@@ -21,7 +21,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 
 	log.Infof("Deploying applicationset in namespace %q", managementNamespace)
 
-	err := CreateManagedClusterSetBinding(McsbName, managementNamespace)
+	err := CreateManagedClusterSetBinding(ctx, McsbName, managementNamespace)
 	if err != nil {
 		return err
 	}
