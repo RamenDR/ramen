@@ -18,7 +18,7 @@ from drenv import ceph
 from drenv import commands
 from drenv import kubectl
 
-POOL_NAME = "replicapool"
+POOL_NAMES = ["replicapool", "replicapool-2"]
 
 
 def log_blocklist(cluster):
@@ -32,33 +32,35 @@ def fetch_secret_info(cluster):
     info = {}
 
     print(f"Getting mirroring info site name for cluster '{cluster}'")
-    info["name"] = drenv.wait_for(
-        f"cephblockpools.ceph.rook.io/{POOL_NAME}",
-        output="jsonpath={.status.mirroringInfo.site_name}",
-        namespace="rook-ceph",
-        profile=cluster,
-    )
+    for pool in POOL_NAMES:
+        info[pool] = {}
+        info[pool]["name"] = drenv.wait_for(
+            f"cephblockpools.ceph.rook.io/{pool}",
+            output="jsonpath={.status.mirroringInfo.site_name}",
+            namespace="rook-ceph",
+            profile=cluster,
+        )
 
-    print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
-    secret_name = kubectl.get(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--output=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
+        print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
+        secret_name = kubectl.get(
+            "cephblockpools.ceph.rook.io",
+            pool,
+            "--output=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
+            "--namespace=rook-ceph",
+            context=cluster,
+        )
 
-    print(f"Getting secret {secret_name} token for cluster '{cluster}'")
-    info["token"] = kubectl.get(
-        "secret",
-        secret_name,
-        "--output=jsonpath={.data.token}",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
+        print(f"Getting secret {secret_name} token for cluster '{cluster}'")
+        info[pool]["token"] = kubectl.get(
+            "secret",
+            secret_name,
+            "--output=jsonpath={.data.token}",
+            "--namespace=rook-ceph",
+            context=cluster,
+        )
 
-    # Must be encoded as base64 in secret .data section.
-    info["pool"] = base64.b64encode(POOL_NAME.encode()).decode()
+        # Must be encoded as base64 in secret .data section.
+        info[pool]["pool"] = base64.b64encode(pool.encode()).decode()
 
     return info
 
@@ -86,25 +88,29 @@ def disable_rbd_mirror_debug_logs(cluster):
 def configure_rbd_mirroring(cluster, peer_info):
     print(f"Applying rbd mirror secret in cluster '{cluster}'")
 
-    template = drenv.template("start-data/rbd-mirror-secret.yaml")
-    yaml = template.substitute(peer_info)
-    kubectl.apply(
-        "--filename=-",
-        "--namespace=rook-ceph",
-        input=yaml,
-        context=cluster,
-    )
+    for pool in POOL_NAMES:
+        template = drenv.template("start-data/rbd-mirror-secret.yaml")
+        yaml = template.substitute(peer_info[pool])
+        kubectl.apply(
+            "--filename=-",
+            "--namespace=rook-ceph",
+            input=yaml,
+            context=cluster,
+        )
 
-    print(f"Configure peers for cluster '{cluster}'")
-    patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
-    kubectl.patch(
-        "cephblockpool",
-        POOL_NAME,
-        "--type=merge",
-        f"--patch={json.dumps(patch)}",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
+        print(f"Configure peers for cluster '{cluster}'")
+        # pool = peer
+        patch = {
+            "spec": {"mirroring": {"peers": {"secretNames": [peer_info[pool]["name"]]}}}
+        }
+        kubectl.patch(
+            "cephblockpool",
+            pool,
+            "--type=merge",
+            f"--patch={json.dumps(patch)}",
+            "--namespace=rook-ceph",
+            context=cluster,
+        )
 
     print("Creating VolumeReplicationClass")
     template = drenv.template("start-data/vrc-sample.yaml")
@@ -112,7 +118,7 @@ def configure_rbd_mirroring(cluster, peer_info):
     kubectl.apply("--filename=-", input=yaml, context=cluster)
 
     template = drenv.template("start-data/vgrc-sample.yaml")
-    yaml = template.substitute(cluster=cluster, pool=POOL_NAME)
+    yaml = template.substitute(cluster=cluster, pool="replicapool")
     kubectl.apply("--filename=-", input=yaml, context=cluster)
 
     print(f"Apply rbd mirror to cluster '{cluster}'")
@@ -161,15 +167,16 @@ def wait_until_pool_mirroring_is_healthy(cluster, attempts=3):
         else:
             break
 
-    status = kubectl.get(
-        "cephblockpools.ceph.rook.io",
-        POOL_NAME,
-        "--output=jsonpath={.status}",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
-    info = {f"Cluster '{cluster}' ceph block pool status": json.loads(status)}
-    print(yaml.dump(info, sort_keys=False))
+    for pool in POOL_NAMES:
+        status = kubectl.get(
+            "cephblockpools.ceph.rook.io",
+            pool,
+            "--output=jsonpath={.status}",
+            "--namespace=rook-ceph",
+            context=cluster,
+        )
+        info = {f"Cluster '{cluster}' ceph block pool status": json.loads(status)}
+        print(yaml.dump(info, sort_keys=False))
 
 
 def watch_pool_mirroring_status(cluster, timeout=180):
@@ -182,24 +189,25 @@ def watch_pool_mirroring_status(cluster, timeout=180):
 
     while True:
         remaining = deadline - time.monotonic()
-        watcher = kubectl.watch(
-            f"cephblockpool/{POOL_NAME}",
-            jsonpath="{.status.mirroringStatus.summary}",
-            namespace="rook-ceph",
-            timeout=remaining,
-            context=cluster,
-        )
-        with closing(watcher):
-            for line in watcher:
-                summary = json.loads(line)
-                print(f"Cluster '{cluster}' mirroring status': {summary}")
+        for pool in POOL_NAMES:
+            watcher = kubectl.watch(
+                f"cephblockpool/{pool}",
+                jsonpath="{.status.mirroringStatus.summary}",
+                namespace="rook-ceph",
+                timeout=remaining,
+                context=cluster,
+            )
+            with closing(watcher):
+                for line in watcher:
+                    summary = json.loads(line)
+                    print(f"Cluster '{cluster}' mirroring status': {summary}")
 
-                if mirroring_is_healthy(summary):
-                    elapsed = time.monotonic() - start
-                    print(
-                        f"Cluster '{cluster}' mirroring healthy in {elapsed:.2f} seconds"
-                    )
-                    return
+                    if mirroring_is_healthy(summary):
+                        elapsed = time.monotonic() - start
+                        print(
+                            f"Cluster '{cluster}' mirroring healthy in {elapsed:.2f} seconds"
+                        )
+                        return
 
 
 def mirroring_is_healthy(summary):
