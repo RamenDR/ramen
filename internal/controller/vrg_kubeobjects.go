@@ -75,6 +75,10 @@ func (v *VRGInstance) kubeObjectsProtect(
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
+		// set the in-memory condition to nil to indicate that we don't need
+		// kube objects protected for this vrg
+		v.kubeObjectsProtected = nil
+
 		return
 	}
 
@@ -136,7 +140,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		v.kubeObjectsCaptureStartOrResume(result,
 			captureStartConditionally,
 			captureInProgressStatusUpdate,
-			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval, labels,
+			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval,
 			generation,
 			kubeobjects.RequestsMapKeyedByName(requests),
 			log,
@@ -210,42 +214,28 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	captureNumber int64,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	interval time.Duration,
-	labels map[string]string,
 	generation int64,
 	requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) {
-	groups := v.recipeElements.CaptureWorkflow
-	requestsProcessedCount := 0
-	requestsCompletedCount := 0
+	captureSteps := v.recipeElements.CaptureWorkflow
+
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
+	labels := util.OwnerLabels(v.instance)
 
-	for groupNumber, captureGroup := range groups {
-		cg := captureGroup
-		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
-
-		if cg.IsHook {
-			if err := v.executeHook(cg.Hook, log1); err != nil {
-				break
-			}
-		} else {
-			requestsCompletedCount += v.kubeObjectsGroupCapture(
-				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
-				captureInProgressStatusUpdate,
-				labels, annotations, requests, log,
-			)
-
-			requestsProcessedCount += len(v.s3StoreAccessors)
-			if requestsCompletedCount < requestsProcessedCount {
-				log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
-
-				return
-			}
-		}
+	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
+		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
+	if err != nil {
+		return
 	}
 
-	firstRequest := getFirstRequest(groups, requests, namePrefix, v.s3StoreAccessors[0].S3ProfileName)
+	if allEssentialStepsFailed {
+		v.kubeObjectsCaptureFailed("KubeObjectsCaptureError", "Kube objects capture failed")
 
+		return
+	}
+
+	firstRequest := getFirstRequest(captureSteps, requests, namePrefix, v.s3StoreAccessors[0].S3ProfileName)
 	v.kubeObjectsCaptureComplete(
 		result,
 		captureStartConditionally,
@@ -256,6 +246,76 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		firstRequest.StartTime(),
 		firstRequest.Object().GetAnnotations(),
 	)
+}
+
+//nolint:gocognit,funlen,cyclop
+func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
+	veleroNamespaceName string, captureInProgressStatusUpdate captureInProgressStatusUpdate,
+	annotations map[string]string, requests map[string]kubeobjects.Request, log logr.Logger,
+) (bool, error) {
+	captureSteps := v.recipeElements.CaptureWorkflow
+	failOn := v.recipeElements.CaptureFailOn
+	allEssentialStepsFailed := true
+	essentialStepsCount := 0
+	requestsProcessedCount := 0
+	requestsCompletedCount := 0
+	labels := util.OwnerLabels(v.instance)
+
+	for groupNumber, captureGroup := range captureSteps {
+		var err error
+
+		var loopCount int
+
+		cg := captureGroup
+		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
+		isEssentialStep := cg.GroupEssential != nil && *cg.GroupEssential
+
+		if cg.IsHook {
+			err = v.executeHook(cg.Hook, log1)
+		}
+
+		if !cg.IsHook {
+			loopCount, err = v.kubeObjectsGroupCapture(
+				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
+				captureInProgressStatusUpdate,
+				labels, annotations, requests, log,
+			)
+			requestsCompletedCount += loopCount
+		}
+
+		if err != nil {
+			if shouldStopExecution(failOn, isEssentialStep) {
+				v.kubeObjectsCaptureFailed("KubeObjectsWorkflowError", err.Error())
+
+				return false, err
+			}
+
+			allEssentialStepsFailed = allEssentialStepsFailed && isEssentialStep
+
+			continue
+		}
+
+		if isEssentialStep {
+			// shows that at least one essential step has succeeded
+			allEssentialStepsFailed = false
+			essentialStepsCount++
+		}
+
+		requestsProcessedCount += len(v.s3StoreAccessors)
+		if requestsCompletedCount < requestsProcessedCount {
+			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
+
+			return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
+		}
+
+		log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
+	}
+
+	if essentialStepsCount == 0 {
+		allEssentialStepsFailed = false
+	}
+
+	return allEssentialStepsFailed, nil
 }
 
 func (v *VRGInstance) executeHook(hook kubeobjects.HookSpec, log1 logr.Logger) error {
@@ -300,7 +360,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	labels, annotations map[string]string, requests map[string]kubeobjects.Request,
 	log logr.Logger,
-) (requestsCompletedCount int) {
+) (requestsCompletedCount int, reqErr error) {
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		requestName := kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.S3ProfileName)
 		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
@@ -317,10 +377,12 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				log1.Error(err, "Kube objects group capture request submit error")
 
 				result.Requeue = true
+				reqErr = fmt.Errorf("kube objects group capture error: %v", err)
 
 				continue
 			}
 
+			captureInProgressStatusUpdate()
 			log1.Info("Kube objects group capture request submitted")
 		} else {
 			err := request.Status(v.log)
@@ -344,14 +406,13 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", err.Error())
 
 			result.Requeue = true
+			reqErr = fmt.Errorf("kube objects group capture error: %v", err)
 
-			return
+			continue
 		}
-
-		captureInProgressStatusUpdate()
 	}
 
-	return requestsCompletedCount
+	return requestsCompletedCount, reqErr
 }
 
 func (v *VRGInstance) kubeObjectsCaptureAndCaptureRequestDelete(
@@ -653,8 +714,6 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	log logr.Logger,
 ) error {
-	labels := util.OwnerLabels(v.instance)
-
 	captureRequests, err := v.getCaptureRequests()
 	if err != nil {
 		return err
@@ -665,38 +724,97 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 		return err
 	}
 
-	groups := v.recipeElements.RecoverWorkflow
-	requests := make([]kubeobjects.Request, len(groups))
+	steps := v.recipeElements.RecoverWorkflow
+	requests := make([]kubeobjects.Request, len(steps))
+	labels := util.OwnerLabels(v.instance)
 
 	s3StoreAccessor, err := v.findS3StoreAccessor(s3ProfileName)
 	if err != nil {
 		return fmt.Errorf("kube objects recovery couldn't build s3StoreAccessor: %v", err)
 	}
 
-	for groupNumber, recoverGroup := range groups {
-		rg := recoverGroup
-		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
+	allEssentialStepsFailed, err := v.executeRecoverSteps(result, s3StoreAccessor, captureToRecoverFromIdentifier,
+		captureRequests, recoverRequests, requests, log)
+	if err != nil {
+		return err
+	}
 
-		if rg.IsHook {
-			if err := v.executeHook(rg.Hook, log1); err != nil {
-				return fmt.Errorf("check hook execution failed during restore %s: %v", rg.Hook.Name, err)
-			}
-		} else {
-			if err := v.executeRecoverGroup(result, s3StoreAccessor,
-				captureToRecoverFromIdentifier, captureRequests,
-				recoverRequests, labels, groupNumber, rg,
-				requests, log1); err != nil {
-				return err
-			}
-		}
+	if allEssentialStepsFailed {
+		return fmt.Errorf("workflow execution failed during restore")
 	}
 
 	startTime := getRequestsStartTime(requests)
-
 	duration := time.Since(startTime.Time)
-	log.Info("Kube objects recovered", "groups", len(groups), "start", startTime, "duration", duration)
+	log.Info("Kube objects recovered", "groups", len(steps), "start", startTime, "duration", duration)
 
 	return v.kubeObjectsRecoverRequestsDelete(result, v.veleroNamespaceName(), labels)
+}
+
+func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
+	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier, captureRequests,
+	recoverRequests map[string]kubeobjects.Request, requests []kubeobjects.Request, log logr.Logger,
+) (bool, error) {
+	failOn := v.recipeElements.RestoreFailOn
+	allEssentialStepsFailed := true
+	essentialStepsCount := 0
+	labels := util.OwnerLabels(v.instance)
+
+	recoverSteps := v.recipeElements.RecoverWorkflow
+	for groupNumber, recoverGroup := range recoverSteps {
+		var err error
+
+		rg := recoverGroup
+		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
+		isEssentialStep := rg.GroupEssential != nil && *rg.GroupEssential
+
+		if rg.IsHook {
+			err = v.executeHook(rg.Hook, log1)
+		}
+
+		if !rg.IsHook {
+			err = v.executeRecoverGroup(result, s3StoreAccessor,
+				captureToRecoverFromIdentifier, captureRequests,
+				recoverRequests, labels, groupNumber, rg,
+				requests, log1)
+		}
+
+		if err != nil {
+			if shouldStopExecution(failOn, isEssentialStep) {
+				return false, err
+			}
+
+			allEssentialStepsFailed = allEssentialStepsFailed && isEssentialStep
+
+			continue
+		}
+
+		if isEssentialStep {
+			// shows that at least one essential step has succeeded
+			allEssentialStepsFailed = false
+			essentialStepsCount++
+		}
+	}
+
+	if essentialStepsCount == 0 {
+		allEssentialStepsFailed = false
+	}
+
+	return allEssentialStepsFailed, nil
+}
+
+// function considers failOn and essential parameters and returns
+// stopExecution: should further execution be stopped
+func shouldStopExecution(failOn string, essential bool) bool {
+	switch failOn {
+	case WorkflowAnyError:
+		return true
+	case WorkflowEssentialError:
+		return essential
+	case WorkflowFullError:
+		return false
+	}
+
+	return false
 }
 
 func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
@@ -824,14 +942,14 @@ func kubeObjectsRequestsWatch(
 	return b
 }
 
-func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
+func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, string, error) {
 	workflow, err := getBackupWorkflow(recipe)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if err := validateWorkflow(workflow); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	resources := make([]kubeobjects.CaptureSpec, len(workflow.Sequence))
@@ -846,24 +964,24 @@ func getCaptureGroups(recipe Recipe.Recipe) ([]kubeobjects.CaptureSpec, error) {
 					continue
 				}
 
-				return resources, err
+				return resources, workflow.FailOn, err
 			}
 
 			resources[index] = *captureInstance
 		}
 	}
 
-	return resources, nil
+	return resources, workflow.FailOn, nil
 }
 
-func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
+func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, string, error) {
 	workflow, err := getRestoreWorkflow(recipe)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if err := validateWorkflow(workflow); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	resources := make([]kubeobjects.RecoverSpec, len(workflow.Sequence))
@@ -879,14 +997,14 @@ func getRecoverGroups(recipe Recipe.Recipe) ([]kubeobjects.RecoverSpec, error) {
 					continue
 				}
 
-				return resources, err
+				return resources, workflow.FailOn, err
 			}
 
 			resources[index] = *captureInstance
 		}
 	}
 
-	return resources, nil
+	return resources, workflow.FailOn, nil
 }
 
 var (
@@ -1061,6 +1179,7 @@ func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 					Name:      suffix,
 					Condition: chk.Condition,
 				},
+				Essential: hook.Essential,
 			}
 		}
 	}
@@ -1071,8 +1190,6 @@ func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 	for _, op := range hook.Ops {
 		if op.Name == suffix {
-			// TODO: There are two timeouts, onErrors one in hooks and other one in
-			// check or operation, which one to consider while running hook?
 			return kubeobjects.HookSpec{
 				Name:           hook.Name,
 				Namespace:      hook.Namespace,
@@ -1126,6 +1243,7 @@ func convertRecipeGroupToCaptureSpec(group Recipe.Group) (*kubeobjects.CaptureSp
 				IncludedNamespaces: group.IncludedNamespaces,
 				IncludedResources:  group.IncludedResourceTypes,
 				ExcludedResources:  group.ExcludedResourceTypes,
+				GroupEssential:     group.Essential,
 			},
 			LabelSelector:           group.LabelSelector,
 			OrLabelSelectors:        []*metav1.LabelSelector{},

@@ -232,7 +232,7 @@ func backupDummyStatusProcessAndRestore(
 	restoreName string,
 	labels map[string]string,
 ) (*velero.Restore, error) {
-	backupStatusLog(backup, w.log)
+	backupStatusLog("restore", backup, w.log)
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted,
@@ -389,7 +389,7 @@ func backupRealStatusProcess(
 	backup *velero.Backup,
 	log logr.Logger,
 ) error {
-	backupStatusLog(backup, log)
+	backupStatusLog("backup", backup, log)
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted:
@@ -611,8 +611,9 @@ func restore(
 	}
 }
 
-func backupStatusLog(backup *velero.Backup, log logr.Logger) {
-	log.Info("Backup",
+func backupStatusLog(caller string, backup *velero.Backup, log logr.Logger) {
+	msg := fmt.Sprintf("Backup status log during %s", caller)
+	log.Info(msg,
 		"phase", backup.Status.Phase,
 		"warnings", backup.Status.Warnings,
 		"errors", backup.Status.Errors,
@@ -621,15 +622,15 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 	)
 
 	if backup.Status.StartTimestamp != nil {
-		log.Info("Backup", "start", backup.Status.StartTimestamp)
+		log.Info(msg, "start", backup.Status.StartTimestamp)
 	}
 
 	if backup.Status.CompletionTimestamp != nil {
-		log.Info("Backup", "finish", backup.Status.CompletionTimestamp)
+		log.Info(msg, "finish", backup.Status.CompletionTimestamp)
 	}
 
 	if backup.Status.Progress != nil {
-		log.Info("Items",
+		log.Info(msg+" items",
 			"to be backed up", backup.Status.Progress.TotalItems,
 			"backed up", backup.Status.Progress.ItemsBackedUp,
 		)
