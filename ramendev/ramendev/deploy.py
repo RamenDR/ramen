@@ -54,7 +54,7 @@ def run(args):
 
 def load_image(args):
     command.info("Loading image '%s'", args.image)
-    with tempfile.TemporaryDirectory(prefix="ramenctl-deploy-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="ramendev-deploy-") as tmpdir:
         tar = os.path.join(tmpdir, "image.tar")
         command.watch("podman", "save", args.image, "-o", tar)
         cmd = ["drenv", "load", f"--image={tar}"]

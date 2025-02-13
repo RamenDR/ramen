@@ -356,17 +356,17 @@ This builds the image `quay.io/ramendr/ramen-operator:latest`
 To deploy the *Ramen* operator in the test environment:
 
 ```
-ramenctl deploy test/envs/regional-dr.yaml
+ramendev deploy test/envs/regional-dr.yaml
 ```
 
-For more info on the `ramenctl` tool see
-[ramenctl/README.md](../ramenctl/README.md).
+For more info on the `ramendev` tool see
+[ramendev/README.md](../ramendev/README.md).
 
 Ramen now needs to be configured to know about the managed clusters and the
 s3 endpoints. To configure the ramen operator for test environment:
 
 ```
-ramenctl config test/envs/regional-dr.yaml
+ramendev config test/envs/regional-dr.yaml
 ```
 
 ## Running system tests

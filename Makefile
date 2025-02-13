@@ -203,8 +203,8 @@ test-cephfs-cg: generate manifests envtest ## Run util-pvc tests.
 test-drenv: ## Run drenv tests.
 	$(MAKE) -C test
 
-test-ramenctl: ## Run ramenctl tests.
-	$(MAKE) -C ramenctl
+test-ramendev: ## Run ramendev tests.
+	$(MAKE) -C ramendev
 
 e2e-rdr: generate manifests ## Run rdr-e2e tests.
 	cd e2e && ./run.sh
