@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -454,11 +455,13 @@ func backupRequestCreate(
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
+	labels[util.CreatedByRamenLabel] = "true"
 	backupLocation := backupLocation(requestsNamespaceName, requestName,
 		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 		caCertificates,
 		labels,
 	)
+
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
 	}
