@@ -6,6 +6,7 @@ package volsync
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -116,7 +117,7 @@ func (v *VSHandler) GetWorkloadStatus() string {
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (v *VSHandler) ReconcileRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -169,6 +170,11 @@ func (v *VSHandler) ReconcileRD(
 
 	if !RDStatusReady(rd, l) {
 		return nil, nil
+	}
+
+	err = v.pruneOldSnapshots(rd.Namespace)
+	if err != nil {
+		return nil, err
 	}
 
 	l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s, Copy method: %s",
@@ -1108,6 +1114,44 @@ func (v *VSHandler) DeleteRD(pvcName string, pvcNamespace string) error {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
 			}
 		}
+	}
+
+	return nil
+}
+
+func (v *VSHandler) pruneOldSnapshots(pvcNamespace string) error {
+	snapList := &snapv1.VolumeSnapshotList{}
+
+	err := v.listByOwner(snapList, pvcNamespace)
+	if err != nil {
+		return err
+	}
+
+	if len(snapList.Items) <= 1 {
+		return nil
+	}
+
+	// Sort snapshots by CreationTimestamp (ascending: oldest first)
+	slices.SortFunc(snapList.Items, func(a, b snapv1.VolumeSnapshot) int {
+		if a.CreationTimestamp.Before(&b.CreationTimestamp) {
+			return -1
+		}
+
+		return 1
+	})
+
+	for i := 0; i < len(snapList.Items)-1; i++ {
+		snapshot := snapList.Items[i]
+
+		if err := v.client.Delete(v.ctx, &snapshot); err != nil {
+			if !errors.IsNotFound(err) {
+				v.log.Error(err, "error deleting VolumeSnapshot", "name", snapshot.GetName())
+
+				return err
+			}
+		}
+
+		v.log.Info("Deleted VolumeSnapshot", "name", snapshot.GetName())
 	}
 
 	return nil
