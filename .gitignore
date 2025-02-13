@@ -48,7 +48,7 @@ test/addons/kubevirt/vm/id_rsa.pub
 *.egg-info/
 __pycache__/
 test/build
-ramenctl/build
+ramendev/build
 
 # Generated disk images
 *.qcow2
