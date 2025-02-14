@@ -42,18 +42,17 @@ func EnableProtection(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
-	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	clusterName := placementDecision.Status.Decisions[0].ClusterName
 	log.Infof("Workload running on cluster %q", clusterName)
 
 	log.Info("Annotating placement")
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := getPlacement(util.Ctx.Hub.Client, managementNamespace, placementName)
+		placement, err := util.GetPlacement(util.Ctx.Hub.Client, managementNamespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -118,19 +117,8 @@ func Failover(ctx types.Context) error {
 
 	drpcName := name
 	client := util.Ctx.Hub.Client
-	drPolicyName := util.DefaultDRPolicyName
 
-	currentCluster, err := getCurrentCluster(client, managementNamespace, name)
-	if err != nil {
-		return err
-	}
-
-	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
-	if err != nil {
-		return err
-	}
-
-	targetCluster, err := getTargetCluster(client, managementNamespace, drpcName, drpolicy)
+	currentCluster, targetCluster, err := util.GetCurrentAndTargetCluster(client, managementNamespace, drpcName)
 	if err != nil {
 		return err
 	}
@@ -151,19 +139,8 @@ func Relocate(ctx types.Context) error {
 
 	drpcName := name
 	client := util.Ctx.Hub.Client
-	drPolicyName := util.DefaultDRPolicyName
 
-	currentCluster, err := getCurrentCluster(client, managementNamespace, name)
-	if err != nil {
-		return err
-	}
-
-	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
-	if err != nil {
-		return err
-	}
-
-	targetCluster, err := getTargetCluster(client, managementNamespace, drpcName, drpolicy)
+	currentCluster, targetCluster, err := util.GetCurrentAndTargetCluster(client, managementNamespace, drpcName)
 	if err != nil {
 		return err
 	}
