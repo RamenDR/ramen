@@ -14,6 +14,7 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
+	rmnapi "github.com/ramendr/ramen/internal/controller/api"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/yaml"
 )
 
 type RecipeElements struct {
@@ -116,8 +118,14 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 	}
 
 	recipe := recipe.Recipe{}
-	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
-		return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+	if vrg.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(ramenConfig) && vrg.Spec.KubeObjectProtection.RecipeRef.Name==rmnapi.VMRecipeName {
+		if err:=yaml.Unmarshal([]byte(rmnapi.VMRecipe), &recipe); err != nil {
+			return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+		}
+	} else {
+		if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
+			return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+		}
 	}
 
 	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {

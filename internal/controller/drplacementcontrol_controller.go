@@ -30,6 +30,7 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
+	rmnapi "github.com/ramendr/ramen/internal/controller/api"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 )
@@ -2421,7 +2422,6 @@ func (r *DRPlacementControlReconciler) ensureNoConflictingDRPCs(ctx context.Cont
 
 	for i := range drpcList.Items {
 		otherDRPC := &drpcList.Items[i]
-
 		// Skip the drpc itself
 		if otherDRPC.Name == drpc.Name && otherDRPC.Namespace == drpc.Namespace {
 			continue
@@ -2466,10 +2466,13 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
-	conflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
-	if conflict {
-		return fmt.Errorf("drpc: %s and drpc: %s protect the same namespace",
-			drpc.Name, otherDRPC.Name)
+	potentialConflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
+	if potentialConflict {
+		independentVMProtection := drpcProtectVMInNS(drpc, otherDRPC, ramenConfig, log)
+		if !independentVMProtection {
+			return fmt.Errorf("drpc: %s and drpc: %s protect common resources from the same namespace",
+				drpc.Name, otherDRPC.Name)
+		}
 	}
 
 	return nil
@@ -2498,4 +2501,20 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	otherDrpolicyClusters := rmnutil.DRPolicyClusterNamesAsASet(otherDrpolicy)
 
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
+}
+
+func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig, log logr.Logger) bool {
+	log.Info("In DRPC Protect VM in NS Validation")
+	if (drpc.Spec.KubeObjectProtection.RecipeRef.Name == rmnapi.VMRecipeName && otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name == rmnapi.VMRecipeName) {
+		log.Info("It could be Independent VM protection.")
+		ramenOpsNS:=RamenOperandsNamespace(*ramenConfig)
+		log.Info("Ramen Ops namespace is : "+ramenOpsNS)
+		if (drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS && otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS) {
+			log.Info("Its a valid Independent VM protection.")
+			return true
+		}
+	}
+
+	log.Info("It isn't a valid Independent VM protection.")
+	return false
 }
