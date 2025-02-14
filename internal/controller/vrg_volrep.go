@@ -1988,6 +1988,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, erro
 func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
 	err := errors.New("s3Profiles empty")
 	NoS3 := false
+	requeue := false
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if s3ProfileName == NoS3StoreAvailable {
@@ -2016,6 +2017,15 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 			continue
 		}
 
+		// If in failover mode and no PVs are found, try next S3 profile
+		if v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover && pvCount == 0 {
+			v.log.Info("No PVs found in the", " S3 profile: ", s3ProfileName)
+
+			requeue = true
+
+			continue
+		}
+
 		// Attempt to restore all PVCs from this profile. If a PVC is missing from this s3 stores or fails
 		// to restore, there will be a warning, but not a failure (no retry). In such cases, the PVC may be
 		// created when the application is created and it will bind to the PV correctly if the PVC name
@@ -2038,6 +2048,15 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 	}
 
 	if NoS3 {
+		return 0, nil
+	}
+
+	// If in failover mode and no PVs were found, requeue the request to retry later
+	if v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover && requeue {
+		v.log.Info("No PVs found in any S3 store. Requeuing the request to retry")
+
+		result.Requeue = true
+
 		return 0, nil
 	}
 
