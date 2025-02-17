@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -125,9 +127,9 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}
 
-	recipe := recipev1.Recipe{}
-	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
-		return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+	recipe, err := getRecipeObj(ctx, recipeNamespacedName, vrg, reader, ramenConfig)
+	if err != nil {
+		return recipeElements, err
 	}
 
 	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
@@ -155,6 +157,26 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 	}
 
 	return recipeElements, nil
+}
+
+func getRecipeObj(ctx context.Context, recipeNamespacedName types.NamespacedName, vrg ramen.VolumeReplicationGroup,
+	reader client.Reader, ramenConfig ramen.RamenConfig,
+) (recipev1.Recipe, error) {
+	recipe := recipev1.Recipe{}
+	if vrg.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(ramenConfig) &&
+		vrg.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
+		if err := yaml.Unmarshal([]byte(recipecore.VMRecipe), &recipe); err != nil {
+			return recipe, fmt.Errorf("recipe %s unmarshal error: %w", recipecore.VMRecipe, err)
+		}
+
+		return recipe, nil
+	}
+
+	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
+		return recipe, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+	}
+
+	return recipe, nil
 }
 
 func RecipeParametersExpand(recipe *recipev1.Recipe, parameters map[string][]string,
