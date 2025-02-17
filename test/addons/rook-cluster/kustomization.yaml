@@ -37,4 +37,4 @@ patches:
     patch: |-
       - op: replace
         path: /spec/cephVersion/image
-        value: quay.io/egershko/ceph:wip-pkalever-rbd-group-snap-mirror1
+        value: quay.ceph.io/ceph-ci/ceph:wip-pkalever-rbd-group-snap-mirror
