@@ -694,7 +694,13 @@ var _ = Describe("VolSync_Handler", func() {
 						Expect(finalSyncCompl).To(BeFalse())
 						Expect(rs).ToNot(BeNil())
 
-						// ReconcileRS should have created the replication source - since the secret isn't there
+						// Ensure replication source is created
+						Eventually(func() error {
+							return k8sClient.Get(ctx,
+								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
+						}, maxWait, interval).Should(Succeed())
+
+						// Consistently continue to synchronize PVC data to a remote location
 						Consistently(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
