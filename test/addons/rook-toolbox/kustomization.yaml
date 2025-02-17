@@ -5,8 +5,7 @@
 ---
 resources:
   - https://raw.githubusercontent.com/rook/rook/release-1.16/deploy/examples/toolbox.yaml
-
 images:
   - name: quay.io/ceph/ceph:v19
-    newName: quay.io/egershko/ceph
-    newTag: wip-pkalever-rbd-group-snap-mirror1
+    newName: quay.ceph.io/ceph-ci/ceph
+    newTag: wip-pkalever-rbd-group-snap-mirror
