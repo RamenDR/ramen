@@ -19,18 +19,6 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func getPlacement(client client.Client, namespace, name string) (*clusterv1beta1.Placement, error) {
-	placement := &clusterv1beta1.Placement{}
-	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
-
-	err := client.Get(context.Background(), key, placement)
-	if err != nil {
-		return nil, err
-	}
-
-	return placement, nil
-}
-
 func updatePlacement(client client.Client, placement *clusterv1beta1.Placement) error {
 	return client.Update(context.Background(), placement)
 }
