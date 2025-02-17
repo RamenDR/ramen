@@ -9,6 +9,7 @@ import sys
 import drenv
 from drenv import kubectl
 
+STORAGE_CLASS_NAME_PREFIX = "rook-cephfs-"
 FILE_SYSTEMS = ["test-fs1", "test-fs2"]
 
 
@@ -21,12 +22,16 @@ def deploy(cluster):
 
         print("Creating StorageClass")
         template = drenv.template("storage-class.yaml")
-        yaml = template.substitute(cluster=cluster, fsname=file_system)
+        storage_class_name = STORAGE_CLASS_NAME_PREFIX + file_system
+        yaml = template.substitute(
+            cluster=cluster, fsname=file_system, name=storage_class_name
+        )
         kubectl.apply("--filename=-", input=yaml, context=cluster)
 
     print("Creating SnapshotClass")
     template = drenv.template("snapshot-class.yaml")
-    yaml = template.substitute(cluster=cluster)
+    storage_class_name = STORAGE_CLASS_NAME_PREFIX + FILE_SYSTEMS[0]
+    yaml = template.substitute(cluster=cluster, scname=storage_class_name)
     kubectl.apply("--filename=-", input=yaml, context=cluster)
 
 
