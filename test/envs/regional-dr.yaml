@@ -11,6 +11,7 @@ ramen:
   topology: regional-dr
   features:
     volsync: true
+    consistency_groups: true
 
 templates:
   - name: "dr-cluster"
