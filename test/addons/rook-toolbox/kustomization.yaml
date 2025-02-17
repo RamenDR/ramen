@@ -5,3 +5,8 @@
 ---
 resources:
   - https://raw.githubusercontent.com/rook/rook/release-1.16/deploy/examples/toolbox.yaml
+
+images:
+  - name: quay.io/ceph/ceph:v19
+    newName: quay.ceph.io/ceph-ci/ceph
+    newTag: main

@@ -29,3 +29,7 @@ patches:
           enabled: true
           periodicity: daily
           maxLogSize: 50M
+      # Use ceph main image
+      - op: replace
+        path: /spec/cephVersion/image
+        value: quay.ceph.io/ceph-ci/ceph:main
