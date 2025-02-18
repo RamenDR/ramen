@@ -259,10 +259,9 @@ func (v *VSHandler) createOrUpdateRD(
 func (v *VSHandler) isPVCInUseByNonRDPod(pvcNamespacedName types.NamespacedName) (bool, error) {
 	rd := &volsyncv1alpha1.ReplicationDestination{}
 
-	err := v.client.Get(v.ctx, pvcNamespacedName, rd)
-
 	// IF RD is Found, then no more checks are needed. We'll assume that the RD
 	// was created when the PVC was Not in use.
+	err := v.client.Get(v.ctx, pvcNamespacedName, rd)
 	if err == nil {
 		return false, nil
 	} else if !errors.IsNotFound(err) {
