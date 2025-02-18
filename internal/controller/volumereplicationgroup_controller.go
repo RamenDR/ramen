@@ -330,10 +330,10 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 			continue
 		}
 
-		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		// continue if we fail to get the labels for this object hoping
 		// that pvc might actually belong to  some other vrg instead of
 		// this. If not found, then reconcile request would not be sent
+		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
 			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
 

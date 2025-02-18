@@ -2024,7 +2024,6 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// PVC may cause a new PV to be created.
 		// Ignoring PVC restore errors helps with the upgrade from ODF-4.12.x to 4.13
 		pvcCount, err = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
-
 		if err != nil || pvCount != pvcCount {
 			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
 				pvCount, pvcCount, err))
