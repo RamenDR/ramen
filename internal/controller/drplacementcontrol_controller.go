@@ -1257,7 +1257,10 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 	// iteration of the reconcile loop.  Hence, the next attempt to update the
 	// status should be after the remaining duration of this polling interval has
 	// elapsed: (beforeProcessing + StatusCheckDelay - time.Now())
-	return time.Until(beforeProcessing.Add(StatusCheckDelay))
+	// If the scheduled time is already in the past, requeue immediately.
+	remaining := time.Until(beforeProcessing.Add(StatusCheckDelay))
+
+	return max(0, remaining)
 }
 
 // updateDRPCStatus updates the DRPC sub-resource status with,
