@@ -17,7 +17,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func CreateNamespace(client client.Client, namespace string) error {
+// Namespace annotation for volsync to grant elevated permissions for mover pods
+// More info: https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
+const volsyncPrivilegedMovers = "volsync.backube/privileged-movers"
+
+func CreateNamespace(client client.Client, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
@@ -29,7 +33,11 @@ func CreateNamespace(client client.Client, namespace string) error {
 		if !errors.IsAlreadyExists(err) {
 			return err
 		}
+
+		log.Debugf("Namespace %q already exist", namespace)
 	}
+
+	log.Debugf("Created namespace %q", namespace)
 
 	return nil
 }
@@ -47,12 +55,12 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 			return err
 		}
 
-		log.Infof("Namespace %q not found", namespace)
+		log.Debugf("Namespace %q not found", namespace)
 
 		return nil
 	}
 
-	log.Infof("Waiting until namespace %q is deleted", namespace)
+	log.Debugf("Waiting until namespace %q is deleted", namespace)
 
 	startTime := time.Now()
 	key := types.NamespacedName{Name: namespace}
@@ -63,7 +71,7 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 				return err
 			}
 
-			log.Infof("Namespace %q deleted", namespace)
+			log.Debugf("Namespace %q deleted", namespace)
 
 			return nil
 		}
@@ -80,22 +88,22 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 // See this link https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 // Workaround: create ns in both drclusters and add annotation
 func CreateNamespaceAndAddAnnotation(namespace string) error {
-	if err := CreateNamespace(Ctx.C1.Client, namespace); err != nil {
+	if err := CreateNamespace(Ctx.C1.Client, namespace, Ctx.Log); err != nil {
 		return err
 	}
 
-	if err := addNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace); err != nil {
+	if err := addNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace, Ctx.Log); err != nil {
 		return err
 	}
 
-	if err := CreateNamespace(Ctx.C2.Client, namespace); err != nil {
+	if err := CreateNamespace(Ctx.C2.Client, namespace, Ctx.Log); err != nil {
 		return err
 	}
 
-	return addNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace)
+	return addNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace, Ctx.Log)
 }
 
-func addNamespaceAnnotationForVolSync(client client.Client, namespace string) error {
+func addNamespaceAnnotationForVolSync(client client.Client, namespace string, log *zap.SugaredLogger) error {
 	key := types.NamespacedName{Name: namespace}
 	objNs := &corev1.Namespace{}
 
@@ -108,8 +116,15 @@ func addNamespaceAnnotationForVolSync(client client.Client, namespace string) er
 		annotations = make(map[string]string)
 	}
 
-	annotations["volsync.backube/privileged-movers"] = "true"
+	annotations[volsyncPrivilegedMovers] = "true"
 	objNs.SetAnnotations(annotations)
 
-	return client.Update(context.Background(), objNs)
+	if err := client.Update(context.Background(), objNs); err != nil {
+		return err
+	}
+
+	log.Debugf("Annotated namespace %q with \"%s: %s\"",
+		namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers])
+
+	return nil
 }
