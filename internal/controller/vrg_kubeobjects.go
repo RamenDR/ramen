@@ -261,7 +261,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 func (v *VRGInstance) executeHook(hook kubeobjects.HookSpec, log1 logr.Logger) error {
 	if hook.Type == "check" {
 		hookResult, err := util.EvaluateCheckHook(v.reconciler.APIReader, &hook, log1)
-
 		if err != nil {
 			log1.Error(err, "error occurred during check hook ")
 		} else {
@@ -324,7 +323,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 			log1.Info("Kube objects group capture request submitted")
 		} else {
 			err := request.Status(v.log)
-
 			if err == nil {
 				log1.Info("Kube objects group captured", "start", request.StartTime(), "end", request.EndTime())
 

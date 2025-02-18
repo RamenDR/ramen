@@ -784,14 +784,14 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 ) error {
 	// Only after the VRGs have been deleted, we delete the MCVs for the VRGs and the NS
 	for _, drClusterName := range clusterNames {
-		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
 		// Delete MCV for the VRG
+		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
 		if err != nil {
 			return fmt.Errorf("failed to delete VRG MCV %w", err)
 		}
 
-		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
 		// Delete MCV for Namespace
+		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
 		if err != nil {
 			return fmt.Errorf("failed to delete namespace MCV %w", err)
 		}
