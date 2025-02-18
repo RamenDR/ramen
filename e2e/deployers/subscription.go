@@ -38,7 +38,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	log.Infof("Deploying subscription in namespace %q", managementNamespace)
 
 	// create subscription namespace
-	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace)
+	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace, log)
 	if err != nil {
 		return err
 	}
