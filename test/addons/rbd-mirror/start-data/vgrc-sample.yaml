@@ -5,7 +5,7 @@
 apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeGroupReplicationClass
 metadata:
-  name: vgrc-sample
+  name: $name
   labels:
     ramendr.openshift.io/storageid: rook-ceph-$cluster-1
     ramendr.openshift.io/replicationid: rook-ceph-replication-1

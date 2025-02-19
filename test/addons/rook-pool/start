@@ -43,38 +43,40 @@ def deploy(cluster):
 
 def wait(cluster):
     print("Waiting until ceph block pool is ready")
-    drenv.wait_for(
-        "cephblockpool/replicapool",
-        output="jsonpath={.status.phase}",
-        namespace="rook-ceph",
-        timeout=120,
-        profile=cluster,
-    )
-    kubectl.wait(
-        "cephblockpool/replicapool",
-        "--for=jsonpath={.status.phase}=Ready",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
-        context=cluster,
-    )
+    for pool in POOL_NAMES:
+        drenv.wait_for(
+            f"cephblockpool/{pool}",
+            output="jsonpath={.status.phase}",
+            namespace="rook-ceph",
+            timeout=120,
+            profile=cluster,
+        )
+        kubectl.wait(
+            f"cephblockpool/{pool}",
+            "--for=jsonpath={.status.phase}=Ready",
+            "--namespace=rook-ceph",
+            "--timeout=300s",
+            context=cluster,
+        )
 
-    print("Waiting for replica pool peer token")
-    kubectl.wait(
-        "cephblockpool/replicapool",
-        "--for=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}=pool-peer-token-replicapool",
-        "--namespace=rook-ceph",
-        "--timeout=300s",
-        context=cluster,
-    )
+        print("Waiting for replica pool peer token")
+        kubectl.wait(
+            f"cephblockpool/{pool}",
+            "--for=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}"
+            f"=pool-peer-token-{pool}",
+            "--namespace=rook-ceph",
+            "--timeout=300s",
+            context=cluster,
+        )
 
-    out = kubectl.get(
-        "cephblockpool/replicapool",
-        "--output=jsonpath={.status}",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
-    info = {"ceph pool status": json.loads(out)}
-    print(yaml.dump(info, sort_keys=False))
+        out = kubectl.get(
+            f"cephblockpool/{pool}",
+            "--output=jsonpath={.status}",
+            "--namespace=rook-ceph",
+            context=cluster,
+        )
+        info = {"ceph pool status": json.loads(out)}
+        print(yaml.dump(info, sort_keys=False))
 
 
 if len(sys.argv) != 2:

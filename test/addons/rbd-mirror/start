@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import base64
+import concurrent.futures
 import json
 import os
 import sys
@@ -18,7 +19,7 @@ from drenv import ceph
 from drenv import commands
 from drenv import kubectl
 
-POOL_NAME = "replicapool"
+POOL_NAMES = ["replicapool", "replicapool-2"]
 
 
 def log_blocklist(cluster):
@@ -28,12 +29,12 @@ def log_blocklist(cluster):
         print(yaml.dump(info, sort_keys=False))
 
 
-def fetch_secret_info(cluster):
+def fetch_secret_info(cluster, pool):
     info = {}
 
-    print(f"Getting mirroring info site name for cluster '{cluster}'")
+    print(f"Getting mirroring info site name for cluster '{cluster}' and cephblockpool {pool}")
     info["name"] = drenv.wait_for(
-        f"cephblockpools.ceph.rook.io/{POOL_NAME}",
+        f"cephblockpools.ceph.rook.io/{pool}",
         output="jsonpath={.status.mirroringInfo.site_name}",
         namespace="rook-ceph",
         profile=cluster,
@@ -42,7 +43,7 @@ def fetch_secret_info(cluster):
     print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
     secret_name = kubectl.get(
         "cephblockpools.ceph.rook.io",
-        POOL_NAME,
+        pool,
         "--output=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
         "--namespace=rook-ceph",
         context=cluster,
@@ -58,7 +59,7 @@ def fetch_secret_info(cluster):
     )
 
     # Must be encoded as base64 in secret .data section.
-    info["pool"] = base64.b64encode(POOL_NAME.encode()).decode()
+    info["pool"] = base64.b64encode(pool.encode()).decode()
 
     return info
 
@@ -83,8 +84,8 @@ def disable_rbd_mirror_debug_logs(cluster):
     ceph.rm_config(cluster, "mgr", "mgr/rbd_support/log_level")
 
 
-def configure_rbd_mirroring(cluster, peer_info):
-    print(f"Applying rbd mirror secret in cluster '{cluster}'")
+def configure_rbd_mirroring(cluster, pool, peer_info):
+    print(f"Applying rbd mirror secret in cluster '{cluster}' for cephblockpool {pool}")
 
     template = drenv.template("start-data/rbd-mirror-secret.yaml")
     yaml = template.substitute(peer_info)
@@ -96,23 +97,33 @@ def configure_rbd_mirroring(cluster, peer_info):
     )
 
     print(f"Configure peers for cluster '{cluster}'")
-    patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
+    patch = {
+        "spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}
+    }
     kubectl.patch(
         "cephblockpool",
-        POOL_NAME,
+        pool,
         "--type=merge",
         f"--patch={json.dumps(patch)}",
         "--namespace=rook-ceph",
         context=cluster,
     )
 
+    vrc_name = "vrc-sample"
+    vgrc_name = "vgrc-sample"
+    if pool != 'replicapool':
+        num = pool.split("-")[1]
+        vrc_name = f"{vrc_name}-{num}"
+        vgrc_name = f"{vgrc_name}-{num}"
+
     print("Creating VolumeReplicationClass")
     template = drenv.template("start-data/vrc-sample.yaml")
-    yaml = template.substitute(cluster=cluster)
+    yaml = template.substitute(name=vrc_name, cluster=cluster, pool=pool)
     kubectl.apply("--filename=-", input=yaml, context=cluster)
 
+    print("Creating VolumeGroupReplicationClass")
     template = drenv.template("start-data/vgrc-sample.yaml")
-    yaml = template.substitute(cluster=cluster, pool=POOL_NAME)
+    yaml = template.substitute(name=vgrc_name, cluster=cluster, pool=pool)
     kubectl.apply("--filename=-", input=yaml, context=cluster)
 
     print(f"Apply rbd mirror to cluster '{cluster}'")
@@ -144,14 +155,14 @@ def wait_until_rbd_mirror_is_ready(cluster):
     print(yaml.dump(info, sort_keys=False))
 
 
-def wait_until_pool_mirroring_is_healthy(cluster, attempts=3):
+def wait_until_pool_mirroring_is_healthy(cluster, pool, attempts=3):
     # We have random timeouts when rbd-mirror fail to connect to the peer.
     # When this happens we can recover by restarting the rbd-mirror daemon.
 
     for i in range(1, attempts + 1):
         print(f"Waiting for mirroring health in cluster '{cluster}' ({i}/{attempts})")
         try:
-            watch_pool_mirroring_status(cluster)
+            watch_pool_mirroring_status(cluster, pool)
         except commands.Timeout:
             if i == attempts:
                 raise
@@ -163,16 +174,16 @@ def wait_until_pool_mirroring_is_healthy(cluster, attempts=3):
 
     status = kubectl.get(
         "cephblockpools.ceph.rook.io",
-        POOL_NAME,
+        pool,
         "--output=jsonpath={.status}",
         "--namespace=rook-ceph",
         context=cluster,
     )
-    info = {f"Cluster '{cluster}' ceph block pool status": json.loads(status)}
+    info = {f"Cluster '{cluster}' cephblockpool {pool} status": json.loads(status)}
     print(yaml.dump(info, sort_keys=False))
 
 
-def watch_pool_mirroring_status(cluster, timeout=180):
+def watch_pool_mirroring_status(cluster, pool, timeout=180):
     """
     Watch pool .status.mirroringStatus.summary until mirroring is healthy or
     the timeout expires.
@@ -183,7 +194,7 @@ def watch_pool_mirroring_status(cluster, timeout=180):
     while True:
         remaining = deadline - time.monotonic()
         watcher = kubectl.watch(
-            f"cephblockpool/{POOL_NAME}",
+            f"cephblockpool/{pool}",
             jsonpath="{.status.mirroringStatus.summary}",
             namespace="rook-ceph",
             timeout=remaining,
@@ -227,6 +238,26 @@ def restart_rbd_mirror_daemon(cluster):
     )
 
 
+def test(cluster1, cluster2, pool):
+    cluster1_info = fetch_secret_info(cluster1, pool)
+    cluster2_info = fetch_secret_info(cluster2, pool)
+
+    print(f"Setting up mirroring from '{cluster2}' to '{cluster1}'")
+    configure_rbd_mirroring(cluster1, pool, cluster2_info)
+
+    print(f"Setting up mirroring from '{cluster1}' to '{cluster2}'")
+    configure_rbd_mirroring(cluster2, pool, cluster1_info)
+
+    wait_until_rbd_mirror_is_ready(cluster1)
+    wait_until_rbd_mirror_is_ready(cluster2)
+
+    log_blocklist(cluster1)
+    log_blocklist(cluster2)
+
+    wait_until_pool_mirroring_is_healthy(cluster1, pool)
+    wait_until_pool_mirroring_is_healthy(cluster2, pool)
+
+
 if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} cluster1 cluster2")
     sys.exit(1)
@@ -243,22 +274,12 @@ else:
     disable_rbd_mirror_debug_logs(cluster1)
     disable_rbd_mirror_debug_logs(cluster2)
 
-cluster1_info = fetch_secret_info(cluster1)
-cluster2_info = fetch_secret_info(cluster2)
+with concurrent.futures.ThreadPoolExecutor() as e:
+    tests = []
+    for pool in POOL_NAMES:
+        tests.append(e.submit(test, cluster1, cluster2, pool))
 
-print(f"Setting up mirroring from '{cluster2}' to '{cluster1}'")
-configure_rbd_mirroring(cluster1, cluster2_info)
-
-print(f"Setting up mirroring from '{cluster1}' to '{cluster2}'")
-configure_rbd_mirroring(cluster2, cluster1_info)
-
-wait_until_rbd_mirror_is_ready(cluster1)
-wait_until_rbd_mirror_is_ready(cluster2)
-
-log_blocklist(cluster1)
-log_blocklist(cluster2)
-
-wait_until_pool_mirroring_is_healthy(cluster1)
-wait_until_pool_mirroring_is_healthy(cluster2)
+    for t in concurrent.futures.as_completed(tests):
+        t.result()
 
 print("Mirroring was setup successfully")
