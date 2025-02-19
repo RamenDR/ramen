@@ -167,8 +167,9 @@ func kubeObjectsCaptureStartConditionallyPrimary(
 	captureStart func(),
 ) {
 	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
-		v.log.Info("Kube objects capture start delay", "delay", delay, "interval", captureStartInterval)
-		delaySetIfLess(result, delay, v.log)
+		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
+			"interval", captureStartInterval)
+		calibrateRequeueAfterTime(result, delay, v.log)
 
 		return
 	}
