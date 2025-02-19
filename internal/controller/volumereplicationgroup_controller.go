@@ -1172,6 +1172,12 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
+	// clusterDataProtected looks at the v.kubeObjectsProtected condition
+	// to determine if the cluster data is protected. If it is nil, then it is
+	// considered as success. So we should set it as false here and set it as
+	// true if protection is not required or if protection is successful.
+	v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureNotStarted", "Kube objects capture has not started")
+
 	if err := v.pvcsDeselectedUnprotect(); err != nil {
 		return v.dataError(err, "PVCs deselected unprotect failed", v.result.Requeue)
 	}
