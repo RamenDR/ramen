@@ -75,6 +75,10 @@ func (v *VRGInstance) kubeObjectsProtect(
 	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
+		// set the in-memory condition to nil to indicate that we don't need
+		// kube objects protected for this vrg
+		v.kubeObjectsCaptureStatusNil()
+
 		return
 	}
 
@@ -170,6 +174,8 @@ func kubeObjectsCaptureStartConditionallyPrimary(
 		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
 			"interval", captureStartInterval)
 		calibrateRequeueAfterTime(result, delay, v.log)
+		v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded,
+			kubeObjectsClusterDataProtectedTrueMessage)
 
 		return
 	}
@@ -467,6 +473,10 @@ func (v *VRGInstance) kubeObjectsCaptureFailed(reason, message string) {
 
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
 	v.kubeObjectsCaptureStatus(metav1.ConditionFalse, reason, message)
+}
+
+func (v *VRGInstance) kubeObjectsCaptureStatusNil() {
+	v.kubeObjectsProtected = nil
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, reason, message string) {
