@@ -1204,11 +1204,15 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 			v.log.Info("Kube objects restore failed", "error", err)
 			v.errorConditionLogAndSet(err, "Failed to restore kube objects", setVRGKubeObjectsErrorCondition)
 
-			return v.updateVRGStatus(v.result)
+			return v.updateVRGConditionsAndStatus(v.result)
 		}
 
+		// save status and requeue if kube objects are restored
 		v.log.Info("Kube objects restored")
 		setVRGKubeObjectsReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, "Kube objects restored")
+		v.result.Requeue = true
+
+		return v.updateVRGConditionsAndStatus(v.result)
 	}
 
 	v.kubeObjectsProtectPrimary(&v.result)
