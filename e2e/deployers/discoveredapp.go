@@ -31,8 +31,6 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
-	log.Infof("Deploying workload in namespace %q", appNamespace)
-
 	// create namespace in both dr clusters
 	if err := util.CreateNamespaceAndAddAnnotation(appNamespace); err != nil {
 		return err
@@ -70,7 +68,8 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Info("Workload deployed")
+	log.Infof("Deployed discovered app \"%s/%s\" on cluster %q",
+		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
 
 	return nil
 }
@@ -79,8 +78,6 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
-
-	log.Infof("Undeploying workload in namespace %q", appNamespace)
 
 	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, util.DefaultDRPolicyName)
 	if err != nil {
@@ -113,7 +110,7 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Info("Workload undeployed")
+	log.Infof("Undeployed discovered app \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
 
 	return nil
 }

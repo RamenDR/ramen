@@ -5,6 +5,7 @@ package deployers
 
 import (
 	"github.com/ramendr/ramen/e2e/types"
+	"github.com/ramendr/ramen/e2e/util"
 )
 
 const (
@@ -18,8 +19,6 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
-
-	log.Infof("Deploying applicationset in namespace %q", managementNamespace)
 
 	err := CreateManagedClusterSetBinding(ctx, McsbName, managementNamespace)
 	if err != nil {
@@ -41,7 +40,15 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	return err
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Deployed applicationset app \"%s/%s\" on cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+
+	return nil
 }
 
 // Undeploy deletes an ApplicationSet from the hub cluster, deleting the workload from the managed clusters.
@@ -50,12 +57,18 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Infof("Undeploying applicationset in namespace %q", managementNamespace)
-
 	err := DeleteApplicationSet(ctx, a)
 	if err != nil {
 		return err
 	}
+
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Undeployed applicationset app \"%s/%s\" on cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
 
 	err = DeleteConfigMap(ctx, name, managementNamespace)
 	if err != nil {
