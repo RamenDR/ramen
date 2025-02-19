@@ -1198,6 +1198,10 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	v.reconcileAsPrimary()
 
+	if v.result.Requeue {
+		return v.updateVRGConditionsAndStatus(v.result)
+	}
+
 	if v.shouldRestoreKubeObjects() {
 		err := v.kubeObjectsRecover(&v.result)
 		if err != nil {
@@ -1216,7 +1220,16 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	}
 
 	v.kubeObjectsProtectPrimary(&v.result)
+
+	if v.result.Requeue {
+		return v.updateVRGConditionsAndStatus(v.result)
+	}
+
 	v.vrgObjectProtect(&v.result)
+
+	if v.result.Requeue {
+		return v.updateVRGConditionsAndStatus(v.result)
+	}
 
 	// If requeue is false, then VRG was successfully processed as primary.
 	// Hence the event to be generated is Success of type normal.
