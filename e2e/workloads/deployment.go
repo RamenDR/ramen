@@ -87,7 +87,7 @@ func (w Deployment) Health(ctx types.Context, client client.Client, namespace st
 	}
 
 	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		log.Info("Deployment is ready")
+		log.Debugf("Deployment \"%s/%s\" is ready", namespace, w.GetAppName())
 
 		return nil
 	}
