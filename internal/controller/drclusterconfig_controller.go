@@ -70,6 +70,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,resourceNames=kube-system,verbs=get;list;watch
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
@@ -243,6 +244,19 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	log logr.Logger,
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
+	// validate cluster ID
+	mc, err := util.NewManagedClusterInstance(ctx, r.Client, drCConfig.Name)
+	if err != nil {
+		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to get managedcluster for DRClusterConfig resource"+
+			" while validating for cluster ID, %w", err)
+	}
+
+	clusterID, err := mc.ClusterID()
+	if drCConfig.Spec.ClusterID != clusterID {
+		return ctrl.Result{}, fmt.Errorf("cluster ID claim value %v differs from that of the k8s cluster. %w",
+			drCConfig.Spec.ClusterID, err)
+	}
+
 	if err := util.NewResourceUpdater(drCConfig).
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
@@ -253,7 +267,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
-	err := r.UpdateSupportedClasses(ctx, drCConfig)
+	err = r.UpdateSupportedClasses(ctx, drCConfig)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
 		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
