@@ -5,9 +5,12 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,6 +46,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		drCluster1Name = "drcluster1"
 		ramenConfig    *ramen.RamenConfig
 		mc             *ocmv1.ManagedCluster
+		cid            string
 	)
 
 	BeforeAll(func() {
@@ -339,6 +343,12 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("ManagedCluster resource has all required status", func() {
 				It("reports DRCluster validated as true", func() {
 					By("updating a ManagedCluster resource status with correct claims")
+					ns := &corev1.Namespace{}
+					Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
+						Namespace: "",
+						Name:      "kube-system",
+					}, ns)).To(Succeed())
+					cid = fmt.Sprint(ns.ObjectMeta.UID)
 					mc.Status = ocmv1.ManagedClusterStatus{
 						Conditions: []metav1.Condition{
 							{
@@ -367,7 +377,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 							},
 							{
 								Name:  "id.k8s.io",
-								Value: "cluster",
+								Value: cid,
 							},
 						},
 					}
@@ -387,7 +397,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					)
 				})
 				It("creates the DRClusterConfig manifest", func() {
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, false)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{}, false)
 				})
 			})
 		})
@@ -409,7 +419,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Create(context.TODO(), &syncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{}, true)
 				})
 			})
 			When("There is an Async DRPolicy", func() {
@@ -429,7 +439,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m"}, false)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{"1m"}, false)
 				})
 			})
 			When("There is another Async DRPolicy with the same schedule", func() {
@@ -449,7 +459,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m"}, true)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{"1m"}, true)
 				})
 			})
 			When("There is another Async DRPolicy with a different schedule", func() {
@@ -469,7 +479,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m", "5m"}, false)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{"1m", "5m"}, false)
 				})
 			})
 			When("An Async DRPolicy with a common schedule is deleted", func() {
@@ -482,7 +492,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m", "5m"}, true)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{"1m", "5m"}, true)
 				})
 			})
 			When("An Async DRPolicy with a unique schedule is deleted", func() {
@@ -495,7 +505,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{"1m"}, false)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{"1m"}, false)
 				})
 			})
 			When("A last Async DRPolicy with a unique schedule is deleted", func() {
@@ -508,7 +518,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, false)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{}, false)
 				})
 			})
 			When("An Async DRPolicy does not contain the DRCluster", func() {
@@ -528,7 +538,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Create(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{}, true)
 				})
 			})
 			When("There are no DRPolicy resources containing the DRCluster", func() {
@@ -541,7 +551,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Delete(context.TODO(), &syncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{}, true)
 				})
 			})
 			When("There are no DRPolicy resources", func() {
@@ -554,7 +564,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Delete(context.TODO(), &asyncDRPolicy)).To(Succeed())
 
-					verifyDRClusterConfigMW(k8sClient, drCluster1Name, "cluster", []string{}, true)
+					verifyDRClusterConfigMW(k8sClient, drCluster1Name, cid, []string{}, true)
 				})
 			})
 		})
