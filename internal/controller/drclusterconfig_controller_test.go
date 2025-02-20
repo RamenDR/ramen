@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	config "k8s.io/component-base/config/v1alpha1"
+	ocmv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -154,9 +155,19 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		By("Creating a DClusterConfig")
 
+		clusterClaimClusterID := &ocmv1alpha1.ClusterClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "id.k8s.io",
+			},
+			Spec: ocmv1alpha1.ClusterClaimSpec{Value: "cid"},
+		}
+		Expect(k8sClient.Create(context.TODO(), clusterClaimClusterID)).To(Succeed())
+
 		drCConfig = &ramen.DRClusterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "local"},
-			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
+			Spec: ramen.DRClusterConfigSpec{
+				ClusterID: "cid",
+			},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
 		objectConditionExpectEventually(
