@@ -460,15 +460,12 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedConditions() (*metav1.Conditi
 
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
-	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
-		return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
-			"No PVCs are protected using Volsync scheme")
+	if v.noProtectedVolSyncPVCs() {
+		return v.handleNoProtectedVolSyncPVCs()
 	}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-		// The primary will contain the DataProtected condition.
-		return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
-			"Volsync based PVC protection does not report DataProtected/ClusterDataProtected conditions as Secondary")
+		return v.handleSecondaryVolsyncPVCConflict()
 	}
 
 	ready := true
@@ -638,4 +635,48 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 	}
 
 	return nil
+}
+
+func (v *VRGInstance) noProtectedVolSyncPVCs() bool {
+	return len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0
+}
+
+func (v *VRGInstance) handleNoProtectedVolSyncPVCs() *metav1.Condition {
+	return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+		"No PVCs are protected using Volsync scheme")
+}
+
+func (v *VRGInstance) handleSecondaryVolsyncPVCConflict() *metav1.Condition {
+	if v.validateSecondaryPVCConflictForVolsync() {
+		return newVRGAsDataProtectedConditionPVCConflict(v.instance.Generation,
+			"A PVC that is not a replication destination should not match the label selector.")
+	}
+
+	return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+		"Volsync based PVC protection does not report DataProtected/ClusterDataProtected conditions as Secondary")
+}
+
+func (v *VRGInstance) validateSecondaryPVCConflictForVolsync() bool {
+	if len(v.volSyncPVCs) == 0 {
+		return false
+	}
+
+	// Validate that only replication destination PVCs match the label selector.
+	for _, pvc := range v.volSyncPVCs {
+		matchFound := false
+
+		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+			if pvc.GetName() == rdSpec.ProtectedPVC.Name {
+				matchFound = true
+
+				break // Found a match, no need to check further for this PVC
+			}
+		}
+
+		if !matchFound {
+			return true // No match found for this PVC, conflict detected!
+		}
+	}
+
+	return false // No conflicts found
 }
