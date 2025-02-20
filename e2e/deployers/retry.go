@@ -25,7 +25,7 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Infof("Subscription phase is %s", phase)
+			log.Debugf("Subscription \"%s/%s\" phase is %s", namespace, name, phase)
 
 			return nil
 		}
@@ -46,14 +46,12 @@ func WaitWorkloadHealth(ctx types.Context, client client.Client, namespace strin
 	for {
 		err := w.Health(ctx, client, namespace)
 		if err == nil {
-			log.Info("Workload is ready")
+			log.Debugf("Workload \"%s/%s\" is ready", namespace, w.GetAppName())
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			log.Info(err.Error())
-
 			return fmt.Errorf("workload %q is not ready yet before timeout of %v",
 				w.GetName(), util.Timeout)
 		}

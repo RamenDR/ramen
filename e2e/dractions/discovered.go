@@ -92,7 +92,6 @@ func failoverRelocateDiscoveredApps(
 	targetCluster string,
 ) error {
 	name := ctx.Name()
-	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
@@ -116,8 +115,6 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	// delete pvc and deployment from dr cluster
-	log.Infof("Cleaning up discovered apps from cluster %q", currentCluster)
-
 	if err = deployers.DeleteDiscoveredApps(ctx, appNamespace, currentCluster); err != nil {
 		return err
 	}
