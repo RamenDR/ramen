@@ -10,6 +10,8 @@ import (
 	"slices"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -139,6 +141,21 @@ func (r *DRClusterConfigReconciler) statusUpdate(ctx context.Context, obj *ramen
 	return nil
 }
 
+// getK8sClusterID getClusterID returns the cluster ID of the k8s Cluster
+func (r *DRClusterConfigReconciler) getK8sClusterID() string {
+	kubeSystemNamespace := &corev1.Namespace{}
+	if err := r.Client.Get(context.TODO(), types.NamespacedName{
+		Name:      "kube-system",
+		Namespace: "",
+	}, kubeSystemNamespace); err != nil {
+		r.Log.Error(err, "Failed to get the namespace kube-system")
+
+		return ""
+	}
+
+	return fmt.Sprint(kubeSystemNamespace.GetObjectMeta().GetUID())
+}
+
 func setDRClusterConfigInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConfigConfigurationProcessed,
@@ -251,6 +268,12 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 			err.Error(), metav1.ConditionFalse, DRClusterConfigConditionConfigurationFailed)
 
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
+	}
+
+	// validate cluster ID
+	if drCConfig.Spec.ClusterID != r.getK8sClusterID() {
+		return ctrl.Result{}, fmt.Errorf("cluster ID claim value %v differs from that of the k8s cluster",
+			drCConfig.Spec.ClusterID)
 	}
 
 	err := r.UpdateSupportedClasses(ctx, drCConfig)

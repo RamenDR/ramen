@@ -357,6 +357,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 // +kubebuilder:rbac:groups=argoproj.io,resources=applicationsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,resourceNames=kube-system,verbs=get;list;watch
 
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
@@ -684,13 +685,22 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 
 	util.AddLabel(&drcConfig, util.CreatedByRamenLabel, "true")
 
-	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	err = u.ensureNoDuplicateSchedules(&drcConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ensure that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate schedule from
-	// another DRPolicy
+	return &drcConfig, nil
+}
+
+// ensureNoDuplicateSchedules ensures that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate
+// schedule from another DRPolicy
+func (u *drclusterInstance) ensureNoDuplicateSchedules(drcConfig *ramen.DRClusterConfig) error {
+	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	if err != nil {
+		return err
+	}
+
 	added := map[string]bool{}
 
 	for idx := range drpolicies.Items {
@@ -717,7 +727,7 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		}
 	}
 
-	return &drcConfig, nil
+	return nil
 }
 
 // TODO:
