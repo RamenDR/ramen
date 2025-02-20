@@ -119,9 +119,12 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 # see https://github.com/golangci/golangci-lint/issues/828
 
 .PHONY: lint
-lint: golangci-bin lint-e2e lint-api ## Run configured golangci-lint and pre-commit.sh linters against the code.
+lint: golangci-bin lint-config-verify lint-e2e lint-api ## Run configured golangci-lint and pre-commit.sh linters against the code.
 	testbin/golangci-lint run ./... --config=./.golangci.yaml
 	hack/pre-commit.sh
+
+lint-config-verify: golangci-bin ## Verify golangci-lint configuration file
+	testbin/golangci-lint config verify --config=./.golangci.yaml
 
 lint-e2e: golangci-bin ## Run configured golangci-lint for e2e module
 	cd e2e && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
