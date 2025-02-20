@@ -581,6 +581,8 @@ func (mwu *MWUtil) GenerateManifest(obj interface{}) (*ocmworkv1.Manifest, error
 func (mwu *MWUtil) newManifestWork(name string, mcNamespace string,
 	labels map[string]string, manifests []ocmworkv1.Manifest, annotations map[string]string,
 ) *ocmworkv1.ManifestWork {
+	// if labels is empty map, then add the ramen label. If not empty, then append.
+	labels[CreatedByRamenLabel] = "true"
 	mw := &ocmworkv1.ManifestWork{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
