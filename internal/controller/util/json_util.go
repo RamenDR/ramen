@@ -50,7 +50,7 @@ func EvaluateCheckHook(k8sClient client.Reader, hook *kubeobjects.HookSpec, log 
 		case <-ctx.Done():
 			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
 		case <-ticker.C:
-			objs, err := getResourcesList(k8sClient, hook)
+			objs, err := getResourcesList(k8sClient, hook, log)
 			if err != nil {
 				return false, err // Some other error occurred, return it
 			}
@@ -91,7 +91,7 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 	return finalRes, err
 }
 
-func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec) ([]client.Object, error) {
+func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) ([]client.Object, error) {
 	resourceList := make([]client.Object, 0)
 
 	var objList client.ObjectList
@@ -108,8 +108,12 @@ func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec) ([]cl
 	}
 
 	if hook.NameSelector != "" {
+		log.Info("getting resources using nameSelector", "nameSelector", hook.NameSelector)
+
 		objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sClient, hook, objList)
 		if err != nil {
+			log.Error(err, "error getting resources using nameSelector", "error", err)
+
 			return resourceList, err
 		}
 
@@ -117,8 +121,12 @@ func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec) ([]cl
 	}
 
 	if hook.LabelSelector != nil {
+		log.Info("getting resources using labelSelector", "labelSelector", hook.LabelSelector)
+
 		objsUsingLabelSelector, err := getResourcesUsingLabelSelector(k8sClient, hook, objList)
 		if err != nil {
+			log.Error(err, "error getting resources using labelSelector", "error", err)
+
 			return resourceList, err
 		}
 
