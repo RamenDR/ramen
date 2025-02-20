@@ -10,44 +10,56 @@ import drenv
 from drenv import kubectl
 
 STORAGE_CLASS_NAME_PREFIX = "rook-cephfs-"
-FILE_SYSTEMS = ["test-fs1", "test-fs2"]
+FS_NAMES = ["test-fs1", "test-fs2"]
+CEPHFS_VOLUME_SNAPSHOT_CLASSES = [
+    "csi-cephfsplugin-snapclass",
+    "csi-cephfsplugin-snapclass-2",
+]
+
+STORAGE_CLASSES_MAP = [
+    {"fs": fs, "name": f"{STORAGE_CLASS_NAME_PREFIX}{fs}", "vsc": vsc}
+    for fs, vsc in zip(FS_NAMES, CEPHFS_VOLUME_SNAPSHOT_CLASSES)
+]
 
 
 def deploy(cluster):
-    for file_system in FILE_SYSTEMS:
-        print("Creating CephFS instance")
+    for storage_class in STORAGE_CLASSES_MAP:
+        print("Creating CephFS instances")
         template = drenv.template("filesystem.yaml")
-        yaml = template.substitute(cluster=cluster, name=file_system)
+        yaml = template.substitute(cluster=cluster, name=storage_class["fs"])
         kubectl.apply("--filename=-", input=yaml, context=cluster)
 
-        print("Creating StorageClass")
+        print("Creating StorageClasses")
         template = drenv.template("storage-class.yaml")
-        storage_class_name = STORAGE_CLASS_NAME_PREFIX + file_system
         yaml = template.substitute(
-            cluster=cluster, fsname=file_system, name=storage_class_name
+            cluster=cluster, fsname=storage_class["fs"], name=storage_class["name"]
         )
         kubectl.apply("--filename=-", input=yaml, context=cluster)
 
-    print("Creating SnapshotClass")
-    template = drenv.template("snapshot-class.yaml")
-    storage_class_name = STORAGE_CLASS_NAME_PREFIX + FILE_SYSTEMS[0]
-    yaml = template.substitute(cluster=cluster, scname=storage_class_name)
-    kubectl.apply("--filename=-", input=yaml, context=cluster)
+        print("Creating SnapshotClasses")
+        template = drenv.template("snapshot-class.yaml")
+        yaml = template.substitute(
+            cluster=cluster,
+            vscname=storage_class["vsc"],
+            scname=storage_class["name"],
+            fsname=storage_class["fs"],
+        )
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
 
 
 def wait(cluster):
     print("Waiting until Ceph File Systems are ready")
 
-    for file_system in FILE_SYSTEMS:
+    for fs_name in FS_NAMES:
         drenv.wait_for(
-            f"cephfilesystem/{file_system}",
+            f"cephfilesystem/{fs_name}",
             output="jsonpath={.status.phase}",
             namespace="rook-ceph",
             timeout=120,
             profile=cluster,
         )
         kubectl.wait(
-            f"cephfilesystem/{file_system}",
+            f"cephfilesystem/{fs_name}",
             "--for=jsonpath={.status.phase}=Ready",
             "--namespace=rook-ceph",
             "--timeout=300s",

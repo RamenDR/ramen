@@ -5,10 +5,10 @@
 apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeGroupReplicationClass
 metadata:
-  name: vgrc-sample
+  name: $vgrcname
   labels:
     ramendr.openshift.io/storageid: $scname-$cluster-1
-    ramendr.openshift.io/replicationid: rook-ceph-replication-1
+    ramendr.openshift.io/replicationid: $scname-replication-1
 spec:
   provisioner: rook-ceph.rbd.csi.ceph.com
   parameters:

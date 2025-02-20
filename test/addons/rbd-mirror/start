@@ -18,7 +18,26 @@ from drenv import ceph
 from drenv import commands
 from drenv import kubectl
 
-POOL_NAME = "replicapool"
+POOL_NAMES = ["replicapool", "replicapool-2"]
+VOLUME_REPLICATION_CLASSES = ["vrc-sample", "vrc-sample-2"]
+VOLUME_GROUP_REPLICATION_CLASSES = ["vgrc-sample", "vgrc-sample-2"]
+STORAGE_CLASS_NAMES = ["rook-ceph-block", "rook-ceph-block-2"]
+
+
+STORAGE_CLASSES_MAP = [
+    {
+        "name": sc,
+        "pool": pool,
+        "vrc": vrc,
+        "vgrc": vgrc,
+    }
+    for sc, pool, vrc, vgrc in zip(
+        STORAGE_CLASS_NAMES,
+        POOL_NAMES,
+        VOLUME_REPLICATION_CLASSES,
+        VOLUME_GROUP_REPLICATION_CLASSES,
+    )
+]
 
 
 def log_blocklist(cluster):
@@ -33,7 +52,7 @@ def fetch_secret_info(cluster):
 
     print(f"Getting mirroring info site name for cluster '{cluster}'")
     info["name"] = drenv.wait_for(
-        f"cephblockpools.ceph.rook.io/{POOL_NAME}",
+        f"cephblockpools.ceph.rook.io/{POOL_NAMES[0]}",
         output="jsonpath={.status.mirroringInfo.site_name}",
         namespace="rook-ceph",
         profile=cluster,
@@ -42,7 +61,7 @@ def fetch_secret_info(cluster):
     print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
     secret_name = kubectl.get(
         "cephblockpools.ceph.rook.io",
-        POOL_NAME,
+        POOL_NAMES[0],
         "--output=jsonpath={.status.info.rbdMirrorBootstrapPeerSecretName}",
         "--namespace=rook-ceph",
         context=cluster,
@@ -58,7 +77,7 @@ def fetch_secret_info(cluster):
     )
 
     # Must be encoded as base64 in secret .data section.
-    info["pool"] = base64.b64encode(POOL_NAME.encode()).decode()
+    info["pool"] = base64.b64encode(POOL_NAMES[0].encode()).decode()
 
     return info
 
@@ -99,23 +118,29 @@ def configure_rbd_mirroring(cluster, peer_info):
     patch = {"spec": {"mirroring": {"peers": {"secretNames": [peer_info["name"]]}}}}
     kubectl.patch(
         "cephblockpool",
-        POOL_NAME,
+        POOL_NAMES[0],
         "--type=merge",
         f"--patch={json.dumps(patch)}",
         "--namespace=rook-ceph",
         context=cluster,
     )
 
-    print("Creating VolumeReplicationClass")
-    template = drenv.template("start-data/vrc-sample.yaml")
-    yaml = template.substitute(cluster=cluster, scname="rook-ceph-block")
-    kubectl.apply("--filename=-", input=yaml, context=cluster)
+    for storage_class in STORAGE_CLASSES_MAP:
+        print("Creating VolumeReplicationClass")
+        template = drenv.template("start-data/vrc-sample.yaml")
+        yaml = template.substitute(
+            cluster=cluster, vrcname=storage_class["vrc"], scname=storage_class["name"]
+        )
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
 
-    template = drenv.template("start-data/vgrc-sample.yaml")
-    yaml = template.substitute(
-        cluster=cluster, pool=POOL_NAME, scname="rook-ceph-block"
-    )
-    kubectl.apply("--filename=-", input=yaml, context=cluster)
+        template = drenv.template("start-data/vgrc-sample.yaml")
+        yaml = template.substitute(
+            cluster=cluster,
+            pool=storage_class["pool"],
+            vgrcname=storage_class["vgrc"],
+            scname=storage_class["name"],
+        )
+        kubectl.apply("--filename=-", input=yaml, context=cluster)
 
     print(f"Apply rbd mirror to cluster '{cluster}'")
     kubectl.apply("--kustomize=start-data", context=cluster)
@@ -165,7 +190,7 @@ def wait_until_pool_mirroring_is_healthy(cluster, attempts=3):
 
     status = kubectl.get(
         "cephblockpools.ceph.rook.io",
-        POOL_NAME,
+        POOL_NAMES[0],
         "--output=jsonpath={.status}",
         "--namespace=rook-ceph",
         context=cluster,
@@ -185,7 +210,7 @@ def watch_pool_mirroring_status(cluster, timeout=180):
     while True:
         remaining = deadline - time.monotonic()
         watcher = kubectl.watch(
-            f"cephblockpool/{POOL_NAME}",
+            f"cephblockpool/{POOL_NAMES[0]}",
             jsonpath="{.status.mirroringStatus.summary}",
             namespace="rook-ceph",
             timeout=remaining,
