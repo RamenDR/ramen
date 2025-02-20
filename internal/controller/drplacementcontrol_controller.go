@@ -15,6 +15,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	rmnapi "github.com/ramendr/ramen/internal/controller/api"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -2469,10 +2470,13 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
-	conflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
-	if conflict {
-		return fmt.Errorf("drpc: %s and drpc: %s protect the same namespace",
-			drpc.Name, otherDRPC.Name)
+	potentialConflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
+	if potentialConflict {
+		independentVMProtection := drpcProtectVMInNS(drpc, otherDRPC, ramenConfig, log)
+		if !independentVMProtection {
+			return fmt.Errorf("drpc: %s and drpc: %s protect common resources from the same namespace",
+				drpc.Name, otherDRPC.Name)
+		}
 	}
 
 	return nil
@@ -2501,4 +2505,28 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	otherDrpolicyClusters := rmnutil.DRPolicyClusterNamesAsASet(otherDrpolicy)
 
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
+}
+
+func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl,
+	ramenConfig *rmn.RamenConfig, log logr.Logger) bool {
+	log.Info("In DRPC Protect VM in NS Validation")
+	drpcName := drpc.Spec.KubeObjectProtection.RecipeRef.Name
+	otherDrpcName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
+	if drpcName == rmnapi.VMRecipeName && otherDrpcName == rmnapi.VMRecipeName {
+
+		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
+		log.Info("It could be Independent VM protection.")
+		log.Info("Ramen Ops namespace is : " + ramenOpsNS)
+
+		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
+			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
+			log.Info("Its a valid Independent VM protection.")
+
+			return true
+		}
+	}
+
+	log.Info("It isn't a valid Independent VM protection.")
+
+	return false
 }
