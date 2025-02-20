@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	gomegaTypes "github.com/onsi/gomega/types"
@@ -55,6 +57,12 @@ func createManagedCluster(k8sClient client.Client, cluster string) *ocmv1.Manage
 }
 
 func updateManagedClusterStatus(k8sClient client.Client, mc *ocmv1.ManagedCluster) {
+	ns := &corev1.Namespace{}
+	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
+		Namespace: "",
+		Name:      "kube-system",
+	}, ns)).To(Succeed())
+
 	mc.Status = ocmv1.ManagedClusterStatus{
 		Conditions: []metav1.Condition{
 			{
@@ -68,7 +76,7 @@ func updateManagedClusterStatus(k8sClient client.Client, mc *ocmv1.ManagedCluste
 		ClusterClaims: []ocmv1.ManagedClusterClaim{
 			{
 				Name:  "id.k8s.io",
-				Value: "fake",
+				Value: fmt.Sprint(ns.ObjectMeta.UID),
 			},
 		},
 	}
