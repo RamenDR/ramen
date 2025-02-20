@@ -28,6 +28,7 @@ import (
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	clrapiv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
@@ -110,6 +111,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(gppv1.AddToScheme(scheme))
 		utilruntime.Must(argocdv1alpha1hack.AddToScheme(scheme))
 		utilruntime.Must(clrapiv1beta1.AddToScheme(scheme))
+		utilruntime.Must(clrapiv1beta2.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))
 		utilruntime.Must(ocmv1.AddToScheme(scheme))
 	} else {
