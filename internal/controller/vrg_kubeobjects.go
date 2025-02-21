@@ -203,6 +203,7 @@ const (
 	vrgGenerationNumberBitCount = 64
 )
 
+// nolint: funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
 	captureStartConditionally captureStartConditionally,
@@ -226,7 +227,11 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 		if cg.IsHook {
 			if err := v.executeHook(cg.Hook, log1); err != nil {
-				break
+				log1.Info("Check hook execution failed", "hook", cg.Hook.Name, "error", err)
+
+				result.Requeue = true
+
+				return
 			}
 		} else {
 			requestsCompletedCount += v.kubeObjectsGroupCapture(
@@ -245,6 +250,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	}
 
 	firstRequest := getFirstRequest(groups, requests, namePrefix, v.s3StoreAccessors[0].S3ProfileName)
+	if firstRequest == nil {
+		result.Requeue = true
+
+		v.log.Info("Kube objects capture first request not found")
+
+		return
+	}
 
 	v.kubeObjectsCaptureComplete(
 		result,
