@@ -259,6 +259,18 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 
 		v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
 		v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
+	} else {
+		// Perform a PVC conflict check against the secondary cluster.
+		// Ensures that PVCs matching the label selector are properly validated before protection.
+		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+			for _, pvc := range v.volSyncPVCs {
+				if pvc.GetName() != rdSpec.ProtectedPVC.Name {
+					v.log.Info("A PVC that is not a replication destination should not match the label selector.")
+
+					return true
+				}
+			}
+		}
 	}
 
 	// Reset status finalsync flags and condition

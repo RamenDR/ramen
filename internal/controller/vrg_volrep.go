@@ -181,6 +181,18 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 	}
 
+	// Ensure that no PVC on the secondary cluster matches the label selector.
+	// This check runs after all protected PVCs have been cleaned up in the previous step.
+	if !requeue && len(v.volRepPVCs) > 0 {
+		requeue = true
+
+		v.log.Info("No PVC on the secondary should match the label selector")
+	}
+
+	if !requeue {
+		v.log.Info("Successfully reconciled VolRep as Secondary")
+	}
+
 	return requeue
 }
 
