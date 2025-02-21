@@ -226,7 +226,11 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 		if cg.IsHook {
 			if err := v.executeHook(cg.Hook, log1); err != nil {
-				break
+				log1.Info("Check hook execution failed", "hook", cg.Hook.Name, "error", err)
+
+				result.Requeue = true
+
+				return
 			}
 		} else {
 			requestsCompletedCount += v.kubeObjectsGroupCapture(
