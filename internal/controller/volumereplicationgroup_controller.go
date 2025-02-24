@@ -567,7 +567,7 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to label PVCs for consistency groups", true)
 	}
 
-	v.log = v.log.WithName("vrginstance").WithValues("State", v.instance.Spec.ReplicationState)
+	v.log = v.log.WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
 
 	if util.ResourceIsDeleted(v.instance) {
@@ -743,37 +743,44 @@ func (v *VRGInstance) labelPVCsForCG() error {
 }
 
 func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim) error {
-	scName := pvc.Spec.StorageClassName
+	cgLabelVal, err := v.getCGLabelValue(pvc.Spec.StorageClassName, pvc.GetName(), pvc.GetNamespace())
+	if err != nil {
+		return err
+	}
 
+	// Add a CG label to indicate that this PVC belongs to a consistency group.
+	return util.NewResourceUpdater(pvc).
+		AddLabel(ConsistencyGroupLabel, cgLabelVal).
+		Update(v.ctx, v.reconciler.Client)
+}
+
+func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace string) (string, error) {
 	if scName == nil || *scName == "" {
-		return fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+		return "", fmt.Errorf("missing storage class name for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
 	storageClass := &storagev1.StorageClass{}
 	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
 		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
 
-		return fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+		return "", fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
 	}
 
 	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
 	if !ok {
-		v.log.Info("Missing storageID for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+		v.log.Info("Missing storageID for PVC %s/%s", pvcNamespace, pvcName)
 
-		return fmt.Errorf("missing storageID for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
+		return "", fmt.Errorf("missing storageID for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
 	// FIXME: a temporary workaround for issue DFBUGS-1209
 	// Remove this block once DFBUGS-1209 is fixed
-	storageID = "cephfs-" + storageID
+	cgLabelVal := "cephfs-" + storageID
 	if storageClass.Provisioner != DefaultCephFSCSIDriverName {
-		storageID = "rbd-" + storageID
+		cgLabelVal = "rbd-" + storageID
 	}
 
-	// Add label for PVC, showing that this PVC is part of consistency group
-	return util.NewResourceUpdater(pvc).
-		AddLabel(ConsistencyGroupLabel, storageID).
-		Update(v.ctx, v.reconciler.Client)
+	return cgLabelVal, nil
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {
