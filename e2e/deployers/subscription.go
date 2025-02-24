@@ -35,15 +35,13 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Infof("Deploying subscription in namespace %q", managementNamespace)
-
 	// create subscription namespace
-	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace)
+	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = CreateManagedClusterSetBinding(McsbName, managementNamespace)
+	err = CreateManagedClusterSetBinding(ctx, McsbName, managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -58,7 +56,20 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	return waitSubscriptionPhase(ctx, managementNamespace, name, subscriptionv1.SubscriptionPropagated)
+	err = waitSubscriptionPhase(ctx, managementNamespace, name, subscriptionv1.SubscriptionPropagated)
+	if err != nil {
+		return err
+	}
+
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Deployed subscription app \"%s/%s\" on cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+
+	return nil
 }
 
 // Undeploy deletes a subscription from the hub cluster, deleting the workload from the managed clusters.
@@ -67,12 +78,18 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Infof("Undeploying subscription in namespace %q", managementNamespace)
-
 	err := DeleteSubscription(ctx, s)
 	if err != nil {
 		return err
 	}
+
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Undeployed subscription app \"%s/%s\" on cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
 
 	err = DeletePlacement(ctx, name, managementNamespace)
 	if err != nil {

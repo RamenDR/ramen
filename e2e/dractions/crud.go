@@ -16,19 +16,8 @@ import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
-
-func getPlacement(client client.Client, namespace, name string) (*clusterv1beta1.Placement, error) {
-	placement := &clusterv1beta1.Placement{}
-	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
-
-	err := client.Get(context.Background(), key, placement)
-	if err != nil {
-		return nil, err
-	}
-
-	return placement, nil
-}
 
 func updatePlacement(client client.Client, placement *clusterv1beta1.Placement) error {
 	return client.Update(context.Background(), placement)
@@ -46,14 +35,24 @@ func getDRPC(client client.Client, namespace, name string) (*ramen.DRPlacementCo
 	return drpc, nil
 }
 
-func createDRPC(client client.Client, drpc *ramen.DRPlacementControl) error {
+func createDRPC(ctx types.Context, client client.Client, drpc *ramen.DRPlacementControl) error {
+	log := ctx.Logger()
+
 	err := client.Create(context.Background(), drpc)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
 		}
-		// ctx.Log.Info("drpc " + drpc.Name + " already Exists")
+
+		log.Debugf("drpc \"%s/%s\" already exist", drpc.Namespace, drpc.Name)
 	}
+
+	spec, err := yaml.Marshal(drpc.Spec)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("Created drpc \"%s/%s\" with spec:\n%s", drpc.Namespace, drpc.Name, string(spec))
 
 	return nil
 }
@@ -62,7 +61,9 @@ func updateDRPC(client client.Client, drpc *ramen.DRPlacementControl) error {
 	return client.Update(context.Background(), drpc)
 }
 
-func deleteDRPC(client client.Client, namespace, name string) error {
+func deleteDRPC(ctx types.Context, client client.Client, namespace, name string) error {
+	log := ctx.Logger()
+
 	objDrpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
@@ -72,10 +73,18 @@ func deleteDRPC(client client.Client, namespace, name string) error {
 			return err
 		}
 
+		log.Debugf("drpc \"%s/%s\" not found", namespace, name)
+
 		return nil
 	}
 
-	return client.Delete(context.Background(), objDrpc)
+	if err := client.Delete(context.Background(), objDrpc); err != nil {
+		return err
+	}
+
+	log.Debugf("Deleted drpc \"%s/%s\"", namespace, name)
+
+	return nil
 }
 
 func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, appname string) *ramen.DRPlacementControl {
@@ -135,8 +144,10 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 			return err
 		}
 
-		log.Info("Placement already Exists")
+		log.Debugf("Placement \"%s/%s\" already Exists", namespace, name)
 	}
+
+	log.Debugf("Created placement \"%s/%s\"", namespace, name)
 
 	return nil
 }

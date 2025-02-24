@@ -34,7 +34,7 @@ linters-settings:
     strict: true
   wsl:
     allow-trailing-comment: true
-    enforce-err-cuddling: true
+    force-err-cuddling: true
   revive:
     ignore-generated-header: false
     severity: error

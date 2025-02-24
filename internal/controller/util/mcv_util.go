@@ -136,7 +136,7 @@ func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, reso
 	nf := &csiaddonsv1alpha1.NetworkFence{}
 
 	err := m.getResourceFromManagedCluster(
-		resourceName,
+		"network-fence-"+resourceName,
 		resourceNamespace,
 		managedCluster,
 		annotations,

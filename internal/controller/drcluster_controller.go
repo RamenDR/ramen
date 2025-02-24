@@ -1004,8 +1004,8 @@ func (u *drclusterInstance) cleanClusters(clusters []ramen.DRCluster) (bool, err
 	cleanedCount := 0
 
 	for _, cluster := range clusters {
-		requeue, err := u.removeFencingCR(cluster)
 		// Can just error alone be checked?
+		requeue, err := u.removeFencingCR(cluster)
 		if err != nil {
 			needRequeue = true
 		} else {

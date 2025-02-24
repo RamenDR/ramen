@@ -17,8 +17,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
-	// TODO: log cluster namespace for completeness?
-	log.Infof("Protecting workload in namespace %q", managementNamespace)
+	log.Infof("Protecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
 
 	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
@@ -26,7 +25,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	drpcName := name
 
 	// create mcsb default in ramen-ops ns
-	if err := deployers.CreateManagedClusterSetBinding(deployers.McsbName, managementNamespace); err != nil {
+	if err := deployers.CreateManagedClusterSetBinding(ctx, deployers.McsbName, managementNamespace); err != nil {
 		return err
 	}
 
@@ -41,13 +40,11 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	log.Info("Creating drpc")
-
 	clusterName := drpolicy.Spec.DRClusters[0]
 
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
-	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
+	if err = createDRPC(ctx, util.Ctx.Hub.Client, drpc); err != nil {
 		return err
 	}
 
@@ -61,18 +58,16 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
+	appNamespace := ctx.AppNamespace()
 
-	// TODO: log cluster namespace for completeness?
-	log.Infof("Unprotecting workload in namespace %q", managementNamespace)
+	log.Infof("Unprotecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
 
 	placementName := name
 	drpcName := name
 
 	client := util.Ctx.Hub.Client
 
-	log.Info("Deleting drpc")
-
-	if err := deleteDRPC(client, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, client, managementNamespace, drpcName); err != nil {
 		return err
 	}
 

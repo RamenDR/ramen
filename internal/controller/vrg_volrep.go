@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -573,13 +572,10 @@ func undoPVRetention(pv *corev1.PersistentVolume) {
 }
 
 func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
-	return fmt.Sprintf("%s-%s", pvcVRAnnotationArchivedVersionV1, strconv.Itoa(int(gen)))
+	return fmt.Sprintf("%s-%d", pvcVRAnnotationArchivedVersionV1, gen)
 }
 
 func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
-	pvHasAnnotation := false
-	pvcHasAnnotation := false
-
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		log.Error(err, "Failed to get PV to check if archived")
@@ -587,17 +583,11 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 		return false
 	}
 
-	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
-	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
-		pvcHasAnnotation = true
+	if pvc.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pvc.Generation) {
+		return false
 	}
 
-	pvDesiredValue := v.generateArchiveAnnotation(pv.Generation)
-	if v, ok := pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvDesiredValue) {
-		pvHasAnnotation = true
-	}
-
-	if !pvHasAnnotation || !pvcHasAnnotation {
+	if pv.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pv.Generation) {
 		return false
 	}
 
@@ -2034,7 +2024,6 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// PVC may cause a new PV to be created.
 		// Ignoring PVC restore errors helps with the upgrade from ODF-4.12.x to 4.13
 		pvcCount, err = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
-
 		if err != nil || pvCount != pvcCount {
 			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
 				pvCount, pvcCount, err))

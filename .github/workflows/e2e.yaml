@@ -64,7 +64,7 @@ jobs:
     - name: Deploy ramen
       run: |
         source venv
-        ramenctl deploy test/envs/regional-dr.yaml
+        ramendev deploy test/envs/regional-dr.yaml
 
     - name: Configure ramen
       uses: nick-fields/retry@v3
@@ -73,7 +73,7 @@ jobs:
         max_attempts: 3
         command: |
           source venv
-          ramenctl config test/envs/regional-dr.yaml
+          ramendev config test/envs/regional-dr.yaml
 
     - name: Run e2e tests
       run: |
