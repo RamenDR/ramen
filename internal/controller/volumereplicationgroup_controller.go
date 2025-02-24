@@ -1188,6 +1188,10 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 		if numOfRestoredRes != 0 {
 			return v.updateVRGConditionsAndStatus(v.result)
 		}
+
+		if v.instance.Spec.Action != "" && numOfRestoredRes == 0 {
+			return v.clusterDataError(err, "Failed to restore PVs/PVCs, No PV found", v.result)
+		}
 	}
 
 	v.reconcileAsPrimary()
