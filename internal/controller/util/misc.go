@@ -5,6 +5,8 @@ package util
 
 import (
 	"context"
+	"fmt"
+	"hash/crc32"
 	"reflect"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -13,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -25,6 +28,9 @@ const (
 
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
+
+	JobNameMaxLength     = validation.DNS1123LabelMaxLength
+	ServiceNameMaxLength = validation.DNS1123LabelMaxLength
 )
 
 type ResourceUpdater struct {
@@ -253,4 +259,29 @@ func TrimToK8sResourceNameLength(name string) string {
 	}
 
 	return name
+}
+
+func GetJobName(namePrefix string, ownerName string) string {
+	return getShortenedResourceName(namePrefix, ownerName, JobNameMaxLength)
+}
+
+func GetServiceName(namePrefix string, ownerName string) string {
+	return getShortenedResourceName(namePrefix, ownerName, ServiceNameMaxLength)
+}
+
+func getShortenedResourceName(namePrefix string, ownerName string, maxLength int) string {
+	name := namePrefix + ownerName
+
+	if len(name) > maxLength {
+		return namePrefix + GetHashedName(ownerName)
+	}
+
+	// No need to shorten, use original name
+	return name
+}
+
+// Implements the string shortening algorithm, required to match volsync resources names.
+// https://github.com/backube/volsync/pull/1519
+func GetHashedName(name string) string {
+	return fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(name)))
 }
