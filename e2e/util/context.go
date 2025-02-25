@@ -27,6 +27,7 @@ import (
 var ConfigFile string
 
 type Cluster struct {
+	Name   string
 	Client ctrlClient.Client
 }
 
@@ -38,6 +39,12 @@ type Context struct {
 }
 
 var Ctx *Context
+
+const (
+	defaultHubClusterName = "hub"
+	defaultC1ClusterName  = "c1"
+	defaultC2ClusterName  = "c2"
+)
 
 func addToScheme(scheme *runtime.Scheme) error {
 	if err := ocmv1b1.AddToScheme(scheme); err != nil {
@@ -102,14 +109,32 @@ func NewContext(log *zap.SugaredLogger, configFile string) (*Context, error) {
 		panic(err)
 	}
 
+	ctx.Hub.Name = config.Clusters["hub"].Name
+	if ctx.Hub.Name == "" {
+		ctx.Hub.Name = defaultHubClusterName
+		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
+	}
+
 	ctx.Hub.Client, err = setupClient(config.Clusters["hub"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
+	ctx.C1.Name = config.Clusters["c1"].Name
+	if ctx.C1.Name == "" {
+		ctx.C1.Name = defaultC1ClusterName
+		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
+	}
+
 	ctx.C1.Client, err = setupClient(config.Clusters["c1"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
+	}
+
+	ctx.C2.Name = config.Clusters["c2"].Name
+	if ctx.C2.Name == "" {
+		ctx.C2.Name = defaultC2ClusterName
+		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
 	}
 
 	ctx.C2.Client, err = setupClient(config.Clusters["c2"].KubeconfigPath)
