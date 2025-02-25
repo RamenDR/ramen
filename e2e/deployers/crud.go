@@ -112,7 +112,7 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 			return err
 		}
 
-		log.Debugf("Placement \"%s/%s\" already Exists", namespace, name)
+		log.Debugf("Placement \"%s/%s\" already exists", namespace, name)
 	}
 
 	log.Debugf("Created placement \"%s/%s\"", namespace, name)
@@ -193,7 +193,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 			return err
 		}
 
-		log.Debugf("Subscription \"%s/%s\" already Exists", managementNamespace, name)
+		log.Debugf("Subscription \"%s/%s\" already exists", managementNamespace, name)
 	}
 
 	log.Debugf("Created subscription \"%s/%s\"", managementNamespace, name)
@@ -258,7 +258,7 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		log.Debugf("ConfigMap \"%s/%s\" already Exists", cmNamespace, cmName)
+		log.Debugf("ConfigMap \"%s/%s\" already exists", cmNamespace, cmName)
 	}
 
 	log.Debugf("Created configMap \"%s/%s\"", cmNamespace, cmName)
@@ -364,7 +364,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 			return err
 		}
 
-		log.Debugf("Applicationset \"%s/%s\" already Exists", managementNamespace, name)
+		log.Debugf("Applicationset \"%s/%s\" already exists", managementNamespace, name)
 	}
 
 	log.Debugf("Created applicationset \"%s/%s\"", managementNamespace, name)
