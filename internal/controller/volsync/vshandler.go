@@ -2006,7 +2006,7 @@ func getLocalServiceNameForRDFromPVCName(pvcName string) string {
 
 func getLocalServiceNameForRD(rdName string) string {
 	// This is the name VolSync will use for the service
-	return fmt.Sprintf("volsync-rsync-tls-dst-%s", rdName)
+	return util.GetServiceName("volsync-rsync-tls-dst-", rdName)
 }
 
 // This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
@@ -2551,7 +2551,7 @@ func (v *VSHandler) removeOCMAnnotationsAndUpdate(obj client.Object) error {
 func (v *VSHandler) IsActiveJobPresent(name, namespace string) (bool, error) {
 	namespacedName := types.NamespacedName{
 		Namespace: namespace,
-		Name:      fmt.Sprintf("volsync-rsync-tls-src-%s", name),
+		Name:      util.GetJobName("volsync-rsync-tls-src-", name),
 	}
 
 	job := &batchv1.Job{}
