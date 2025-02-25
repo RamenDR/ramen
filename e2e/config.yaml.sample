@@ -20,12 +20,15 @@ pvcspecs:
     accessmodes: ReadWriteMany
 
 # Sample cluster configurations:
-# Uncomment and edit the following lines to provide the kubeconfig paths
-# for your test clusters.
+# Uncomment and edit the following lines to set cluster names
+# and their kubeconfig paths for the managed and hub clusters.
 # Clusters:
 #   c1:
-#     kubeconfigpath: /path/to/kubeconfig/c1
+#     name: dr1
+#     kubeconfigpath: /path/to/kubeconfig/dr1
 #   c2:
-#     kubeconfigpath: /path/to/kubeconfig/c2
+#     name: dr2
+#     kubeconfigpath: /path/to/kubeconfig/dr2
 #   hub:
+#     name: hub
 #     kubeconfigpath: /path/to/kubeconfig/hub

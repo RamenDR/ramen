@@ -53,7 +53,10 @@ def dump_e2e_config(env):
         with open(path, "w") as f:
             f.write(data)
 
-        e2e_config["Clusters"][e2e_name] = {"kubeconfigpath": path}
+        e2e_config["Clusters"][e2e_name] = {
+            "name": cluster_name,
+            "kubeconfigpath": path,
+        }
 
     path = os.path.join(base, "config.yaml")
     with open(path, "w") as f:
