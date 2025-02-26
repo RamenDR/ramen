@@ -39,11 +39,6 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
-	// Total number of condition types in VRG as of now. Change this value
-	// when a new condition type is added to VRG or an existing condition
-	// type is removed from VRG status.
-	VRGTotalConditions = 4
-
 	// VolSync related conditions. These conditions are only applicable
 	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
@@ -86,10 +81,6 @@ const (
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	if len(*conditions) == VRGTotalConditions {
-		return
-	}
-
 	time := metav1.NewTime(time.Now())
 
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
