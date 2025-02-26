@@ -40,7 +40,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}

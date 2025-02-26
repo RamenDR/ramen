@@ -16,7 +16,7 @@ func Validate(dt *testing.T) {
 	t.Run("hub", func(dt *testing.T) {
 		t := test.WithLog(dt, util.Ctx.Log)
 
-		err := util.ValidateRamenHubOperator(util.Ctx.Hub.Client)
+		err := util.ValidateRamenHubOperator(util.Ctx.Hub)
 		if err != nil {
 			t.Fatalf("Failed to validated hub cluster: %s", err)
 		}
@@ -24,7 +24,7 @@ func Validate(dt *testing.T) {
 	t.Run("c1", func(dt *testing.T) {
 		t := test.WithLog(dt, util.Ctx.Log)
 
-		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1.Client, "c1")
+		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1, "c1")
 		if err != nil {
 			t.Fatalf("Failed to validated dr cluster c1: %s", err)
 		}
@@ -32,7 +32,7 @@ func Validate(dt *testing.T) {
 	t.Run("c2", func(dt *testing.T) {
 		t := test.WithLog(dt, util.Ctx.Log)
 
-		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2.Client, "c2")
+		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2, "c2")
 		if err != nil {
 			t.Fatalf("Failed to validated dr cluster c2: %s", err)
 		}

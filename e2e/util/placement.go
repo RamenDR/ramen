@@ -17,8 +17,8 @@ import (
 // based on the PlacementDecision for the given Placement resource.
 // Assumes the PlacementDecision exists with a Decision.
 // Not applicable for discovered apps before enabling protection, as no Placement exists.
-func GetCurrentCluster(client client.Client, namespace string, placementName string) (string, error) {
-	placementDecision, err := waitPlacementDecision(client, namespace, placementName)
+func GetCurrentCluster(cluster Cluster, namespace string, placementName string) (string, error) {
+	placementDecision, err := waitPlacementDecision(cluster, namespace, placementName)
 	if err != nil {
 		return "", err
 	}
@@ -26,11 +26,11 @@ func GetCurrentCluster(client client.Client, namespace string, placementName str
 	return placementDecision.Status.Decisions[0].ClusterName, nil
 }
 
-func GetPlacement(client client.Client, namespace, name string) (*v1beta1.Placement, error) {
+func GetPlacement(cluster Cluster, namespace, name string) (*v1beta1.Placement, error) {
 	placement := &v1beta1.Placement{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := client.Get(context.Background(), key, placement)
+	err := cluster.Client.Get(context.Background(), key, placement)
 	if err != nil {
 		return nil, err
 	}
@@ -39,17 +39,17 @@ func GetPlacement(client client.Client, namespace, name string) (*v1beta1.Placem
 }
 
 // waitPlacementDecision waits until we have a placement decision and returns the placement decision object.
-func waitPlacementDecision(client client.Client, namespace string, placementName string,
+func waitPlacementDecision(cluster Cluster, namespace string, placementName string,
 ) (*v1beta1.PlacementDecision, error) {
 	startTime := time.Now()
 
 	for {
-		placement, err := GetPlacement(client, namespace, placementName)
+		placement, err := GetPlacement(cluster, namespace, placementName)
 		if err != nil {
 			return nil, err
 		}
 
-		placementDecision, err := getPlacementDecisionFromPlacement(client, placement)
+		placementDecision, err := getPlacementDecisionFromPlacement(cluster, placement)
 		if err != nil {
 			return nil, err
 		}
@@ -66,7 +66,7 @@ func waitPlacementDecision(client client.Client, namespace string, placementName
 	}
 }
 
-func getPlacementDecisionFromPlacement(ctrlClient client.Client, placement *v1beta1.Placement,
+func getPlacementDecisionFromPlacement(cluster Cluster, placement *v1beta1.Placement,
 ) (*v1beta1.PlacementDecision, error) {
 	matchLabels := map[string]string{
 		v1beta1.PlacementLabel: placement.GetName(),
@@ -78,7 +78,7 @@ func getPlacementDecisionFromPlacement(ctrlClient client.Client, placement *v1be
 	}
 
 	plDecisions := &v1beta1.PlacementDecisionList{}
-	if err := ctrlClient.List(context.Background(), plDecisions, listOptions...); err != nil {
+	if err := cluster.Client.List(context.Background(), plDecisions, listOptions...); err != nil {
 		return nil, fmt.Errorf("failed to list PlacementDecisions (placement: %s)",
 			placement.GetNamespace()+"/"+placement.GetName())
 	}
