@@ -14,7 +14,7 @@ import (
 
 func EnsureChannel() error {
 	// create channel namespace
-	err := CreateNamespace(Ctx.Hub.Client, GetChannelNamespace(), Ctx.Log)
+	err := CreateNamespace(Ctx.Hub, GetChannelNamespace(), Ctx.Log)
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func EnsureChannelDeleted() error {
 		return err
 	}
 
-	return DeleteNamespace(Ctx.Hub.Client, GetChannelNamespace(), Ctx.Log)
+	return DeleteNamespace(Ctx.Hub, GetChannelNamespace(), Ctx.Log)
 }
 
 func createChannel() error {
