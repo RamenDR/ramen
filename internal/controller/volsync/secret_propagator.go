@@ -164,6 +164,9 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PolicyName,
 			Namespace: sp.Owner.GetNamespace(),
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -256,6 +259,9 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PlacementRuleName,
 			Namespace: sp.Owner.GetNamespace(),
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -301,6 +307,9 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      sp.PlacementBindingName,
 			Namespace: sp.Owner.GetNamespace(),
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 	}
 

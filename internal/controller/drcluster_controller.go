@@ -663,13 +663,17 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		return nil, err
 	}
 
+	labels := make(map[string]string)
+	labels[util.CreatedByRamenLabel] = "true"
+
 	drcConfig := ramen.DRClusterConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DRClusterConfig",
 			APIVersion: "ramendr.openshift.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: u.object.GetName(),
+			Name:   u.object.GetName(),
+			Labels: labels,
 		},
 		Spec: ramen.DRClusterConfigSpec{
 			ClusterID: clusterID,
