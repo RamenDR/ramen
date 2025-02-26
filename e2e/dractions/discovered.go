@@ -44,12 +44,12 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
-	if err = createDRPC(ctx, util.Ctx.Hub.Client, drpc); err != nil {
+	if err = createDRPC(ctx, util.Ctx.Hub, drpc); err != nil {
 		return err
 	}
 
 	// wait for drpc ready
-	return waitDRPCReady(ctx, util.Ctx.Hub.Client, managementNamespace, drpcName)
+	return waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
 }
 
 // remove DRPC
@@ -65,13 +65,11 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
-	client := util.Ctx.Hub.Client
-
-	if err := deleteDRPC(ctx, client, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, util.Ctx.Hub, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
-	if err := waitDRPCDeleted(ctx, client, managementNamespace, drpcName); err != nil {
+	if err := waitDRPCDeleted(ctx, util.Ctx.Hub, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
@@ -96,7 +94,6 @@ func failoverRelocateDiscoveredApps(
 	appNamespace := ctx.AppNamespace()
 
 	drpcName := name
-	client := util.Ctx.Hub.Client
 
 	drPolicyName := util.DefaultDRPolicyName
 
@@ -105,11 +102,11 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	if err := waitAndUpdateDRPC(ctx, client, managementNamespace, drpcName, action, targetCluster); err != nil {
+	if err := waitAndUpdateDRPC(ctx, util.Ctx.Hub, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
 	}
 
-	if err := waitDRPCProgression(ctx, client, managementNamespace, name,
+	if err := waitDRPCProgression(ctx, util.Ctx.Hub, managementNamespace, name,
 		ramen.ProgressionWaitOnUserToCleanUp); err != nil {
 		return err
 	}
@@ -119,11 +116,11 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	if err := waitDRPCPhase(ctx, client, managementNamespace, name, state); err != nil {
+	if err := waitDRPCPhase(ctx, util.Ctx.Hub, managementNamespace, name, state); err != nil {
 		return err
 	}
 
-	if err := waitDRPCReady(ctx, client, managementNamespace, name); err != nil {
+	if err := waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, name); err != nil {
 		return err
 	}
 
