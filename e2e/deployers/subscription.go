@@ -36,7 +36,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 
 	// create subscription namespace
-	err := util.CreateNamespace(util.Ctx.Hub.Client, managementNamespace, log)
+	err := util.CreateNamespace(util.Ctx.Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub.Client, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	return util.DeleteNamespace(util.Ctx.Hub.Client, managementNamespace, log)
+	return util.DeleteNamespace(util.Ctx.Hub, managementNamespace, log)
 }
 
 func (s Subscription) IsDiscovered() bool {

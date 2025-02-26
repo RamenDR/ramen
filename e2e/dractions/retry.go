@@ -88,8 +88,8 @@ func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Cli
 	return util.Ctx.C2.Client
 }
 
-func getTargetCluster(client client.Client, currentCluster string) (string, error) {
-	drpolicy, err := util.GetDRPolicy(client, util.DefaultDRPolicyName)
+func getTargetCluster(cluster util.Cluster, currentCluster string) (string, error) {
+	drpolicy, err := util.GetDRPolicy(cluster, util.DefaultDRPolicyName)
 	if err != nil {
 		return "", err
 	}

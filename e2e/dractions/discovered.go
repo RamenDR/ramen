@@ -35,7 +35,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	}
 
 	// create drpc
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub.Client, drPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, drPolicyName)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func failoverRelocateDiscoveredApps(
 
 	drPolicyName := util.DefaultDRPolicyName
 
-	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, drPolicyName)
 	if err != nil {
 		return err
 	}
