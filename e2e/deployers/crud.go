@@ -112,7 +112,7 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 			return err
 		}
 
-		log.Debugf("Placement \"%s/%s\" already Exists", namespace, name)
+		log.Debugf("Placement \"%s/%s\" already exists", namespace, name)
 	}
 
 	log.Debugf("Created placement \"%s/%s\"", namespace, name)
@@ -193,8 +193,10 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 			return err
 		}
 
-		log.Info("Subscription already Exists")
+		log.Debugf("Subscription \"%s/%s\" already exists", managementNamespace, name)
 	}
+
+	log.Debugf("Created subscription \"%s/%s\"", managementNamespace, name)
 
 	return nil
 }
@@ -217,8 +219,10 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 			return err
 		}
 
-		log.Info("Subscription not found")
+		log.Debugf("Subscription \"%s/%s\" not found", managementNamespace, name)
 	}
+
+	log.Debugf("Deleted subscription \"%s/%s\"", managementNamespace, name)
 
 	return nil
 }
@@ -254,8 +258,10 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		log.Infof("ConfigMap %q already Exists", cmName)
+		log.Debugf("ConfigMap \"%s/%s\" already exists", cmNamespace, cmName)
 	}
+
+	log.Debugf("Created configMap \"%s/%s\"", cmNamespace, cmName)
 
 	return nil
 }
@@ -274,8 +280,10 @@ func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error
 			return fmt.Errorf("could not delete configMap %q", cmName)
 		}
 
-		log.Infof("ConfigMap %q not found", cmName)
+		log.Debugf("ConfigMap \"%s/%s\" not found", cmNamespace, cmName)
 	}
+
+	log.Debugf("Deleted configMap \"%s/%s\"", cmNamespace, cmName)
 
 	return nil
 }
@@ -356,8 +364,10 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 			return err
 		}
 
-		log.Info("Applicationset already Exists")
+		log.Debugf("Applicationset \"%s/%s\" already exists", managementNamespace, name)
 	}
+
+	log.Debugf("Created applicationset \"%s/%s\"", managementNamespace, name)
 
 	return nil
 }
@@ -380,8 +390,10 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 			return err
 		}
 
-		log.Info("Applicationset not found")
+		log.Debugf("Applicationset \"%s/%s\" not found", managementNamespace, name)
 	}
+
+	log.Debugf("Deleted applicationset \"%s/%s\"", managementNamespace, name)
 
 	return nil
 }
@@ -400,6 +412,8 @@ func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 }
 
 func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
+	log := ctx.Logger()
+
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -422,6 +436,9 @@ func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
 
 		return err
 	}
+
+	log.Debugf("Deleted discovered app \"%s/%s\" on cluster %q",
+		namespace, ctx.Workload().GetAppName(), cluster)
 
 	return nil
 }
