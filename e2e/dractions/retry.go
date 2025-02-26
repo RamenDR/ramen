@@ -16,14 +16,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func waitDRPCReady(ctx types.Context, client client.Client, namespace string, drpcName string) error {
+func waitDRPCReady(ctx types.Context, cluster util.Cluster, namespace string, drpcName string) error {
 	log := ctx.Logger()
 	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" is ready", namespace, drpcName)
 
 	for {
-		drpc, err := getDRPC(client, namespace, drpcName)
+		drpc, err := getDRPC(cluster, namespace, drpcName)
 		if err != nil {
 			return err
 		}
@@ -52,14 +52,14 @@ func conditionMet(conditions []metav1.Condition, conditionType string) bool {
 	return condition != nil && condition.Status == "True"
 }
 
-func waitDRPCPhase(ctx types.Context, client client.Client, namespace, name string, phase ramen.DRState) error {
+func waitDRPCPhase(ctx types.Context, cluster util.Cluster, namespace, name string, phase ramen.DRState) error {
 	log := ctx.Logger()
 	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" reach phase %q", namespace, name, phase)
 
 	for {
-		drpc, err := getDRPC(client, namespace, name)
+		drpc, err := getDRPC(cluster, namespace, name)
 		if err != nil {
 			return err
 		}
@@ -104,14 +104,14 @@ func getTargetCluster(cluster util.Cluster, currentCluster string) (string, erro
 	return targetCluster, nil
 }
 
-func waitDRPCDeleted(ctx types.Context, client client.Client, namespace string, name string) error {
+func waitDRPCDeleted(ctx types.Context, cluster util.Cluster, namespace string, name string) error {
 	log := ctx.Logger()
 	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" is deleted", namespace, name)
 
 	for {
-		_, err := getDRPC(client, namespace, name)
+		_, err := getDRPC(cluster, namespace, name)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				log.Debugf("drpc \"%s/%s\" is deleted", namespace, name)
@@ -133,7 +133,7 @@ func waitDRPCDeleted(ctx types.Context, client client.Client, namespace string, 
 // nolint:unparam
 func waitDRPCProgression(
 	ctx types.Context,
-	client client.Client,
+	cluster util.Cluster,
 	namespace, name string,
 	progression ramen.ProgressionStatus,
 ) error {
@@ -143,7 +143,7 @@ func waitDRPCProgression(
 	log.Debugf("Waiting until drpc \"%s/%s\" reach progression %q", namespace, name, progression)
 
 	for {
-		drpc, err := getDRPC(client, namespace, name)
+		drpc, err := getDRPC(cluster, namespace, name)
 		if err != nil {
 			return err
 		}
