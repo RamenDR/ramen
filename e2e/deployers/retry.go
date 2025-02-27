@@ -10,7 +10,6 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subscriptionv1.SubscriptionPhase) error {
@@ -18,7 +17,7 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 	startTime := time.Now()
 
 	for {
-		sub, err := getSubscription(util.Ctx.Hub.Client, namespace, name)
+		sub, err := getSubscription(util.Ctx.Hub, namespace, name)
 		if err != nil {
 			return err
 		}
@@ -38,13 +37,13 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 	}
 }
 
-func WaitWorkloadHealth(ctx types.Context, client client.Client, namespace string) error {
+func WaitWorkloadHealth(ctx types.Context, cluster util.Cluster, namespace string) error {
 	log := ctx.Logger()
 	w := ctx.Workload()
 	startTime := time.Now()
 
 	for {
-		err := w.Health(ctx, client, namespace)
+		err := w.Health(ctx, cluster, namespace)
 		if err == nil {
 			log.Debugf("Workload \"%s/%s\" is ready", namespace, w.GetAppName())
 

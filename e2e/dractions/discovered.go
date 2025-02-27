@@ -124,7 +124,7 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	drClient := getDRClusterClient(targetCluster, drpolicy)
+	drCluster := getDRCluster(targetCluster, drpolicy)
 
-	return deployers.WaitWorkloadHealth(ctx, drClient, appNamespace)
+	return deployers.WaitWorkloadHealth(ctx, drCluster, appNamespace)
 }
