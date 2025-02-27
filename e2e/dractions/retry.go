@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func waitDRPCReady(ctx types.Context, cluster util.Cluster, namespace string, drpcName string) error {
@@ -79,13 +78,13 @@ func waitDRPCPhase(ctx types.Context, cluster util.Cluster, namespace, name stri
 	}
 }
 
-// return dr cluster client
-func getDRClusterClient(clusterName string, drpolicy *ramen.DRPolicy) client.Client {
+// return dr cluster
+func getDRCluster(clusterName string, drpolicy *ramen.DRPolicy) util.Cluster {
 	if clusterName == drpolicy.Spec.DRClusters[0] {
-		return util.Ctx.C1.Client
+		return util.Ctx.C1
 	}
 
-	return util.Ctx.C2.Client
+	return util.Ctx.C2
 }
 
 func getTargetCluster(cluster util.Cluster, currentCluster string) (string, error) {

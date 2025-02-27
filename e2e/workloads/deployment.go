@@ -12,7 +12,6 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Deployment struct {
@@ -78,10 +77,10 @@ func (w Deployment) GetResources() error {
 }
 
 // Check the workload health deployed in a cluster namespace
-func (w Deployment) Health(ctx types.Context, client client.Client, namespace string) error {
+func (w Deployment) Health(ctx types.Context, cluster util.Cluster, namespace string) error {
 	log := ctx.Logger()
 
-	deploy, err := getDeployment(client, namespace, w.GetAppName())
+	deploy, err := getDeployment(cluster, namespace, w.GetAppName())
 	if err != nil {
 		return err
 	}
@@ -95,11 +94,11 @@ func (w Deployment) Health(ctx types.Context, client client.Client, namespace st
 	return nil
 }
 
-func getDeployment(client client.Client, namespace, name string) (*appsv1.Deployment, error) {
+func getDeployment(cluster util.Cluster, namespace, name string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
-	err := client.Get(context.Background(), key, deploy)
+	err := cluster.Client.Get(context.Background(), key, deploy)
 	if err != nil {
 		return nil, err
 	}
