@@ -33,10 +33,10 @@ func CreateNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 			return err
 		}
 
-		log.Debugf("Namespace %q already exist", namespace)
+		log.Debugf("Namespace %q already exist in cluster %q", namespace, cluster.Name)
 	}
 
-	log.Debugf("Created namespace %q", namespace)
+	log.Debugf("Created namespace %q in cluster %q", namespace, cluster.Name)
 
 	return nil
 }
@@ -54,12 +54,12 @@ func DeleteNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 			return err
 		}
 
-		log.Debugf("Namespace %q not found", namespace)
+		log.Debugf("Namespace %q not found in cluster %q", namespace, cluster.Name)
 
 		return nil
 	}
 
-	log.Debugf("Waiting until namespace %q is deleted", namespace)
+	log.Debugf("Waiting until namespace %q is deleted in cluster %q", namespace, cluster.Name)
 
 	startTime := time.Now()
 	key := types.NamespacedName{Name: namespace}
@@ -70,13 +70,13 @@ func DeleteNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 				return err
 			}
 
-			log.Debugf("Namespace %q deleted", namespace)
+			log.Debugf("Namespace %q deleted in cluster %q", namespace, cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > 60*time.Second {
-			return fmt.Errorf("timeout deleting namespace %q", namespace)
+			return fmt.Errorf("timeout deleting namespace %q in cluster %q", namespace, cluster.Name)
 		}
 
 		time.Sleep(time.Second)
@@ -122,8 +122,8 @@ func addNamespaceAnnotationForVolSync(cluster Cluster, namespace string, log *za
 		return err
 	}
 
-	log.Debugf("Annotated namespace %q with \"%s: %s\"",
-		namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers])
+	log.Debugf("Annotated namespace %q with \"%s: %s\" in cluster %q",
+		namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers], cluster.Name)
 
 	return nil
 }
