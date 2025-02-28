@@ -17,8 +17,6 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
-	log.Infof("Protecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
-
 	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
 	placementName := name
@@ -42,6 +40,9 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 	clusterName := drpolicy.Spec.DRClusters[0]
 
+	log.Infof("Protecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
+		clusterName, appNamespace, managementNamespace)
+
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
 	if err = createDRPC(ctx, util.Ctx.Hub, drpc); err != nil {
@@ -60,10 +61,16 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
-	log.Infof("Unprotecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
-
 	placementName := name
 	drpcName := name
+
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, placementName)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Unprotecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
+		clusterName, appNamespace, managementNamespace)
 
 	if err := deleteDRPC(ctx, util.Ctx.Hub, managementNamespace, drpcName); err != nil {
 		return err

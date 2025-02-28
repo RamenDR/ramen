@@ -19,7 +19,7 @@ func waitDRPCReady(ctx types.Context, cluster util.Cluster, namespace string, dr
 	log := ctx.Logger()
 	startTime := time.Now()
 
-	log.Debugf("Waiting until drpc \"%s/%s\" is ready", namespace, drpcName)
+	log.Debugf("Waiting until drpc \"%s/%s\" is ready in cluster %q", namespace, drpcName, cluster.Name)
 
 	for {
 		drpc, err := getDRPC(cluster, namespace, drpcName)
@@ -31,14 +31,15 @@ func waitDRPCReady(ctx types.Context, cluster util.Cluster, namespace string, dr
 		peerReady := conditionMet(drpc.Status.Conditions, ramen.ConditionPeerReady)
 
 		if available && peerReady && drpc.Status.LastGroupSyncTime != nil {
-			log.Debugf("drpc \"%s/%s\" is ready", namespace, drpcName)
+			log.Debugf("drpc \"%s/%s\" is ready in cluster %q", namespace, drpcName, cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("timeout waiting for drpc to become ready (Available: %v, PeerReady: %v, lastGroupSyncTime: %v)",
-				available, peerReady, drpc.Status.LastGroupSyncTime)
+			return fmt.Errorf("timeout waiting for drpc to become ready in cluster %q"+
+				" (Available: %v, PeerReady: %v, lastGroupSyncTime: %v)",
+				cluster.Name, available, peerReady, drpc.Status.LastGroupSyncTime)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -55,7 +56,7 @@ func waitDRPCPhase(ctx types.Context, cluster util.Cluster, namespace, name stri
 	log := ctx.Logger()
 	startTime := time.Now()
 
-	log.Debugf("Waiting until drpc \"%s/%s\" reach phase %q", namespace, name, phase)
+	log.Debugf("Waiting until drpc \"%s/%s\" reach phase %q in cluster %q", namespace, name, phase, cluster.Name)
 
 	for {
 		drpc, err := getDRPC(cluster, namespace, name)
@@ -65,13 +66,13 @@ func waitDRPCPhase(ctx types.Context, cluster util.Cluster, namespace, name stri
 
 		currentPhase := drpc.Status.Phase
 		if currentPhase == phase {
-			log.Debugf("drpc \"%s/%s\" phase is %q", namespace, name, phase)
+			log.Debugf("drpc \"%s/%s\" phase is %q in cluster %q", namespace, name, phase, cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q status is not %q yet before timeout, fail", name, phase)
+			return fmt.Errorf("drpc %q status is not %q yet before timeout in cluster %q, fail", name, phase, cluster.Name)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -107,22 +108,22 @@ func waitDRPCDeleted(ctx types.Context, cluster util.Cluster, namespace string, 
 	log := ctx.Logger()
 	startTime := time.Now()
 
-	log.Debugf("Waiting until drpc \"%s/%s\" is deleted", namespace, name)
+	log.Debugf("Waiting until drpc \"%s/%s\" is deleted in cluster %q", namespace, name, cluster.Name)
 
 	for {
 		_, err := getDRPC(cluster, namespace, name)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				log.Debugf("drpc \"%s/%s\" is deleted", namespace, name)
+				log.Debugf("drpc \"%s/%s\" is deleted in cluster %q", namespace, name, cluster.Name)
 
 				return nil
 			}
 
-			log.Debugf("Failed to get drpc \"%s/%s\": %s", namespace, name, err)
+			log.Debugf("Failed to get drpc \"%s/%s\" in cluster %q: %s", namespace, name, cluster.Name, err)
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q is not deleted yet before timeout, fail", name)
+			return fmt.Errorf("drpc %q is not deleted yet before timeout in cluster %q, fail", name, cluster.Name)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -139,7 +140,8 @@ func waitDRPCProgression(
 	log := ctx.Logger()
 	startTime := time.Now()
 
-	log.Debugf("Waiting until drpc \"%s/%s\" reach progression %q", namespace, name, progression)
+	log.Debugf("Waiting until drpc \"%s/%s\" reach progression %q in cluster %q",
+		namespace, name, progression, cluster.Name)
 
 	for {
 		drpc, err := getDRPC(cluster, namespace, name)
@@ -149,14 +151,14 @@ func waitDRPCProgression(
 
 		currentProgression := drpc.Status.Progression
 		if currentProgression == progression {
-			log.Debugf("drpc \"%s/%s\" progression is %q", namespace, name, progression)
+			log.Debugf("drpc \"%s/%s\" progression is %q in cluster %q", namespace, name, progression, cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q progression is not %q yet before timeout of %v",
-				name, progression, util.Timeout)
+			return fmt.Errorf("drpc %q progression is not %q yet before timeout of %v in cluster %q",
+				name, progression, util.Timeout, cluster.Name)
 		}
 
 		time.Sleep(util.RetryInterval)

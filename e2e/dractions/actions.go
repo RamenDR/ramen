@@ -33,8 +33,6 @@ func EnableProtection(ctx types.Context) error {
 	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
 
-	log.Infof("Protecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
-
 	drPolicyName := util.DefaultDRPolicyName
 	appname := w.GetAppName()
 	placementName := name
@@ -45,7 +43,8 @@ func EnableProtection(ctx types.Context) error {
 		return err
 	}
 
-	log.Debugf("Workload running on cluster %q", clusterName)
+	log.Infof("Protecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
+		clusterName, appNamespace, managementNamespace)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		placement, err := util.GetPlacement(util.Ctx.Hub, managementNamespace, placementName)
@@ -63,8 +62,9 @@ func EnableProtection(ctx types.Context) error {
 			return err
 		}
 
-		log.Debugf("Annotated placement \"%s/%s\" with \"%s: %s\"",
-			managementNamespace, placementName, OcmSchedulingDisable, placement.Annotations[OcmSchedulingDisable])
+		log.Debugf("Annotated placement \"%s/%s\" with \"%s: %s\" in cluster %q",
+			managementNamespace, placementName, OcmSchedulingDisable,
+			placement.Annotations[OcmSchedulingDisable], util.Ctx.Hub.Name)
 
 		return nil
 	})
@@ -96,9 +96,16 @@ func DisableProtection(ctx types.Context) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
+	placementName := name
 	log := ctx.Logger()
 
-	log.Infof("Unprotecting workload in app namespace %q, management namespace: %q", appNamespace, managementNamespace)
+	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, placementName)
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Unprotecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
+		clusterName, appNamespace, managementNamespace)
 
 	drpcName := name
 
