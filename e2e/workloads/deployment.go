@@ -86,7 +86,7 @@ func (w Deployment) Health(ctx types.Context, cluster util.Cluster, namespace st
 	}
 
 	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		log.Debugf("Deployment \"%s/%s\" is ready", namespace, w.GetAppName())
+		log.Debugf("Deployment \"%s/%s\" is ready in cluster %q", namespace, w.GetAppName(), cluster.Name)
 
 		return nil
 	}

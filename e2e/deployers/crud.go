@@ -56,10 +56,10 @@ func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 			return err
 		}
 
-		log.Debugf("ManagedClusterSetBinding \"%s/%s\" already exist", namespace, name)
+		log.Debugf("ManagedClusterSetBinding \"%s/%s\" already exist in cluster %q", namespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Created ManagedClusterSetBinding \"%s/%s\"", namespace, name)
+	log.Debugf("Created ManagedClusterSetBinding \"%s/%s\" in cluster %q", namespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -79,10 +79,10 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 			return err
 		}
 
-		log.Debugf("ManagedClusterSetBinding \"%s/%s\" not found", namespace, name)
+		log.Debugf("ManagedClusterSetBinding \"%s/%s\" not found in cluster %q", namespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Deleted ManagedClusterSetBinding \"%s/%s\"", namespace, name)
+	log.Debugf("Deleted ManagedClusterSetBinding \"%s/%s\" in cluster %q", namespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -112,10 +112,10 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 			return err
 		}
 
-		log.Debugf("Placement \"%s/%s\" already exists", namespace, name)
+		log.Debugf("Placement \"%s/%s\" already exists in cluster %q", namespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Created placement \"%s/%s\"", namespace, name)
+	log.Debugf("Created placement \"%s/%s\" in cluster %q", namespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -135,10 +135,10 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 			return err
 		}
 
-		log.Debugf("Placement \"%s/%s\" not found", namespace, name)
+		log.Debugf("Placement \"%s/%s\" not found in cluster %q", namespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Deleted placement \"%s/%s\"", namespace, name)
+	log.Debugf("Deleted placement \"%s/%s\" in cluster %q", namespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -193,10 +193,10 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 			return err
 		}
 
-		log.Debugf("Subscription \"%s/%s\" already exists", managementNamespace, name)
+		log.Debugf("Subscription \"%s/%s\" already exists in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Created subscription \"%s/%s\"", managementNamespace, name)
+	log.Debugf("Created subscription \"%s/%s\" in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -219,10 +219,10 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 			return err
 		}
 
-		log.Debugf("Subscription \"%s/%s\" not found", managementNamespace, name)
+		log.Debugf("Subscription \"%s/%s\" not found in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Deleted subscription \"%s/%s\"", managementNamespace, name)
+	log.Debugf("Deleted subscription \"%s/%s\" in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -258,10 +258,10 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		log.Debugf("ConfigMap \"%s/%s\" already exists", cmNamespace, cmName)
+		log.Debugf("ConfigMap \"%s/%s\" already exists in cluster %q", cmNamespace, cmName, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Created configMap \"%s/%s\"", cmNamespace, cmName)
+	log.Debugf("Created configMap \"%s/%s\" in cluster %q", cmNamespace, cmName, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -277,13 +277,13 @@ func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error
 	err := util.Ctx.Hub.Client.Delete(context.Background(), configMap)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return fmt.Errorf("could not delete configMap %q", cmName)
+			return fmt.Errorf("could not delete configMap %q in cluster %q", cmName, util.Ctx.Hub.Name)
 		}
 
-		log.Debugf("ConfigMap \"%s/%s\" not found", cmNamespace, cmName)
+		log.Debugf("ConfigMap \"%s/%s\" not found in cluster %q", cmNamespace, cmName, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Deleted configMap \"%s/%s\"", cmNamespace, cmName)
+	log.Debugf("Deleted configMap \"%s/%s\" in cluster %q", cmNamespace, cmName, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -364,10 +364,10 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 			return err
 		}
 
-		log.Debugf("Applicationset \"%s/%s\" already exists", managementNamespace, name)
+		log.Debugf("Applicationset \"%s/%s\" already exists in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Created applicationset \"%s/%s\"", managementNamespace, name)
+	log.Debugf("Created applicationset \"%s/%s\" in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -390,10 +390,10 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 			return err
 		}
 
-		log.Debugf("Applicationset \"%s/%s\" not found", managementNamespace, name)
+		log.Debugf("Applicationset \"%s/%s\" not found in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Deleted applicationset \"%s/%s\"", managementNamespace, name)
+	log.Debugf("Deleted applicationset \"%s/%s\" in cluster %q", managementNamespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
@@ -405,7 +405,7 @@ func isLastAppsetInArgocdNs(namespace string) (bool, error) {
 	err := util.Ctx.Hub.Client.List(
 		context.Background(), appsetList, client.InNamespace(namespace))
 	if err != nil {
-		return false, fmt.Errorf("failed to list applicationsets: %w", err)
+		return false, fmt.Errorf("failed to list applicationsets in cluster %q: %w", util.Ctx.Hub.Name, err)
 	}
 
 	return len(appsetList.Items) == 1, nil
@@ -437,7 +437,7 @@ func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
 		return err
 	}
 
-	log.Debugf("Deleted discovered app \"%s/%s\" on cluster %q",
+	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
 		namespace, ctx.Workload().GetAppName(), cluster)
 
 	return nil
