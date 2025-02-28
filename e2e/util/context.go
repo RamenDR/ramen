@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
-	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	// Placement
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -28,7 +28,7 @@ var ConfigFile string
 
 type Cluster struct {
 	Name   string
-	Client ctrlClient.Client
+	Client client.Client
 }
 
 type Context struct {
@@ -70,7 +70,7 @@ func addToScheme(scheme *runtime.Scheme) error {
 	return ramen.AddToScheme(scheme)
 }
 
-func setupClient(kubeconfigPath string) (ctrlClient.Client, error) {
+func setupClient(kubeconfigPath string) (client.Client, error) {
 	var err error
 
 	if kubeconfigPath == "" {
@@ -91,7 +91,7 @@ func setupClient(kubeconfigPath string) (ctrlClient.Client, error) {
 		return nil, err
 	}
 
-	client, err := ctrlClient.New(cfg, ctrlClient.Options{Scheme: scheme.Scheme})
+	client, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to build controller client from kubeconfig (%s): %w", kubeconfigPath, err)
 	}
