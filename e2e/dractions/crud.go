@@ -43,7 +43,7 @@ func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacement
 			return err
 		}
 
-		log.Debugf("drpc \"%s/%s\" already exist", drpc.Namespace, drpc.Name)
+		log.Debugf("drpc \"%s/%s\" already exist in cluster %q", drpc.Namespace, drpc.Name, cluster.Name)
 	}
 
 	spec, err := yaml.Marshal(drpc.Spec)
@@ -51,7 +51,8 @@ func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacement
 		return err
 	}
 
-	log.Debugf("Created drpc \"%s/%s\" with spec:\n%s", drpc.Namespace, drpc.Name, string(spec))
+	log.Debugf("Created drpc \"%s/%s\" in cluster %q with spec:\n%s",
+		drpc.Namespace, drpc.Name, cluster.Name, string(spec))
 
 	return nil
 }
@@ -72,7 +73,7 @@ func deleteDRPC(ctx types.Context, cluster util.Cluster, namespace, name string)
 			return err
 		}
 
-		log.Debugf("drpc \"%s/%s\" not found", namespace, name)
+		log.Debugf("drpc \"%s/%s\" not found in cluster %q", namespace, name, cluster.Name)
 
 		return nil
 	}
@@ -81,7 +82,7 @@ func deleteDRPC(ctx types.Context, cluster util.Cluster, namespace, name string)
 		return err
 	}
 
-	log.Debugf("Deleted drpc \"%s/%s\"", namespace, name)
+	log.Debugf("Deleted drpc \"%s/%s\" in cluster %q", namespace, name, cluster.Name)
 
 	return nil
 }
@@ -143,10 +144,10 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 			return err
 		}
 
-		log.Debugf("Placement \"%s/%s\" already Exists", namespace, name)
+		log.Debugf("Placement \"%s/%s\" already Exists in cluster %q", namespace, name, util.Ctx.Hub.Name)
 	}
 
-	log.Debugf("Created placement \"%s/%s\"", namespace, name)
+	log.Debugf("Created placement \"%s/%s\" in cluster %q", namespace, name, util.Ctx.Hub.Name)
 
 	return nil
 }
