@@ -68,7 +68,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Deployed discovered app \"%s/%s\" on cluster %q",
+	log.Infof("Deployed discovered app \"%s/%s\" in cluster %q",
 		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
 
 	return nil

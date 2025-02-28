@@ -45,7 +45,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Deployed applicationset app \"%s/%s\" on cluster %q",
+	log.Infof("Deployed applicationset app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
 
 	return nil
@@ -67,7 +67,7 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Undeployed applicationset app \"%s/%s\" on cluster %q",
+	log.Infof("Undeployed applicationset app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
 
 	err = DeleteConfigMap(ctx, name, managementNamespace)
