@@ -48,9 +48,10 @@ func createChannel() error {
 			return err
 		}
 
-		Ctx.Log.Debugf("Channel \"%s/%s\" already exists", GetChannelNamespace(), GetChannelName())
+		Ctx.Log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
+			GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
 	} else {
-		Ctx.Log.Infof("Created channel \"%s/%s\"", GetChannelNamespace(), GetChannelName())
+		Ctx.Log.Infof("Created channel \"%s/%s\" in cluster %q", GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
 	}
 
 	return nil
@@ -70,9 +71,9 @@ func deleteChannel() error {
 			return err
 		}
 
-		Ctx.Log.Debugf("Channel \"%s/%s\" not found", GetChannelNamespace(), GetChannelName())
+		Ctx.Log.Debugf("Channel \"%s/%s\" not found in cluster %q", GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
 	} else {
-		Ctx.Log.Infof("Deleted channel \"%s/%s\"", GetChannelNamespace(), GetChannelName())
+		Ctx.Log.Infof("Deleted channel \"%s/%s\" in cluster %q", GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
 	}
 
 	return nil
