@@ -35,16 +35,16 @@ func ValidateRamenHubOperator(cluster Cluster) error {
 	}
 
 	if pod.Status.Phase != "Running" {
-		return fmt.Errorf("ramen hub operator pod %q not running (phase %q)",
-			pod.Name, pod.Status.Phase)
+		return fmt.Errorf("ramen hub operator pod %q not running (phase %q) in cluster %q",
+			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen hub operator pod %q is running", pod.Name)
+	Ctx.Log.Infof("Ramen hub operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster Cluster, clusterName string) error {
+func ValidateRamenDRClusterOperator(cluster Cluster) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
@@ -59,11 +59,11 @@ func ValidateRamenDRClusterOperator(cluster Cluster, clusterName string) error {
 	}
 
 	if pod.Status.Phase != "Running" {
-		return fmt.Errorf("ramen dr cluster operator pod %q not running (phase %q)",
-			pod.Name, pod.Status.Phase)
+		return fmt.Errorf("ramen dr cluster operator pod %q not running (phase %q) in cluster %q",
+			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, clusterName)
+	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }
@@ -113,7 +113,7 @@ func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
 ) {
 	ls, err := labels.Parse(labelSelector)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse label selector %q: %v", labelSelector, err)
+		return nil, fmt.Errorf("failed to parse label selector %q in cluster %q: %v", labelSelector, cluster.Name, err)
 	}
 
 	pods := &v1.PodList{}
@@ -126,7 +126,7 @@ func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
 
 	err = cluster.Client.List(context.Background(), pods, listOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pods in namespace %s: %v", namespace, err)
+		return nil, fmt.Errorf("failed to list pods in namespace %s in cluster %q: %v", namespace, cluster.Name, err)
 	}
 
 	for i := range pods.Items {
@@ -136,6 +136,6 @@ func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
 		}
 	}
 
-	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q",
-		labelSelector, podIdentifier, namespace)
+	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q in cluster %q",
+		labelSelector, podIdentifier, namespace, cluster.Name)
 }
