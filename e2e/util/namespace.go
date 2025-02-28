@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,14 +20,14 @@ import (
 // More info: https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 const volsyncPrivilegedMovers = "volsync.backube/privileged-movers"
 
-func CreateNamespace(client client.Client, namespace string, log *zap.SugaredLogger) error {
+func CreateNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 		},
 	}
 
-	err := client.Create(context.Background(), ns)
+	err := cluster.Client.Create(context.Background(), ns)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -42,14 +41,14 @@ func CreateNamespace(client client.Client, namespace string, log *zap.SugaredLog
 	return nil
 }
 
-func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLogger) error {
+func DeleteNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 		},
 	}
 
-	err := client.Delete(context.Background(), ns)
+	err := cluster.Client.Delete(context.Background(), ns)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -66,7 +65,7 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 	key := types.NamespacedName{Name: namespace}
 
 	for {
-		if err := client.Get(context.Background(), key, ns); err != nil {
+		if err := cluster.Client.Get(context.Background(), key, ns); err != nil {
 			if !errors.IsNotFound(err) {
 				return err
 			}
@@ -88,26 +87,26 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 // See this link https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 // Workaround: create ns in both drclusters and add annotation
 func CreateNamespaceAndAddAnnotation(namespace string) error {
-	if err := CreateNamespace(Ctx.C1.Client, namespace, Ctx.Log); err != nil {
+	if err := CreateNamespace(Ctx.C1, namespace, Ctx.Log); err != nil {
 		return err
 	}
 
-	if err := addNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace, Ctx.Log); err != nil {
+	if err := addNamespaceAnnotationForVolSync(Ctx.C1, namespace, Ctx.Log); err != nil {
 		return err
 	}
 
-	if err := CreateNamespace(Ctx.C2.Client, namespace, Ctx.Log); err != nil {
+	if err := CreateNamespace(Ctx.C2, namespace, Ctx.Log); err != nil {
 		return err
 	}
 
-	return addNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace, Ctx.Log)
+	return addNamespaceAnnotationForVolSync(Ctx.C2, namespace, Ctx.Log)
 }
 
-func addNamespaceAnnotationForVolSync(client client.Client, namespace string, log *zap.SugaredLogger) error {
+func addNamespaceAnnotationForVolSync(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
 	key := types.NamespacedName{Name: namespace}
 	objNs := &corev1.Namespace{}
 
-	if err := client.Get(context.Background(), key, objNs); err != nil {
+	if err := cluster.Client.Get(context.Background(), key, objNs); err != nil {
 		return err
 	}
 
@@ -119,7 +118,7 @@ func addNamespaceAnnotationForVolSync(client client.Client, namespace string, lo
 	annotations[volsyncPrivilegedMovers] = "true"
 	objNs.SetAnnotations(annotations)
 
-	if err := client.Update(context.Background(), objNs); err != nil {
+	if err := cluster.Client.Update(context.Background(), objNs); err != nil {
 		return err
 	}
 

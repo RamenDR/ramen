@@ -15,19 +15,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
-func updatePlacement(client client.Client, placement *clusterv1beta1.Placement) error {
-	return client.Update(context.Background(), placement)
+func updatePlacement(cluster util.Cluster, placement *clusterv1beta1.Placement) error {
+	return cluster.Client.Update(context.Background(), placement)
 }
 
-func getDRPC(client client.Client, namespace, name string) (*ramen.DRPlacementControl, error) {
+func getDRPC(cluster util.Cluster, namespace, name string) (*ramen.DRPlacementControl, error) {
 	drpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := client.Get(context.Background(), key, drpc)
+	err := cluster.Client.Get(context.Background(), key, drpc)
 	if err != nil {
 		return nil, err
 	}
@@ -35,10 +34,10 @@ func getDRPC(client client.Client, namespace, name string) (*ramen.DRPlacementCo
 	return drpc, nil
 }
 
-func createDRPC(ctx types.Context, client client.Client, drpc *ramen.DRPlacementControl) error {
+func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacementControl) error {
 	log := ctx.Logger()
 
-	err := client.Create(context.Background(), drpc)
+	err := cluster.Client.Create(context.Background(), drpc)
 	if err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return err
@@ -57,17 +56,17 @@ func createDRPC(ctx types.Context, client client.Client, drpc *ramen.DRPlacement
 	return nil
 }
 
-func updateDRPC(client client.Client, drpc *ramen.DRPlacementControl) error {
-	return client.Update(context.Background(), drpc)
+func updateDRPC(cluster util.Cluster, drpc *ramen.DRPlacementControl) error {
+	return cluster.Client.Update(context.Background(), drpc)
 }
 
-func deleteDRPC(ctx types.Context, client client.Client, namespace, name string) error {
+func deleteDRPC(ctx types.Context, cluster util.Cluster, namespace, name string) error {
 	log := ctx.Logger()
 
 	objDrpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := client.Get(context.Background(), key, objDrpc)
+	err := cluster.Client.Get(context.Background(), key, objDrpc)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			return err
@@ -78,7 +77,7 @@ func deleteDRPC(ctx types.Context, client client.Client, namespace, name string)
 		return nil
 	}
 
-	if err := client.Delete(context.Background(), objDrpc); err != nil {
+	if err := cluster.Client.Delete(context.Background(), objDrpc); err != nil {
 		return err
 	}
 

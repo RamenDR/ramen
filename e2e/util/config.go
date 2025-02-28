@@ -23,14 +23,16 @@ type PVCSpec struct {
 	AccessModes          string
 	UnsupportedDeployers []string
 }
+type ClusterConfig struct {
+	Name           string
+	KubeconfigPath string
+}
 type TestConfig struct {
 	// User configurable values.
 	ChannelNamespace string
 	GitURL           string
-	Clusters         map[string]struct {
-		KubeconfigPath string
-	}
-	PVCSpecs []PVCSpec
+	Clusters         map[string]ClusterConfig
+	PVCSpecs         []PVCSpec
 
 	// Generated values
 	channelName string

@@ -227,11 +227,11 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 	return nil
 }
 
-func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
+func getSubscription(cluster util.Cluster, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
-	err := client.Get(context.Background(), key, subscription)
+	err := cluster.Client.Get(context.Background(), key, subscription)
 	if err != nil {
 		return nil, err
 	}

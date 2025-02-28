@@ -6,6 +6,7 @@ package volsync
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -116,7 +117,7 @@ func (v *VSHandler) GetWorkloadStatus() string {
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (v *VSHandler) ReconcileRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -169,6 +170,11 @@ func (v *VSHandler) ReconcileRD(
 
 	if !RDStatusReady(rd, l) {
 		return nil, nil
+	}
+
+	err = v.pruneOldSnapshots(rd.Namespace)
+	if err != nil {
+		return nil, err
 	}
 
 	l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s, Copy method: %s",
@@ -1112,6 +1118,32 @@ func (v *VSHandler) DeleteRD(pvcName string, pvcNamespace string) error {
 	return nil
 }
 
+// pruneOldSnapshots deletes older VolumeSnapshots in the given PVC namespace,
+// keeping only the most recent snapshot
+func (v *VSHandler) pruneOldSnapshots(pvcNamespace string) error {
+	snapList := &snapv1.VolumeSnapshotList{}
+
+	err := v.listByOwner(snapList, pvcNamespace)
+	if err != nil {
+		return err
+	}
+
+	if len(snapList.Items) <= 1 {
+		return nil
+	}
+
+	// Sort snapshots by CreationTimestamp (ascending: oldest first)
+	slices.SortFunc(snapList.Items, func(a, b snapv1.VolumeSnapshot) int {
+		if a.CreationTimestamp.Before(&b.CreationTimestamp) {
+			return -1
+		}
+
+		return 1
+	})
+
+	return v.deleteVolumeSnapshots(snapList.Items[:len(snapList.Items)-1])
+}
+
 func (v *VSHandler) DeleteSnapshots(pvcNamespace string) error {
 	// Remove a Snapshot by name that is owned (by parent vrg owner)
 	snapList := &snapv1.VolumeSnapshotList{}
@@ -1121,8 +1153,12 @@ func (v *VSHandler) DeleteSnapshots(pvcNamespace string) error {
 		return err
 	}
 
-	for i := range snapList.Items {
-		snapshot := snapList.Items[i]
+	return v.deleteVolumeSnapshots(snapList.Items)
+}
+
+func (v *VSHandler) deleteVolumeSnapshots(snapshots []snapv1.VolumeSnapshot) error {
+	for i := range snapshots {
+		snapshot := snapshots[i]
 
 		if err := v.client.Delete(v.ctx, &snapshot); err != nil {
 			if !errors.IsNotFound(err) {
@@ -2006,7 +2042,7 @@ func getLocalServiceNameForRDFromPVCName(pvcName string) string {
 
 func getLocalServiceNameForRD(rdName string) string {
 	// This is the name VolSync will use for the service
-	return fmt.Sprintf("volsync-rsync-tls-dst-%s", rdName)
+	return util.GetServiceName("volsync-rsync-tls-dst-", rdName)
 }
 
 // This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
@@ -2551,7 +2587,7 @@ func (v *VSHandler) removeOCMAnnotationsAndUpdate(obj client.Object) error {
 func (v *VSHandler) IsActiveJobPresent(name, namespace string) (bool, error) {
 	namespacedName := types.NamespacedName{
 		Namespace: namespace,
-		Name:      fmt.Sprintf("volsync-rsync-tls-src-%s", name),
+		Name:      util.GetJobName("volsync-rsync-tls-src-", name),
 	}
 
 	job := &batchv1.Job{}

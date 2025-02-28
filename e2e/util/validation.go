@@ -20,16 +20,16 @@ const (
 	ramenSystemNamespace = "ramen-system"
 )
 
-func ValidateRamenHubOperator(k8sClient client.Client) error {
+func ValidateRamenHubOperator(cluster Cluster) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
-	ramenNameSpace, err := GetRamenNameSpace(k8sClient)
+	ramenNameSpace, err := GetRamenNameSpace(cluster)
 	if err != nil {
 		return err
 	}
 
-	pod, err := FindPod(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, ramenNameSpace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -44,16 +44,16 @@ func ValidateRamenHubOperator(k8sClient client.Client) error {
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(k8sClient client.Client, clusterName string) error {
+func ValidateRamenDRClusterOperator(cluster Cluster, clusterName string) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
-	ramenNameSpace, err := GetRamenNameSpace(k8sClient)
+	ramenNameSpace, err := GetRamenNameSpace(cluster)
 	if err != nil {
 		return err
 	}
 
-	pod, err := FindPod(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, ramenNameSpace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -68,8 +68,8 @@ func ValidateRamenDRClusterOperator(k8sClient client.Client, clusterName string)
 	return nil
 }
 
-func GetRamenNameSpace(k8sClient client.Client) (string, error) {
-	isOpenShift, err := IsOpenShiftCluster(k8sClient)
+func GetRamenNameSpace(cluster Cluster) (string, error) {
+	isOpenShift, err := IsOpenShiftCluster(cluster)
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +83,7 @@ func GetRamenNameSpace(k8sClient client.Client) (string, error) {
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
 // It returns true if the cluster is OpenShift, false otherwise, along with any error encountered.
-func IsOpenShiftCluster(k8sClient client.Client) (bool, error) {
+func IsOpenShiftCluster(cluster Cluster) (bool, error) {
 	configList := &unstructured.Unstructured{}
 	configList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "config.openshift.io",
@@ -91,7 +91,7 @@ func IsOpenShiftCluster(k8sClient client.Client) (bool, error) {
 		Kind:    "ClusterVersion",
 	})
 
-	err := k8sClient.List(context.TODO(), configList)
+	err := cluster.Client.List(context.TODO(), configList)
 	if err == nil {
 		// found OpenShift only resource type, it is OpenShift
 		return true, nil
@@ -108,7 +108,7 @@ func IsOpenShiftCluster(k8sClient client.Client) (bool, error) {
 }
 
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
-func FindPod(k8sClient client.Client, namespace, labelSelector, podIdentifier string) (
+func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
 ) {
 	ls, err := labels.Parse(labelSelector)
@@ -124,7 +124,7 @@ func FindPod(k8sClient client.Client, namespace, labelSelector, podIdentifier st
 		},
 	}
 
-	err = k8sClient.List(context.Background(), pods, listOptions...)
+	err = cluster.Client.List(context.Background(), pods, listOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pods in namespace %s: %v", namespace, err)
 	}
