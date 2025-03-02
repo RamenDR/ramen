@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -31,7 +32,11 @@ func TestMain(m *testing.M) {
 
 	log.Infof("Using config file %q", configFile)
 
-	util.Ctx, err = util.NewContext(log, configFile)
+	if err := config.ReadConfig(configFile); err != nil {
+		log.Fatalf("Failed to read config: %s", err)
+	}
+
+	util.Ctx, err = util.NewContext(log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}

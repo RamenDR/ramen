@@ -98,15 +98,11 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 	return client, nil
 }
 
-func NewContext(log *zap.SugaredLogger, configFile string) (*Context, error) {
+func NewContext(log *zap.SugaredLogger) (*Context, error) {
 	var err error
 
 	ctx := new(Context)
 	ctx.Log = log
-
-	if err := config.ReadConfig(configFile); err != nil {
-		panic(err)
-	}
 
 	clusters := config.GetClusters()
 
