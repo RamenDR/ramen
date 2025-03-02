@@ -10,7 +10,7 @@ import drenv
 from drenv import kubectl
 
 STORAGE_CLASS_NAME_PREFIX = "rook-cephfs-"
-FILE_SYSTEMS = ["test-fs1", "test-fs2"]
+FILE_SYSTEMS = ["fs1", "fs2"]
 
 
 def deploy(cluster):

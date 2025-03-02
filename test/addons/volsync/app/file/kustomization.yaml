@@ -14,7 +14,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/storageClassName
-        value: rook-cephfs-test-fs1
+        value: rook-cephfs-fs1
       - op: replace
         path: /spec/accessModes
         value:
