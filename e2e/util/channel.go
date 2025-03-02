@@ -6,6 +6,7 @@ package util
 import (
 	"context"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +15,7 @@ import (
 
 func EnsureChannel() error {
 	// create channel namespace
-	err := CreateNamespace(Ctx.Hub, GetChannelNamespace(), Ctx.Log)
+	err := CreateNamespace(Ctx.Hub, config.GetChannelNamespace(), Ctx.Log)
 	if err != nil {
 		return err
 	}
@@ -27,17 +28,17 @@ func EnsureChannelDeleted() error {
 		return err
 	}
 
-	return DeleteNamespace(Ctx.Hub, GetChannelNamespace(), Ctx.Log)
+	return DeleteNamespace(Ctx.Hub, config.GetChannelNamespace(), Ctx.Log)
 }
 
 func createChannel() error {
 	objChannel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetChannelName(),
-			Namespace: GetChannelNamespace(),
+			Name:      config.GetChannelName(),
+			Namespace: config.GetChannelNamespace(),
 		},
 		Spec: channelv1.ChannelSpec{
-			Pathname: GetGitURL(),
+			Pathname: config.GetGitURL(),
 			Type:     channelv1.ChannelTypeGitHub,
 		},
 	}
@@ -49,9 +50,10 @@ func createChannel() error {
 		}
 
 		Ctx.Log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
-			GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
+			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	} else {
-		Ctx.Log.Infof("Created channel \"%s/%s\" in cluster %q", GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
+		Ctx.Log.Infof("Created channel \"%s/%s\" in cluster %q",
+			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	}
 
 	return nil
@@ -60,8 +62,8 @@ func createChannel() error {
 func deleteChannel() error {
 	channel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetChannelName(),
-			Namespace: GetChannelNamespace(),
+			Name:      config.GetChannelName(),
+			Namespace: config.GetChannelNamespace(),
 		},
 	}
 
@@ -71,9 +73,11 @@ func deleteChannel() error {
 			return err
 		}
 
-		Ctx.Log.Debugf("Channel \"%s/%s\" not found in cluster %q", GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
+		Ctx.Log.Debugf("Channel \"%s/%s\" not found in cluster %q",
+			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	} else {
-		Ctx.Log.Infof("Deleted channel \"%s/%s\" in cluster %q", GetChannelNamespace(), GetChannelName(), Ctx.Hub.Name)
+		Ctx.Log.Infof("Deleted channel \"%s/%s\" in cluster %q",
+			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	}
 
 	return nil

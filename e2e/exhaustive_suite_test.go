@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/types"
@@ -33,7 +34,7 @@ var (
 )
 
 func generateWorkloads([]types.Workload) {
-	pvcSpecs := util.GetPVCSpecs()
+	pvcSpecs := config.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
 		// add storageclass name to deployment name
 		deployment := &workloads.Deployment{
