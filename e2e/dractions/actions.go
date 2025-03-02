@@ -78,7 +78,7 @@ func EnableProtection(ctx types.Context) error {
 	}
 
 	// For volsync based replication we must create the cluster namespaces with special annotation.
-	if err := util.CreateNamespaceAndAddAnnotation(ctx.AppNamespace()); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(ctx.AppNamespace(), log); err != nil {
 		return err
 	}
 
