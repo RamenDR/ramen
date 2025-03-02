@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-namespace: drenv-addon-test
+namespace: rook-cephfs-test
 
 resources:
 - namespace.yaml
