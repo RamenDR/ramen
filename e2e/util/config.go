@@ -22,10 +22,12 @@ type PVCSpec struct {
 	AccessModes          string
 	UnsupportedDeployers []string
 }
+
 type ClusterConfig struct {
 	Name           string
 	KubeconfigPath string
 }
+
 type TestConfig struct {
 	// User configurable values.
 	ChannelNamespace string
