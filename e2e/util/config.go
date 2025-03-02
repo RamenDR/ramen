@@ -48,14 +48,6 @@ func ReadConfig(log *zap.SugaredLogger, configFile string) error {
 	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
 	viper.SetDefault("GitURL", defaultGitURL)
 
-	if err := viper.BindEnv("ChannelNamespace", "ChannelNamespace"); err != nil {
-		return (err)
-	}
-
-	if err := viper.BindEnv("GitURL", "GitURL"); err != nil {
-		return (err)
-	}
-
 	if configFile == "" {
 		log.Info("No configuration file specified, using default value config.yaml")
 
