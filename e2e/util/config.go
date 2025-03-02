@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
 )
 
 const (
@@ -44,15 +43,9 @@ var (
 )
 
 //nolint:cyclop
-func ReadConfig(log *zap.SugaredLogger, configFile string) error {
+func ReadConfig(configFile string) error {
 	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
 	viper.SetDefault("GitURL", defaultGitURL)
-
-	if configFile == "" {
-		log.Info("No configuration file specified, using default value config.yaml")
-
-		configFile = "config.yaml"
-	}
 
 	viper.SetConfigFile(configFile)
 

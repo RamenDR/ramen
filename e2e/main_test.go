@@ -12,8 +12,10 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
+var configFile string
+
 func init() {
-	flag.StringVar(&util.ConfigFile, "config", "", "Path to the config file")
+	flag.StringVar(&configFile, "config", "config.yaml", "e2e configuration file")
 }
 
 func TestMain(m *testing.M) {
@@ -27,7 +29,9 @@ func TestMain(m *testing.M) {
 	}
 	// TODO: Sync the log on exit
 
-	util.Ctx, err = util.NewContext(log, util.ConfigFile)
+	log.Infof("Using config file %q", configFile)
+
+	util.Ctx, err = util.NewContext(log, configFile)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}
