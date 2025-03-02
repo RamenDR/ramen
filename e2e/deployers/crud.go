@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -172,7 +173,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 			Annotations: annotations,
 		},
 		Spec: subscriptionv1.SubscriptionSpec{
-			Channel:   util.GetChannelNamespace() + "/" + util.GetChannelName(),
+			Channel:   config.GetChannelNamespace() + "/" + config.GetChannelName(),
 			Placement: placementRulePlacement,
 		},
 	}
@@ -323,7 +324,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 				},
 				Spec: argocdv1alpha1hack.ApplicationSpec{
 					Source: &argocdv1alpha1hack.ApplicationSource{
-						RepoURL:        util.GetGitURL(),
+						RepoURL:        config.GetGitURL(),
 						Path:           w.GetPath(),
 						TargetRevision: w.GetRevision(),
 					},
@@ -448,7 +449,7 @@ type CombinedData map[string]interface{}
 func CreateKustomizationFile(ctx types.Context, dir string) error {
 	w := ctx.Workload()
 	yamlData := `resources:
-- ` + util.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
+- ` + config.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
 
 	var yamlContent CombinedData
 

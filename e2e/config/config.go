@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package config
 
 import (
 	"fmt"
@@ -94,6 +94,10 @@ func GetGitURL() string {
 
 func GetPVCSpecs() []PVCSpec {
 	return config.PVCSpecs
+}
+
+func GetClusters() map[string]ClusterConfig {
+	return config.Clusters
 }
 
 // resourceName convert a URL to conventional k8s resource name:

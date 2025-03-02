@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -19,7 +20,7 @@ type Deployment struct {
 	Revision string
 	AppName  string
 	Name     string
-	PVCSpec  util.PVCSpec
+	PVCSpec  config.PVCSpec
 }
 
 func (w Deployment) GetAppName() string {
