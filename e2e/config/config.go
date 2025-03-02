@@ -23,16 +23,16 @@ type PVCSpec struct {
 	UnsupportedDeployers []string
 }
 
-type ClusterConfig struct {
+type Cluster struct {
 	Name           string
 	KubeconfigPath string
 }
 
-type TestConfig struct {
+type Config struct {
 	// User configurable values.
 	ChannelNamespace string
 	GitURL           string
-	Clusters         map[string]ClusterConfig
+	Clusters         map[string]Cluster
 	PVCSpecs         []PVCSpec
 
 	// Generated values
@@ -41,7 +41,7 @@ type TestConfig struct {
 
 var (
 	resourceNameForbiddenCharacters *regexp.Regexp
-	config                          = &TestConfig{}
+	config                          = &Config{}
 )
 
 //nolint:cyclop
@@ -96,7 +96,7 @@ func GetPVCSpecs() []PVCSpec {
 	return config.PVCSpecs
 }
 
-func GetClusters() map[string]ClusterConfig {
+func GetClusters() map[string]Cluster {
 	return config.Clusters
 }
 
