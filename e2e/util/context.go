@@ -24,8 +24,6 @@ import (
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 )
 
-var ConfigFile string
-
 type Cluster struct {
 	Name   string
 	Client client.Client
@@ -105,7 +103,7 @@ func NewContext(log *zap.SugaredLogger, configFile string) (*Context, error) {
 	ctx := new(Context)
 	ctx.Log = log
 
-	if err := ReadConfig(log, configFile); err != nil {
+	if err := ReadConfig(configFile); err != nil {
 		panic(err)
 	}
 
