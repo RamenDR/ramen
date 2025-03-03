@@ -1293,6 +1293,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		}
 	}
 
+	r.repairReverseProgression(drpc, log)
+
 	if reflect.DeepEqual(r.savedInstanceStatus, drpc.Status) {
 		log.Info("No need to update DRPC Status")
 
@@ -1309,6 +1311,38 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	log.Info("Updated DRPC Status")
 
 	return nil
+}
+
+func (r *DRPlacementControlReconciler) repairReverseProgression(drpc *rmn.DRPlacementControl, log logr.Logger) {
+	// if Phase is changed - no need to manipulate Progression, it can be changed in both directions
+	if r.savedInstanceStatus.Phase != drpc.Status.Phase {
+		return
+	}
+
+	var progressionList []rmn.ProgressionStatus
+
+	switch drpc.Spec.Action {
+	case rmn.ActionFailover:
+		progressionList = failoverProgressionList
+	case rmn.ActionRelocate:
+		progressionList = relocateProgressionList
+	default:
+		progressionList = deployProgressionList
+	}
+
+	currentProgressionIndex := slices.Index(progressionList, r.savedInstanceStatus.Progression)
+	nextProgressionIndex := slices.Index(progressionList, drpc.Status.Progression)
+
+	if currentProgressionIndex == -1 || nextProgressionIndex == -1 {
+		return
+	}
+
+	if nextProgressionIndex < currentProgressionIndex {
+		log.Info(fmt.Sprintf("Repair reverse Progression from '%s' to '%s'",
+			drpc.Status.Progression, r.savedInstanceStatus.Progression))
+
+		drpc.Status.Progression = r.savedInstanceStatus.Progression
+	}
 }
 
 // updateResourceCondition updates DRPC status sub-resource with updated status from VRG if one exists,
