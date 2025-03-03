@@ -5,6 +5,7 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -75,7 +76,14 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 	var err error
 
 	for _, obj := range objs {
-		res, err := EvaluateCheckHookExp(hook.Chk.Condition, obj)
+		data, err := ConvertClientObjectToMap(obj)
+		if err != nil {
+			log.Info("error converting object to map", "for", hook.Name, "with error", err)
+
+			return false, err
+		}
+
+		res, err := EvaluateCheckHookExp(hook.Chk.Condition, data)
 		finalRes = finalRes && res
 
 		if err != nil {
@@ -89,6 +97,22 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 	}
 
 	return finalRes, err
+}
+
+func ConvertClientObjectToMap(obj client.Object) (map[string]interface{}, error) {
+	var jsonData map[string]interface{}
+
+	jsonBytes, err := json.Marshal(obj)
+	if err != nil {
+		return jsonData, fmt.Errorf("error marshaling object %w", err)
+	}
+
+	err = json.Unmarshal(jsonBytes, &jsonData)
+	if err != nil {
+		return jsonData, fmt.Errorf("error unmarshalling object %w", err)
+	}
+
+	return jsonData, nil
 }
 
 func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) ([]client.Object, error) {
