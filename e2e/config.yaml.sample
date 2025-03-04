@@ -1,6 +1,9 @@
 # Configuration for RamenDR End to End testing.
 
 ---
+# Kubernetes distribution (possible distro values: k8s, ocp)
+distro: k8s
+
 # Git repository url and branch containing application manifests
 # to be deployed on the clusters.
 repo:
