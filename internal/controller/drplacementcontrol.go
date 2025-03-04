@@ -1890,16 +1890,49 @@ func (d *DRPCInstance) newVRGSpecSync() *rmn.VRGSyncSpec {
 	}
 }
 
-func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
+func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (bool, map[string][]string) {
+	syncPeerClasses := drpolicy.Status.Sync.PeerClasses
+	aSyncPeerClasses := drpolicy.Status.Async.PeerClasses
+
+	if len(syncPeerClasses) == 0 && len(aSyncPeerClasses) == 0 {
+		return checkMetroSupportUsingRegion(drpolicy, drclusters)
+	}
+
+	if len(syncPeerClasses) != 0 {
+		return checkMetroSupportUsingPeerClass(drpolicy)
+	}
+
+	return false, nil
+}
+
+func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy) (bool, map[string][]string) {
+	peerClasses := drPolicy.Status.Sync.PeerClasses
+	if len(peerClasses) == 0 {
+		return false, nil
+	}
+
+	metroMap := make(map[string][]string)
+	for _, peerClass := range peerClasses {
+		metroMap[peerClass.StorageClassName] = peerClass.ClusterIDs
+	}
+
+	return true, metroMap
+}
+
+func checkMetroSupportUsingRegion(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
 	supportsMetro bool,
-	metroMap map[rmn.Region][]string,
+	metroMap map[string][]string,
 ) {
 	allRegionsMap := make(map[rmn.Region][]string)
-	metroMap = make(map[rmn.Region][]string)
+	metroMap = make(map[string][]string)
 
 	for _, managedCluster := range rmnutil.DRPolicyClusterNames(drpolicy) {
 		for _, v := range drclusters {
 			if v.Name == managedCluster {
+				if v.Spec.Region == "" {
+					return supportsMetro, metroMap
+				}
+
 				allRegionsMap[v.Spec.Region] = append(
 					allRegionsMap[v.Spec.Region],
 					managedCluster)
@@ -1910,7 +1943,7 @@ func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
 	for k, v := range allRegionsMap {
 		if len(v) > 1 {
 			supportsMetro = true
-			metroMap[k] = v
+			metroMap[string(k)] = v
 		}
 	}
 

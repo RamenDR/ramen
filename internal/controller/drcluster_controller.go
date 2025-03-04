@@ -1122,6 +1122,12 @@ func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log
 			continue
 		}
 
+		if len(drPolicy.Status.Sync.PeerClasses) > 0 {
+			found = true
+
+			break
+		}
+
 		if drCluster.Spec.Region == peerCluster.Spec.Region {
 			found = true
 
