@@ -183,6 +183,13 @@ func validateDRPolicy(ctx context.Context,
 	drclusters *ramen.DRClusterList,
 	apiReader client.Reader,
 ) (string, error) {
+
+	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
+	if len(drpolicy.Status.Sync.PeerClasses) > 0 && len(drpolicy.Status.Async.PeerClasses) > 0 {
+		return ReasonValidationFailed,
+			fmt.Errorf("invalid DRPolicy: DRPolicy cannot contain both Sync and Async Configurations")
+	}
+
 	// TODO: Ensure DRClusters exist and are validated? Also ensure they are not in a deleted state!?
 	// If new DRPolicy and clusters are deleted, then fail reconciliation?
 	if len(drpolicy.Spec.DRClusters) == 0 {
