@@ -9,36 +9,9 @@ import (
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/test"
-	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
-
-// Deployers = {"Subscription", "AppSet", "Imperative"}
-// Workloads = {"Deployment", "STS", "DaemonSet"}
-// Classes   = {"rbd", "cephfs"}
-
-var (
-	Workloads      = []types.Workload{}
-	subscription   = &deployers.Subscription{}
-	appset         = &deployers.ApplicationSet{}
-	discoveredApps = &deployers.DiscoveredApp{}
-	Deployers      = []types.Deployer{subscription, appset, discoveredApps}
-)
-
-func generateWorkloads([]types.Workload) {
-	pvcSpecs := config.GetPVCSpecs()
-	for _, pvcSpec := range pvcSpecs {
-		for _, name := range workloads.AvailableNames() {
-			workload, err := workloads.New(name, config.GetGitBranch(), pvcSpec)
-			if err != nil {
-				panic(err)
-			}
-
-			Workloads = append(Workloads, workload)
-		}
-	}
-}
 
 //nolint:thelper
 func Exhaustive(dt *testing.T) {
@@ -56,17 +29,30 @@ func Exhaustive(dt *testing.T) {
 		}
 	})
 
-	generateWorkloads(Workloads)
+	pvcSpecs := config.GetPVCSpecs()
 
-	for _, deployer := range Deployers {
-		for _, workload := range Workloads {
-			ctx := test.NewContext(workload, deployer, util.Ctx.Log)
-			t.Run(ctx.Name(), func(dt *testing.T) {
-				t := test.WithLog(dt, ctx.Logger())
-				t.Parallel()
-				runTestFlow(t, ctx)
-			})
+	for _, tc := range config.GetTests() {
+		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
+		if !ok {
+			panic("unknown pvcSpec")
 		}
+
+		workload, err := workloads.New(tc.Workload, config.GetGitBranch(), pvcSpec)
+		if err != nil {
+			panic(err)
+		}
+
+		deployer, err := deployers.New(tc.Deployer)
+		if err != nil {
+			panic(err)
+		}
+
+		ctx := test.NewContext(workload, deployer, util.Ctx.Log)
+		t.Run(ctx.Name(), func(dt *testing.T) {
+			t := test.WithLog(dt, ctx.Logger())
+			t.Parallel()
+			runTestFlow(t, ctx)
+		})
 	}
 }
 
