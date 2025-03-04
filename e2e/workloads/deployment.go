@@ -16,11 +16,11 @@ import (
 )
 
 type Deployment struct {
-	Path     string
-	Revision string
-	AppName  string
-	Name     string
-	PVCSpec  config.PVCSpec
+	Path    string
+	Branch  string
+	AppName string
+	Name    string
+	PVCSpec config.PVCSpec
 }
 
 func (w Deployment) GetAppName() string {
@@ -35,8 +35,8 @@ func (w Deployment) GetPath() string {
 	return w.Path
 }
 
-func (w Deployment) GetRevision() string {
-	return w.Revision
+func (w Deployment) GetBranch() string {
+	return w.Branch
 }
 
 func (w Deployment) SupportsDeployer(d types.Deployer) bool {

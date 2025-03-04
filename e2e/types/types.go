@@ -26,7 +26,7 @@ type Workload interface {
 	GetName() string
 	GetAppName() string
 	GetPath() string
-	GetRevision() string
+	GetBranch() string
 
 	// SupportsDeployer returns tue if this workload is compatible with deployer.
 	SupportsDeployer(Deployer) bool

@@ -1,9 +1,11 @@
 # Configuration for RamenDR End to End testing.
 
 ---
-# Git repository URL containing application manifests to be deployed on
-# the clusters.
-giturl: "https://github.com/RamenDR/ocm-ramen-samples.git"
+# Git repository url and branch containing application manifests
+# to be deployed on the clusters.
+repo:
+  url: "https://github.com/RamenDR/ocm-ramen-samples.git"
+  branch: main
 
 # List of PVC specifications for workloads.
 # These define storage configurations, such as 'storageClassName' and
