@@ -29,8 +29,14 @@ var (
 func generateWorkloads([]types.Workload) {
 	pvcSpecs := config.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
-		deployment := workloads.NewDeployment(config.GetGitBranch(), pvcSpec)
-		Workloads = append(Workloads, deployment)
+		for _, name := range workloads.AvailableNames() {
+			workload, err := workloads.New(name, config.GetGitBranch(), pvcSpec)
+			if err != nil {
+				panic(err)
+			}
+
+			Workloads = append(Workloads, workload)
+		}
 	}
 }
 
