@@ -183,7 +183,6 @@ func validateDRPolicy(ctx context.Context,
 	drclusters *ramen.DRClusterList,
 	apiReader client.Reader,
 ) (string, error) {
-
 	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
 	if len(drpolicy.Status.Sync.PeerClasses) > 0 && len(drpolicy.Status.Async.PeerClasses) > 0 {
 		return ReasonValidationFailed,
@@ -304,34 +303,71 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterLi
 	return nil
 }
 
+func getClusterIDSFromPolicy(drpolicy *ramen.DRPolicy) []string {
+	cids := []string{}
+
+	if len(drpolicy.Status.Sync.PeerClasses) > 0 {
+		for _, pc := range drpolicy.Status.Sync.PeerClasses {
+			cids = append(cids, pc.ClusterIDs...)
+		}
+
+		return cids
+	}
+
+	if len(drpolicy.Status.Async.PeerClasses) > 0 {
+		for _, pc := range drpolicy.Status.Async.PeerClasses {
+			cids = append(cids, pc.ClusterIDs...)
+		}
+
+		return cids
+	}
+
+	return cids
+}
+
+func hasOverlapWithMetro(metroMap map[string][]string, commonClusterIDs, commonClusters []string) bool {
+	for _, v := range metroMap {
+		if sets.NewString(v...).HasAny(commonClusterIDs...) {
+			return true
+		}
+
+		if sets.NewString(v...).HasAny(commonClusters...) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
 	d1ClusterNames := sets.NewString(util.DRPolicyClusterNames(d1)...)
-	d1SupportsMetro, d1MetroRegions := dRPolicySupportsMetro(d1, drclusters.Items)
+	d1ClusterIDs := sets.NewString(getClusterIDSFromPolicy(d1)...)
+	d1SupportsMetro, d1MetroMap := dRPolicySupportsMetro(d1, drclusters.Items)
+
 	d2ClusterNames := sets.NewString(util.DRPolicyClusterNames(d2)...)
-	d2SupportsMetro, d2MetroRegions := dRPolicySupportsMetro(d2, drclusters.Items)
+	d2ClusterIDs := sets.NewString(getClusterIDSFromPolicy(d2)...)
+	d2SupportsMetro, d2MetroMap := dRPolicySupportsMetro(d2, drclusters.Items)
+
 	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
+	commonClusterIDs := d1ClusterIDs.Intersection(d2ClusterIDs)
 
 	// No common managed clusters, so we are good
-	if commonClusters.Len() == 0 {
+	if commonClusterIDs.Len() == 0 && commonClusters.Len() == 0 {
 		return false
 	}
 
 	// Lets check if the metro clusters in DRPolicy d2 belong to common managed clusters list
 	if d2SupportsMetro {
-		for _, v := range d2MetroRegions {
-			if sets.NewString(v...).HasAny(commonClusters.List()...) {
-				return true
-			}
-		}
+		return hasOverlapWithMetro(d2MetroMap,
+			commonClusterIDs.List(),
+			commonClusters.List())
 	}
 
 	// Lets check if the metro clusters in DRPolicy d1 belong to common managed clusters list
 	if d1SupportsMetro {
-		for _, v := range d1MetroRegions {
-			if sets.NewString(v...).HasAny(commonClusters.List()...) {
-				return true
-			}
-		}
+		return hasOverlapWithMetro(d1MetroMap,
+			commonClusterIDs.List(),
+			commonClusters.List())
 	}
 
 	return false
