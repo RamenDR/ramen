@@ -6,8 +6,13 @@ package core
 // spec.groups.includeResourceTypes is skipped which infers include all resource types for group workflow(backup/restore) operation
 // spec.groups.essential is skipped which infers group workflow action should succeed else stop further processing of workflow and initiate rollback
 const (
-	VMRecipeName = "vm-recipe"
-	VMRecipe     = `
+	VMRecipeName         = "vm-recipe"
+	VMList               = "PROTECTED_VMS"
+	K8SLabelSelector     = "K8S_RESOURCE_SELECTOR"
+	PVCLabelSelector     = "PVC_RESOURCE_SELECTOR"
+	VMLabelSelector      = "ramendr.openshift.io/k8s-resource-selector"
+	ProtectedVMNamespace = "VM_NAMESPACE"
+	VMRecipe             = `
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: Recipe
 metadata:
