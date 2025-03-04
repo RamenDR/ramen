@@ -9,10 +9,6 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-const (
-	argocdNamespace = "argocd"
-)
-
 type ApplicationSet struct{}
 
 // Deploy creates an ApplicationSet on the hub cluster, creating the workload on one of the managed clusters.
@@ -103,7 +99,7 @@ func (a ApplicationSet) GetName() string {
 }
 
 func (a ApplicationSet) GetNamespace() string {
-	return argocdNamespace
+	return config.GetNamespaces().ArgocdNamespace
 }
 
 func (a ApplicationSet) IsDiscovered() bool {
