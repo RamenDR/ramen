@@ -778,7 +778,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			Expect(k8sClient.Delete(context.TODO(), vrg)).To(Succeed())
 
 			By("ensuring VRG cannot be deleted")
-			Consistently(func() error {
+			Eventually(func() error {
 				return apiReader.Get(context.TODO(), vrgDeleteIncompleteVR.vrgNamespacedName(), vrg)
 			}, vrgtimeout, vrginterval).
 				Should(Succeed(), "VRG %s was deleted when VR is incomplete", vrgDeleteIncompleteVR.vrgName)
