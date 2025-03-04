@@ -14,6 +14,7 @@ import (
 const (
 	defaultChannelNamespace = "e2e-gitops"
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
+	defaultGitBranch        = "main"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -21,6 +22,13 @@ const (
 type Channel struct {
 	Name      string
 	Namespace string
+}
+
+// Repo represents the user-configurable git repository settings.
+// It includes the repository url and branch to be used for deploying workload.
+type Repo struct {
+	URL    string
+	Branch string
 }
 
 type PVCSpec struct {
@@ -37,7 +45,7 @@ type Cluster struct {
 
 type Config struct {
 	// User configurable values.
-	GitURL   string
+	Repo     Repo
 	Clusters map[string]Cluster
 	PVCSpecs []PVCSpec
 
@@ -52,7 +60,8 @@ var (
 
 //nolint:cyclop
 func ReadConfig(configFile string) error {
-	viper.SetDefault("GitURL", defaultGitURL)
+	viper.SetDefault("Repo.URL", defaultGitURL)
+	viper.SetDefault("Repo.Branch", defaultGitBranch)
 
 	viper.SetConfigFile(configFile)
 
@@ -80,7 +89,7 @@ func ReadConfig(configFile string) error {
 		return fmt.Errorf("failed to find pvcs in configuration")
 	}
 
-	config.Channel.Name = resourceName(config.GitURL)
+	config.Channel.Name = resourceName(config.Repo.URL)
 	config.Channel.Namespace = defaultChannelNamespace
 
 	return nil
@@ -95,7 +104,11 @@ func GetChannelNamespace() string {
 }
 
 func GetGitURL() string {
-	return config.GitURL
+	return config.Repo.URL
+}
+
+func GetGitBranch() string {
+	return config.Repo.Branch
 }
 
 func GetPVCSpecs() []PVCSpec {

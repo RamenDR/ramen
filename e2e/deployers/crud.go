@@ -154,7 +154,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	labels[AppLabelKey] = name
 
 	annotations := make(map[string]string)
-	annotations["apps.open-cluster-management.io/github-branch"] = w.GetRevision()
+	annotations["apps.open-cluster-management.io/github-branch"] = w.GetBranch()
 	annotations["apps.open-cluster-management.io/github-path"] = w.GetPath()
 
 	placementRef := corev1.ObjectReference{
@@ -326,7 +326,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 					Source: &argocdv1alpha1hack.ApplicationSource{
 						RepoURL:        config.GetGitURL(),
 						Path:           w.GetPath(),
-						TargetRevision: w.GetRevision(),
+						TargetRevision: w.GetBranch(),
 					},
 					Destination: argocdv1alpha1hack.ApplicationDestination{
 						Server:    "{{server}}",
@@ -449,7 +449,7 @@ type CombinedData map[string]interface{}
 func CreateKustomizationFile(ctx types.Context, dir string) error {
 	w := ctx.Workload()
 	yamlData := `resources:
-- ` + config.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
+- ` + config.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetBranch()
 
 	var yamlContent CombinedData
 
