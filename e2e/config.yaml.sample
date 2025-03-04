@@ -1,9 +1,6 @@
 # Configuration for RamenDR End to End testing.
 
 ---
-# Namespace where the channel CR will be created.
-channelnamespace: "e2e-gitops"
-
 # Git repository URL containing application manifests to be deployed on
 # the clusters.
 giturl: "https://github.com/RamenDR/ocm-ramen-samples.git"

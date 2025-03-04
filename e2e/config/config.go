@@ -16,6 +16,13 @@ const (
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 )
 
+// Channel defines the name and namespace for the channel CR.
+// This is not user-configurable and always uses default values.
+type Channel struct {
+	Name      string
+	Namespace string
+}
+
 type PVCSpec struct {
 	Name                 string
 	StorageClassName     string
@@ -30,13 +37,12 @@ type Cluster struct {
 
 type Config struct {
 	// User configurable values.
-	ChannelNamespace string
-	GitURL           string
-	Clusters         map[string]Cluster
-	PVCSpecs         []PVCSpec
+	GitURL   string
+	Clusters map[string]Cluster
+	PVCSpecs []PVCSpec
 
 	// Generated values
-	channelName string
+	Channel Channel
 }
 
 var (
@@ -46,7 +52,6 @@ var (
 
 //nolint:cyclop
 func ReadConfig(configFile string) error {
-	viper.SetDefault("ChannelNamespace", defaultChannelNamespace)
 	viper.SetDefault("GitURL", defaultGitURL)
 
 	viper.SetConfigFile(configFile)
@@ -75,17 +80,18 @@ func ReadConfig(configFile string) error {
 		return fmt.Errorf("failed to find pvcs in configuration")
 	}
 
-	config.channelName = resourceName(config.GitURL)
+	config.Channel.Name = resourceName(config.GitURL)
+	config.Channel.Namespace = defaultChannelNamespace
 
 	return nil
 }
 
 func GetChannelName() string {
-	return config.channelName
+	return config.Channel.Name
 }
 
 func GetChannelNamespace() string {
-	return config.ChannelNamespace
+	return config.Channel.Namespace
 }
 
 func GetGitURL() string {
