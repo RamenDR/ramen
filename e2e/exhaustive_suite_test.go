@@ -4,7 +4,6 @@
 package e2e_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/config"
@@ -19,11 +18,6 @@ import (
 // Workloads = {"Deployment", "STS", "DaemonSet"}
 // Classes   = {"rbd", "cephfs"}
 
-const (
-	GITPATH = "workloads/deployment/base"
-	APPNAME = "busybox"
-)
-
 var (
 	Workloads      = []types.Workload{}
 	subscription   = &deployers.Subscription{}
@@ -35,14 +29,7 @@ var (
 func generateWorkloads([]types.Workload) {
 	pvcSpecs := config.GetPVCSpecs()
 	for _, pvcSpec := range pvcSpecs {
-		// add storageclass name to deployment name
-		deployment := &workloads.Deployment{
-			Path:    GITPATH,
-			Branch:  config.GetGitBranch(),
-			AppName: APPNAME,
-			Name:    fmt.Sprintf("Deploy-%s", pvcSpec.Name),
-			PVCSpec: pvcSpec,
-		}
+		deployment := workloads.NewDeployment(config.GetGitBranch(), pvcSpec)
 		Workloads = append(Workloads, deployment)
 	}
 }
