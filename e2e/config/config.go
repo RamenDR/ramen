@@ -165,8 +165,13 @@ func GetGitBranch() string {
 	return config.Repo.Branch
 }
 
-func GetPVCSpecs() []PVCSpec {
-	return config.PVCSpecs
+func GetPVCSpecs() map[string]PVCSpec {
+	res := map[string]PVCSpec{}
+	for _, spec := range config.PVCSpecs {
+		res[spec.Name] = spec
+	}
+
+	return res
 }
 
 func GetClusters() map[string]Cluster {
