@@ -218,6 +218,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  verbs:
+  - get
+  - list
+- apiGroups:
   - multicluster.x-k8s.io
   resources:
   - serviceexports
