@@ -30,8 +30,7 @@ import (
 )
 
 const (
-	AppLabelKey    = "app"
-	ClusterSetName = "default"
+	AppLabelKey = "app"
 
 	fMode = 0o600
 )
@@ -47,7 +46,7 @@ func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 			Labels:    labels,
 		},
 		Spec: ocmv1b2.ManagedClusterSetBindingSpec{
-			ClusterSet: ClusterSetName,
+			ClusterSet: config.GetClusterSetName(),
 		},
 	}
 
@@ -92,7 +91,7 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
-	clusterSet := []string{ClusterSetName}
+	clusterSet := []string{config.GetClusterSetName()}
 
 	var numClusters int32 = 1
 	placement := &ocmv1b1.Placement{

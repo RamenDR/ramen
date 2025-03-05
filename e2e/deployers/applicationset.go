@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -20,7 +21,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	err := CreateManagedClusterSetBinding(ctx, McsbName, managementNamespace)
+	err := CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -88,7 +89,7 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	}
 
 	if lastAppset {
-		err = DeleteManagedClusterSetBinding(ctx, McsbName, managementNamespace)
+		err = DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
 		if err != nil {
 			return err
 		}

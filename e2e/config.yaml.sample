@@ -10,6 +10,9 @@ repo:
 # DRPolicy name in the hub cluster.
 drPolicy: dr-policy
 
+# Add ClusterSet name to match your Open Cluster Management configuration.
+clusterSet: default
+
 # List of PVC specifications for workloads.
 # These define storage configurations, such as 'storageClassName' and
 # 'accessModes', and are used to kustomize workloads.

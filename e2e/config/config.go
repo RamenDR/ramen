@@ -17,6 +17,7 @@ const (
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 	defaultGitBranch        = "main"
 	defaultDRPolicyName     = "dr-policy"
+	defaultClusterSetName   = "default"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -53,11 +54,12 @@ type Test struct {
 
 type Config struct {
 	// User configurable values.
-	Repo     Repo
-	DRPolicy string
-	Clusters map[string]Cluster
-	PVCSpecs []PVCSpec
-	Tests    []Test
+	Repo       Repo
+	DRPolicy   string
+	ClusterSet string
+	Clusters   map[string]Cluster
+	PVCSpecs   []PVCSpec
+	Tests      []Test
 
 	// Generated values
 	Channel Channel
@@ -79,6 +81,7 @@ func ReadConfig(configFile string, options Options) error {
 	viper.SetDefault("Repo.URL", defaultGitURL)
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
 	viper.SetDefault("DRPolicy", defaultDRPolicyName)
+	viper.SetDefault("ClusterSet", defaultClusterSetName)
 
 	viper.SetConfigFile(configFile)
 
@@ -170,6 +173,10 @@ func GetGitBranch() string {
 
 func GetDRPolicyName() string {
 	return config.DRPolicy
+}
+
+func GetClusterSetName() string {
+	return config.ClusterSet
 }
 
 func GetPVCSpecs() map[string]PVCSpec {
