@@ -7,6 +7,9 @@ repo:
   url: "https://github.com/RamenDR/ocm-ramen-samples.git"
   branch: main
 
+# DRPolicy name in the hub cluster.
+drPolicy: dr-policy
+
 # List of PVC specifications for workloads.
 # These define storage configurations, such as 'storageClassName' and
 # 'accessModes', and are used to kustomize workloads.

@@ -16,6 +16,7 @@ const (
 	defaultChannelNamespace = "e2e-gitops"
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 	defaultGitBranch        = "main"
+	defaultDRPolicyName     = "dr-policy"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -53,6 +54,7 @@ type Test struct {
 type Config struct {
 	// User configurable values.
 	Repo     Repo
+	DRPolicy string
 	Clusters map[string]Cluster
 	PVCSpecs []PVCSpec
 	Tests    []Test
@@ -76,6 +78,7 @@ var (
 func ReadConfig(configFile string, options Options) error {
 	viper.SetDefault("Repo.URL", defaultGitURL)
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
+	viper.SetDefault("DRPolicy", defaultDRPolicyName)
 
 	viper.SetConfigFile(configFile)
 
@@ -163,6 +166,10 @@ func GetGitURL() string {
 
 func GetGitBranch() string {
 	return config.Repo.Branch
+}
+
+func GetDRPolicyName() string {
+	return config.DRPolicy
 }
 
 func GetPVCSpecs() map[string]PVCSpec {

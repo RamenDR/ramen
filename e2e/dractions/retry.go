@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -89,7 +90,7 @@ func getDRCluster(clusterName string, drpolicy *ramen.DRPolicy) util.Cluster {
 }
 
 func getTargetCluster(cluster util.Cluster, currentCluster string) (string, error) {
-	drpolicy, err := util.GetDRPolicy(cluster, util.DefaultDRPolicyName)
+	drpolicy, err := util.GetDRPolicy(cluster, config.GetDRPolicyName())
 	if err != nil {
 		return "", err
 	}

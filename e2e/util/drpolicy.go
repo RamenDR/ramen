@@ -10,8 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-const DefaultDRPolicyName = "dr-policy"
-
 // nolint:unparam
 func GetDRPolicy(cluster Cluster, name string) (*ramen.DRPolicy, error) {
 	drpolicy := &ramen.DRPolicy{}
