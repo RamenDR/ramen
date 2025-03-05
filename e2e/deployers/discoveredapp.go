@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -48,7 +49,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, util.DefaultDRPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
@@ -79,7 +80,7 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, util.DefaultDRPolicyName)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
