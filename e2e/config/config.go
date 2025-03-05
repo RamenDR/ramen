@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -60,13 +61,19 @@ type Config struct {
 	Channel Channel
 }
 
+// Options that can be used in a configuration file.
+type Options struct {
+	Workloads []string
+	Deployers []string
+}
+
 var (
 	resourceNameForbiddenCharacters *regexp.Regexp
 	config                          = &Config{}
 )
 
 //nolint:cyclop
-func ReadConfig(configFile string) error {
+func ReadConfig(configFile string, options Options) error {
 	viper.SetDefault("Repo.URL", defaultGitURL)
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
 
@@ -96,12 +103,48 @@ func ReadConfig(configFile string) error {
 		return fmt.Errorf("failed to find pvcs in configuration")
 	}
 
-	if len(config.Tests) == 0 {
-		return fmt.Errorf("failed to find tests in configuration")
+	if err := validateTests(config, &options); err != nil {
+		return err
 	}
 
 	config.Channel.Name = resourceName(config.Repo.URL)
 	config.Channel.Namespace = defaultChannelNamespace
+
+	return nil
+}
+
+func validateTests(config *Config, options *Options) error {
+	if len(config.Tests) == 0 {
+		return fmt.Errorf("no tests found")
+	}
+
+	pvcSpecNames := make([]string, 0, len(config.PVCSpecs))
+	for _, spec := range config.PVCSpecs {
+		pvcSpecNames = append(pvcSpecNames, spec.Name)
+	}
+
+	testsSeen := map[Test]struct{}{}
+
+	for _, t := range config.Tests {
+		if _, ok := testsSeen[t]; ok {
+			return fmt.Errorf("duplicate test (deployer: %q, workload: %q, pvcSpec: %q)",
+				t.Deployer, t.Workload, t.PVCSpec)
+		}
+
+		if !slices.Contains(options.Deployers, t.Deployer) {
+			return fmt.Errorf("invalid test deployer: %q (available %q)", t.Deployer, options.Deployers)
+		}
+
+		if !slices.Contains(options.Workloads, t.Workload) {
+			return fmt.Errorf("invalid test workload: %q (available %q)", t.Workload, options.Workloads)
+		}
+
+		if !slices.Contains(pvcSpecNames, t.PVCSpec) {
+			return fmt.Errorf("invalid test pvcSpec: %q (available %q)", t.PVCSpec, pvcSpecNames)
+		}
+
+		testsSeen[t] = struct{}{}
+	}
 
 	return nil
 }
