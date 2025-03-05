@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/workloads"
 )
 
 var configFile string
@@ -32,7 +34,11 @@ func TestMain(m *testing.M) {
 
 	log.Infof("Using config file %q", configFile)
 
-	if err := config.ReadConfig(configFile); err != nil {
+	options := config.Options{
+		Deployers: deployers.AvailableNames(),
+		Workloads: workloads.AvailableNames(),
+	}
+	if err := config.ReadConfig(configFile, options); err != nil {
 		log.Fatalf("Failed to read config: %s", err)
 	}
 
