@@ -120,8 +120,9 @@ func ReadConfig(configFile string, options Options) error {
 }
 
 func validateTests(config *Config, options *Options) error {
+	// We allow an empty test list so one can run the validation tests or unit tests without a fully configured file.
 	if len(config.Tests) == 0 {
-		return fmt.Errorf("no tests found")
+		return nil
 	}
 
 	pvcSpecNames := make([]string, 0, len(config.PVCSpecs))
