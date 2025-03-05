@@ -10,11 +10,13 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func Validate(dt *testing.T) {
+func TestValidation(dt *testing.T) {
 	t := test.WithLog(dt, util.Ctx.Log)
-	t.Helper()
+	t.Parallel()
+
 	t.Run("hub", func(dt *testing.T) {
 		t := test.WithLog(dt, util.Ctx.Log)
+		t.Parallel()
 
 		err := util.ValidateRamenHubOperator(util.Ctx.Hub)
 		if err != nil {
@@ -23,6 +25,7 @@ func Validate(dt *testing.T) {
 	})
 	t.Run("c1", func(dt *testing.T) {
 		t := test.WithLog(dt, util.Ctx.Log)
+		t.Parallel()
 
 		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1)
 		if err != nil {
@@ -31,6 +34,7 @@ func Validate(dt *testing.T) {
 	})
 	t.Run("c2", func(dt *testing.T) {
 		t := test.WithLog(dt, util.Ctx.Log)
+		t.Parallel()
 
 		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2)
 		if err != nil {
