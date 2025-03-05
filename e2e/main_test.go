@@ -57,25 +57,3 @@ func TestMain(m *testing.M) {
 
 	os.Exit(m.Run())
 }
-
-type testDef struct {
-	name string
-	test func(t *testing.T)
-}
-
-var Suites = []testDef{
-	{"Exhaustive", Exhaustive},
-}
-
-func TestSuites(dt *testing.T) {
-	t := test.WithLog(dt, util.Ctx.Log)
-	t.Log(t.Name())
-
-	if !t.Run("Validate", Validate) {
-		t.FailNow()
-	}
-
-	for _, suite := range Suites {
-		t.Run(suite.name, suite.test)
-	}
-}

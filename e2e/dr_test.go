@@ -13,10 +13,8 @@ import (
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-//nolint:thelper
-func Exhaustive(dt *testing.T) {
+func TestDR(dt *testing.T) {
 	t := test.WithLog(dt, util.Ctx.Log)
-	t.Helper()
 	t.Parallel()
 
 	tests := config.GetTests()
