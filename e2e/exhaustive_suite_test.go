@@ -19,6 +19,11 @@ func Exhaustive(dt *testing.T) {
 	t.Helper()
 	t.Parallel()
 
+	tests := config.GetTests()
+	if len(tests) == 0 {
+		t.Fatal("No tests found in the configuration file")
+	}
+
 	if err := util.EnsureChannel(); err != nil {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
@@ -31,7 +36,7 @@ func Exhaustive(dt *testing.T) {
 
 	pvcSpecs := config.GetPVCSpecs()
 
-	for _, tc := range config.GetTests() {
+	for _, tc := range tests {
 		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
 		if !ok {
 			panic("unknown pvcSpec")
