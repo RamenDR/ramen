@@ -33,8 +33,13 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	if err != nil {
+		return err
+	}
+
 	// create subscription namespace
-	err := util.CreateNamespace(util.Ctx.Hub, managementNamespace, log)
+	err = util.CreateNamespace(util.Ctx.Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}
@@ -44,7 +49,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, managementNamespace)
+	err = CreatePlacement(ctx, name, managementNamespace, drpolicy.Spec.DRClusters[0])
 	if err != nil {
 		return err
 	}

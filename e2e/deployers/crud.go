@@ -87,7 +87,7 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 	return nil
 }
 
-func CreatePlacement(ctx types.Context, name, namespace string) error {
+func CreatePlacement(ctx types.Context, name, namespace string, clusterName string) error {
 	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
@@ -103,6 +103,22 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 		Spec: ocmv1b1.PlacementSpec{
 			ClusterSets:      clusterSet,
 			NumberOfClusters: &numClusters,
+			// Restricts to the specified cluster using requiredClusterSelector.
+			Predicates: []ocmv1b1.ClusterPredicate{
+				{
+					RequiredClusterSelector: ocmv1b1.ClusterSelector{
+						LabelSelector: metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "name",
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   []string{clusterName},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 

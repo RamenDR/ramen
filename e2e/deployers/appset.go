@@ -21,12 +21,17 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	err := CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, managementNamespace)
+	err = CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	if err != nil {
+		return err
+	}
+
+	err = CreatePlacement(ctx, name, managementNamespace, drpolicy.Spec.DRClusters[0])
 	if err != nil {
 		return err
 	}
