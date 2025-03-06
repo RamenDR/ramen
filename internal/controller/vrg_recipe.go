@@ -163,8 +163,18 @@ func getRecipeObj(ctx context.Context, recipeNamespacedName types.NamespacedName
 	reader client.Reader, ramenConfig ramen.RamenConfig,
 ) (recipev1.Recipe, error) {
 	recipe := recipev1.Recipe{}
+
 	if vrg.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(ramenConfig) &&
 		vrg.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
+		if vrg.Spec.ProtectedNamespaces == nil || len(*vrg.Spec.ProtectedNamespaces) == 0 {
+			return recipe, fmt.Errorf("recipe %s should have atleast one protected namespace specified",
+				vrg.Spec.KubeObjectProtection.RecipeRef.Name)
+		}
+
+		vrg.Spec.KubeObjectProtection.RecipeParameters["VM_NAMESPACE"] = append(
+			vrg.Spec.KubeObjectProtection.RecipeParameters["VM_NAMESPACE"],
+			*vrg.Spec.ProtectedNamespaces...)
+
 		if err := yaml.Unmarshal([]byte(recipecore.VMRecipe), &recipe); err != nil {
 			return recipe, fmt.Errorf("recipe %s unmarshal error: %w", recipecore.VMRecipe, err)
 		}
