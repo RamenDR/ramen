@@ -36,7 +36,7 @@ require (
 	k8s.io/component-base v0.31.1
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
-	kubevirt.io/api v1.5.0
+	kubevirt.io/api v1.5.2
 	open-cluster-management.io/api v0.15.0
 	open-cluster-management.io/config-policy-controller v0.15.0
 	open-cluster-management.io/governance-policy-propagator v0.15.0
