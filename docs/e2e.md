@@ -32,16 +32,20 @@ Create a `config.yaml` file by copying the `config.yaml.sample` template:
 cp config.yaml.sample config.yaml
 ```
 
-Update `config.yaml` by adding kubeconfig paths of the clusters, with format:
+Update `config.yaml` by uncommenting and adding cluster names and kubeconfig paths
+for the hub and managed clusters.
 
 ```yaml
 Clusters:
+  hub:
+    name: hub
+    kubeconfigpath: /path/to/kubeconfig/hub
   c1:
+    name: dr1
     kubeconfigpath: /path/to/kubeconfig/c1
   c2:
+    name: dr2
     kubeconfigpath: /path/to/kubeconfig/c2
-  hub:
-    kubeconfigpath: /path/to/kubeconfig/hub
 ```
 
 ### Run all E2E tests
