@@ -8,12 +8,17 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/workloads"
 )
 
+var configFile string
+
 func init() {
-	flag.StringVar(&util.ConfigFile, "config", "", "Path to the config file")
+	flag.StringVar(&configFile, "config", "config.yaml", "e2e configuration file")
 }
 
 func TestMain(m *testing.M) {
@@ -27,7 +32,17 @@ func TestMain(m *testing.M) {
 	}
 	// TODO: Sync the log on exit
 
-	util.Ctx, err = util.NewContext(log, util.ConfigFile)
+	log.Infof("Using config file %q", configFile)
+
+	options := config.Options{
+		Deployers: deployers.AvailableNames(),
+		Workloads: workloads.AvailableNames(),
+	}
+	if err := config.ReadConfig(configFile, options); err != nil {
+		log.Fatalf("Failed to read config: %s", err)
+	}
+
+	util.Ctx, err = util.NewContext(log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}

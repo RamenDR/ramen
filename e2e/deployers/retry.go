@@ -24,13 +24,14 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Debugf("Subscription \"%s/%s\" phase is %s", namespace, name, phase)
+			log.Debugf("Subscription \"%s/%s\" phase is %s in cluster %q", namespace, name, phase, util.Ctx.Hub.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("subscription %q status is not %q yet before timeout", name, phase)
+			return fmt.Errorf("subscription %q status is not %q yet before timeout in cluster %q",
+				name, phase, util.Ctx.Hub.Name)
 		}
 
 		time.Sleep(util.RetryInterval)
@@ -45,14 +46,14 @@ func WaitWorkloadHealth(ctx types.Context, cluster util.Cluster, namespace strin
 	for {
 		err := w.Health(ctx, cluster, namespace)
 		if err == nil {
-			log.Debugf("Workload \"%s/%s\" is ready", namespace, w.GetAppName())
+			log.Debugf("Workload \"%s/%s\" is ready in cluster %q", namespace, w.GetAppName(), cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("workload %q is not ready yet before timeout of %v",
-				w.GetName(), util.Timeout)
+			return fmt.Errorf("workload %q is not ready yet before timeout of %v in cluster %q",
+				w.GetName(), util.Timeout, cluster.Name)
 		}
 
 		time.Sleep(util.RetryInterval)

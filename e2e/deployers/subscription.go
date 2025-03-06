@@ -66,7 +66,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Deployed subscription app \"%s/%s\" on cluster %q",
+	log.Infof("Deployed subscription app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
 
 	return nil
@@ -88,7 +88,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Undeployed subscription app \"%s/%s\" on cluster %q",
+	log.Infof("Undeployed subscription app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
 
 	err = DeletePlacement(ctx, name, managementNamespace)

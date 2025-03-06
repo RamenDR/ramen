@@ -104,8 +104,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		// subscription, such as, the deployment, pods, services, etc., by an
 		// entity external to the VRG a la IaC.
 		if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
-			log.Info("Requeuing due to failure to upload PV object to S3 store(s)",
-				"errorValue", err)
+			log.Error(err, "Requeuing due to failure to upload PV object to S3 store(s)")
 
 			v.requeue()
 
@@ -635,13 +634,11 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	}
 
 	if err := v.addArchivedAnnotationForPVC(pvc, log); err != nil {
-		msg := fmt.Sprintf("failed to add archived annotation for PVC (%s/%s) with error (%v)",
-			pvc.Namespace, pvc.Name, err)
-		v.log.Info(msg)
+		msg := fmt.Sprintf("failed to add archived annotation: %s", err)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonClusterDataAnnotationFailed, msg)
 
-		return errors.New(msg)
+		return fmt.Errorf("failed to add archived annotation for PVC (%s/%s): %w", pvc.Namespace, pvc.Name, err)
 	}
 
 	msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
@@ -1921,37 +1918,40 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 		pvc.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pvc.Generation)
+	pvcAnnotationValue := v.generateArchiveAnnotation(pvc.Generation)
+	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = pvcAnnotationValue
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
-
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
+		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s:%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, pvcAnnotationValue, v.instance.Namespace,
+			v.instance.Name, err)
 	}
+
+	log.Info("Annotated PersistentVolumeClaim", "namespace", pvc.Namespace, "name", pvc.Name, "key",
+		pvcVRAnnotationArchivedKey, "value", pvcAnnotationValue)
 
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
-		log.Error(err, "Failed to get PV to add archived annotation")
-
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
-			"VolumeReplicationGroup (%s/%s), %w",
-			pv.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+		return fmt.Errorf("failed to get PersistentVolume (%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			pv.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
 	if pv.ObjectMeta.Annotations == nil {
 		pv.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
-	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
-		log.Error(err, "Failed to update PersistentVolume annotation")
+	pvAnnotationValue := v.generateArchiveAnnotation(pv.Generation)
+	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = pvAnnotationValue
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
+	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s:%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			pvc.Name, pvcVRAnnotationArchivedKey, pvAnnotationValue, v.instance.Namespace, v.instance.Name, err)
 	}
+
+	log.Info("Annotated PersistentVolume", "name", pv.Name, "key", pvcVRAnnotationArchivedKey, "value",
+		pvAnnotationValue)
 
 	return nil
 }

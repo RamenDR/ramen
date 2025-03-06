@@ -5,25 +5,39 @@ package workloads
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	deploymentName    = "deploy"
+	deploymentAppName = "busybox"
+	deploymentPath    = "workloads/deployment/base"
+)
+
 type Deployment struct {
-	Path     string
-	Revision string
-	AppName  string
-	Name     string
-	PVCSpec  util.PVCSpec
+	Name    string
+	Branch  string
+	PVCSpec config.PVCSpec
+}
+
+func NewDeployment(branch string, pvcSpec config.PVCSpec) types.Workload {
+	return &Deployment{
+		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
+		Branch:  branch,
+		PVCSpec: pvcSpec,
+	}
 }
 
 func (w Deployment) GetAppName() string {
-	return w.AppName
+	return deploymentAppName
 }
 
 func (w Deployment) GetName() string {
@@ -31,11 +45,11 @@ func (w Deployment) GetName() string {
 }
 
 func (w Deployment) GetPath() string {
-	return w.Path
+	return deploymentPath
 }
 
-func (w Deployment) GetRevision() string {
-	return w.Revision
+func (w Deployment) GetBranch() string {
+	return w.Branch
 }
 
 func (w Deployment) SupportsDeployer(d types.Deployer) bool {
@@ -86,7 +100,7 @@ func (w Deployment) Health(ctx types.Context, cluster util.Cluster, namespace st
 	}
 
 	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		log.Debugf("Deployment \"%s/%s\" is ready", namespace, w.GetAppName())
+		log.Debugf("Deployment \"%s/%s\" is ready in cluster %q", namespace, w.GetAppName(), cluster.Name)
 
 		return nil
 	}

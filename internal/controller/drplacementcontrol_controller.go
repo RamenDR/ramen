@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -2374,7 +2375,7 @@ func ensureDRPCValidNamespace(drpc *rmn.DRPlacementControl, ramenConfig *rmn.Ram
 		return nil
 	}
 
-	if drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(drpc) {
 		adminNamespace := drpcAdminNamespaceName(*ramenConfig)
 
 		return fmt.Errorf("drpc in non-admin namespace(%v) cannot have protected namespaces, admin-namespaces: %v",
@@ -2397,7 +2398,7 @@ func drpcsProtectCommonNamespace(drpcProtectedNs []string, otherDRPCProtectedNs 
 func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) ([]string, error) {
-	if drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(drpc) {
 		return *drpc.Spec.ProtectedNamespaces, nil
 	}
 
@@ -2469,9 +2470,14 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
+	independentVMProtection := drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
+	if independentVMProtection {
+		return nil
+	}
+
 	conflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
 	if conflict {
-		return fmt.Errorf("drpc: %s and drpc: %s protect the same namespace",
+		return fmt.Errorf("drpc: %s and drpc: %s protect common resources from the same namespace",
 			drpc.Name, otherDRPC.Name)
 	}
 
@@ -2501,4 +2507,29 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	otherDrpolicyClusters := rmnutil.DRPolicyClusterNamesAsASet(otherDrpolicy)
 
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
+}
+
+func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl,
+	ramenConfig *rmn.RamenConfig,
+) bool {
+	if (drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil) ||
+		(otherdrpc.Spec.KubeObjectProtection == nil || otherdrpc.Spec.KubeObjectProtection.RecipeRef == nil) {
+		return false
+	}
+
+	drpcRecipeName := drpc.Spec.KubeObjectProtection.RecipeRef.Name
+	otherDrpcRecipeName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
+
+	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
+	// Support for protecting independent VMs added for epic-6681
+	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
+		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
+
+		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
+			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
+			return true
+		}
+	}
+
+	return false
 }

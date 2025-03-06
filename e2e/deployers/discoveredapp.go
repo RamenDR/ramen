@@ -32,7 +32,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	appNamespace := ctx.AppNamespace()
 
 	// create namespace in both dr clusters
-	if err := util.CreateNamespaceAndAddAnnotation(appNamespace); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(appNamespace, log); err != nil {
 		return err
 	}
 
@@ -68,7 +68,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Deployed discovered app \"%s/%s\" on cluster %q",
+	log.Infof("Deployed discovered app \"%s/%s\" in cluster %q",
 		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
 
 	return nil

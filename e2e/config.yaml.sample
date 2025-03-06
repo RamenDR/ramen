@@ -1,12 +1,11 @@
 # Configuration for RamenDR End to End testing.
 
 ---
-# Namespace where the channel CR will be created.
-channelnamespace: "e2e-gitops"
-
-# Git repository URL containing application manifests to be deployed on
-# the clusters.
-giturl: "https://github.com/RamenDR/ocm-ramen-samples.git"
+# Git repository url and branch containing application manifests
+# to be deployed on the clusters.
+repo:
+  url: "https://github.com/RamenDR/ocm-ramen-samples.git"
+  branch: main
 
 # List of PVC specifications for workloads.
 # These define storage configurations, such as 'storageClassName' and
@@ -16,8 +15,32 @@ pvcspecs:
     storageclassname: rook-ceph-block
     accessmodes: ReadWriteOnce
   - name: cephfs
-    storageclassname: rook-cephfs-test-fs1
+    storageclassname: rook-cephfs-fs1
     accessmodes: ReadWriteMany
+
+# List to tests to run.
+# Available workloads: deploy
+# Available deployers: appset, subscr, disapp
+# Test names are generated as "{deployer}-{workload}-{pvcspec}".
+tests:
+  - deployer: appset
+    workload: deploy
+    pvcspec: rbd
+  - deployer: appset
+    workload: deploy
+    pvcspec: cephfs
+  - deployer: subscr
+    workload: deploy
+    pvcspec: rbd
+  - deployer: subscr
+    workload: deploy
+    pvcspec: cephfs
+  - deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
 
 # Sample cluster configurations:
 # Uncomment and edit the following lines to set cluster names

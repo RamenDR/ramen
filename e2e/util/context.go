@@ -20,11 +20,10 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
+	"github.com/ramendr/ramen/e2e/config"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 )
-
-var ConfigFile string
 
 type Cluster struct {
 	Name   string
@@ -99,45 +98,43 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 	return client, nil
 }
 
-func NewContext(log *zap.SugaredLogger, configFile string) (*Context, error) {
+func NewContext(log *zap.SugaredLogger) (*Context, error) {
 	var err error
 
 	ctx := new(Context)
 	ctx.Log = log
 
-	if err := ReadConfig(log, configFile); err != nil {
-		panic(err)
-	}
+	clusters := config.GetClusters()
 
-	ctx.Hub.Name = config.Clusters["hub"].Name
+	ctx.Hub.Name = clusters["hub"].Name
 	if ctx.Hub.Name == "" {
 		ctx.Hub.Name = defaultHubClusterName
 		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
 	}
 
-	ctx.Hub.Client, err = setupClient(config.Clusters["hub"].KubeconfigPath)
+	ctx.Hub.Client, err = setupClient(clusters["hub"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
-	ctx.C1.Name = config.Clusters["c1"].Name
+	ctx.C1.Name = clusters["c1"].Name
 	if ctx.C1.Name == "" {
 		ctx.C1.Name = defaultC1ClusterName
 		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
 	}
 
-	ctx.C1.Client, err = setupClient(config.Clusters["c1"].KubeconfigPath)
+	ctx.C1.Client, err = setupClient(clusters["c1"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
 	}
 
-	ctx.C2.Name = config.Clusters["c2"].Name
+	ctx.C2.Name = clusters["c2"].Name
 	if ctx.C2.Name == "" {
 		ctx.C2.Name = defaultC2ClusterName
 		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
 	}
 
-	ctx.C2.Client, err = setupClient(config.Clusters["c2"].KubeconfigPath)
+	ctx.C2.Client, err = setupClient(clusters["c2"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
 	}
