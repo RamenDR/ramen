@@ -38,6 +38,9 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
+	log.Infof("Deploying subscription app \"%s/%s\" in cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+
 	// create subscription namespace
 	err = util.CreateNamespace(util.Ctx.Hub, managementNamespace, log)
 	if err != nil {
@@ -64,13 +67,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
-	if err != nil {
-		return err
-	}
-
-	log.Infof("Deployed subscription app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+	log.Info("Workload deployed")
 
 	return nil
 }
@@ -81,18 +78,18 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	err := DeleteSubscription(ctx, s)
-	if err != nil {
-		return err
-	}
-
 	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Undeployed subscription app \"%s/%s\" in cluster %q",
+	log.Infof("Undeploying subscription app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+
+	err = DeleteSubscription(ctx, s)
+	if err != nil {
+		return err
+	}
 
 	err = DeletePlacement(ctx, name, managementNamespace)
 	if err != nil {
@@ -104,7 +101,14 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	return util.DeleteNamespace(util.Ctx.Hub, managementNamespace, log)
+	err = util.DeleteNamespace(util.Ctx.Hub, managementNamespace, log)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload undeployed")
+
+	return nil
 }
 
 func (s Subscription) IsDiscovered() bool {
