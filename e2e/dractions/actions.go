@@ -44,8 +44,7 @@ func EnableProtection(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Protecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
-		clusterName, appNamespace, managementNamespace)
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		placement, err := util.GetPlacement(util.Ctx.Hub, managementNamespace, placementName)
@@ -83,7 +82,14 @@ func EnableProtection(ctx types.Context) error {
 		return err
 	}
 
-	return waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	err = waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload protected")
+
+	return nil
 }
 
 // remove DRPC
@@ -105,8 +111,8 @@ func DisableProtection(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Unprotecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
-		clusterName, appNamespace, managementNamespace)
+	log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
+		appNamespace, ctx.Workload().GetAppName(), clusterName)
 
 	drpcName := name
 
@@ -114,7 +120,14 @@ func DisableProtection(ctx types.Context) error {
 		return err
 	}
 
-	return waitDRPCDeleted(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	err = waitDRPCDeleted(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload unprotected")
+
+	return nil
 }
 
 func Failover(ctx types.Context) error {
@@ -132,9 +145,17 @@ func Failover(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Failing over workload from cluster %q to cluster %q", currentCluster, targetCluster)
+	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
 
-	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
+	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload failed over")
+
+	return nil
 }
 
 // Determine DRPC
@@ -156,9 +177,17 @@ func Relocate(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Relocating workload from cluster %q to cluster %q", currentCluster, targetCluster)
+	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
 
-	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
+	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload relocated")
+
+	return nil
 }
 
 func failoverRelocate(ctx types.Context,

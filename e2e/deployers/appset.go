@@ -21,12 +21,20 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	err := CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, managementNamespace)
+	log.Infof("Deploying applicationset app \"%s/%s\" in cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+
+	err = CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	if err != nil {
+		return err
+	}
+
+	err = CreatePlacement(ctx, name, managementNamespace, drpolicy.Spec.DRClusters[0])
 	if err != nil {
 		return err
 	}
@@ -41,13 +49,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
-	if err != nil {
-		return err
-	}
-
-	log.Infof("Deployed applicationset app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+	log.Info("Workload deployed")
 
 	return nil
 }
@@ -58,18 +60,18 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	err := DeleteApplicationSet(ctx, a)
-	if err != nil {
-		return err
-	}
-
 	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Undeployed applicationset app \"%s/%s\" in cluster %q",
+	log.Infof("Undeploying applicationset app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+
+	err = DeleteApplicationSet(ctx, a)
+	if err != nil {
+		return err
+	}
 
 	err = DeleteConfigMap(ctx, name, managementNamespace)
 	if err != nil {
@@ -94,6 +96,8 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 			return err
 		}
 	}
+
+	log.Info("Workload undeployed")
 
 	return nil
 }

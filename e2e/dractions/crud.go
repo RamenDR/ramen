@@ -132,6 +132,7 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 			Labels:      labels,
 			Annotations: annotations,
 		},
+		// Predicate is not required since OCM is not managing this app.
 		Spec: clusterv1beta1.PlacementSpec{
 			ClusterSets:      clusterSet,
 			NumberOfClusters: &numClusters,

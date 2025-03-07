@@ -41,8 +41,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 	clusterName := drpolicy.Spec.DRClusters[0]
 
-	log.Infof("Protecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
-		clusterName, appNamespace, managementNamespace)
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
 
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
@@ -51,7 +50,14 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	}
 
 	// wait for drpc ready
-	return waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	err = waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload protected")
+
+	return nil
 }
 
 // remove DRPC
@@ -70,8 +76,8 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Unprotecting workload running in cluster %q (app namespace: %q, management namespace: %q)",
-		clusterName, appNamespace, managementNamespace)
+	log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
+		appNamespace, ctx.Workload().GetAppName(), clusterName)
 
 	if err := deleteDRPC(ctx, util.Ctx.Hub, managementNamespace, drpcName); err != nil {
 		return err
@@ -86,7 +92,14 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	return deployers.DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	err = deployers.DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload unprotected")
+
+	return nil
 }
 
 // nolint:funlen,cyclop
