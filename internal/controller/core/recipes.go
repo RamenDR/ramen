@@ -28,13 +28,17 @@ spec:
     - namespaces
     - nodes
     includedNamespaces:
-    - ${ALL_NAMESPACES}
+    - ${VM_NAMESPACE}
     labelSelector: 
       matchExpressions:
-      - key: appname
+      - key: ramendr.openshift.io/protected-vms
         operator: In
         values:
-        - ${LABEL_SELECTOR}
+        - ${PROTECTED_VMS}
+      - key: ramendr.openshift.io/k8s-resource-selector
+        operator: In
+        values:
+        - ${K8S_RESOURCE_SELECTOR}
     name: vm-backup
     type: resource
   workflows:
@@ -48,14 +52,14 @@ spec:
     - group: vm-backup
   volumes:
     includedNamespaces:
-    - ${ALL_NAMESPACES}
+    - ${VM_NAMESPACE}
     name: vm-volumes
     type: volume
     labelSelector:
       matchExpressions:
-      - key: appname
+      - key: ramendr.openshift.io/k8s-resource-selector
         operator: In
         values:
-        - vm
+        - ${PVC_RESOURCE_SELECTOR}
 `
 )
