@@ -13,11 +13,22 @@ import (
 )
 
 const (
+	// Kubernetes distributions
+	distroK8s = "k8s"
+	distroOcp = "ocp"
+
+	// Channel
 	defaultChannelNamespace = "e2e-gitops"
-	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
-	defaultGitBranch        = "main"
-	defaultDRPolicyName     = "dr-policy"
-	defaultClusterSetName   = "default"
+
+	// Git repository
+	defaultGitURL    = "https://github.com/RamenDR/ocm-ramen-samples.git"
+	defaultGitBranch = "main"
+
+	// DRPolicy
+	defaultDRPolicyName = "dr-policy"
+
+	// ClusterSet
+	defaultClusterSetName = "default"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -25,6 +36,14 @@ const (
 type Channel struct {
 	Name      string
 	Namespace string
+}
+
+// Namespaces are determined by distro and are not user-configurable.
+type Namespaces struct {
+	RamenHubNamespace       string
+	RamenDRClusterNamespace string
+	RamenOpsNamespace       string
+	ArgocdNamespace         string
 }
 
 // Repo represents the user-configurable git repository settings.
@@ -54,6 +73,7 @@ type Test struct {
 
 type Config struct {
 	// User configurable values.
+	Distro     string
 	Repo       Repo
 	DRPolicy   string
 	ClusterSet string
@@ -62,13 +82,30 @@ type Config struct {
 	Tests      []Test
 
 	// Generated values
-	Channel Channel
+	Channel    Channel
+	Namespaces Namespaces
 }
 
 // Options that can be used in a configuration file.
 type Options struct {
 	Workloads []string
 	Deployers []string
+}
+
+// Default namespace mappings for Kubernetes (k8s) clusters.
+var k8sNamespaces = Namespaces{
+	RamenHubNamespace:       "ramen-system",
+	RamenDRClusterNamespace: "ramen-system",
+	RamenOpsNamespace:       "ramen-ops",
+	ArgocdNamespace:         "argocd",
+}
+
+// Default namespace mappings for OpenShift (ocp) clusters.
+var ocpNamespaces = Namespaces{
+	RamenHubNamespace:       "openshift-operators",
+	RamenDRClusterNamespace: "openshift-dr-system",
+	RamenOpsNamespace:       "openshift-dr-ops",
+	ArgocdNamespace:         "openshift-gitops",
 }
 
 var (
@@ -91,6 +128,11 @@ func ReadConfig(configFile string, options Options) error {
 
 	if err := viper.Unmarshal(config); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %v", err)
+	}
+
+	if config.Distro != distroK8s && config.Distro != distroOcp {
+		return fmt.Errorf("invalid distro %q: (choose one of %q, %q)",
+			config.Distro, distroK8s, distroOcp)
 	}
 
 	if config.Clusters["hub"].KubeconfigPath == "" {
@@ -178,6 +220,17 @@ func GetDRPolicyName() string {
 
 func GetClusterSetName() string {
 	return config.ClusterSet
+}
+
+func GetNamespaces() Namespaces {
+	switch config.Distro {
+	case distroK8s:
+		return k8sNamespaces
+	case distroOcp:
+		return ocpNamespaces
+	default:
+		panic("invalid distro")
+	}
 }
 
 func GetPVCSpecs() map[string]PVCSpec {

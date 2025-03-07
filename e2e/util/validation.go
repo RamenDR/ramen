@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ramendr/ramen/e2e/config"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -16,20 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	ramenSystemNamespace = "ramen-system"
-)
-
 func ValidateRamenHubOperator(cluster Cluster) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
-	ramenNameSpace, err := GetRamenNameSpace(cluster)
-	if err != nil {
-		return err
-	}
-
-	pod, err := FindPod(cluster, ramenNameSpace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.GetNamespaces().RamenHubNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -48,12 +40,7 @@ func ValidateRamenDRClusterOperator(cluster Cluster) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
-	ramenNameSpace, err := GetRamenNameSpace(cluster)
-	if err != nil {
-		return err
-	}
-
-	pod, err := FindPod(cluster, ramenNameSpace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.GetNamespaces().RamenDRClusterNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -66,19 +53,6 @@ func ValidateRamenDRClusterOperator(cluster Cluster) error {
 	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
-}
-
-func GetRamenNameSpace(cluster Cluster) (string, error) {
-	isOpenShift, err := IsOpenShiftCluster(cluster)
-	if err != nil {
-		return "", err
-	}
-
-	if isOpenShift {
-		return "openshift-operators", nil
-	}
-
-	return ramenSystemNamespace, nil
 }
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
