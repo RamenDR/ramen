@@ -371,7 +371,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		ready := d.checkReadiness(failoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
-			d.setProgression(rmn.ProgressionWaitForReadiness)
+			d.advanceProgression(rmn.ProgressionWaitForReadiness)
 
 			return !done, nil
 		}
@@ -2305,6 +2305,78 @@ specialProgressions are used to indicate special cases irrespective of action or
 		ProgressionActionPaused,
 	}
 */
+
+var deployProgressionList = []rmn.ProgressionStatus{
+	rmn.ProgressionCreatingMW,
+	rmn.ProgressionUpdatingPlRule,
+	rmn.ProgressionEnsuringVolSyncSetup,
+	rmn.ProgressionSettingupVolsyncDest,
+	rmn.ProgressionCompleted,
+}
+
+var failoverProgressionList = []rmn.ProgressionStatus{
+	rmn.ProgressionCheckingFailoverPrerequisites,
+	rmn.ProgressionWaitForFencing,
+	rmn.ProgressionWaitForStorageMaintenanceActivation,
+	rmn.ProgressionFailingOverToCluster,
+	rmn.ProgressionWaitingForResourceRestore,
+	rmn.ProgressionEnsuringVolSyncSetup,
+	rmn.ProgressionSettingupVolsyncDest,
+	rmn.ProgressionWaitForReadiness,
+	rmn.ProgressionUpdatedPlacement,
+	rmn.ProgressionCompleted,
+	rmn.ProgressionCleaningUp,
+	rmn.ProgressionWaitOnUserToCleanUp,
+}
+
+var relocateProgressionList = []rmn.ProgressionStatus{
+	rmn.ProgressionPreparingFinalSync,
+	rmn.ProgressionClearingPlacement,
+	rmn.ProgressionRunningFinalSync,
+	rmn.ProgressionFinalSyncComplete,
+	rmn.ProgressionEnsuringVolumesAreSecondary,
+	rmn.ProgressionWaitOnUserToCleanUp,
+	rmn.ProgressionCompleted,
+	rmn.ProgressionCleaningUp,
+	rmn.ProgressionWaitingForResourceRestore,
+	rmn.ProgressionWaitForReadiness,
+	rmn.ProgressionUpdatedPlacement,
+	rmn.ProgressionEnsuringVolSyncSetup,
+	rmn.ProgressionSettingupVolsyncDest,
+}
+
+func (d *DRPCInstance) advanceProgression(nextProgression rmn.ProgressionStatus,
+) {
+	var progressionList []rmn.ProgressionStatus
+
+	switch d.instance.Spec.Action {
+	case rmn.ActionFailover:
+		progressionList = failoverProgressionList
+	case rmn.ActionRelocate:
+		progressionList = relocateProgressionList
+	default:
+		progressionList = deployProgressionList
+	}
+
+	currentProgressionIndex := slices.Index(progressionList, d.instance.Status.Progression)
+	nextProgressionIndex := slices.Index(progressionList, nextProgression)
+
+	// If either status is not found in the list
+	if currentProgressionIndex == -1 || nextProgressionIndex == -1 {
+		d.log.Info(fmt.Sprintf("failed to change Progression from '%s' to '%s'",
+			d.instance.Status.Progression, nextProgression))
+
+		return
+	}
+
+	if nextProgressionIndex > currentProgressionIndex {
+		updateDRPCProgression(d.instance, nextProgression, d.log)
+	} else {
+		d.log.Info(fmt.Sprintf("skip reverse Progression from '%s' to '%s'",
+			d.instance.Status.Progression, nextProgression))
+	}
+}
+
 func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
 	updateDRPCProgression(d.instance, nextProgression, d.log)
 }
