@@ -40,6 +40,8 @@ type RecipeElements struct {
 	RestoreFailOn   string
 }
 
+const DefaultCaptureRecoverGroupName = "default"
+
 func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.CaptureSpec {
 	namespaces := []string{vrg.Namespace}
 
@@ -49,6 +51,7 @@ func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.
 
 	captureSpecs := []kubeobjects.CaptureSpec{
 		{
+			Name: DefaultCaptureRecoverGroupName,
 			Spec: kubeobjects.Spec{
 				KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 					IncludedNamespaces: namespaces,
@@ -73,6 +76,7 @@ func recoverWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.
 
 	recoverSpecs := []kubeobjects.RecoverSpec{
 		{
+			BackupName: DefaultCaptureRecoverGroupName,
 			Spec: kubeobjects.Spec{
 				KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
 					IncludedNamespaces: namespaces,
