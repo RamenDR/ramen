@@ -31,6 +31,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
@@ -652,6 +653,20 @@ func (u *drclusterInstance) ensureDRClusterConfig() error {
 	return nil
 }
 
+// getClusterID returns the cluster ID of the OCP-Cluster
+func GetOCPClusterID(ctx context.Context, kubeClient client.Client, logger *logr.Logger) string {
+	clusterVersion := &configv1.ClusterVersion{}
+
+	err := kubeClient.Get(ctx, types.NamespacedName{Name: "version"}, clusterVersion)
+	if err != nil {
+		logger.Error(err, "Failed to get the clusterVersion version of the OCP cluster")
+
+		return ""
+	}
+
+	return fmt.Sprint(clusterVersion.Spec.ClusterID)
+}
+
 func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, error) {
 	mc, err := util.NewManagedClusterInstance(u.ctx, u.client, u.object.GetName())
 	if err != nil {
@@ -661,6 +676,8 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 	clusterID, err := mc.ClusterID()
 	if err != nil {
 		return nil, err
+	} else if clusterID != GetOCPClusterID(u.ctx, u.client, &u.log) {
+		return nil, fmt.Errorf("cluster ID claim value differs from that of the OCP cluster")
 	}
 
 	drcConfig := ramen.DRClusterConfig{
