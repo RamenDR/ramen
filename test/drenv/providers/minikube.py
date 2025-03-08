@@ -13,6 +13,8 @@ from packaging.version import Version
 from drenv import commands
 from drenv import containerd
 
+MINIKUBE = "minikube"
+
 EXTRA_CONFIG = [
     # When enabled, tells the Kubelet to pull images one at a time. This slows
     # down concurrent image pulls and cause timeouts when using slow network.
@@ -357,7 +359,7 @@ def _minikube_file(*names):
 
 
 def _run(command, *args, profile=None, output=None):
-    cmd = ["minikube", command]
+    cmd = [MINIKUBE, command]
     if profile:
         cmd.extend(("--profile", profile))
     if output:
@@ -367,7 +369,7 @@ def _run(command, *args, profile=None, output=None):
 
 
 def _watch(command, *args, profile=None, timeout=None):
-    cmd = ["minikube", command, "--profile", profile]
+    cmd = [MINIKUBE, command, "--profile", profile]
     cmd.extend(args)
     logging.debug("[%s] Running %s", profile, cmd)
     for line in commands.watch(*cmd, timeout=timeout):
