@@ -5,6 +5,7 @@ import errno
 import json
 import logging
 import os
+import platform
 import sys
 import time
 
@@ -119,6 +120,11 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
 
     if local_registry:
         args.append(f"--insecure-registry={LOCAL_REGISTRY}")
+
+    # Enable running amd64 images on Apple silicon. We can remove this when we
+    # have arm64 images for all dependencies.
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        args.append("--rosetta")
 
     # TODO: Use --interactive=false when the bug is fixed.
     # https://github.com/kubernetes/minikube/issues/19518
