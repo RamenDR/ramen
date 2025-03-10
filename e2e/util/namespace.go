@@ -9,18 +9,19 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 // Namespace annotation for volsync to grant elevated permissions for mover pods
 // More info: https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 const volsyncPrivilegedMovers = "volsync.backube/privileged-movers"
 
-func CreateNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
+func CreateNamespace(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
@@ -41,7 +42,7 @@ func CreateNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 	return nil
 }
 
-func DeleteNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
+func DeleteNamespace(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
@@ -102,7 +103,7 @@ func CreateNamespaceAndAddAnnotation(namespace string, log *zap.SugaredLogger) e
 	return addNamespaceAnnotationForVolSync(Ctx.C2, namespace, log)
 }
 
-func addNamespaceAnnotationForVolSync(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
+func addNamespaceAnnotationForVolSync(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
 	key := k8stypes.NamespacedName{Name: namespace}
 	objNs := &corev1.Namespace{}
 

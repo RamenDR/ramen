@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -16,9 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-func ValidateRamenHubOperator(cluster Cluster, log *zap.SugaredLogger) error {
+func ValidateRamenHubOperator(cluster types.Cluster, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
@@ -37,7 +39,7 @@ func ValidateRamenHubOperator(cluster Cluster, log *zap.SugaredLogger) error {
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster Cluster, log *zap.SugaredLogger) error {
+func ValidateRamenDRClusterOperator(cluster types.Cluster, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
@@ -58,7 +60,7 @@ func ValidateRamenDRClusterOperator(cluster Cluster, log *zap.SugaredLogger) err
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
 // It returns true if the cluster is OpenShift, false otherwise, along with any error encountered.
-func IsOpenShiftCluster(cluster Cluster) (bool, error) {
+func IsOpenShiftCluster(cluster types.Cluster) (bool, error) {
 	configList := &unstructured.Unstructured{}
 	configList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "config.openshift.io",
@@ -83,7 +85,7 @@ func IsOpenShiftCluster(cluster Cluster) (bool, error) {
 }
 
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
-func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
+func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
 ) {
 	ls, err := labels.Parse(labelSelector)
