@@ -16,6 +16,7 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.2.0
 	github.com/onsi/ginkgo/v2 v2.22.1
 	github.com/onsi/gomega v1.36.1
+	github.com/openshift/api v0.0.0-20231218131639-7a5aa77cc72d
 	github.com/operator-framework/api v0.27.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/ramendr/ramen/api v0.0.0-20240924121439-b7cba82de417
