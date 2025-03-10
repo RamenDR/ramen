@@ -87,20 +87,20 @@ func DeleteNamespace(cluster types.Cluster, namespace string, log *zap.SugaredLo
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.
 // See this link https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 // Workaround: create ns in both drclusters and add annotation
-func CreateNamespaceAndAddAnnotation(namespace string, log *zap.SugaredLogger) error {
-	if err := CreateNamespace(Ctx.C1, namespace, log); err != nil {
+func CreateNamespaceAndAddAnnotation(env *types.Env, namespace string, log *zap.SugaredLogger) error {
+	if err := CreateNamespace(env.C1, namespace, log); err != nil {
 		return err
 	}
 
-	if err := addNamespaceAnnotationForVolSync(Ctx.C1, namespace, log); err != nil {
+	if err := addNamespaceAnnotationForVolSync(env.C1, namespace, log); err != nil {
 		return err
 	}
 
-	if err := CreateNamespace(Ctx.C2, namespace, log); err != nil {
+	if err := CreateNamespace(env.C2, namespace, log); err != nil {
 		return err
 	}
 
-	return addNamespaceAnnotationForVolSync(Ctx.C2, namespace, log)
+	return addNamespaceAnnotationForVolSync(env.C2, namespace, log)
 }
 
 func addNamespaceAnnotationForVolSync(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {

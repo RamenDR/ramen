@@ -41,7 +41,7 @@ func EnableProtection(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func EnableProtection(ctx types.Context) error {
 	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := util.GetPlacement(util.Ctx.Hub, managementNamespace, placementName)
+		placement, err := util.GetPlacement(ctx.Env().Hub, managementNamespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -60,13 +60,13 @@ func EnableProtection(ctx types.Context) error {
 
 		placement.Annotations[OcmSchedulingDisable] = "true"
 
-		if err := updatePlacement(util.Ctx.Hub, placement); err != nil {
+		if err := updatePlacement(ctx.Env().Hub, placement); err != nil {
 			return err
 		}
 
 		log.Debugf("Annotated placement \"%s/%s\" with \"%s: %s\" in cluster %q",
 			managementNamespace, placementName, OcmSchedulingDisable,
-			placement.Annotations[OcmSchedulingDisable], util.Ctx.Hub.Name)
+			placement.Annotations[OcmSchedulingDisable], ctx.Env().Hub.Name)
 
 		return nil
 	})
@@ -75,16 +75,16 @@ func EnableProtection(ctx types.Context) error {
 	}
 
 	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
-	if err = createDRPC(ctx, util.Ctx.Hub, drpc); err != nil {
+	if err = createDRPC(ctx, drpc); err != nil {
 		return err
 	}
 
 	// For volsync based replication we must create the cluster namespaces with special annotation.
-	if err := util.CreateNamespaceAndAddAnnotation(ctx.AppNamespace(), log); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), ctx.AppNamespace(), log); err != nil {
 		return err
 	}
 
-	err = waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	err = waitDRPCReady(ctx, managementNamespace, drpcName)
 	if err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func DisableProtection(ctx types.Context) error {
 	placementName := name
 	log := ctx.Logger()
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -123,11 +123,11 @@ func DisableProtection(ctx types.Context) error {
 
 	drpcName := name
 
-	if err := deleteDRPC(ctx, util.Ctx.Hub, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
-	err = waitDRPCDeleted(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	err = waitDRPCDeleted(ctx, managementNamespace, drpcName)
 	if err != nil {
 		return err
 	}
@@ -142,12 +142,12 @@ func Failover(ctx types.Context) error {
 	log := ctx.Logger()
 	name := ctx.Name()
 
-	currentCluster, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
+	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(util.Ctx.Hub, currentCluster)
+	targetCluster, err := getTargetCluster(ctx.Env().Hub, currentCluster)
 	if err != nil {
 		return err
 	}
@@ -174,12 +174,12 @@ func Relocate(ctx types.Context) error {
 	log := ctx.Logger()
 	name := ctx.Name()
 
-	currentCluster, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
+	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(util.Ctx.Hub, currentCluster)
+	targetCluster, err := getTargetCluster(ctx.Env().Hub, currentCluster)
 	if err != nil {
 		return err
 	}
@@ -211,33 +211,33 @@ func failoverRelocate(ctx types.Context,
 	drpcName := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
 
-	if err := waitAndUpdateDRPC(ctx, util.Ctx.Hub, managementNamespace, drpcName, action, targetCluster); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
 	}
 
-	if err := waitDRPCPhase(ctx, util.Ctx.Hub, managementNamespace, drpcName, state); err != nil {
+	if err := waitDRPCPhase(ctx, managementNamespace, drpcName, state); err != nil {
 		return err
 	}
 
-	return waitDRPCReady(ctx, util.Ctx.Hub, managementNamespace, drpcName)
+	return waitDRPCReady(ctx, managementNamespace, drpcName)
 }
 
 func waitAndUpdateDRPC(
 	ctx types.Context,
-	cluster types.Cluster,
 	namespace, drpcName string,
 	action ramen.DRAction,
 	targetCluster string,
 ) error {
 	log := ctx.Logger()
+	hub := ctx.Env().Hub
 
 	// here we expect drpc should be ready before action
-	if err := waitDRPCReady(ctx, cluster, namespace, drpcName); err != nil {
+	if err := waitDRPCReady(ctx, namespace, drpcName); err != nil {
 		return err
 	}
 
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		drpc, err := getDRPC(cluster, namespace, drpcName)
+		drpc, err := getDRPC(hub, namespace, drpcName)
 		if err != nil {
 			return err
 		}
@@ -249,7 +249,7 @@ func waitAndUpdateDRPC(
 			drpc.Spec.PreferredCluster = targetCluster
 		}
 
-		if err := updateDRPC(cluster, drpc); err != nil {
+		if err := updateDRPC(hub, drpc); err != nil {
 			return err
 		}
 
