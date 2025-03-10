@@ -113,6 +113,49 @@ var testCasesData = []testCases{
 		result:        false,
 		jsonText:      jsonStatefulset,
 	},
+	/* The json expression that can be provided as a condition in the check hook spec follows the format
+
+	<expression1> op <expression2>
+	With some of the conditions below:
+
+	1. Both the expressions should individually comply to be a valid json expression.
+	2. An expression should be enclosed with curly braces {}.
+	3. An expression could either be a json expression that can be evaluated from the pod/deployment/statefulset json
+	   content or a literal which can be either string or number.
+	Some improvements needs to be done which are added as sub-issues linked to this one.
+
+	Adding the commented TCs which are to pass when the improvements are done.
+	*/
+	// {
+	// 	jsonPathExprs: "{$.status.conditions[0].status} == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonStatefulset,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.spec.replicas} == {1}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
+	// 	result:        true,
+	// 	jsonText:      jsonStatefulset,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.spec.replicas} == {1} && $.status.conditions[0].status == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
 }
 
 var testCasesObjectData = []testCasesObject{
@@ -200,6 +243,28 @@ func Test_isValidJsonPathExpression(t *testing.T) {
 		args args
 		want bool
 	}{
+		/* Same comments as above */
+		// {
+		// 	name: "String expression",
+		// 	args: args{
+		// 		expr: "{True}",
+		// 	},
+		// 	want: true,
+		// },
+		// {
+		// 	name: "String expression 1",
+		// 	args: args{
+		// 		expr: "{\"Ready\"}",
+		// 	},
+		// 	want: true,
+		// },
+		// {
+		// 	name: "Number expression",
+		// 	args: args{
+		// 		expr: "{10}",
+		// 	},
+		// 	want: true,
+		// },
 		{
 			name: "Simple expression",
 			args: args{
