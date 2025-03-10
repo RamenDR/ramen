@@ -31,7 +31,6 @@ type Cluster struct {
 }
 
 type Context struct {
-	Log *zap.SugaredLogger
 	Hub Cluster
 	C1  Cluster
 	C2  Cluster
@@ -102,7 +101,6 @@ func NewContext(log *zap.SugaredLogger) (*Context, error) {
 	var err error
 
 	ctx := new(Context)
-	ctx.Log = log
 
 	clusters := config.GetClusters()
 
