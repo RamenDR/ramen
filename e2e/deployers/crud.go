@@ -10,23 +10,22 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/ramendr/ramen/e2e/config"
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
-
-	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 	placementrulev1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+
+	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
+	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/types"
+	"github.com/ramendr/ramen/e2e/util"
 )
 
 const (

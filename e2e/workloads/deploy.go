@@ -9,10 +9,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ramendr/ramen/e2e/config"
-	"github.com/ramendr/ramen/e2e/types"
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+
+	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 const (

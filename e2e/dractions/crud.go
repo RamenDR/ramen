@@ -7,15 +7,16 @@ import (
 	"context"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/yaml"
+
+	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/types"
+	"github.com/ramendr/ramen/e2e/util"
 )
 
 func updatePlacement(cluster types.Cluster, placement *clusterv1beta1.Placement) error {

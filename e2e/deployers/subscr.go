@@ -4,11 +4,12 @@
 package deployers
 
 import (
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
+
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 )
 
 type Subscription struct{}
