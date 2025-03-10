@@ -8,10 +8,12 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 // nolint:unparam
-func GetDRPolicy(cluster Cluster, name string) (*ramen.DRPolicy, error) {
+func GetDRPolicy(cluster types.Cluster, name string) (*ramen.DRPolicy, error) {
 	drpolicy := &ramen.DRPolicy{}
 	key := k8stypes.NamespacedName{Name: name}
 

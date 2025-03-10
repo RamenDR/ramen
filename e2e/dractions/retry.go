@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func waitDRPCReady(ctx types.Context, cluster util.Cluster, namespace string, drpcName string) error {
+func waitDRPCReady(ctx types.Context, cluster types.Cluster, namespace string, drpcName string) error {
 	log := ctx.Logger()
 	startTime := time.Now()
 
@@ -53,7 +53,7 @@ func conditionMet(conditions []metav1.Condition, conditionType string) bool {
 	return condition != nil && condition.Status == "True"
 }
 
-func waitDRPCPhase(ctx types.Context, cluster util.Cluster, namespace, name string, phase ramen.DRState) error {
+func waitDRPCPhase(ctx types.Context, cluster types.Cluster, namespace, name string, phase ramen.DRState) error {
 	log := ctx.Logger()
 	startTime := time.Now()
 
@@ -81,7 +81,7 @@ func waitDRPCPhase(ctx types.Context, cluster util.Cluster, namespace, name stri
 }
 
 // return dr cluster
-func getDRCluster(clusterName string, drpolicy *ramen.DRPolicy) util.Cluster {
+func getDRCluster(clusterName string, drpolicy *ramen.DRPolicy) types.Cluster {
 	if clusterName == drpolicy.Spec.DRClusters[0] {
 		return util.Ctx.C1
 	}
@@ -89,7 +89,7 @@ func getDRCluster(clusterName string, drpolicy *ramen.DRPolicy) util.Cluster {
 	return util.Ctx.C2
 }
 
-func getTargetCluster(cluster util.Cluster, currentCluster string) (string, error) {
+func getTargetCluster(cluster types.Cluster, currentCluster string) (string, error) {
 	drpolicy, err := util.GetDRPolicy(cluster, config.GetDRPolicyName())
 	if err != nil {
 		return "", err
@@ -105,7 +105,7 @@ func getTargetCluster(cluster util.Cluster, currentCluster string) (string, erro
 	return targetCluster, nil
 }
 
-func waitDRPCDeleted(ctx types.Context, cluster util.Cluster, namespace string, name string) error {
+func waitDRPCDeleted(ctx types.Context, cluster types.Cluster, namespace string, name string) error {
 	log := ctx.Logger()
 	startTime := time.Now()
 
@@ -134,7 +134,7 @@ func waitDRPCDeleted(ctx types.Context, cluster util.Cluster, namespace string, 
 // nolint:unparam
 func waitDRPCProgression(
 	ctx types.Context,
-	cluster util.Cluster,
+	cluster types.Cluster,
 	namespace, name string,
 	progression ramen.ProgressionStatus,
 ) error {

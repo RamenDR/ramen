@@ -18,11 +18,11 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func updatePlacement(cluster util.Cluster, placement *clusterv1beta1.Placement) error {
+func updatePlacement(cluster types.Cluster, placement *clusterv1beta1.Placement) error {
 	return cluster.Client.Update(context.Background(), placement)
 }
 
-func getDRPC(cluster util.Cluster, namespace, name string) (*ramen.DRPlacementControl, error) {
+func getDRPC(cluster types.Cluster, namespace, name string) (*ramen.DRPlacementControl, error) {
 	drpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
@@ -34,7 +34,7 @@ func getDRPC(cluster util.Cluster, namespace, name string) (*ramen.DRPlacementCo
 	return drpc, nil
 }
 
-func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacementControl) error {
+func createDRPC(ctx types.Context, cluster types.Cluster, drpc *ramen.DRPlacementControl) error {
 	log := ctx.Logger()
 
 	err := cluster.Client.Create(context.Background(), drpc)
@@ -57,11 +57,11 @@ func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacement
 	return nil
 }
 
-func updateDRPC(cluster util.Cluster, drpc *ramen.DRPlacementControl) error {
+func updateDRPC(cluster types.Cluster, drpc *ramen.DRPlacementControl) error {
 	return cluster.Client.Update(context.Background(), drpc)
 }
 
-func deleteDRPC(ctx types.Context, cluster util.Cluster, namespace, name string) error {
+func deleteDRPC(ctx types.Context, cluster types.Cluster, namespace, name string) error {
 	log := ctx.Logger()
 
 	objDrpc := &ramen.DRPlacementControl{}
