@@ -1,15 +1,15 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util_test
+package hooks_test
 
 import (
 	"encoding/json"
 	"strconv"
 	"testing"
 
+	"github.com/ramendr/ramen/internal/controller/hooks"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	"github.com/ramendr/ramen/internal/controller/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -166,7 +166,7 @@ func TestEvaluateCheckHookExp(t *testing.T) {
 				t.Error(err)
 			}
 
-			_, err = util.EvaluateCheckHookExp(test.jsonPathExprs, jsonData)
+			_, err = hooks.EvaluateCheckHookExp(test.jsonPathExprs, jsonData)
 			if (err == nil) != test.result {
 				t.Errorf("EvaluateCheckHookExp() = %v, want %v", err, test.result)
 			}
@@ -182,7 +182,7 @@ func TestEvaluateCheckHookForObjects(t *testing.T) {
 		objs := []client.Object{test.jsonObj}
 
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			_, err := util.EvaluateCheckHookForObjects(objs, test.hook, log)
+			_, err := hooks.EvaluateCheckHookForObjects(objs, test.hook, log)
 			if (err == nil) != test.result {
 				t.Errorf("EvaluateCheckHookExpObject() = %v, want %v", err, test.result)
 			}
@@ -318,7 +318,7 @@ func Test_isValidJsonPathExpression(t *testing.T) {
 		test := tt
 
 		t.Run(test.name, func(t *testing.T) {
-			if got := util.IsValidJSONPathExpression(test.args.expr); got != test.want {
+			if got := hooks.IsValidJSONPathExpression(test.args.expr); got != test.want {
 				t.Errorf("IsValidJSONPathExpression() = %v, want %v", got, test.want)
 			}
 		})
