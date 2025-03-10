@@ -35,7 +35,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
 
 	// create subscription namespace
-	err = util.CreateNamespace(util.Ctx.Hub, managementNamespace, log)
+	err = util.CreateNamespace(ctx.Env().Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -108,7 +108,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	err = util.DeleteNamespace(util.Ctx.Hub, managementNamespace, log)
+	err = util.DeleteNamespace(ctx.Env().Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}

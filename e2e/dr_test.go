@@ -14,7 +14,7 @@ import (
 )
 
 func TestDR(dt *testing.T) {
-	t := test.WithLog(dt, log)
+	t := test.WithLog(dt, Ctx.log)
 	t.Parallel()
 
 	tests := config.GetTests()
@@ -22,12 +22,12 @@ func TestDR(dt *testing.T) {
 		t.Fatal("No tests found in the configuration file")
 	}
 
-	if err := util.EnsureChannel(log); err != nil {
+	if err := util.EnsureChannel(Ctx.env.Hub, Ctx.log); err != nil {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
 	t.Cleanup(func() {
-		if err := util.EnsureChannelDeleted(log); err != nil {
+		if err := util.EnsureChannelDeleted(Ctx.env.Hub, Ctx.log); err != nil {
 			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
 	})
@@ -50,7 +50,7 @@ func TestDR(dt *testing.T) {
 			panic(err)
 		}
 
-		ctx := test.NewContext(workload, deployer, log)
+		ctx := test.NewContext(workload, deployer, Ctx.env, Ctx.log)
 		t.Run(ctx.Name(), func(dt *testing.T) {
 			t := test.WithLog(dt, ctx.Logger())
 			t.Parallel()

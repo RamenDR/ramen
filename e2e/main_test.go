@@ -8,16 +8,20 @@ import (
 	"os"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/test"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
-	"go.uber.org/zap"
 )
 
 type Context struct {
 	log *zap.SugaredLogger
+	env *types.Env
 }
 
 // The global test context
@@ -53,7 +57,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to read config: %s", err)
 	}
 
-	util.Ctx, err = util.NewContext(log)
+	Ctx.env, err = env.New(log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}

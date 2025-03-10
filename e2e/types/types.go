@@ -14,6 +14,12 @@ type Cluster struct {
 	Client client.Client
 }
 
+type Env struct {
+	Hub Cluster
+	C1  Cluster
+	C2  Cluster
+}
+
 // Deployer interface has methods to deploy a workload to a cluster
 type Deployer interface {
 	Deploy(Context) error
@@ -55,4 +61,5 @@ type Context interface {
 	AppNamespace() string
 
 	Logger() *zap.SugaredLogger
+	Env() *Env
 }

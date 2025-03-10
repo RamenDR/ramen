@@ -18,27 +18,27 @@ func TestValidation(dt *testing.T) {
 		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
 
-		err := util.ValidateRamenHubOperator(util.Ctx.Hub, Ctx.log)
+		err := util.ValidateRamenHubOperator(Ctx.env.Hub, Ctx.log)
 		if err != nil {
-			t.Fatalf("Failed to validate hub cluster %q: %s", util.Ctx.Hub.Name, err)
+			t.Fatalf("Failed to validate hub cluster %q: %s", Ctx.env.Hub.Name, err)
 		}
 	})
 	t.Run("c1", func(dt *testing.T) {
 		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
 
-		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1, Ctx.log)
+		err := util.ValidateRamenDRClusterOperator(Ctx.env.C1, Ctx.log)
 		if err != nil {
-			t.Fatalf("Failed to validate dr cluster %q: %s", util.Ctx.C1.Name, err)
+			t.Fatalf("Failed to validate dr cluster %q: %s", Ctx.env.C1.Name, err)
 		}
 	})
 	t.Run("c2", func(dt *testing.T) {
 		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
 
-		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2, Ctx.log)
+		err := util.ValidateRamenDRClusterOperator(Ctx.env.C2, Ctx.log)
 		if err != nil {
-			t.Fatalf("Failed to validate dr cluster %q: %s", util.Ctx.C2.Name, err)
+			t.Fatalf("Failed to validate dr cluster %q: %s", Ctx.env.C2.Name, err)
 		}
 	})
 }

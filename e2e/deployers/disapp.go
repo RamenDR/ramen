@@ -29,7 +29,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	appNamespace := ctx.AppNamespace()
 
 	// create namespace in both dr clusters
-	if err := util.CreateNamespaceAndAddAnnotation(appNamespace, log); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log); err != nil {
 		return err
 	}
 
@@ -45,7 +45,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	if err = WaitWorkloadHealth(ctx, util.Ctx.C1, appNamespace); err != nil {
+	if err = WaitWorkloadHealth(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
 
@@ -78,7 +78,7 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
@@ -96,11 +96,11 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	}
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(util.Ctx.C1, appNamespace, log); err != nil {
+	if err := util.DeleteNamespace(ctx.Env().C1, appNamespace, log); err != nil {
 		return err
 	}
 
-	if err := util.DeleteNamespace(util.Ctx.C2, appNamespace, log); err != nil {
+	if err := util.DeleteNamespace(ctx.Env().C2, appNamespace, log); err != nil {
 		return err
 	}
 

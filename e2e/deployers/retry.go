@@ -18,21 +18,21 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 	startTime := time.Now()
 
 	for {
-		sub, err := getSubscription(util.Ctx.Hub, namespace, name)
+		sub, err := getSubscription(ctx.Env().Hub, namespace, name)
 		if err != nil {
 			return err
 		}
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Debugf("Subscription \"%s/%s\" phase is %s in cluster %q", namespace, name, phase, util.Ctx.Hub.Name)
+			log.Debugf("Subscription \"%s/%s\" phase is %s in cluster %q", namespace, name, phase, ctx.Env().Hub.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
 			return fmt.Errorf("subscription %q status is not %q yet before timeout in cluster %q",
-				name, phase, util.Ctx.Hub.Name)
+				name, phase, ctx.Env().Hub.Name)
 		}
 
 		time.Sleep(util.RetryInterval)
