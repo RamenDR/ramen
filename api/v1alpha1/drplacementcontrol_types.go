@@ -115,6 +115,7 @@ const (
 	ProgressionUpdatedPlacement                    = ProgressionStatus("UpdatedPlacement")
 	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
 	ProgressionSettingupVolsyncDest                = ProgressionStatus("SettingUpVolSyncDest")
+	ProgressionEnsuringVolSyncDestSetup            = ProgressionStatus("EnsuringVolSyncDestSetup")
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
