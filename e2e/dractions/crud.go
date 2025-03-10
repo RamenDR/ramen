@@ -11,7 +11,7 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -39,7 +39,7 @@ func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacement
 
 	err := cluster.Client.Create(context.Background(), drpc)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
@@ -69,7 +69,7 @@ func deleteDRPC(ctx types.Context, cluster util.Cluster, namespace, name string)
 
 	err := cluster.Client.Get(context.Background(), key, objDrpc)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
@@ -141,7 +141,7 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 
 	err := util.Ctx.Hub.Client.Create(context.Background(), placement)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 

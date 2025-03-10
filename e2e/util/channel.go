@@ -8,7 +8,7 @@ import (
 
 	"github.com/ramendr/ramen/e2e/config"
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
@@ -46,7 +46,7 @@ func createChannel(log *zap.SugaredLogger) error {
 
 	err := Ctx.Hub.Client.Create(context.Background(), objChannel)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
@@ -70,7 +70,7 @@ func deleteChannel(log *zap.SugaredLogger) error {
 
 	err := Ctx.Hub.Client.Delete(context.Background(), channel)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
