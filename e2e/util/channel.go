@@ -7,31 +7,32 @@ import (
 	"context"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 )
 
-func EnsureChannel() error {
+func EnsureChannel(log *zap.SugaredLogger) error {
 	// create channel namespace
-	err := CreateNamespace(Ctx.Hub, config.GetChannelNamespace(), Ctx.Log)
+	err := CreateNamespace(Ctx.Hub, config.GetChannelNamespace(), log)
 	if err != nil {
 		return err
 	}
 
-	return createChannel()
+	return createChannel(log)
 }
 
-func EnsureChannelDeleted() error {
-	if err := deleteChannel(); err != nil {
+func EnsureChannelDeleted(log *zap.SugaredLogger) error {
+	if err := deleteChannel(log); err != nil {
 		return err
 	}
 
-	return DeleteNamespace(Ctx.Hub, config.GetChannelNamespace(), Ctx.Log)
+	return DeleteNamespace(Ctx.Hub, config.GetChannelNamespace(), log)
 }
 
-func createChannel() error {
+func createChannel(log *zap.SugaredLogger) error {
 	objChannel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.GetChannelName(),
@@ -49,17 +50,17 @@ func createChannel() error {
 			return err
 		}
 
-		Ctx.Log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
+		log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
 			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	} else {
-		Ctx.Log.Infof("Created channel \"%s/%s\" in cluster %q",
+		log.Infof("Created channel \"%s/%s\" in cluster %q",
 			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	}
 
 	return nil
 }
 
-func deleteChannel() error {
+func deleteChannel(log *zap.SugaredLogger) error {
 	channel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.GetChannelName(),
@@ -73,10 +74,10 @@ func deleteChannel() error {
 			return err
 		}
 
-		Ctx.Log.Debugf("Channel \"%s/%s\" not found in cluster %q",
+		log.Debugf("Channel \"%s/%s\" not found in cluster %q",
 			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	} else {
-		Ctx.Log.Infof("Deleted channel \"%s/%s\" in cluster %q",
+		log.Infof("Deleted channel \"%s/%s\" in cluster %q",
 			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
 	}
 

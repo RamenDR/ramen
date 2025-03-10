@@ -13,7 +13,15 @@ import (
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
+	"go.uber.org/zap"
 )
+
+type Context struct {
+	log *zap.SugaredLogger
+}
+
+// The global test context
+var Ctx Context
 
 func TestMain(m *testing.M) {
 	var (
@@ -26,11 +34,13 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
 	flag.Parse()
 
-	log, err := test.CreateLogger(logFile)
+	Ctx.log, err = test.CreateLogger(logFile)
 	if err != nil {
 		panic(err)
 	}
 	// TODO: Sync the log on exit
+
+	log := Ctx.log
 
 	log.Infof("Using config file %q", configFile)
 	log.Infof("Using log file %q", logFile)
