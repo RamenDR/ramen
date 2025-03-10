@@ -15,19 +15,15 @@ import (
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-var (
-	configFile string
-	logFile    string
-)
+func TestMain(m *testing.M) {
+	var (
+		err        error
+		configFile string
+		logFile    string
+	)
 
-func init() {
 	flag.StringVar(&configFile, "config", "config.yaml", "e2e configuration file")
 	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
-}
-
-func TestMain(m *testing.M) {
-	var err error
-
 	flag.Parse()
 
 	log, err := test.CreateLogger(logFile)
