@@ -8,6 +8,7 @@ import (
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 )
 
@@ -108,11 +109,16 @@ func DisableProtection(ctx types.Context) error {
 
 	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, placementName)
 	if err != nil {
-		return err
-	}
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
 
-	log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-		appNamespace, ctx.Workload().GetAppName(), clusterName)
+		log.Debugf("Could not retrieve the cluster name: %s", err)
+		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
+	} else {
+		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
+			appNamespace, ctx.Workload().GetAppName(), clusterName)
+	}
 
 	drpcName := name
 
