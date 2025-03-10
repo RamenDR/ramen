@@ -113,6 +113,36 @@ var testCasesData = []testCases{
 		result:        false,
 		jsonText:      jsonStatefulset,
 	},
+	// {
+	// 	jsonPathExprs: "{$.status.conditions[0].status} == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonStatefulset,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.spec.replicas} == {1}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
+	// 	result:        true,
+	// 	jsonText:      jsonStatefulset,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
+	// {
+	// 	jsonPathExprs: "{$.spec.replicas} == {1} && $.status.conditions[0].status == {True}",
+	// 	result:        true,
+	// 	jsonText:      jsonPod,
+	// },
 }
 
 var testCasesObjectData = []testCasesObject{
@@ -200,6 +230,27 @@ func Test_isValidJsonPathExpression(t *testing.T) {
 		args args
 		want bool
 	}{
+		// {
+		// 	name: "String expression",
+		// 	args: args{
+		// 		expr: "{True}",
+		// 	},
+		// 	want: true,
+		// },
+		// {
+		// 	name: "String expression 1",
+		// 	args: args{
+		// 		expr: "{\"Ready\"}",
+		// 	},
+		// 	want: true,
+		// },
+		// {
+		// 	name: "Number expression",
+		// 	args: args{
+		// 		expr: "{10}",
+		// 	},
+		// 	want: true,
+		// },
 		{
 			name: "Simple expression",
 			args: args{
