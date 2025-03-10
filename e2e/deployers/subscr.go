@@ -4,13 +4,11 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 )
-
-// mcsb name must be same as the target ManagedClusterSet
-const McsbName = ClusterSetName
 
 type Subscription struct{}
 
@@ -41,7 +39,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	err = CreateManagedClusterSetBinding(ctx, McsbName, managementNamespace)
+	err = CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -96,7 +94,7 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	err = DeleteManagedClusterSetBinding(ctx, McsbName, managementNamespace)
+	err = DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
 	if err != nil {
 		return err
 	}

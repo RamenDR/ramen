@@ -16,6 +16,8 @@ const (
 	defaultChannelNamespace = "e2e-gitops"
 	defaultGitURL           = "https://github.com/RamenDR/ocm-ramen-samples.git"
 	defaultGitBranch        = "main"
+	defaultDRPolicyName     = "dr-policy"
+	defaultClusterSetName   = "default"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -52,10 +54,12 @@ type Test struct {
 
 type Config struct {
 	// User configurable values.
-	Repo     Repo
-	Clusters map[string]Cluster
-	PVCSpecs []PVCSpec
-	Tests    []Test
+	Repo       Repo
+	DRPolicy   string
+	ClusterSet string
+	Clusters   map[string]Cluster
+	PVCSpecs   []PVCSpec
+	Tests      []Test
 
 	// Generated values
 	Channel Channel
@@ -76,6 +80,8 @@ var (
 func ReadConfig(configFile string, options Options) error {
 	viper.SetDefault("Repo.URL", defaultGitURL)
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
+	viper.SetDefault("DRPolicy", defaultDRPolicyName)
+	viper.SetDefault("ClusterSet", defaultClusterSetName)
 
 	viper.SetConfigFile(configFile)
 
@@ -114,8 +120,9 @@ func ReadConfig(configFile string, options Options) error {
 }
 
 func validateTests(config *Config, options *Options) error {
+	// We allow an empty test list so one can run the validation tests or unit tests without a fully configured file.
 	if len(config.Tests) == 0 {
-		return fmt.Errorf("no tests found")
+		return nil
 	}
 
 	pvcSpecNames := make([]string, 0, len(config.PVCSpecs))
@@ -163,6 +170,14 @@ func GetGitURL() string {
 
 func GetGitBranch() string {
 	return config.Repo.Branch
+}
+
+func GetDRPolicyName() string {
+	return config.DRPolicy
+}
+
+func GetClusterSetName() string {
+	return config.ClusterSet
 }
 
 func GetPVCSpecs() map[string]PVCSpec {

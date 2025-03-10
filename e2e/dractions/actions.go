@@ -5,6 +5,7 @@ package dractions
 
 import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"k8s.io/client-go/util/retry"
@@ -33,7 +34,7 @@ func EnableProtection(ctx types.Context) error {
 	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
 
-	drPolicyName := util.DefaultDRPolicyName
+	drPolicyName := config.GetDRPolicyName()
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name

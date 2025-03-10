@@ -75,11 +75,17 @@ jobs:
           source venv
           ramendev config test/envs/regional-dr.yaml
 
-    - name: Run e2e tests
-      run: |
-        cat e2e/config.yaml.sample >> e2e/config.yaml
-        cat ~/.config/drenv/rdr/config.yaml >> e2e/config.yaml
-        make e2e-rdr
+    - name: Prepare e2e config
+      working-directory: e2e
+      run: cat config.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
+
+    - name: Run e2e validation
+      working-directory: e2e
+      run: ./run.sh -test.run TestValidation -logfile validation.log
+
+    - name: Run e2e dr tests
+      working-directory: e2e
+      run: ./run.sh -test.run TestDR -logfile dr.log
 
     - name: Gather environment data
       if: always()
@@ -94,7 +100,7 @@ jobs:
     # https://github.com/actions/upload-artifact/issues/546
     - name: Archive artifacts
       if: always()
-      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/ramen-e2e.log
+      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/*.log
 
     - name: Upload artifacts
       if: always()

@@ -1595,6 +1595,11 @@ func updatePeers(
 	peerClasses := vrgPeerClasses
 
 	for pvcIdx := range vrgFromView.Status.ProtectedPVCs {
+		if vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName == nil ||
+			len(*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName) == 0 {
+			continue
+		}
+
 		for policyPeerClassIdx := range policyPeerClasses {
 			if policyPeerClasses[policyPeerClassIdx].StorageClassName ==
 				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName {
