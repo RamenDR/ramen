@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/hooks"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
@@ -280,7 +281,15 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		isEssentialStep := cg.GroupEssential != nil && *cg.GroupEssential
 
 		if cg.IsHook {
-			err = v.executeHook(cg.Hook, log1)
+			executor, err1 := hooks.GetHookExecutor(cg.Hook)
+			if err1 != nil {
+				// continue if hook type is not supported. Supported types are "check" and "exec"
+				log1.Info("Hook type not supported", "hook", cg.Hook)
+
+				continue
+			}
+
+			err = executor.Execute(v.reconciler.Client, log1)
 		}
 
 		if !cg.IsHook {
@@ -323,39 +332,6 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	}
 
 	return allEssentialStepsFailed, nil
-}
-
-func (v *VRGInstance) executeHook(hook kubeobjects.HookSpec, log1 logr.Logger) error {
-	if hook.Type == "check" {
-		hookResult, err := util.EvaluateCheckHook(v.reconciler.APIReader, &hook, log1)
-		if err != nil {
-			log1.Error(err, "error occurred during check hook ")
-		} else {
-			hookName := hook.Name + "/" + hook.Chk.Name
-			log1.Info("Check hook executed successfully", "check hook is ", hookName, " result is ", hookResult)
-		}
-
-		if !hookResult && shouldHookBeFailedOnError(&hook) {
-			return fmt.Errorf("stopping workflow sequence as check hook failed")
-		}
-
-		return nil
-	}
-
-	return nil
-}
-
-func shouldHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
-	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
-	if hook.Chk.OnError != "" && hook.Chk.OnError == "continue" {
-		return false
-	}
-
-	if hook.OnError != "" && hook.OnError == "continue" {
-		return false
-	}
-
-	return true
 }
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
@@ -758,6 +734,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	return v.kubeObjectsRecoverRequestsDelete(result, v.veleroNamespaceName(), labels)
 }
 
+// nolint: gocognit,cyclop
 func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier, captureRequests,
 	recoverRequests map[string]kubeobjects.Request, requests []kubeobjects.Request, log logr.Logger,
@@ -776,7 +753,15 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		isEssentialStep := rg.GroupEssential != nil && *rg.GroupEssential
 
 		if rg.IsHook {
-			err = v.executeHook(rg.Hook, log1)
+			executor, err1 := hooks.GetHookExecutor(rg.Hook)
+			if err1 != nil {
+				// continue if hook type is not supported. Supported types are "check" and "exec"
+				log1.Info("Hook type not supported", "hook", rg.Hook)
+
+				continue
+			}
+
+			err = executor.Execute(v.reconciler.Client, log1)
 		}
 
 		if !rg.IsHook {
