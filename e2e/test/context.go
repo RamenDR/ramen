@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/types"
-	"go.uber.org/zap"
 )
 
 // Make it easier to manage namespaces created by the tests.
