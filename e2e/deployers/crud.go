@@ -243,7 +243,7 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 	return nil
 }
 
-func getSubscription(cluster util.Cluster, namespace, name string) (*subscriptionv1.Subscription, error) {
+func getSubscription(cluster types.Cluster, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 

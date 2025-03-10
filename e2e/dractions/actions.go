@@ -223,7 +223,7 @@ func failoverRelocate(ctx types.Context,
 
 func waitAndUpdateDRPC(
 	ctx types.Context,
-	cluster util.Cluster,
+	cluster types.Cluster,
 	namespace, drpcName string,
 	action ramen.DRAction,
 	targetCluster string,

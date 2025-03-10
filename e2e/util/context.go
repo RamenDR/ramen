@@ -20,20 +20,17 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	"github.com/ramendr/ramen/e2e/config"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
+
+	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-type Cluster struct {
-	Name   string
-	Client client.Client
-}
-
 type Context struct {
-	Hub Cluster
-	C1  Cluster
-	C2  Cluster
+	Hub types.Cluster
+	C1  types.Cluster
+	C2  types.Cluster
 }
 
 var Ctx *Context

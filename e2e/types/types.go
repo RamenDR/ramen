@@ -4,9 +4,15 @@
 package types
 
 import (
-	"github.com/ramendr/ramen/e2e/util"
 	"go.uber.org/zap"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// Clsuter can be a hub cluster or a managed cluster.
+type Cluster struct {
+	Name   string
+	Client client.Client
+}
 
 // Deployer interface has methods to deploy a workload to a cluster
 type Deployer interface {
@@ -31,7 +37,7 @@ type Workload interface {
 	// SupportsDeployer returns tue if this workload is compatible with deployer.
 	SupportsDeployer(Deployer) bool
 
-	Health(ctx Context, cluster util.Cluster, namespace string) error
+	Health(ctx Context, cluster Cluster, namespace string) error
 }
 
 // Context combines workload, deployer and logger used in the content of one test.
