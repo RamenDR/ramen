@@ -12,27 +12,28 @@ import (
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-func EnsureChannel(log *zap.SugaredLogger) error {
+func EnsureChannel(hub types.Cluster, log *zap.SugaredLogger) error {
 	// create channel namespace
-	err := CreateNamespace(Ctx.Hub, config.GetChannelNamespace(), log)
+	err := CreateNamespace(hub, config.GetChannelNamespace(), log)
 	if err != nil {
 		return err
 	}
 
-	return createChannel(log)
+	return createChannel(hub, log)
 }
 
-func EnsureChannelDeleted(log *zap.SugaredLogger) error {
-	if err := deleteChannel(log); err != nil {
+func EnsureChannelDeleted(hub types.Cluster, log *zap.SugaredLogger) error {
+	if err := deleteChannel(hub, log); err != nil {
 		return err
 	}
 
-	return DeleteNamespace(Ctx.Hub, config.GetChannelNamespace(), log)
+	return DeleteNamespace(hub, config.GetChannelNamespace(), log)
 }
 
-func createChannel(log *zap.SugaredLogger) error {
+func createChannel(hub types.Cluster, log *zap.SugaredLogger) error {
 	objChannel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.GetChannelName(),
@@ -44,23 +45,23 @@ func createChannel(log *zap.SugaredLogger) error {
 		},
 	}
 
-	err := Ctx.Hub.Client.Create(context.Background(), objChannel)
+	err := hub.Client.Create(context.Background(), objChannel)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
 		log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
+			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
 	} else {
 		log.Infof("Created channel \"%s/%s\" in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
+			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
 	}
 
 	return nil
 }
 
-func deleteChannel(log *zap.SugaredLogger) error {
+func deleteChannel(hub types.Cluster, log *zap.SugaredLogger) error {
 	channel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.GetChannelName(),
@@ -68,17 +69,17 @@ func deleteChannel(log *zap.SugaredLogger) error {
 		},
 	}
 
-	err := Ctx.Hub.Client.Delete(context.Background(), channel)
+	err := hub.Client.Delete(context.Background(), channel)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
 		log.Debugf("Channel \"%s/%s\" not found in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
+			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
 	} else {
 		log.Infof("Deleted channel \"%s/%s\" in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), Ctx.Hub.Name)
+			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
 	}
 
 	return nil

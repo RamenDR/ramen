@@ -18,7 +18,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.GetDRPolicyName())
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -87,7 +87,7 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 
 	// multiple appsets could use the same mcsb in argocd ns.
 	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(managementNamespace)
+	lastAppset, err := isLastAppsetInArgocdNs(ctx, managementNamespace)
 	if err != nil {
 		return err
 	}
