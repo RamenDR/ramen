@@ -1275,7 +1275,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 ) error {
 	log.Info("Updating DRPC status")
 
-	r.updateResourceCondition(ctx, drpc, userPlacement)
+	r.updateResourceCondition(ctx, drpc, userPlacement, log)
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
@@ -1317,7 +1317,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 //
 //nolint:funlen
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
+	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
 ) {
 	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
 	if err != nil {
