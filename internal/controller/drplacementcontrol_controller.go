@@ -1097,6 +1097,10 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
+	labels := make(map[string]string)
+	labels[createdByRamenLabel] = "true"
+	clonedPlRule.ObjectMeta.Labels = labels
+
 	userPlRule.DeepCopyInto(clonedPlRule)
 
 	clonedPlRule.Name = clonedPlRuleName
@@ -1701,6 +1705,7 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 	plDecision.ObjectMeta.Labels = map[string]string{
 		clrapiv1beta1.PlacementLabel:    placement.GetName(),
 		rmnutil.ExcludeFromVeleroBackup: "true",
+		createdByRamenLabel:             "true",
 	}
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))

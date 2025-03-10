@@ -227,6 +227,10 @@ func CreateRamenOpsNamespace(ctx context.Context, k8sClient client.Client, ramen
 func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, namespace string) error {
 	ns := &corev1.Namespace{}
 
+	labels := make(map[string]string)
+	labels[createdByRamenLabel] = "true"
+	ns.ObjectMeta.Labels = labels
+
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {

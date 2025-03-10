@@ -115,6 +115,9 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      replicationGroupDestinationName,
 			Namespace: replicationGroupDestinationNamespace,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 	}
 
@@ -201,6 +204,9 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      replicationGroupSourceName,
 			Namespace: replicationGroupSourceNamespace,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 	}
 
