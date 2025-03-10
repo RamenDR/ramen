@@ -11,7 +11,7 @@ import (
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -114,7 +114,7 @@ func waitDRPCDeleted(ctx types.Context, cluster util.Cluster, namespace string, 
 	for {
 		_, err := getDRPC(cluster, namespace, name)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if k8serrors.IsNotFound(err) {
 				log.Debugf("drpc \"%s/%s\" is deleted in cluster %q", namespace, name, cluster.Name)
 
 				return nil

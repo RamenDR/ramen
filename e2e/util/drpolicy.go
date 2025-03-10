@@ -7,13 +7,13 @@ import (
 	"context"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"k8s.io/apimachinery/pkg/types"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 )
 
 // nolint:unparam
 func GetDRPolicy(cluster Cluster, name string) (*ramen.DRPolicy, error) {
 	drpolicy := &ramen.DRPolicy{}
-	key := types.NamespacedName{Name: name}
+	key := k8stypes.NamespacedName{Name: name}
 
 	err := cluster.Client.Get(context.Background(), key, drpolicy)
 	if err != nil {
