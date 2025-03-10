@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +29,7 @@ func CreateNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 
 	err := cluster.Client.Create(context.Background(), ns)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
@@ -50,7 +50,7 @@ func DeleteNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 
 	err := cluster.Client.Delete(context.Background(), ns)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
@@ -62,11 +62,11 @@ func DeleteNamespace(cluster Cluster, namespace string, log *zap.SugaredLogger) 
 	log.Debugf("Waiting until namespace %q is deleted in cluster %q", namespace, cluster.Name)
 
 	startTime := time.Now()
-	key := types.NamespacedName{Name: namespace}
+	key := k8stypes.NamespacedName{Name: namespace}
 
 	for {
 		if err := cluster.Client.Get(context.Background(), key, ns); err != nil {
-			if !errors.IsNotFound(err) {
+			if !k8serrors.IsNotFound(err) {
 				return err
 			}
 
@@ -103,7 +103,7 @@ func CreateNamespaceAndAddAnnotation(namespace string, log *zap.SugaredLogger) e
 }
 
 func addNamespaceAnnotationForVolSync(cluster Cluster, namespace string, log *zap.SugaredLogger) error {
-	key := types.NamespacedName{Name: namespace}
+	key := k8stypes.NamespacedName{Name: namespace}
 	objNs := &corev1.Namespace{}
 
 	if err := cluster.Client.Get(context.Background(), key, objNs); err != nil {
