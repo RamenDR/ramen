@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func ValidateRamenHubOperator(cluster Cluster) error {
+func ValidateRamenHubOperator(cluster Cluster, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
@@ -31,12 +32,12 @@ func ValidateRamenHubOperator(cluster Cluster) error {
 			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen hub operator pod %q is running in cluster %q", pod.Name, cluster.Name)
+	log.Infof("Ramen hub operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster Cluster) error {
+func ValidateRamenDRClusterOperator(cluster Cluster, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
@@ -50,7 +51,7 @@ func ValidateRamenDRClusterOperator(cluster Cluster) error {
 			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
+	log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }

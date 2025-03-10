@@ -11,32 +11,32 @@ import (
 )
 
 func TestValidation(dt *testing.T) {
-	t := test.WithLog(dt, util.Ctx.Log)
+	t := test.WithLog(dt, Ctx.log)
 	t.Parallel()
 
 	t.Run("hub", func(dt *testing.T) {
-		t := test.WithLog(dt, util.Ctx.Log)
+		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
 
-		err := util.ValidateRamenHubOperator(util.Ctx.Hub)
+		err := util.ValidateRamenHubOperator(util.Ctx.Hub, Ctx.log)
 		if err != nil {
 			t.Fatalf("Failed to validate hub cluster %q: %s", util.Ctx.Hub.Name, err)
 		}
 	})
 	t.Run("c1", func(dt *testing.T) {
-		t := test.WithLog(dt, util.Ctx.Log)
+		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
 
-		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1)
+		err := util.ValidateRamenDRClusterOperator(util.Ctx.C1, Ctx.log)
 		if err != nil {
 			t.Fatalf("Failed to validate dr cluster %q: %s", util.Ctx.C1.Name, err)
 		}
 	})
 	t.Run("c2", func(dt *testing.T) {
-		t := test.WithLog(dt, util.Ctx.Log)
+		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
 
-		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2)
+		err := util.ValidateRamenDRClusterOperator(util.Ctx.C2, Ctx.log)
 		if err != nil {
 			t.Fatalf("Failed to validate dr cluster %q: %s", util.Ctx.C2.Name, err)
 		}
