@@ -6,12 +6,12 @@ package util
 import (
 	"context"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"go.uber.org/zap"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
+
+	"github.com/ramendr/ramen/e2e/config"
 )
 
 func EnsureChannel(log *zap.SugaredLogger) error {
