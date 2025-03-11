@@ -13,10 +13,6 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-const (
-	ramenOpsNamespace = "ramen-ops"
-)
-
 type DiscoveredApp struct{}
 
 func (d DiscoveredApp) GetName() string {
@@ -24,7 +20,7 @@ func (d DiscoveredApp) GetName() string {
 }
 
 func (d DiscoveredApp) GetNamespace() string {
-	return ramenOpsNamespace
+	return config.GetNamespaces().RamenOpsNamespace
 }
 
 // Deploy creates a workload on the first managed cluster.
@@ -54,6 +50,9 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
+	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q",
+		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+
 	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", appNamespace,
 		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
 
@@ -69,8 +68,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Deployed discovered app \"%s/%s\" in cluster %q",
-		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+	log.Info("Workload deployed")
 
 	return nil
 }
@@ -84,6 +82,9 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	if err != nil {
 		return err
 	}
+
+	log.Infof("Undeploying discovered app \"%s/%s\" in clusters %q and %q",
+		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0], drpolicy.Spec.DRClusters[1])
 
 	// delete app on both clusters
 	if err := DeleteDiscoveredApps(ctx, appNamespace, drpolicy.Spec.DRClusters[0]); err != nil {
@@ -103,7 +104,7 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	log.Infof("Undeployed discovered app \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
+	log.Info("Workload undeployed")
 
 	return nil
 }
