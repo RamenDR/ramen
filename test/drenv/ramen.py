@@ -35,7 +35,7 @@ def dump_e2e_config(env):
     kubeconfigs_dir = os.path.join(base, "kubeconfigs")
     os.makedirs(kubeconfigs_dir, exist_ok=True)
 
-    e2e_config = {"Clusters": {}}
+    e2e_config = {"clusters": {}}
 
     # Map e2e cluster names to actual cluster names.
     clusters = zip(
@@ -53,7 +53,7 @@ def dump_e2e_config(env):
         with open(path, "w") as f:
             f.write(data)
 
-        e2e_config["Clusters"][e2e_name] = {
+        e2e_config["clusters"][e2e_name] = {
             "name": cluster_name,
             "kubeconfigpath": path,
         }
