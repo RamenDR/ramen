@@ -61,19 +61,8 @@ var (
 )
 
 func ReadConfig(configFile string, options Options) error {
-	viper.SetDefault("Repo.URL", defaultGitURL)
-	viper.SetDefault("Repo.Branch", defaultGitBranch)
-	viper.SetDefault("DRPolicy", defaultDRPolicyName)
-	viper.SetDefault("ClusterSet", defaultClusterSetName)
-
-	viper.SetConfigFile(configFile)
-
-	if err := viper.ReadInConfig(); err != nil {
-		return fmt.Errorf("failed to read config: %v", err)
-	}
-
-	if err := viper.Unmarshal(config); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %v", err)
+	if err := readConfig(configFile, config); err != nil {
+		return err
 	}
 
 	if err := validateDistro(config); err != nil {
@@ -94,6 +83,25 @@ func ReadConfig(configFile string, options Options) error {
 
 	config.Channel.Name = resourceName(config.Repo.URL)
 	config.Channel.Namespace = defaultChannelNamespace
+
+	return nil
+}
+
+func readConfig(configFile string, config *types.Config) error {
+	viper.SetDefault("Repo.URL", defaultGitURL)
+	viper.SetDefault("Repo.Branch", defaultGitBranch)
+	viper.SetDefault("DRPolicy", defaultDRPolicyName)
+	viper.SetDefault("ClusterSet", defaultClusterSetName)
+
+	viper.SetConfigFile(configFile)
+
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read config: %v", err)
+	}
+
+	if err := viper.Unmarshal(config); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %v", err)
+	}
 
 	return nil
 }
