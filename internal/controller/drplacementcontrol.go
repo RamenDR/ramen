@@ -1573,6 +1573,34 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	return d.mwu.UpdateVRGManifestWork(vrg, mw)
 }
 
+// updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
+// a replicationID then the from should also claim a replicationID, else both should not. This ensures that a peerClass
+// is updated with latest storage/replication IDs, but only if the underlying replication scheme remains unchanged.
+func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, scName string) {
+	for toIdx := range to {
+		if (to[toIdx].StorageClassName != scName) ||
+			(!slices.Equal(to[toIdx].ClusterIDs, from.ClusterIDs)) {
+			continue
+		}
+
+		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" {
+			to[toIdx] = from
+
+			break
+		}
+
+		if to[toIdx].ReplicationID != "" && from.ReplicationID != "" {
+			to[toIdx] = from
+
+			break
+		}
+
+		log.Info("Unable to update mismatching peerClass", "peerClass", to[toIdx], "from", from)
+
+		break
+	}
+}
+
 // hasPeerClass finds a peer in the passed in list of peerClasses and returns true if a peer matches the passed in
 // storage class name and represents the cluster in the clusterIDs list
 // Also see peerClassMatchesPeer
@@ -1589,6 +1617,7 @@ func hasPeerClass(vrgPeerClasses []rmn.PeerClass, scName string, clusterIDs []st
 
 // updatePeers see updateVRGDRTypeSpec
 func updatePeers(
+	log logr.Logger,
 	vrgFromView *rmn.VolumeReplicationGroup,
 	vrgPeerClasses, policyPeerClasses []rmn.PeerClass,
 ) []rmn.PeerClass {
@@ -1601,21 +1630,38 @@ func updatePeers(
 		}
 
 		for policyPeerClassIdx := range policyPeerClasses {
-			if policyPeerClasses[policyPeerClassIdx].StorageClassName ==
+			if policyPeerClasses[policyPeerClassIdx].StorageClassName !=
 				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName {
-				if hasPeerClass(
-					vrgPeerClasses,
-					*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
-					policyPeerClasses[policyPeerClassIdx].ClusterIDs,
-				) {
-					break
-				}
+				continue
+			}
 
-				peerClasses = append(
+			if hasPeerClass(
+				vrgPeerClasses,
+				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
+				policyPeerClasses[policyPeerClassIdx].ClusterIDs,
+			) {
+				updatePeerClass(
+					log,
 					peerClasses,
 					policyPeerClasses[policyPeerClassIdx],
+					*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
 				)
+
+				break
 			}
+
+			if hasPeerClass(
+				peerClasses,
+				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
+				policyPeerClasses[policyPeerClassIdx].ClusterIDs,
+			) {
+				break
+			}
+
+			peerClasses = append(
+				peerClasses,
+				policyPeerClasses[policyPeerClassIdx],
+			)
 		}
 	}
 
@@ -1645,7 +1691,12 @@ func (d *DRPCInstance) updateVRGAsyncSpec(vrgFromView, vrg *rmn.VolumeReplicatio
 		return
 	}
 
-	asyncSpec.PeerClasses = updatePeers(vrgFromView, vrg.Spec.Async.PeerClasses, d.drPolicy.Status.Async.PeerClasses)
+	asyncSpec.PeerClasses = updatePeers(
+		d.log,
+		vrgFromView,
+		vrg.Spec.Async.PeerClasses,
+		d.drPolicy.Status.Async.PeerClasses,
+	)
 
 	// TODO: prune peerClasses not in policy and not in use by VRG
 
@@ -1675,7 +1726,7 @@ func (d *DRPCInstance) updateVRGSyncSpec(vrgFromView, vrg *rmn.VolumeReplication
 		return
 	}
 
-	syncSpec.PeerClasses = updatePeers(vrgFromView, vrg.Spec.Sync.PeerClasses, d.drPolicy.Status.Sync.PeerClasses)
+	syncSpec.PeerClasses = updatePeers(d.log, vrgFromView, vrg.Spec.Sync.PeerClasses, d.drPolicy.Status.Sync.PeerClasses)
 
 	// TODO: prune peerClasses not in policy and not in use by VRG
 
