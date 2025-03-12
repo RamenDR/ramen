@@ -8,6 +8,61 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// ChannelConfig defines the name and namespace for the channel CR.
+// This is not user-configurable and always uses default values.
+type ChannelConfig struct {
+	Name      string
+	Namespace string
+}
+
+// NamespacesConfig are determined by distro and are not user-configurable.
+type NamespacesConfig struct {
+	RamenHubNamespace       string
+	RamenDRClusterNamespace string
+	RamenOpsNamespace       string
+	ArgocdNamespace         string
+}
+
+// RepoConfig represents the user-configurable git repository settings.
+// It includes the repository url and branch to be used for deploying workload.
+type RepoConfig struct {
+	URL    string
+	Branch string
+}
+
+type PVCSpecConfig struct {
+	Name                 string
+	StorageClassName     string
+	AccessModes          string
+	UnsupportedDeployers []string
+}
+
+type ClusterConfig struct {
+	Name           string
+	KubeconfigPath string
+}
+
+type TestConfig struct {
+	Workload string
+	Deployer string
+	PVCSpec  string
+}
+
+type Config struct {
+	// User configurable values.
+	Distro     string
+	Repo       RepoConfig
+	DRPolicy   string
+	ClusterSet string
+	Clusters   map[string]ClusterConfig
+	PVCSpecs   []PVCSpecConfig
+	Tests      []TestConfig
+
+	// Generated values
+	Channel    ChannelConfig
+	Namespaces NamespacesConfig
+}
+
 // Clsuter can be a hub cluster or a managed cluster.
 type Cluster struct {
 	Name   string

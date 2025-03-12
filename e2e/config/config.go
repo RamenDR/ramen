@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 const (
@@ -31,61 +33,6 @@ const (
 	defaultClusterSetName = "default"
 )
 
-// Channel defines the name and namespace for the channel CR.
-// This is not user-configurable and always uses default values.
-type Channel struct {
-	Name      string
-	Namespace string
-}
-
-// Namespaces are determined by distro and are not user-configurable.
-type Namespaces struct {
-	RamenHubNamespace       string
-	RamenDRClusterNamespace string
-	RamenOpsNamespace       string
-	ArgocdNamespace         string
-}
-
-// Repo represents the user-configurable git repository settings.
-// It includes the repository url and branch to be used for deploying workload.
-type Repo struct {
-	URL    string
-	Branch string
-}
-
-type PVCSpec struct {
-	Name                 string
-	StorageClassName     string
-	AccessModes          string
-	UnsupportedDeployers []string
-}
-
-type Cluster struct {
-	Name           string
-	KubeconfigPath string
-}
-
-type Test struct {
-	Workload string
-	Deployer string
-	PVCSpec  string
-}
-
-type Config struct {
-	// User configurable values.
-	Distro     string
-	Repo       Repo
-	DRPolicy   string
-	ClusterSet string
-	Clusters   map[string]Cluster
-	PVCSpecs   []PVCSpec
-	Tests      []Test
-
-	// Generated values
-	Channel    Channel
-	Namespaces Namespaces
-}
-
 // Options that can be used in a configuration file.
 type Options struct {
 	Workloads []string
@@ -93,7 +40,7 @@ type Options struct {
 }
 
 // Default namespace mappings for Kubernetes (k8s) clusters.
-var k8sNamespaces = Namespaces{
+var k8sNamespaces = types.NamespacesConfig{
 	RamenHubNamespace:       "ramen-system",
 	RamenDRClusterNamespace: "ramen-system",
 	RamenOpsNamespace:       "ramen-ops",
@@ -101,7 +48,7 @@ var k8sNamespaces = Namespaces{
 }
 
 // Default namespace mappings for OpenShift (ocp) clusters.
-var ocpNamespaces = Namespaces{
+var ocpNamespaces = types.NamespacesConfig{
 	RamenHubNamespace:       "openshift-operators",
 	RamenDRClusterNamespace: "openshift-dr-system",
 	RamenOpsNamespace:       "openshift-dr-ops",
@@ -110,7 +57,7 @@ var ocpNamespaces = Namespaces{
 
 var (
 	resourceNameForbiddenCharacters *regexp.Regexp
-	config                          = &Config{}
+	config                          = &types.Config{}
 )
 
 //nolint:cyclop
@@ -161,7 +108,7 @@ func ReadConfig(configFile string, options Options) error {
 	return nil
 }
 
-func validateTests(config *Config, options *Options) error {
+func validateTests(config *types.Config, options *Options) error {
 	// We allow an empty test list so one can run the validation tests or unit tests without a fully configured file.
 	if len(config.Tests) == 0 {
 		return nil
@@ -172,7 +119,7 @@ func validateTests(config *Config, options *Options) error {
 		pvcSpecNames = append(pvcSpecNames, spec.Name)
 	}
 
-	testsSeen := map[Test]struct{}{}
+	testsSeen := map[types.TestConfig]struct{}{}
 
 	for _, t := range config.Tests {
 		if _, ok := testsSeen[t]; ok {
@@ -222,7 +169,7 @@ func GetClusterSetName() string {
 	return config.ClusterSet
 }
 
-func GetNamespaces() Namespaces {
+func GetNamespaces() types.NamespacesConfig {
 	switch config.Distro {
 	case distroK8s:
 		return k8sNamespaces
@@ -233,8 +180,8 @@ func GetNamespaces() Namespaces {
 	}
 }
 
-func GetPVCSpecs() map[string]PVCSpec {
-	res := map[string]PVCSpec{}
+func GetPVCSpecs() map[string]types.PVCSpecConfig {
+	res := map[string]types.PVCSpecConfig{}
 	for _, spec := range config.PVCSpecs {
 		res[spec.Name] = spec
 	}
@@ -242,11 +189,11 @@ func GetPVCSpecs() map[string]PVCSpec {
 	return res
 }
 
-func GetClusters() map[string]Cluster {
+func GetClusters() map[string]types.ClusterConfig {
 	return config.Clusters
 }
 
-func GetTests() []Test {
+func GetTests() []types.TestConfig {
 	return config.Tests
 }
 
