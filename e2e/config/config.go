@@ -107,7 +107,12 @@ func readConfig(configFile string, config *types.Config) error {
 }
 
 func validateDistro(config *types.Config) error {
-	if config.Distro != distroK8s && config.Distro != distroOcp {
+	switch config.Distro {
+	case distroK8s:
+		config.Namespaces = k8sNamespaces
+	case distroOcp:
+		config.Namespaces = ocpNamespaces
+	default:
 		return fmt.Errorf("invalid distro %q: (choose one of %q, %q)",
 			config.Distro, distroK8s, distroOcp)
 	}
@@ -201,14 +206,7 @@ func GetClusterSetName() string {
 }
 
 func GetNamespaces() types.NamespacesConfig {
-	switch config.Distro {
-	case distroK8s:
-		return k8sNamespaces
-	case distroOcp:
-		return ocpNamespaces
-	default:
-		panic("invalid distro")
-	}
+	return config.Namespaces
 }
 
 func GetPVCSpecs() map[string]types.PVCSpecConfig {
