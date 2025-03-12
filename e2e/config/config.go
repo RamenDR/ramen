@@ -60,7 +60,6 @@ var (
 	config                          = &types.Config{}
 )
 
-//nolint:cyclop
 func ReadConfig(configFile string, options Options) error {
 	viper.SetDefault("Repo.URL", defaultGitURL)
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
@@ -77,11 +76,38 @@ func ReadConfig(configFile string, options Options) error {
 		return fmt.Errorf("failed to unmarshal config: %v", err)
 	}
 
+	if err := validateDistro(config); err != nil {
+		return err
+	}
+
+	if err := validateClusters(config); err != nil {
+		return err
+	}
+
+	if err := validatePVCSpecs(config); err != nil {
+		return err
+	}
+
+	if err := validateTests(config, &options); err != nil {
+		return err
+	}
+
+	config.Channel.Name = resourceName(config.Repo.URL)
+	config.Channel.Namespace = defaultChannelNamespace
+
+	return nil
+}
+
+func validateDistro(config *types.Config) error {
 	if config.Distro != distroK8s && config.Distro != distroOcp {
 		return fmt.Errorf("invalid distro %q: (choose one of %q, %q)",
 			config.Distro, distroK8s, distroOcp)
 	}
 
+	return nil
+}
+
+func validateClusters(config *types.Config) error {
 	if config.Clusters["hub"].KubeconfigPath == "" {
 		return fmt.Errorf("failed to find hub cluster in configuration")
 	}
@@ -94,16 +120,13 @@ func ReadConfig(configFile string, options Options) error {
 		return fmt.Errorf("failed to find c2 cluster in configuration")
 	}
 
+	return nil
+}
+
+func validatePVCSpecs(config *types.Config) error {
 	if len(config.PVCSpecs) == 0 {
 		return fmt.Errorf("failed to find pvcs in configuration")
 	}
-
-	if err := validateTests(config, &options); err != nil {
-		return err
-	}
-
-	config.Channel.Name = resourceName(config.Repo.URL)
-	config.Channel.Namespace = defaultChannelNamespace
 
 	return nil
 }
