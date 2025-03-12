@@ -20,8 +20,9 @@ import (
 )
 
 type Context struct {
-	log *zap.SugaredLogger
-	env *types.Env
+	log    *zap.SugaredLogger
+	env    *types.Env
+	config *types.Config
 }
 
 // The global test context
@@ -53,11 +54,13 @@ func TestMain(m *testing.M) {
 		Deployers: deployers.AvailableNames(),
 		Workloads: workloads.AvailableNames(),
 	}
-	if err := config.ReadConfig(configFile, options); err != nil {
+
+	Ctx.config, err = config.ReadConfig(configFile, options)
+	if err != nil {
 		log.Fatalf("Failed to read config: %s", err)
 	}
 
-	Ctx.env, err = env.New(log)
+	Ctx.env, err = env.New(Ctx.config, Ctx.log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}

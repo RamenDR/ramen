@@ -23,7 +23,6 @@ import (
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -86,42 +85,40 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 	return client, nil
 }
 
-func New(log *zap.SugaredLogger) (*types.Env, error) {
+func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	var err error
 
 	env := &types.Env{}
 
-	clusters := config.GetClusters()
-
-	env.Hub.Name = clusters["hub"].Name
+	env.Hub.Name = config.Clusters["hub"].Name
 	if env.Hub.Name == "" {
 		env.Hub.Name = defaultHubClusterName
 		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
 	}
 
-	env.Hub.Client, err = setupClient(clusters["hub"].KubeconfigPath)
+	env.Hub.Client, err = setupClient(config.Clusters["hub"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
-	env.C1.Name = clusters["c1"].Name
+	env.C1.Name = config.Clusters["c1"].Name
 	if env.C1.Name == "" {
 		env.C1.Name = defaultC1ClusterName
 		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
 	}
 
-	env.C1.Client, err = setupClient(clusters["c1"].KubeconfigPath)
+	env.C1.Client, err = setupClient(config.Clusters["c1"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
 	}
 
-	env.C2.Name = clusters["c2"].Name
+	env.C2.Name = config.Clusters["c2"].Name
 	if env.C2.Name == "" {
 		env.C2.Name = defaultC2ClusterName
 		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
 	}
 
-	env.C2.Client, err = setupClient(clusters["c2"].KubeconfigPath)
+	env.C2.Client, err = setupClient(config.Clusters["c2"].KubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
 	}

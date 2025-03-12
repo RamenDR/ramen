@@ -11,36 +11,35 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func EnsureChannel(hub types.Cluster, log *zap.SugaredLogger) error {
+func EnsureChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	// create channel namespace
-	err := CreateNamespace(hub, config.GetChannelNamespace(), log)
+	err := CreateNamespace(hub, config.Channel.Namespace, log)
 	if err != nil {
 		return err
 	}
 
-	return createChannel(hub, log)
+	return createChannel(hub, config, log)
 }
 
-func EnsureChannelDeleted(hub types.Cluster, log *zap.SugaredLogger) error {
-	if err := deleteChannel(hub, log); err != nil {
+func EnsureChannelDeleted(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+	if err := deleteChannel(hub, config, log); err != nil {
 		return err
 	}
 
-	return DeleteNamespace(hub, config.GetChannelNamespace(), log)
+	return DeleteNamespace(hub, config.Channel.Namespace, log)
 }
 
-func createChannel(hub types.Cluster, log *zap.SugaredLogger) error {
+func createChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	objChannel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      config.GetChannelName(),
-			Namespace: config.GetChannelNamespace(),
+			Name:      config.Channel.Name,
+			Namespace: config.Channel.Namespace,
 		},
 		Spec: channelv1.ChannelSpec{
-			Pathname: config.GetGitURL(),
+			Pathname: config.Repo.URL,
 			Type:     channelv1.ChannelTypeGitHub,
 		},
 	}
@@ -52,20 +51,20 @@ func createChannel(hub types.Cluster, log *zap.SugaredLogger) error {
 		}
 
 		log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
+			config.Channel.Namespace, config.Channel.Name, hub.Name)
 	} else {
 		log.Infof("Created channel \"%s/%s\" in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
+			config.Channel.Namespace, config.Channel.Name, hub.Name)
 	}
 
 	return nil
 }
 
-func deleteChannel(hub types.Cluster, log *zap.SugaredLogger) error {
+func deleteChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	channel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      config.GetChannelName(),
-			Namespace: config.GetChannelNamespace(),
+			Name:      config.Channel.Name,
+			Namespace: config.Channel.Namespace,
 		},
 	}
 
@@ -76,10 +75,10 @@ func deleteChannel(hub types.Cluster, log *zap.SugaredLogger) error {
 		}
 
 		log.Debugf("Channel \"%s/%s\" not found in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
+			config.Channel.Namespace, config.Channel.Name, hub.Name)
 	} else {
 		log.Infof("Deleted channel \"%s/%s\" in cluster %q",
-			config.GetChannelNamespace(), config.GetChannelName(), hub.Name)
+			config.Channel.Namespace, config.Channel.Name, hub.Name)
 	}
 
 	return nil
