@@ -120,15 +120,15 @@ func validateDistro(config *types.Config) error {
 }
 
 func validateClusters(config *types.Config) error {
-	if config.Clusters["hub"].KubeconfigPath == "" {
+	if config.Clusters["hub"].Kubeconfig == "" {
 		return fmt.Errorf("failed to find hub cluster in configuration")
 	}
 
-	if config.Clusters["c1"].KubeconfigPath == "" {
+	if config.Clusters["c1"].Kubeconfig == "" {
 		return fmt.Errorf("failed to find c1 cluster in configuration")
 	}
 
-	if config.Clusters["c2"].KubeconfigPath == "" {
+	if config.Clusters["c2"].Kubeconfig == "" {
 		return fmt.Errorf("failed to find c2 cluster in configuration")
 	}
 

@@ -54,7 +54,7 @@ def dump_e2e_config(env):
 
         e2e_clusters[e2e_name] = {
             "name": cluster_name,
-            "kubeconfigpath": kubeconfig,
+            "kubeconfig": kubeconfig,
         }
 
     e2e_config = {"clusters": e2e_clusters}

@@ -38,8 +38,8 @@ type PVCSpecConfig struct {
 }
 
 type ClusterConfig struct {
-	Name           string
-	KubeconfigPath string
+	Name       string
+	Kubeconfig string
 }
 
 type TestConfig struct {
