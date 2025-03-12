@@ -6,7 +6,6 @@ package dractions
 import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -17,16 +16,17 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	w := ctx.Workload()
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
-	drPolicyName := config.GetDRPolicyName()
+	drPolicyName := config.DRPolicy
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
 
 	// create mcsb default in ramen-ops ns
-	if err := deployers.CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace); err != nil {
+	if err := deployers.CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace); err != nil {
 		return err
 	}
 
@@ -67,6 +67,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 func DisableProtectionDiscoveredApps(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
@@ -99,7 +100,7 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	err = deployers.DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	err = deployers.DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -118,12 +119,13 @@ func failoverRelocateDiscoveredApps(
 	targetCluster string,
 ) error {
 	name := ctx.Name()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
 	drpcName := name
 
-	drPolicyName := config.GetDRPolicyName()
+	drPolicyName := config.DRPolicy
 
 	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, drPolicyName)
 	if err != nil {

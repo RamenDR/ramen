@@ -81,7 +81,7 @@ type Deployer interface {
 	Undeploy(Context) error
 	GetName() string
 	// GetNamespace return the namespace for the ramen resources, or empty string if not using a special namespace.
-	GetNamespace() string
+	GetNamespace(Context) string
 	// Return true for OCM discovered application, false for OCM managed applications.
 	IsDiscovered() bool
 }
@@ -117,4 +117,5 @@ type Context interface {
 
 	Logger() *zap.SugaredLogger
 	Env() *Env
+	Config() *Config
 }

@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -35,6 +34,7 @@ const (
 
 func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) error {
 	log := ctx.Logger()
+	config := ctx.Config()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = namespace
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
@@ -44,7 +44,7 @@ func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 			Labels:    labels,
 		},
 		Spec: ocmv1b2.ManagedClusterSetBindingSpec{
-			ClusterSet: config.GetClusterSetName(),
+			ClusterSet: config.ClusterSet,
 		},
 	}
 
@@ -87,9 +87,10 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 
 func CreatePlacement(ctx types.Context, name, namespace string, clusterName string) error {
 	log := ctx.Logger()
+	config := ctx.Config()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
-	clusterSet := []string{config.GetClusterSetName()}
+	clusterSet := []string{config.ClusterSet}
 
 	var numClusters int32 = 1
 	placement := &ocmv1b1.Placement{
@@ -160,6 +161,7 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 func CreateSubscription(ctx types.Context, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	w := ctx.Workload()
 	managementNamespace := ctx.ManagementNamespace()
 
@@ -186,7 +188,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 			Annotations: annotations,
 		},
 		Spec: subscriptionv1.SubscriptionSpec{
-			Channel:   config.GetChannelNamespace() + "/" + config.GetChannelName(),
+			Channel:   config.Channel.Namespace + "/" + config.Channel.Name,
 			Placement: placementRulePlacement,
 		},
 	}
@@ -308,6 +310,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	w := ctx.Workload()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
@@ -337,7 +340,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 				},
 				Spec: argocdv1alpha1hack.ApplicationSpec{
 					Source: &argocdv1alpha1hack.ApplicationSource{
-						RepoURL:        config.GetGitURL(),
+						RepoURL:        config.Repo.URL,
 						Path:           w.GetPath(),
 						TargetRevision: w.GetBranch(),
 					},
@@ -461,8 +464,9 @@ type CombinedData map[string]interface{}
 
 func CreateKustomizationFile(ctx types.Context, dir string) error {
 	w := ctx.Workload()
+	config := ctx.Config()
 	yamlData := `resources:
-- ` + config.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetBranch()
+- ` + config.Repo.URL + `/` + w.GetPath() + `?ref=` + w.GetBranch()
 
 	var yamlContent CombinedData
 

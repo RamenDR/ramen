@@ -55,36 +55,35 @@ var ocpNamespaces = types.NamespacesConfig{
 	ArgocdNamespace:         "openshift-gitops",
 }
 
-var (
-	resourceNameForbiddenCharacters *regexp.Regexp
-	config                          = &types.Config{}
-)
+var resourceNameForbiddenCharacters *regexp.Regexp
 
-func ReadConfig(configFile string, options Options) error {
+func ReadConfig(configFile string, options Options) (*types.Config, error) {
+	config := &types.Config{}
+
 	if err := readConfig(configFile, config); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := validateDistro(config); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := validateClusters(config); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := validatePVCSpecs(config); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := validateTests(config, &options); err != nil {
-		return err
+		return nil, err
 	}
 
 	config.Channel.Name = resourceName(config.Repo.URL)
 	config.Channel.Namespace = defaultChannelNamespace
 
-	return nil
+	return config, nil
 }
 
 func readConfig(configFile string, config *types.Config) error {
@@ -181,49 +180,14 @@ func validateTests(config *types.Config, options *Options) error {
 	return nil
 }
 
-func GetChannelName() string {
-	return config.Channel.Name
-}
-
-func GetChannelNamespace() string {
-	return config.Channel.Namespace
-}
-
-func GetGitURL() string {
-	return config.Repo.URL
-}
-
-func GetGitBranch() string {
-	return config.Repo.Branch
-}
-
-func GetDRPolicyName() string {
-	return config.DRPolicy
-}
-
-func GetClusterSetName() string {
-	return config.ClusterSet
-}
-
-func GetNamespaces() types.NamespacesConfig {
-	return config.Namespaces
-}
-
-func GetPVCSpecs() map[string]types.PVCSpecConfig {
+// PVCSpecMap returns a mapping from PVCSpec.Name to PVCSpec.
+func PVCSpecsMap(config *types.Config) map[string]types.PVCSpecConfig {
 	res := map[string]types.PVCSpecConfig{}
 	for _, spec := range config.PVCSpecs {
 		res[spec.Name] = spec
 	}
 
 	return res
-}
-
-func GetClusters() map[string]types.ClusterConfig {
-	return config.Clusters
-}
-
-func GetTests() []types.TestConfig {
-	return config.Tests
 }
 
 // resourceName convert a URL to conventional k8s resource name:

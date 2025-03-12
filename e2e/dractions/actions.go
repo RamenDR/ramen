@@ -8,7 +8,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -35,8 +34,9 @@ func EnableProtection(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
+	config := ctx.Config()
 
-	drPolicyName := config.GetDRPolicyName()
+	drPolicyName := config.DRPolicy
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
@@ -141,13 +141,14 @@ func Failover(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
+	config := ctx.Config()
 
 	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx.Env().Hub, currentCluster)
+	targetCluster, err := getTargetCluster(ctx.Env().Hub, config.DRPolicy, currentCluster)
 	if err != nil {
 		return err
 	}
@@ -172,6 +173,7 @@ func Failover(ctx types.Context) error {
 func Relocate(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
+	config := ctx.Config()
 	name := ctx.Name()
 
 	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
@@ -179,7 +181,7 @@ func Relocate(ctx types.Context) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx.Env().Hub, currentCluster)
+	targetCluster, err := getTargetCluster(ctx.Env().Hub, config.DRPolicy, currentCluster)
 	if err != nil {
 		return err
 	}
