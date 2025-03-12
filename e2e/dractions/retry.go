@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -92,8 +91,8 @@ func getDRCluster(ctx types.Context, clusterName string, drpolicy *ramen.DRPolic
 	return ctx.Env().C2
 }
 
-func getTargetCluster(cluster types.Cluster, currentCluster string) (string, error) {
-	drpolicy, err := util.GetDRPolicy(cluster, config.GetDRPolicyName())
+func getTargetCluster(cluster types.Cluster, drPolicyName, currentCluster string) (string, error) {
+	drpolicy, err := util.GetDRPolicy(cluster, drPolicyName)
 	if err != nil {
 		return "", err
 	}

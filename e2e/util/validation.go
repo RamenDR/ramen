@@ -16,15 +16,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func ValidateRamenHubOperator(cluster types.Cluster, log *zap.SugaredLogger) error {
+func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
-	pod, err := FindPod(cluster, config.GetNamespaces().RamenHubNamespace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.Namespaces.RamenHubNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -39,11 +38,11 @@ func ValidateRamenHubOperator(cluster types.Cluster, log *zap.SugaredLogger) err
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster types.Cluster, log *zap.SugaredLogger) error {
+func ValidateRamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
-	pod, err := FindPod(cluster, config.GetNamespaces().RamenDRClusterNamespace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.Namespaces.RamenDRClusterNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}

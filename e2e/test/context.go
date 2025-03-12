@@ -23,10 +23,17 @@ type Context struct {
 	deployer types.Deployer
 	name     string
 	env      *types.Env
+	config   *types.Config
 	logger   *zap.SugaredLogger
 }
 
-func NewContext(w types.Workload, d types.Deployer, env *types.Env, log *zap.SugaredLogger) Context {
+func NewContext(
+	w types.Workload,
+	d types.Deployer,
+	env *types.Env,
+	config *types.Config,
+	log *zap.SugaredLogger,
+) Context {
 	name := strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 
 	return Context{
@@ -34,6 +41,7 @@ func NewContext(w types.Workload, d types.Deployer, env *types.Env, log *zap.Sug
 		deployer: d,
 		name:     name,
 		env:      env,
+		config:   config,
 		logger:   log.Named(name),
 	}
 }
@@ -51,7 +59,7 @@ func (c *Context) Name() string {
 }
 
 func (c *Context) ManagementNamespace() string {
-	if ns := c.deployer.GetNamespace(); ns != "" {
+	if ns := c.deployer.GetNamespace(c); ns != "" {
 		return ns
 	}
 
@@ -68,6 +76,10 @@ func (c *Context) Logger() *zap.SugaredLogger {
 
 func (c *Context) Env() *types.Env {
 	return c.env
+}
+
+func (c *Context) Config() *types.Config {
+	return c.config
 }
 
 // Validated return an error if the combination of deployer and workload is not supported.
