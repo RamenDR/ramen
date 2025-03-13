@@ -7,6 +7,7 @@ import (
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type ApplicationSet struct{}
@@ -58,11 +59,16 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 
 	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
 	if err != nil {
-		return err
-	}
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
 
-	log.Infof("Undeploying applicationset app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+		log.Debugf("Could not retrieve the cluster name: %s", err)
+		log.Infof("Undeploying applicationset app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+	} else {
+		log.Infof("Undeploying applicationset app \"%s/%s\" in cluster %q",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+	}
 
 	err = DeleteApplicationSet(ctx, a)
 	if err != nil {
