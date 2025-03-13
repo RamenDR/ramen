@@ -98,11 +98,6 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	err = deployers.DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
-	if err != nil {
-		return err
-	}
-
 	log.Info("Workload unprotected")
 
 	return nil
