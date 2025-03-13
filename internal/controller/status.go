@@ -71,6 +71,7 @@ const (
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
 	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
+	VRGConditionReasonPVCConflict                 = "PVCConflict"
 )
 
 const (
@@ -513,4 +514,15 @@ func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, ob
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
+}
+
+// set condition when a PVC conflict is detected on the secondary cluster
+func newVRGAsDataProtectedConditionPVCConflict(observedGeneration int64, message string) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionReasonDataProtected,
+		Reason:             VRGConditionReasonPVCConflict,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	}
 }

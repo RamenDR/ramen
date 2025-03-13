@@ -2544,24 +2544,12 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 
 //nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
-	if len(v.volRepPVCs) == 0 {
-		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-			if v.instance.Spec.Sync != nil {
-				return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
-					"PVC protection as secondary is complete, or no PVCs needed protection")
-			}
+	if v.isNoVolRepProtectedPVCs() {
+		return v.handleNoVolRepProtectedPVCs()
+	}
 
-			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
-				"PVC protection as secondary is complete, or no PVCs needed protection using VolumeReplication scheme")
-		}
-
-		if v.instance.Spec.Sync != nil {
-			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
-				"No PVCs are protected, no PVCs found matching the selector")
-		}
-
-		return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
-			"No PVCs are protected using VolumeReplication scheme")
+	if conflictCondition := v.validateSecondaryPVCConflict(); conflictCondition != nil {
+		return conflictCondition
 	}
 
 	vrgProtected := true
@@ -2729,4 +2717,51 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 	}
 
 	return result
+}
+
+func (v *VRGInstance) isNoVolRepProtectedPVCs() bool {
+	return len(v.volRepPVCs) == 0
+}
+
+func (v *VRGInstance) isSecondaryWithVolRepProtectedPVCs() bool {
+	return v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && len(v.volRepPVCs) > 0
+}
+
+func (v *VRGInstance) handleNoVolRepProtectedPVCs() *metav1.Condition {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		return v.handleSecondaryNoVolRepProtectedPVCs()
+	}
+
+	return v.handlePrimaryNoVolRepProtectedPVCs()
+}
+
+func (v *VRGInstance) handleSecondaryNoVolRepProtectedPVCs() *metav1.Condition {
+	message := "PVC protection as secondary is complete, or no PVCs needed protection"
+	if v.instance.Spec.Sync == nil {
+		message += " using VolumeReplication scheme"
+	}
+
+	return newVRGAsDataProtectedUnusedCondition(v.instance.Generation, message)
+}
+
+func (v *VRGInstance) handlePrimaryNoVolRepProtectedPVCs() *metav1.Condition {
+	message := "No PVCs are protected"
+	if v.instance.Spec.Sync == nil {
+		message += " using VolumeReplication scheme"
+	} else {
+		message += ", no PVCs found matching the selector"
+	}
+
+	return newVRGAsDataProtectedUnusedCondition(v.instance.Generation, message)
+}
+
+func (v *VRGInstance) validateSecondaryPVCConflict() *metav1.Condition {
+	if v.isSecondaryWithVolRepProtectedPVCs() {
+		return newVRGAsDataProtectedConditionPVCConflict(
+			v.instance.Generation,
+			"No PVC on the secondary should match the label selector",
+		)
+	}
+
+	return nil
 }
