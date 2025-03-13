@@ -21,16 +21,14 @@ func delaySetMinimum(result *ctrl.Result) {
 	result.RequeueAfter = time.Nanosecond
 }
 
-func delaySetIfLess(result *ctrl.Result, delay time.Duration, log logr.Logger) {
+func calibrateRequeueAfterTime(result *ctrl.Result, delay time.Duration, log logr.Logger) {
+	// If the next reconcile is before the next capture start time, don't calibrate the requeue time.
+	// We will skip the capture in that reconcile and let the reconcile do other work.
 	if result.RequeueAfter > 0 && result.RequeueAfter <= delay {
-		log.Info("Delay not set because current delay is more than zero and less than new delay",
-			"current", result.RequeueAfter, "new", delay)
-
 		return
 	}
 
-	log.Info("Delay set because current delay is zero or more than new delay",
-		"current", result.RequeueAfter, "new", delay)
+	log.Info("setting requeue after to remaining time in the capture interval", "requeuing after", delay)
 
 	result.RequeueAfter = delay
 }
