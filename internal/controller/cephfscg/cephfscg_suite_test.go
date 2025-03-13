@@ -16,8 +16,8 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/testutils"
 	"github.com/ramendr/ramen/internal/controller/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"go.uber.org/zap/zapcore"
@@ -56,8 +56,7 @@ func TestCephfscg(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	Ctx, CtxCancel = context.WithCancel(context.TODO())
-	// onsi.github.io/gomega/#adjusting-output
-	format.MaxLength = 0
+	testutils.ConfigureGinkgo()
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,
