@@ -4,7 +4,6 @@
 package deployers
 
 import (
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,9 +15,10 @@ type ApplicationSet struct{}
 func (a ApplicationSet) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.DRPolicy)
 	if err != nil {
 		return err
 	}
@@ -26,7 +26,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log.Infof("Deploying applicationset app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
 
-	err = CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	err = CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -55,9 +55,10 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -87,13 +88,13 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 
 	// multiple appsets could use the same mcsb in argocd ns.
 	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(managementNamespace)
+	lastAppset, err := isLastAppsetInArgocdNs(ctx, managementNamespace)
 	if err != nil {
 		return err
 	}
 
 	if lastAppset {
-		err = DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+		err = DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 		if err != nil {
 			return err
 		}
@@ -108,8 +109,8 @@ func (a ApplicationSet) GetName() string {
 	return "appset"
 }
 
-func (a ApplicationSet) GetNamespace() string {
-	return config.GetNamespaces().ArgocdNamespace
+func (a ApplicationSet) GetNamespace(ctx types.Context) string {
+	return ctx.Config().Namespaces.ArgocdNamespace
 }
 
 func (a ApplicationSet) IsDiscovered() bool {
