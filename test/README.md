@@ -64,8 +64,8 @@ environment.
 
    ```
    curl -Ls https://get.submariner.io | bash
-   sudo install .local/bin/subctl /usr/local/bin/
-   rm .local/bin/subctl
+   sudo install ~/.local/bin/subctl /usr/local/bin/
+   rm ~/.local/bin/subctl
    ```
 
    For more info see
@@ -185,8 +185,8 @@ environment.
 
    ```
    curl -Ls https://get.submariner.io | bash
-   sudo install .local/bin/subctl /usr/local/bin/
-   rm .local/bin/subctl
+   sudo install ~/.local/bin/subctl /usr/local/bin/
+   rm ~/.local/bin/subctl
    ```
 
    For more info see
