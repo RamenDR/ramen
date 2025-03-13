@@ -80,7 +80,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	requeue := true
 	done, processingErr := d.processPlacement()
 
-	if d.shouldUpdateStatus() || d.statusUpdateTimeElapsed() {
+	if (d.shouldUpdateStatus() || d.statusUpdateTimeElapsed()) && d.savedInstanceStatus.Progression < d.getProgression() {
 		if err := d.reconciler.updateDRPCStatus(d.ctx, d.instance, d.userPlacement, d.log); err != nil {
 			errMsg := fmt.Sprintf("error from update DRPC status: %v", err)
 			if processingErr != nil {

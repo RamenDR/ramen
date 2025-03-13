@@ -188,6 +188,7 @@ func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*
 		dstVRG.Spec.Sync.PeerClasses = srcVRG.Spec.Sync.PeerClasses
 	}
 
+	d.setProgression(rmn.ProgressionEnsuringVolSyncDestSetup)
 	return &dstVRG, nil
 }
 
