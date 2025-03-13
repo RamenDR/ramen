@@ -75,6 +75,7 @@ const (
 
 const (
 	DRClusterNameAnnotation = "drcluster.ramendr.openshift.io/drcluster-name"
+	createdByRamenLabel     = "ramendr.openshift.io/resource-created-by-ramen"
 )
 
 // SetupWithManager sets up the controller with the Manager.
@@ -652,6 +653,7 @@ func (u *drclusterInstance) ensureDRClusterConfig() error {
 	return nil
 }
 
+//nolint:funlen
 func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, error) {
 	mc, err := util.NewManagedClusterInstance(u.ctx, u.client, u.object.GetName())
 	if err != nil {
@@ -663,13 +665,17 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		return nil, err
 	}
 
+	labels := make(map[string]string)
+	labels[createdByRamenLabel] = "true"
+
 	drcConfig := ramen.DRClusterConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DRClusterConfig",
 			APIVersion: "ramendr.openshift.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: u.object.GetName(),
+			Name:   u.object.GetName(),
+			Labels: labels,
 		},
 		Spec: ramen.DRClusterConfigSpec{
 			ClusterID: clusterID,

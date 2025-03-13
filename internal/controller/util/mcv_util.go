@@ -386,6 +386,11 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, logger logr.Logger,
 ) (*viewv1beta1.ManagedClusterView, error) {
 	key := types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}
+
+	labels := make(map[string]string)
+	labels[createdByRamenLabel] = "true"
+	meta.Labels = labels
+
 	mcv := &viewv1beta1.ManagedClusterView{
 		ObjectMeta: meta,
 		Spec: viewv1beta1.ViewSpec{

@@ -1782,6 +1782,9 @@ func (d *DRPCInstance) newVRG(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      d.instance.Name,
 			Namespace: d.vrgNamespace,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 		Spec: rmn.VolumeReplicationGroupSpec{
 			PVCSelector:      d.instance.Spec.PVCSelector,

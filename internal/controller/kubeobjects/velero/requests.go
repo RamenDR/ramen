@@ -28,6 +28,8 @@ const (
 	path         = "velero/"
 	protectsPath = path + "backups/"
 	recoversPath = path + "restores/"
+
+	createdByRamenLabel = "ramendr.openshift.io/resource-created-by-ramen"
 )
 
 type (
@@ -454,11 +456,13 @@ func backupRequestCreate(
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
+	labels[createdByRamenLabel] = "true"
 	backupLocation := backupLocation(requestsNamespaceName, requestName,
 		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 		caCertificates,
 		labels,
 	)
+
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
 	}
