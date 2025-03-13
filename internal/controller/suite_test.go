@@ -13,7 +13,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,6 +43,7 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
+	testutils "github.com/ramendr/ramen/internal/controller/testutils"
 	"github.com/ramendr/ramen/internal/controller/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -115,8 +115,7 @@ func createOperatorNamespace(ramenNamespace string) {
 }
 
 var _ = BeforeSuite(func() {
-	// onsi.github.io/gomega/#adjusting-output
-	format.MaxLength = 0
+	testutils.ConfigureGinkgo()
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,
