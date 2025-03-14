@@ -82,15 +82,6 @@ func waitDRPCPhase(ctx types.Context, namespace, name string, phase ramen.DRStat
 	}
 }
 
-// return dr cluster
-func getDRCluster(ctx types.Context, clusterName string, drpolicy *ramen.DRPolicy) types.Cluster {
-	if clusterName == drpolicy.Spec.DRClusters[0] {
-		return ctx.Env().C1
-	}
-
-	return ctx.Env().C2
-}
-
 func getTargetCluster(cluster types.Cluster, drPolicyName, currentCluster string) (string, error) {
 	drpolicy, err := util.GetDRPolicy(cluster, drPolicyName)
 	if err != nil {
