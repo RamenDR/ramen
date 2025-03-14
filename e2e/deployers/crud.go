@@ -414,7 +414,7 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 	return nil
 }
 
-func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
+func DeleteDiscoveredApps(ctx types.Context, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
 	tempDir, err := os.MkdirTemp("", "ramen-")
@@ -430,7 +430,7 @@ func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
 	}
 
 	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
-		"--context", cluster, "--timeout=5m", "--ignore-not-found=true")
+		"--kubeconfig", cluster.Kubeconfig, "--timeout=5m", "--ignore-not-found=true")
 
 	if out, err := cmd.Output(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -441,7 +441,7 @@ func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
 	}
 
 	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
-		namespace, ctx.Workload().GetAppName(), cluster)
+		namespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	return nil
 }
