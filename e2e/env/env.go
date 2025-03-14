@@ -101,6 +101,8 @@ func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
+	env.Hub.Kubeconfig = config.Clusters["hub"].Kubeconfig
+
 	env.C1.Name = config.Clusters["c1"].Name
 	if env.C1.Name == "" {
 		env.C1.Name = defaultC1ClusterName
@@ -112,6 +114,8 @@ func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
 	}
 
+	env.C1.Kubeconfig = config.Clusters["c1"].Kubeconfig
+
 	env.C2.Name = config.Clusters["c2"].Name
 	if env.C2.Name == "" {
 		env.C2.Name = defaultC2ClusterName
@@ -122,6 +126,8 @@ func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
 	}
+
+	env.C2.Kubeconfig = config.Clusters["c2"].Kubeconfig
 
 	return env, nil
 }

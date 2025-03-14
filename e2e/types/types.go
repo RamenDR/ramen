@@ -65,8 +65,9 @@ type Config struct {
 
 // Clsuter can be a hub cluster or a managed cluster.
 type Cluster struct {
-	Name   string
-	Client client.Client
+	Name       string
+	Client     client.Client
+	Kubeconfig string
 }
 
 type Env struct {
