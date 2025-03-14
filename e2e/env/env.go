@@ -125,3 +125,18 @@ func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 
 	return env, nil
 }
+
+// GetCluster returns the cluster from the env that matches clusterName.
+// If not found, it returns an empty Cluster and an error.
+func GetCluster(env *types.Env, clusterName string) (types.Cluster, error) {
+	switch clusterName {
+	case env.C1.Name:
+		return env.C1, nil
+	case env.C2.Name:
+		return env.C2, nil
+	case env.Hub.Name:
+		return env.Hub, nil
+	default:
+		return types.Cluster{}, fmt.Errorf("cluster %q not found in environment", clusterName)
+	}
+}
