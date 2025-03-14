@@ -129,8 +129,13 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
+	currentDRCluster, err := env.GetEnvCluster(ctx, currentCluster)
+	if err != nil {
+		return err
+	}
+
 	// delete pvc and deployment from dr cluster
-	if err := deployers.DeleteDiscoveredApps(ctx, appNamespace, currentCluster); err != nil {
+	if err := deployers.DeleteDiscoveredApps(ctx, currentDRCluster, appNamespace); err != nil {
 		return err
 	}
 
@@ -142,10 +147,10 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	drCluster, err := env.GetEnvCluster(ctx, targetCluster)
+	targetDRCluster, err := env.GetEnvCluster(ctx, targetCluster)
 	if err != nil {
 		return err
 	}
 
-	return deployers.WaitWorkloadHealth(ctx, drCluster, appNamespace)
+	return deployers.WaitWorkloadHealth(ctx, targetDRCluster, appNamespace)
 }
