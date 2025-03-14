@@ -8,33 +8,44 @@ import (
 	"os"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/test"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-var (
-	configFile string
-	logFile    string
-)
-
-func init() {
-	flag.StringVar(&configFile, "config", "config.yaml", "e2e configuration file")
-	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
+type Context struct {
+	log    *zap.SugaredLogger
+	env    *types.Env
+	config *types.Config
 }
 
-func TestMain(m *testing.M) {
-	var err error
+// The global test context
+var Ctx Context
 
+func TestMain(m *testing.M) {
+	var (
+		err        error
+		configFile string
+		logFile    string
+	)
+
+	flag.StringVar(&configFile, "config", "config.yaml", "e2e configuration file")
+	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
 	flag.Parse()
 
-	log, err := test.CreateLogger(logFile)
+	Ctx.log, err = test.CreateLogger(logFile)
 	if err != nil {
 		panic(err)
 	}
 	// TODO: Sync the log on exit
+
+	log := Ctx.log
 
 	log.Infof("Using config file %q", configFile)
 	log.Infof("Using log file %q", logFile)
@@ -43,11 +54,13 @@ func TestMain(m *testing.M) {
 		Deployers: deployers.AvailableNames(),
 		Workloads: workloads.AvailableNames(),
 	}
-	if err := config.ReadConfig(configFile, options); err != nil {
+
+	Ctx.config, err = config.ReadConfig(configFile, options)
+	if err != nil {
 		log.Fatalf("Failed to read config: %s", err)
 	}
 
-	util.Ctx, err = util.NewContext(log)
+	Ctx.env, err = env.New(Ctx.config, Ctx.log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}

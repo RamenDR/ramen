@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -19,8 +18,8 @@ func (d DiscoveredApp) GetName() string {
 	return "disapp"
 }
 
-func (d DiscoveredApp) GetNamespace() string {
-	return config.GetNamespaces().RamenOpsNamespace
+func (d DiscoveredApp) GetNamespace(ctx types.Context) string {
+	return ctx.Config().Namespaces.RamenOpsNamespace
 }
 
 // Deploy creates a workload on the first managed cluster.
@@ -28,8 +27,11 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
+	// Deploys app on DRCluster(c1)
+	clusterC1 := ctx.Env().C1
+
 	// create namespace in both dr clusters
-	if err := util.CreateNamespaceAndAddAnnotation(appNamespace, log); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log); err != nil {
 		return err
 	}
 
@@ -45,16 +47,11 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
-	if err != nil {
-		return err
-	}
-
 	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q",
-		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+		appNamespace, ctx.Workload().GetAppName(), clusterC1.Name)
 
 	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", appNamespace,
-		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
+		"--context", clusterC1.Name, "--timeout=5m")
 
 	if out, err := cmd.Output(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -64,7 +61,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	if err = WaitWorkloadHealth(ctx, util.Ctx.C1, appNamespace); err != nil {
+	if err = WaitWorkloadHealth(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
 
@@ -76,9 +73,10 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 // Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
+	config := ctx.Config()
 	appNamespace := ctx.AppNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.DRPolicy)
 	if err != nil {
 		return err
 	}
@@ -96,11 +94,11 @@ func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	}
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(util.Ctx.C1, appNamespace, log); err != nil {
+	if err := util.DeleteNamespace(ctx.Env().C1, appNamespace, log); err != nil {
 		return err
 	}
 
-	if err := util.DeleteNamespace(util.Ctx.C2, appNamespace, log); err != nil {
+	if err := util.DeleteNamespace(ctx.Env().C2, appNamespace, log); err != nil {
 		return err
 	}
 

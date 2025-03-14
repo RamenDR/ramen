@@ -4,11 +4,11 @@
 package deployers
 
 import (
-	"github.com/ramendr/ramen/e2e/config"
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
+
+	"github.com/ramendr/ramen/e2e/types"
+	"github.com/ramendr/ramen/e2e/util"
 )
 
 type Subscription struct{}
@@ -17,7 +17,7 @@ func (s Subscription) GetName() string {
 	return "subscr"
 }
 
-func (s Subscription) GetNamespace() string {
+func (s Subscription) GetNamespace(_ types.Context) string {
 	// No special namespaces.
 	return ""
 }
@@ -32,28 +32,27 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	// Address namespace/label/suffix as needed for various resources
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	drpolicy, err := util.GetDRPolicy(util.Ctx.Hub, config.GetDRPolicyName())
-	if err != nil {
-		return err
-	}
+	// Deploys app on DRCluster(c1)
+	clusterC1 := ctx.Env().C1
 
 	log.Infof("Deploying subscription app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterC1.Name)
 
 	// create subscription namespace
-	err = util.CreateNamespace(util.Ctx.Hub, managementNamespace, log)
+	err := util.CreateNamespace(ctx.Env().Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}
 
-	err = CreateManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	err = CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, managementNamespace, drpolicy.Spec.DRClusters[0])
+	err = CreatePlacement(ctx, name, managementNamespace, clusterC1.Name)
 	if err != nil {
 		return err
 	}
@@ -77,9 +76,10 @@ func (s Subscription) Deploy(ctx types.Context) error {
 func (s Subscription) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(util.Ctx.Hub, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -102,12 +102,12 @@ func (s Subscription) Undeploy(ctx types.Context) error {
 		return err
 	}
 
-	err = DeleteManagedClusterSetBinding(ctx, config.GetClusterSetName(), managementNamespace)
+	err = DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	err = util.DeleteNamespace(util.Ctx.Hub, managementNamespace, log)
+	err = util.DeleteNamespace(ctx.Env().Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}

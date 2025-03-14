@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/types"
-	"go.uber.org/zap"
 )
 
 // Make it easier to manage namespaces created by the tests.
@@ -21,16 +22,26 @@ type Context struct {
 	workload types.Workload
 	deployer types.Deployer
 	name     string
+	env      *types.Env
+	config   *types.Config
 	logger   *zap.SugaredLogger
 }
 
-func NewContext(w types.Workload, d types.Deployer, log *zap.SugaredLogger) Context {
+func NewContext(
+	w types.Workload,
+	d types.Deployer,
+	env *types.Env,
+	config *types.Config,
+	log *zap.SugaredLogger,
+) Context {
 	name := strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 
 	return Context{
 		workload: w,
 		deployer: d,
 		name:     name,
+		env:      env,
+		config:   config,
 		logger:   log.Named(name),
 	}
 }
@@ -48,7 +59,7 @@ func (c *Context) Name() string {
 }
 
 func (c *Context) ManagementNamespace() string {
-	if ns := c.deployer.GetNamespace(); ns != "" {
+	if ns := c.deployer.GetNamespace(c); ns != "" {
 		return ns
 	}
 
@@ -61,6 +72,14 @@ func (c *Context) AppNamespace() string {
 
 func (c *Context) Logger() *zap.SugaredLogger {
 	return c.logger
+}
+
+func (c *Context) Env() *types.Env {
+	return c.env
+}
+
+func (c *Context) Config() *types.Config {
+	return c.config
 }
 
 // Validated return an error if the combination of deployer and workload is not supported.
