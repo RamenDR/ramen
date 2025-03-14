@@ -115,3 +115,42 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q in cluster %q",
 		labelSelector, podIdentifier, namespace, cluster.Name)
 }
+
+// ValidateClustersInDRPolicy checks if c1 and c2 exists in the DRPolicy.
+// Returns an error if either cluster is missing.
+func ValidateClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	// Get DRPolicy
+	drpolicy, err := GetDRPolicy(env.Hub, config.DRPolicy)
+	if err != nil {
+		return err
+	}
+
+	// Retrieve cluster names from env
+	c1Name := env.C1.Name
+	c2Name := env.C2.Name
+
+	// Function to check if a cluster exists in drpolicy.Spec.DRClusters
+	clusterExists := func(clusterName string) bool {
+		for _, cluster := range drpolicy.Spec.DRClusters {
+			if cluster == clusterName {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	if !clusterExists(c1Name) {
+		return fmt.Errorf("cluster c1: %q is not defined in drpolicy %q, clusters in drpolicy: %s",
+			c1Name, config.DRPolicy, strings.Join(drpolicy.Spec.DRClusters, ", "))
+	}
+
+	if !clusterExists(c2Name) {
+		return fmt.Errorf("cluster c2: %q is not defined in drpolicy %q, clusters in drpolicy: %s",
+			c2Name, config.DRPolicy, strings.Join(drpolicy.Spec.DRClusters, ", "))
+	}
+
+	log.Infof("Validated clusters c1 %q and c2 %q in DRPolicy %q", c1Name, c2Name, config.DRPolicy)
+
+	return nil
+}

@@ -21,6 +21,10 @@ func TestDR(dt *testing.T) {
 		t.Fatal("No tests found in the configuration file")
 	}
 
+	if err := util.ValidateClustersInDRPolicy(Ctx.env, Ctx.config, Ctx.log); err != nil {
+		t.Fatalf("Failed to validate clusters with DRPolicy: %s", err)
+	}
+
 	if err := util.EnsureChannel(Ctx.env.Hub, Ctx.config, Ctx.log); err != nil {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
