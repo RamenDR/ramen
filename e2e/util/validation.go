@@ -8,20 +8,22 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ramendr/ramen/e2e/config"
+	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-func ValidateRamenHubOperator(cluster Cluster) error {
+func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
-	pod, err := FindPod(cluster, config.GetNamespaces().RamenHubNamespace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.Namespaces.RamenHubNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -31,16 +33,16 @@ func ValidateRamenHubOperator(cluster Cluster) error {
 			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen hub operator pod %q is running in cluster %q", pod.Name, cluster.Name)
+	log.Infof("Ramen hub operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster Cluster) error {
+func ValidateRamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
-	pod, err := FindPod(cluster, config.GetNamespaces().RamenDRClusterNamespace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.Namespaces.RamenDRClusterNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -50,14 +52,14 @@ func ValidateRamenDRClusterOperator(cluster Cluster) error {
 			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
+	log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
 // It returns true if the cluster is OpenShift, false otherwise, along with any error encountered.
-func IsOpenShiftCluster(cluster Cluster) (bool, error) {
+func IsOpenShiftCluster(cluster types.Cluster) (bool, error) {
 	configList := &unstructured.Unstructured{}
 	configList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "config.openshift.io",
@@ -82,7 +84,7 @@ func IsOpenShiftCluster(cluster Cluster) (bool, error) {
 }
 
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
-func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
+func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
 ) {
 	ls, err := labels.Parse(labelSelector)
@@ -112,4 +114,43 @@ func FindPod(cluster Cluster, namespace, labelSelector, podIdentifier string) (
 
 	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q in cluster %q",
 		labelSelector, podIdentifier, namespace, cluster.Name)
+}
+
+// ValidateClustersInDRPolicy checks if c1 and c2 exists in the DRPolicy.
+// Returns an error if either cluster is missing.
+func ValidateClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	// Get DRPolicy
+	drpolicy, err := GetDRPolicy(env.Hub, config.DRPolicy)
+	if err != nil {
+		return err
+	}
+
+	// Retrieve cluster names from env
+	c1Name := env.C1.Name
+	c2Name := env.C2.Name
+
+	// Function to check if a cluster exists in drpolicy.Spec.DRClusters
+	clusterExists := func(clusterName string) bool {
+		for _, cluster := range drpolicy.Spec.DRClusters {
+			if cluster == clusterName {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	if !clusterExists(c1Name) {
+		return fmt.Errorf("cluster c1: %q is not defined in drpolicy %q, clusters in drpolicy: %s",
+			c1Name, config.DRPolicy, strings.Join(drpolicy.Spec.DRClusters, ", "))
+	}
+
+	if !clusterExists(c2Name) {
+		return fmt.Errorf("cluster c2: %q is not defined in drpolicy %q, clusters in drpolicy: %s",
+			c2Name, config.DRPolicy, strings.Join(drpolicy.Spec.DRClusters, ", "))
+	}
+
+	log.Infof("Validated clusters c1 %q and c2 %q in DRPolicy %q", c1Name, c2Name, config.DRPolicy)
+
+	return nil
 }

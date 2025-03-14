@@ -7,22 +7,22 @@ import (
 	"context"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	clusterv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/yaml"
+
+	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-func updatePlacement(cluster util.Cluster, placement *clusterv1beta1.Placement) error {
+func updatePlacement(cluster types.Cluster, placement *clusterv1beta1.Placement) error {
 	return cluster.Client.Update(context.Background(), placement)
 }
 
-func getDRPC(cluster util.Cluster, namespace, name string) (*ramen.DRPlacementControl, error) {
+func getDRPC(cluster types.Cluster, namespace, name string) (*ramen.DRPlacementControl, error) {
 	drpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
@@ -34,16 +34,17 @@ func getDRPC(cluster util.Cluster, namespace, name string) (*ramen.DRPlacementCo
 	return drpc, nil
 }
 
-func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacementControl) error {
+func createDRPC(ctx types.Context, drpc *ramen.DRPlacementControl) error {
 	log := ctx.Logger()
+	hub := ctx.Env().Hub
 
-	err := cluster.Client.Create(context.Background(), drpc)
+	err := hub.Client.Create(context.Background(), drpc)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		log.Debugf("drpc \"%s/%s\" already exist in cluster %q", drpc.Namespace, drpc.Name, cluster.Name)
+		log.Debugf("drpc \"%s/%s\" already exist in cluster %q", drpc.Namespace, drpc.Name, hub.Name)
 	}
 
 	spec, err := yaml.Marshal(drpc.Spec)
@@ -52,37 +53,38 @@ func createDRPC(ctx types.Context, cluster util.Cluster, drpc *ramen.DRPlacement
 	}
 
 	log.Debugf("Created drpc \"%s/%s\" in cluster %q with spec:\n%s",
-		drpc.Namespace, drpc.Name, cluster.Name, string(spec))
+		drpc.Namespace, drpc.Name, hub.Name, string(spec))
 
 	return nil
 }
 
-func updateDRPC(cluster util.Cluster, drpc *ramen.DRPlacementControl) error {
+func updateDRPC(cluster types.Cluster, drpc *ramen.DRPlacementControl) error {
 	return cluster.Client.Update(context.Background(), drpc)
 }
 
-func deleteDRPC(ctx types.Context, cluster util.Cluster, namespace, name string) error {
+func deleteDRPC(ctx types.Context, namespace, name string) error {
 	log := ctx.Logger()
+	hub := ctx.Env().Hub
 
 	objDrpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := cluster.Client.Get(context.Background(), key, objDrpc)
+	err := hub.Client.Get(context.Background(), key, objDrpc)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
-		log.Debugf("drpc \"%s/%s\" not found in cluster %q", namespace, name, cluster.Name)
+		log.Debugf("drpc \"%s/%s\" not found in cluster %q", namespace, name, hub.Name)
 
 		return nil
 	}
 
-	if err := cluster.Client.Delete(context.Background(), objDrpc); err != nil {
+	if err := hub.Client.Delete(context.Background(), objDrpc); err != nil {
 		return err
 	}
 
-	log.Debugf("Deleted drpc \"%s/%s\" in cluster %q", namespace, name, cluster.Name)
+	log.Debugf("Deleted drpc \"%s/%s\" in cluster %q", namespace, name, hub.Name)
 
 	return nil
 }
@@ -139,16 +141,16 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Create(context.Background(), placement)
+	err := ctx.Env().Hub.Client.Create(context.Background(), placement)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		log.Debugf("Placement \"%s/%s\" already Exists in cluster %q", namespace, name, util.Ctx.Hub.Name)
+		log.Debugf("Placement \"%s/%s\" already Exists in cluster %q", namespace, name, ctx.Env().Hub.Name)
 	}
 
-	log.Debugf("Created placement \"%s/%s\" in cluster %q", namespace, name, util.Ctx.Hub.Name)
+	log.Debugf("Created placement \"%s/%s\" in cluster %q", namespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
