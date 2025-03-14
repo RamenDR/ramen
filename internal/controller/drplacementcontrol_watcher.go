@@ -300,13 +300,16 @@ func DRClusterUpdateOfInterest(oldDRCluster, newDRCluster *rmn.DRCluster) bool {
 }
 
 // RequiresDRPCReconciliation determines if the updated DRPolicy resource, compared to the previous version,
-// requires reconciliation of the DRPCs. Reconciliation is needed if the DRPolicy has been newly activated.
+// requires reconciliation of the DRPCs. Reconciliation is needed if the DRPolicy has been newly activated, or
+// peerClasses have been updated in the DRPolicy status.
 // This check helps avoid delays in reconciliation by ensuring timely updates when necessary.
 func RequiresDRPCReconciliation(oldDRPolicy, newDRPolicy *rmn.DRPolicy) bool {
 	err1 := rmnutil.DrpolicyValidated(oldDRPolicy)
 	err2 := rmnutil.DrpolicyValidated(newDRPolicy)
 
-	return err1 != err2
+	return err1 != err2 ||
+		!reflect.DeepEqual(oldDRPolicy.Status.Async.PeerClasses, newDRPolicy.Status.Async.PeerClasses) ||
+		!reflect.DeepEqual(oldDRPolicy.Status.Sync.PeerClasses, newDRPolicy.Status.Sync.PeerClasses)
 }
 
 // checkFailoverActivation checks if provided provisioner and storage instance is activated as per the
