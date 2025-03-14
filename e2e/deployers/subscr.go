@@ -35,16 +35,14 @@ func (s Subscription) Deploy(ctx types.Context) error {
 	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.DRPolicy)
-	if err != nil {
-		return err
-	}
+	// Deploys app on DRCluster(c1)
+	clusterC1 := ctx.Env().C1
 
 	log.Infof("Deploying subscription app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterC1.Name)
 
 	// create subscription namespace
-	err = util.CreateNamespace(ctx.Env().Hub, managementNamespace, log)
+	err := util.CreateNamespace(ctx.Env().Hub, managementNamespace, log)
 	if err != nil {
 		return err
 	}
@@ -54,7 +52,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, managementNamespace, drpolicy.Spec.DRClusters[0])
+	err = CreatePlacement(ctx, name, managementNamespace, clusterC1.Name)
 	if err != nil {
 		return err
 	}

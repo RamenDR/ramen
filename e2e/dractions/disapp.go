@@ -25,6 +25,9 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
+	// Protects app deployed on DRCluster(c1)
+	clusterC1 := ctx.Env().C1
+
 	// create mcsb default in ramen-ops ns
 	if err := deployers.CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace); err != nil {
 		return err
@@ -35,24 +38,16 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	// create drpc
-	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, drPolicyName)
-	if err != nil {
-		return err
-	}
-
-	clusterName := drpolicy.Spec.DRClusters[0]
-
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterC1.Name)
 
 	drpc := generateDRPCDiscoveredApps(
-		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
-	if err = createDRPC(ctx, drpc); err != nil {
+		name, managementNamespace, clusterC1.Name, drPolicyName, placementName, appname, appNamespace)
+	if err := createDRPC(ctx, drpc); err != nil {
 		return err
 	}
 
 	// wait for drpc ready
-	err = waitDRPCReady(ctx, managementNamespace, drpcName)
+	err := waitDRPCReady(ctx, managementNamespace, drpcName)
 	if err != nil {
 		return err
 	}
