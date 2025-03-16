@@ -46,7 +46,7 @@ def dump_e2e_config(env):
         if cluster_name is None:
             continue
 
-        # Create standlone config file for this cluster.
+        # Create a self-contained config file for this cluster.
         data = kubectl.config("view", "--flatten", "--minify", context=cluster_name)
         kubeconfig = os.path.join(kubeconfigs_dir, cluster_name)
         with open(kubeconfig, "w") as f:
