@@ -11,13 +11,15 @@ import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 // GetCurrentCluster returns the name of the cluster where the workload is currently placed,
 // based on the PlacementDecision for the given Placement resource.
 // Assumes the PlacementDecision exists with a Decision.
 // Not applicable for discovered apps before enabling protection, as no Placement exists.
-func GetCurrentCluster(cluster Cluster, namespace string, placementName string) (string, error) {
+func GetCurrentCluster(cluster types.Cluster, namespace string, placementName string) (string, error) {
 	placementDecision, err := waitPlacementDecision(cluster, namespace, placementName)
 	if err != nil {
 		return "", err
@@ -26,7 +28,7 @@ func GetCurrentCluster(cluster Cluster, namespace string, placementName string) 
 	return placementDecision.Status.Decisions[0].ClusterName, nil
 }
 
-func GetPlacement(cluster Cluster, namespace, name string) (*v1beta1.Placement, error) {
+func GetPlacement(cluster types.Cluster, namespace, name string) (*v1beta1.Placement, error) {
 	placement := &v1beta1.Placement{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
@@ -39,7 +41,7 @@ func GetPlacement(cluster Cluster, namespace, name string) (*v1beta1.Placement, 
 }
 
 // waitPlacementDecision waits until we have a placement decision and returns the placement decision object.
-func waitPlacementDecision(cluster Cluster, namespace string, placementName string,
+func waitPlacementDecision(cluster types.Cluster, namespace string, placementName string,
 ) (*v1beta1.PlacementDecision, error) {
 	startTime := time.Now()
 
@@ -66,7 +68,7 @@ func waitPlacementDecision(cluster Cluster, namespace string, placementName stri
 	}
 }
 
-func getPlacementDecisionFromPlacement(cluster Cluster, placement *v1beta1.Placement,
+func getPlacementDecisionFromPlacement(cluster types.Cluster, placement *v1beta1.Placement,
 ) (*v1beta1.PlacementDecision, error) {
 	matchLabels := map[string]string{
 		v1beta1.PlacementLabel: placement.GetName(),

@@ -14,33 +14,32 @@ import (
 )
 
 func TestDR(dt *testing.T) {
-	t := test.WithLog(dt, util.Ctx.Log)
+	t := test.WithLog(dt, Ctx.log)
 	t.Parallel()
 
-	tests := config.GetTests()
-	if len(tests) == 0 {
+	if len(Ctx.config.Tests) == 0 {
 		t.Fatal("No tests found in the configuration file")
 	}
 
-	if err := util.EnsureChannel(); err != nil {
+	if err := util.EnsureChannel(Ctx.env.Hub, Ctx.config, Ctx.log); err != nil {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
 	t.Cleanup(func() {
-		if err := util.EnsureChannelDeleted(); err != nil {
+		if err := util.EnsureChannelDeleted(Ctx.env.Hub, Ctx.config, Ctx.log); err != nil {
 			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
 	})
 
-	pvcSpecs := config.GetPVCSpecs()
+	pvcSpecs := config.PVCSpecsMap(Ctx.config)
 
-	for _, tc := range tests {
+	for _, tc := range Ctx.config.Tests {
 		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
 		if !ok {
 			panic("unknown pvcSpec")
 		}
 
-		workload, err := workloads.New(tc.Workload, config.GetGitBranch(), pvcSpec)
+		workload, err := workloads.New(tc.Workload, Ctx.config.Repo.Branch, pvcSpec)
 		if err != nil {
 			panic(err)
 		}
@@ -50,7 +49,7 @@ func TestDR(dt *testing.T) {
 			panic(err)
 		}
 
-		ctx := test.NewContext(workload, deployer, util.Ctx.Log)
+		ctx := test.NewContext(workload, deployer, Ctx.env, Ctx.config, Ctx.log)
 		t.Run(ctx.Name(), func(dt *testing.T) {
 			t := test.WithLog(dt, ctx.Logger())
 			t.Parallel()

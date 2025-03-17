@@ -9,11 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ramendr/ramen/e2e/config"
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 const (
@@ -25,10 +24,10 @@ const (
 type Deployment struct {
 	Name    string
 	Branch  string
-	PVCSpec config.PVCSpec
+	PVCSpec types.PVCSpecConfig
 }
 
-func NewDeployment(branch string, pvcSpec config.PVCSpec) types.Workload {
+func NewDeployment(branch string, pvcSpec types.PVCSpecConfig) types.Workload {
 	return &Deployment{
 		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
 		Branch:  branch,
@@ -91,7 +90,7 @@ func (w Deployment) GetResources() error {
 }
 
 // Check the workload health deployed in a cluster namespace
-func (w Deployment) Health(ctx types.Context, cluster util.Cluster, namespace string) error {
+func (w Deployment) Health(ctx types.Context, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
 	deploy, err := getDeployment(cluster, namespace, w.GetAppName())
@@ -108,7 +107,7 @@ func (w Deployment) Health(ctx types.Context, cluster util.Cluster, namespace st
 	return nil
 }
 
-func getDeployment(cluster util.Cluster, namespace, name string) (*appsv1.Deployment, error) {
+func getDeployment(cluster types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 

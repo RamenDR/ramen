@@ -35,29 +35,29 @@ def dump_e2e_config(env):
     kubeconfigs_dir = os.path.join(base, "kubeconfigs")
     os.makedirs(kubeconfigs_dir, exist_ok=True)
 
-    e2e_config = {"Clusters": {}}
-
     # Map e2e cluster names to actual cluster names.
     clusters = zip(
         [env["ramen"]["hub"], *env["ramen"]["clusters"]],
         ["hub", "c1", "c2"],
     )
 
+    e2e_clusters = {}
     for cluster_name, e2e_name in clusters:
         if cluster_name is None:
             continue
 
-        # Create standlone config file for this cluster.
+        # Create a self-contained config file for this cluster.
         data = kubectl.config("view", "--flatten", "--minify", context=cluster_name)
-        path = os.path.join(kubeconfigs_dir, cluster_name)
-        with open(path, "w") as f:
+        kubeconfig = os.path.join(kubeconfigs_dir, cluster_name)
+        with open(kubeconfig, "w") as f:
             f.write(data)
 
-        e2e_config["Clusters"][e2e_name] = {
+        e2e_clusters[e2e_name] = {
             "name": cluster_name,
-            "kubeconfigpath": path,
+            "kubeconfig": kubeconfig,
         }
 
+    e2e_config = {"clusters": e2e_clusters}
     path = os.path.join(base, "config.yaml")
     with open(path, "w") as f:
         yaml.dump(e2e_config, f)

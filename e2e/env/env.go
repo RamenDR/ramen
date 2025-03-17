@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package env
 
 import (
 	"fmt"
@@ -20,24 +20,11 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	"github.com/ramendr/ramen/e2e/config"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
-
-type Cluster struct {
-	Name   string
-	Client client.Client
-}
-
-type Context struct {
-	Log *zap.SugaredLogger
-	Hub Cluster
-	C1  Cluster
-	C2  Cluster
-}
-
-var Ctx *Context
 
 const (
 	defaultHubClusterName = "hub"
@@ -98,46 +85,43 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 	return client, nil
 }
 
-func NewContext(log *zap.SugaredLogger) (*Context, error) {
+func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	var err error
 
-	ctx := new(Context)
-	ctx.Log = log
+	env := &types.Env{}
 
-	clusters := config.GetClusters()
-
-	ctx.Hub.Name = clusters["hub"].Name
-	if ctx.Hub.Name == "" {
-		ctx.Hub.Name = defaultHubClusterName
+	env.Hub.Name = config.Clusters["hub"].Name
+	if env.Hub.Name == "" {
+		env.Hub.Name = defaultHubClusterName
 		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
 	}
 
-	ctx.Hub.Client, err = setupClient(clusters["hub"].KubeconfigPath)
+	env.Hub.Client, err = setupClient(config.Clusters["hub"].Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
-	ctx.C1.Name = clusters["c1"].Name
-	if ctx.C1.Name == "" {
-		ctx.C1.Name = defaultC1ClusterName
+	env.C1.Name = config.Clusters["c1"].Name
+	if env.C1.Name == "" {
+		env.C1.Name = defaultC1ClusterName
 		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
 	}
 
-	ctx.C1.Client, err = setupClient(clusters["c1"].KubeconfigPath)
+	env.C1.Client, err = setupClient(config.Clusters["c1"].Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
 	}
 
-	ctx.C2.Name = clusters["c2"].Name
-	if ctx.C2.Name == "" {
-		ctx.C2.Name = defaultC2ClusterName
+	env.C2.Name = config.Clusters["c2"].Name
+	if env.C2.Name == "" {
+		env.C2.Name = defaultC2ClusterName
 		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
 	}
 
-	ctx.C2.Client, err = setupClient(clusters["c2"].KubeconfigPath)
+	env.C2.Client, err = setupClient(config.Clusters["c2"].Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
 	}
 
-	return ctx, nil
+	return env, nil
 }

@@ -54,13 +54,13 @@ tests:
 # Sample cluster configurations:
 # Uncomment and edit the following lines to set cluster names
 # and their kubeconfig paths for the hub and managed clusters.
-# Clusters:
+# clusters:
 #   hub:
 #     name: hub
-#     kubeconfigpath: /path/to/kubeconfig/hub
+#     kubeconfig: hub/config
 #   c1:
 #     name: dr1
-#     kubeconfigpath: /path/to/kubeconfig/dr1
+#     kubeconfig: dr1/config
 #   c2:
 #     name: dr2
-#     kubeconfigpath: /path/to/kubeconfig/dr2
+#     kubeconfig: dr2/config
