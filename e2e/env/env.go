@@ -86,50 +86,66 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 }
 
 func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
-	var err error
-
 	env := &types.Env{}
 
-	env.Hub.Name = config.Clusters["hub"].Name
-	if env.Hub.Name == "" {
-		env.Hub.Name = defaultHubClusterName
-		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
+	if err := setupHub(&env.Hub, config.Clusters["hub"], defaultHubClusterName, log); err != nil {
+		return nil, fmt.Errorf("failed to setup hub cluster \"hub\": %w", err)
 	}
 
-	env.Hub.Client, err = setupClient(config.Clusters["hub"].Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
+	if err := setupManagedCluster(&env.C1, config.Clusters["c1"], defaultC1ClusterName, log); err != nil {
+		return nil, fmt.Errorf("failed to setup managed cluster \"c1\": %w", err)
 	}
 
-	env.Hub.Kubeconfig = config.Clusters["hub"].Kubeconfig
-
-	env.C1.Name = config.Clusters["c1"].Name
-	if env.C1.Name == "" {
-		env.C1.Name = defaultC1ClusterName
-		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
+	if err := setupManagedCluster(&env.C2, config.Clusters["c2"], defaultC2ClusterName, log); err != nil {
+		return nil, fmt.Errorf("failed to setup managed cluster \"c2\": %w", err)
 	}
-
-	env.C1.Client, err = setupClient(config.Clusters["c1"].Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
-	}
-
-	env.C1.Kubeconfig = config.Clusters["c1"].Kubeconfig
-
-	env.C2.Name = config.Clusters["c2"].Name
-	if env.C2.Name == "" {
-		env.C2.Name = defaultC2ClusterName
-		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
-	}
-
-	env.C2.Client, err = setupClient(config.Clusters["c2"].Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
-	}
-
-	env.C2.Kubeconfig = config.Clusters["c2"].Kubeconfig
 
 	return env, nil
+}
+
+func setupHub(
+	cluster *types.Cluster, clusterConfig types.ClusterConfig,
+	defaultName string, log *zap.SugaredLogger,
+) error {
+	var err error
+
+	cluster.Client, err = setupClient(clusterConfig.Kubeconfig)
+	if err != nil {
+		return fmt.Errorf("failed to create client for hub cluster: %w", err)
+	}
+
+	cluster.Kubeconfig = clusterConfig.Kubeconfig
+
+	cluster.Name = clusterConfig.Name
+	if cluster.Name == "" {
+		cluster.Name = defaultName
+		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultName)
+	}
+
+	return nil
+}
+
+func setupManagedCluster(
+	cluster *types.Cluster, clusterConfig types.ClusterConfig,
+	defaultName string, log *zap.SugaredLogger,
+) error {
+	var err error
+
+	cluster.Client, err = setupClient(clusterConfig.Kubeconfig)
+	if err != nil {
+		return fmt.Errorf("failed to create client for managed cluster: %w", err)
+	}
+
+	cluster.Kubeconfig = clusterConfig.Kubeconfig
+
+	// TODO: Automatically get the managed cluster names
+	cluster.Name = clusterConfig.Name
+	if cluster.Name == "" {
+		cluster.Name = defaultName
+		log.Infof("Managed cluster name not set, using default name %q", defaultName)
+	}
+
+	return nil
 }
 
 // GetCluster returns the cluster from the env that matches clusterName.
