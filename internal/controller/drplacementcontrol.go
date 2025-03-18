@@ -1573,13 +1573,39 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	return d.mwu.UpdateVRGManifestWork(vrg, mw)
 }
 
+// equalClusterIDSlices compares 2 slices of clusterID strings and reports true if both contain the same clusterIDs.
+// This is not a generic routine that can be used for any pair of string slices for equality checks, as a case of,
+// - ["a", "b", "b"] compared to ["b", "a", "a"], would return true
+// It is used for clusterIDs with the limitation, because clusterIDs are based on UUIDs and collision has ignorable
+// probability
+func equalClusterIDSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for _, v := range b {
+		if !slices.Contains(a, v) {
+			return false
+		}
+	}
+
+	// check the other way to ensure there are no extra elements in a that are not contained in b
+	for _, v := range a {
+		if !slices.Contains(b, v) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
 // a replicationID then the from should also claim a replicationID, else both should not. This ensures that a peerClass
 // is updated with latest storage/replication IDs, but only if the underlying replication scheme remains unchanged.
 func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, scName string) {
 	for toIdx := range to {
 		if (to[toIdx].StorageClassName != scName) ||
-			(!slices.Equal(to[toIdx].ClusterIDs, from.ClusterIDs)) {
+			(!equalClusterIDSlices(to[toIdx].ClusterIDs, from.ClusterIDs)) {
 			continue
 		}
 
@@ -1607,7 +1633,7 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 func hasPeerClass(vrgPeerClasses []rmn.PeerClass, scName string, clusterIDs []string) bool {
 	for peerClassVRGIdx := range vrgPeerClasses {
 		if (vrgPeerClasses[peerClassVRGIdx].StorageClassName == scName) &&
-			(slices.Equal(vrgPeerClasses[peerClassVRGIdx].ClusterIDs, clusterIDs)) {
+			(equalClusterIDSlices(vrgPeerClasses[peerClassVRGIdx].ClusterIDs, clusterIDs)) {
 			return true
 		}
 	}
