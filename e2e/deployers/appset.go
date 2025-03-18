@@ -15,7 +15,6 @@ type ApplicationSet struct{}
 func (a ApplicationSet) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
 	// Deploys the application on the first DR cluster (c1).
@@ -24,12 +23,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 	log.Infof("Deploying applicationset app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 
-	err := CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	err = CreatePlacement(ctx, name, managementNamespace, cluster.Name)
+	err := CreatePlacement(ctx, name, managementNamespace, cluster.Name)
 	if err != nil {
 		return err
 	}
@@ -53,7 +47,6 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
 	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
@@ -82,20 +75,6 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	err = DeletePlacement(ctx, name, managementNamespace)
 	if err != nil {
 		return err
-	}
-
-	// multiple appsets could use the same mcsb in argocd ns.
-	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(ctx, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	if lastAppset {
-		err = DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
-		if err != nil {
-			return err
-		}
 	}
 
 	log.Info("Workload undeployed")
