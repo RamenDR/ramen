@@ -7,6 +7,7 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 
 	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,6 +26,11 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 	placementName := name
 	drpcName := name
 
+	// We assume that the application is on the first cluster (c1).
+	// This is correct only for the current test flow.
+	// TODO: must discover where the application is located instead.
+	cluster := ctx.Env().C1
+
 	// create mcsb default in ramen-ops ns
 	if err := deployers.CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace); err != nil {
 		return err
@@ -35,24 +41,16 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 		return err
 	}
 
-	// create drpc
-	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, drPolicyName)
-	if err != nil {
-		return err
-	}
-
-	clusterName := drpolicy.Spec.DRClusters[0]
-
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
 
 	drpc := generateDRPCDiscoveredApps(
-		name, managementNamespace, clusterName, drPolicyName, placementName, appname, appNamespace)
-	if err = createDRPC(ctx, drpc); err != nil {
+		name, managementNamespace, cluster.Name, drPolicyName, placementName, appname, appNamespace)
+	if err := createDRPC(ctx, drpc); err != nil {
 		return err
 	}
 
 	// wait for drpc ready
-	err = waitDRPCReady(ctx, managementNamespace, drpcName)
+	err := waitDRPCReady(ctx, managementNamespace, drpcName)
 	if err != nil {
 		return err
 	}
@@ -119,18 +117,10 @@ func failoverRelocateDiscoveredApps(
 	targetCluster string,
 ) error {
 	name := ctx.Name()
-	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
 	drpcName := name
-
-	drPolicyName := config.DRPolicy
-
-	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, drPolicyName)
-	if err != nil {
-		return err
-	}
 
 	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
@@ -142,7 +132,7 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	// delete pvc and deployment from dr cluster
-	if err = deployers.DeleteDiscoveredApps(ctx, appNamespace, currentCluster); err != nil {
+	if err := deployers.DeleteDiscoveredApps(ctx, appNamespace, currentCluster); err != nil {
 		return err
 	}
 
@@ -154,7 +144,10 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	drCluster := getDRCluster(ctx, targetCluster, drpolicy)
+	drCluster, err := env.GetCluster(ctx.Env(), targetCluster)
+	if err != nil {
+		return err
+	}
 
 	return deployers.WaitWorkloadHealth(ctx, drCluster, appNamespace)
 }

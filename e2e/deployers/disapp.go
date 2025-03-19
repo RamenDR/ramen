@@ -25,8 +25,10 @@ func (d DiscoveredApp) GetNamespace(ctx types.Context) string {
 // Deploy creates a workload on the first managed cluster.
 func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	log := ctx.Logger()
-	config := ctx.Config()
 	appNamespace := ctx.AppNamespace()
+
+	// Deploys the application on the first DR cluster (c1).
+	cluster := ctx.Env().C1
 
 	// create namespace in both dr clusters
 	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log); err != nil {
@@ -45,16 +47,11 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.DRPolicy)
-	if err != nil {
-		return err
-	}
-
 	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q",
-		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+		appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", appNamespace,
-		"--context", drpolicy.Spec.DRClusters[0], "--timeout=5m")
+		"--context", cluster.Name, "--timeout=5m")
 
 	if out, err := cmd.Output(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {

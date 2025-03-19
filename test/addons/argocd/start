@@ -21,7 +21,7 @@ def wait_for_clusters(clusters):
 
 def deploy_argocd(cluster):
     print("Deploying argocd")
-    path = cache.get(".", "addons/argocd-2.11.yaml")
+    path = cache.get(".", "addons/argocd-2.11-1.yaml")
     kubectl.apply("--filename", path, "--namespace", "argocd", context=cluster)
 
 

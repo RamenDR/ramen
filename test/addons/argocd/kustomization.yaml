@@ -5,6 +5,7 @@
 ---
 resources:
   - argocd-ns.yaml
+  - argocd-mcsb.yaml
   - https://raw.githubusercontent.com/argoproj/argo-cd/release-2.11/manifests/install.yaml
 
 # In argocd appset DR e2e test, an appset CR will be created that uses placementdecision
