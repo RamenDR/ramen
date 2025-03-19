@@ -13,7 +13,7 @@ kind: VolumeSnapshotClass
 metadata:
   name: csi-cephfsplugin-snapclass
   labels:
-    ramendr.openshift.io/storageid: rook-cephfs-$cluster-1
+    ramendr.openshift.io/storageid: $scname-$cluster-1
 parameters:
   clusterID: rook-ceph
   csi.storage.k8s.io/snapshotter-secret-name: rook-csi-cephfs-provisioner

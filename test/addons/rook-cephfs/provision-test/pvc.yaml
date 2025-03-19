@@ -8,8 +8,8 @@ metadata:
   name: cephfs-pvc
 spec:
   accessModes:
-  - ReadWriteMany
+    - ReadWriteMany
   resources:
     requests:
       storage: 1Gi
-  storageClassName: rook-cephfs-test-fs1
+  storageClassName: rook-cephfs-fs1

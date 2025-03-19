@@ -9,67 +9,75 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8stypes "k8s.io/apimachinery/pkg/types"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-func CreateNamespace(client client.Client, namespace string) error {
+// Namespace annotation for volsync to grant elevated permissions for mover pods
+// More info: https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
+const volsyncPrivilegedMovers = "volsync.backube/privileged-movers"
+
+func CreateNamespace(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 		},
 	}
 
-	err := client.Create(context.Background(), ns)
+	err := cluster.Client.Create(context.Background(), ns)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
+
+		log.Debugf("Namespace %q already exist in cluster %q", namespace, cluster.Name)
 	}
+
+	log.Debugf("Created namespace %q in cluster %q", namespace, cluster.Name)
 
 	return nil
 }
 
-func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLogger) error {
+func DeleteNamespace(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: namespace,
 		},
 	}
 
-	err := client.Delete(context.Background(), ns)
+	err := cluster.Client.Delete(context.Background(), ns)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
-		log.Infof("Namespace %q not found", namespace)
+		log.Debugf("Namespace %q not found in cluster %q", namespace, cluster.Name)
 
 		return nil
 	}
 
-	log.Infof("Waiting until namespace %q is deleted", namespace)
+	log.Debugf("Waiting until namespace %q is deleted in cluster %q", namespace, cluster.Name)
 
 	startTime := time.Now()
-	key := types.NamespacedName{Name: namespace}
+	key := k8stypes.NamespacedName{Name: namespace}
 
 	for {
-		if err := client.Get(context.Background(), key, ns); err != nil {
-			if !errors.IsNotFound(err) {
+		if err := cluster.Client.Get(context.Background(), key, ns); err != nil {
+			if !k8serrors.IsNotFound(err) {
 				return err
 			}
 
-			log.Infof("Namespace %q deleted", namespace)
+			log.Debugf("Namespace %q deleted in cluster %q", namespace, cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > 60*time.Second {
-			return fmt.Errorf("timeout deleting namespace %q", namespace)
+			return fmt.Errorf("timeout deleting namespace %q in cluster %q", namespace, cluster.Name)
 		}
 
 		time.Sleep(time.Second)
@@ -79,27 +87,27 @@ func DeleteNamespace(client client.Client, namespace string, log *zap.SugaredLog
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.
 // See this link https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 // Workaround: create ns in both drclusters and add annotation
-func CreateNamespaceAndAddAnnotation(namespace string) error {
-	if err := CreateNamespace(Ctx.C1.Client, namespace); err != nil {
+func CreateNamespaceAndAddAnnotation(env *types.Env, namespace string, log *zap.SugaredLogger) error {
+	if err := CreateNamespace(env.C1, namespace, log); err != nil {
 		return err
 	}
 
-	if err := addNamespaceAnnotationForVolSync(Ctx.C1.Client, namespace); err != nil {
+	if err := addNamespaceAnnotationForVolSync(env.C1, namespace, log); err != nil {
 		return err
 	}
 
-	if err := CreateNamespace(Ctx.C2.Client, namespace); err != nil {
+	if err := CreateNamespace(env.C2, namespace, log); err != nil {
 		return err
 	}
 
-	return addNamespaceAnnotationForVolSync(Ctx.C2.Client, namespace)
+	return addNamespaceAnnotationForVolSync(env.C2, namespace, log)
 }
 
-func addNamespaceAnnotationForVolSync(client client.Client, namespace string) error {
-	key := types.NamespacedName{Name: namespace}
+func addNamespaceAnnotationForVolSync(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
+	key := k8stypes.NamespacedName{Name: namespace}
 	objNs := &corev1.Namespace{}
 
-	if err := client.Get(context.Background(), key, objNs); err != nil {
+	if err := cluster.Client.Get(context.Background(), key, objNs); err != nil {
 		return err
 	}
 
@@ -108,8 +116,15 @@ func addNamespaceAnnotationForVolSync(client client.Client, namespace string) er
 		annotations = make(map[string]string)
 	}
 
-	annotations["volsync.backube/privileged-movers"] = "true"
+	annotations[volsyncPrivilegedMovers] = "true"
 	objNs.SetAnnotations(annotations)
 
-	return client.Update(context.Background(), objNs)
+	if err := cluster.Client.Update(context.Background(), objNs); err != nil {
+		return err
+	}
+
+	log.Debugf("Annotated namespace %q with \"%s: %s\" in cluster %q",
+		namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers], cluster.Name)
+
+	return nil
 }

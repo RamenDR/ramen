@@ -39,11 +39,6 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
-	// Total number of condition types in VRG as of now. Change this value
-	// when a new condition type is added to VRG or an existing condition
-	// type is removed from VRG status.
-	VRGTotalConditions = 4
-
 	// VolSync related conditions. These conditions are only applicable
 	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
@@ -78,15 +73,14 @@ const (
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
 )
 
-const clusterDataProtectedTrueMessage = "Kube objects protected"
+const (
+	vrgClusterDataProtectedTrueMessage         = "VRG object protected"
+	kubeObjectsClusterDataProtectedTrueMessage = "Kube objects protected"
+)
 
 // Just when VRG has been picked up for reconciliation when nothing has been
 // figured out yet.
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	if len(*conditions) == VRGTotalConditions {
-		return
-	}
-
 	time := metav1.NewTime(time.Now())
 
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -420,7 +414,7 @@ func setStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCon
 	}
 }
 
-func setStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
+func setStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) metav1.Condition {
 	if existingConditions == nil {
 		existingConditions = &[]metav1.Condition{}
 	}
@@ -430,7 +424,7 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
 		*existingConditions = append(*existingConditions, newCondition)
 
-		return
+		return newCondition
 	}
 
 	if existingCondition.Status != newCondition.Status {
@@ -455,6 +449,8 @@ func setStatusCondition(existingConditions *[]metav1.Condition, newCondition met
 		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
 		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	}
+
+	return *existingCondition
 }
 
 func findCondition(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package env
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
-	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	// Placement
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -22,22 +22,15 @@ import (
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-var ConfigFile string
-
-type Cluster struct {
-	Client ctrlClient.Client
-}
-
-type Context struct {
-	Log *zap.SugaredLogger
-	Hub Cluster
-	C1  Cluster
-	C2  Cluster
-}
-
-var Ctx *Context
+const (
+	defaultHubClusterName = "hub"
+	defaultC1ClusterName  = "c1"
+	defaultC2ClusterName  = "c2"
+)
 
 func addToScheme(scheme *runtime.Scheme) error {
 	if err := ocmv1b1.AddToScheme(scheme); err != nil {
@@ -63,7 +56,7 @@ func addToScheme(scheme *runtime.Scheme) error {
 	return ramen.AddToScheme(scheme)
 }
 
-func setupClient(kubeconfigPath string) (ctrlClient.Client, error) {
+func setupClient(kubeconfigPath string) (client.Client, error) {
 	var err error
 
 	if kubeconfigPath == "" {
@@ -84,7 +77,7 @@ func setupClient(kubeconfigPath string) (ctrlClient.Client, error) {
 		return nil, err
 	}
 
-	client, err := ctrlClient.New(cfg, ctrlClient.Options{Scheme: scheme.Scheme})
+	client, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to build controller client from kubeconfig (%s): %w", kubeconfigPath, err)
 	}
@@ -92,30 +85,43 @@ func setupClient(kubeconfigPath string) (ctrlClient.Client, error) {
 	return client, nil
 }
 
-func NewContext(log *zap.SugaredLogger, configFile string) (*Context, error) {
+func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	var err error
 
-	ctx := new(Context)
-	ctx.Log = log
+	env := &types.Env{}
 
-	if err := ReadConfig(log, configFile); err != nil {
-		panic(err)
+	env.Hub.Name = config.Clusters["hub"].Name
+	if env.Hub.Name == "" {
+		env.Hub.Name = defaultHubClusterName
+		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
 	}
 
-	ctx.Hub.Client, err = setupClient(config.Clusters["hub"].KubeconfigPath)
+	env.Hub.Client, err = setupClient(config.Clusters["hub"].Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
 	}
 
-	ctx.C1.Client, err = setupClient(config.Clusters["c1"].KubeconfigPath)
+	env.C1.Name = config.Clusters["c1"].Name
+	if env.C1.Name == "" {
+		env.C1.Name = defaultC1ClusterName
+		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
+	}
+
+	env.C1.Client, err = setupClient(config.Clusters["c1"].Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
 	}
 
-	ctx.C2.Client, err = setupClient(config.Clusters["c2"].KubeconfigPath)
+	env.C2.Name = config.Clusters["c2"].Name
+	if env.C2.Name == "" {
+		env.C2.Name = defaultC2ClusterName
+		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
+	}
+
+	env.C2.Client, err = setupClient(config.Clusters["c2"].Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
 	}
 
-	return ctx, nil
+	return env, nil
 }

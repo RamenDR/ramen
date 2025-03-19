@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package hooks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -50,7 +51,7 @@ func EvaluateCheckHook(k8sClient client.Reader, hook *kubeobjects.HookSpec, log 
 		case <-ctx.Done():
 			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
 		case <-ticker.C:
-			objs, err := getResourcesList(k8sClient, hook)
+			objs, err := getResourcesList(k8sClient, hook, log)
 			if err != nil {
 				return false, err // Some other error occurred, return it
 			}
@@ -75,7 +76,14 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 	var err error
 
 	for _, obj := range objs {
-		res, err := EvaluateCheckHookExp(hook.Chk.Condition, obj)
+		data, err := ConvertClientObjectToMap(obj)
+		if err != nil {
+			log.Info("error converting object to map", "for", hook.Name, "with error", err)
+
+			return false, err
+		}
+
+		res, err := EvaluateCheckHookExp(hook.Chk.Condition, data)
 		finalRes = finalRes && res
 
 		if err != nil {
@@ -91,7 +99,23 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 	return finalRes, err
 }
 
-func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec) ([]client.Object, error) {
+func ConvertClientObjectToMap(obj client.Object) (map[string]interface{}, error) {
+	var jsonData map[string]interface{}
+
+	jsonBytes, err := json.Marshal(obj)
+	if err != nil {
+		return jsonData, fmt.Errorf("error marshaling object %w", err)
+	}
+
+	err = json.Unmarshal(jsonBytes, &jsonData)
+	if err != nil {
+		return jsonData, fmt.Errorf("error unmarshalling object %w", err)
+	}
+
+	return jsonData, nil
+}
+
+func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) ([]client.Object, error) {
 	resourceList := make([]client.Object, 0)
 
 	var objList client.ObjectList
@@ -108,18 +132,22 @@ func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec) ([]cl
 	}
 
 	if hook.NameSelector != "" {
+		log.Info("getting resources using nameSelector", "nameSelector", hook.NameSelector)
+
 		objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sClient, hook, objList)
 		if err != nil {
-			return resourceList, err
+			return resourceList, fmt.Errorf("error getting resources using nameSelector: %w", err)
 		}
 
 		resourceList = append(resourceList, objsUsingNameSelector...)
 	}
 
 	if hook.LabelSelector != nil {
+		log.Info("getting resources using labelSelector", "labelSelector", hook.LabelSelector)
+
 		objsUsingLabelSelector, err := getResourcesUsingLabelSelector(k8sClient, hook, objList)
 		if err != nil {
-			return resourceList, err
+			return resourceList, fmt.Errorf("error getting resources using labelSelector: %w", err)
 		}
 
 		resourceList = append(resourceList, objsUsingLabelSelector...)

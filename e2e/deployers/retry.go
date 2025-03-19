@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
+
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subscriptionv1.SubscriptionPhase) error {
@@ -18,44 +18,43 @@ func waitSubscriptionPhase(ctx types.Context, namespace, name string, phase subs
 	startTime := time.Now()
 
 	for {
-		sub, err := getSubscription(util.Ctx.Hub.Client, namespace, name)
+		sub, err := getSubscription(ctx.Env().Hub, namespace, name)
 		if err != nil {
 			return err
 		}
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Infof("Subscription phase is %s", phase)
+			log.Debugf("Subscription \"%s/%s\" phase is %s in cluster %q", namespace, name, phase, ctx.Env().Hub.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("subscription %q status is not %q yet before timeout", name, phase)
+			return fmt.Errorf("subscription %q status is not %q yet before timeout in cluster %q",
+				name, phase, ctx.Env().Hub.Name)
 		}
 
 		time.Sleep(util.RetryInterval)
 	}
 }
 
-func WaitWorkloadHealth(ctx types.Context, client client.Client, namespace string) error {
+func WaitWorkloadHealth(ctx types.Context, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 	w := ctx.Workload()
 	startTime := time.Now()
 
 	for {
-		err := w.Health(ctx, client, namespace)
+		err := w.Health(ctx, cluster, namespace)
 		if err == nil {
-			log.Info("Workload is ready")
+			log.Debugf("Workload \"%s/%s\" is ready in cluster %q", namespace, w.GetAppName(), cluster.Name)
 
 			return nil
 		}
 
 		if time.Since(startTime) > util.Timeout {
-			log.Info(err.Error())
-
-			return fmt.Errorf("workload %q is not ready yet before timeout of %v",
-				w.GetName(), util.Timeout)
+			return fmt.Errorf("workload %q is not ready yet before timeout of %v in cluster %q",
+				w.GetName(), util.Timeout, cluster.Name)
 		}
 
 		time.Sleep(util.RetryInterval)

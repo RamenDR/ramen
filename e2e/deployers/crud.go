@@ -10,32 +10,31 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
-	"k8s.io/apimachinery/pkg/api/errors"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
-
-	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 	placementrulev1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+
+	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
+	"github.com/ramendr/ramen/e2e/types"
 )
 
 const (
-	AppLabelKey    = "app"
-	ClusterSetName = "default"
+	AppLabelKey = "app"
 
 	fMode = 0o600
 )
 
-func CreateManagedClusterSetBinding(name, namespace string) error {
+func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) error {
+	log := ctx.Logger()
+	config := ctx.Config()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = namespace
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
@@ -45,16 +44,20 @@ func CreateManagedClusterSetBinding(name, namespace string) error {
 			Labels:    labels,
 		},
 		Spec: ocmv1b2.ManagedClusterSetBindingSpec{
-			ClusterSet: ClusterSetName,
+			ClusterSet: config.ClusterSet,
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Create(context.Background(), mcsb)
+	err := ctx.Env().Hub.Client.Create(context.Background(), mcsb)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
+
+		log.Debugf("ManagedClusterSetBinding \"%s/%s\" already exist in cluster %q", namespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Created ManagedClusterSetBinding \"%s/%s\" in cluster %q", namespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -68,23 +71,26 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Delete(context.Background(), mcsb)
+	err := ctx.Env().Hub.Client.Delete(context.Background(), mcsb)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
-		log.Infof("ManagedClusterSetBinding %q not found", name)
+		log.Debugf("ManagedClusterSetBinding \"%s/%s\" not found in cluster %q", namespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Deleted ManagedClusterSetBinding \"%s/%s\" in cluster %q", namespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
 
-func CreatePlacement(ctx types.Context, name, namespace string) error {
+func CreatePlacement(ctx types.Context, name, namespace string, clusterName string) error {
 	log := ctx.Logger()
+	config := ctx.Config()
 	labels := make(map[string]string)
 	labels[AppLabelKey] = name
-	clusterSet := []string{ClusterSetName}
+	clusterSet := []string{config.ClusterSet}
 
 	var numClusters int32 = 1
 	placement := &ocmv1b1.Placement{
@@ -96,17 +102,35 @@ func CreatePlacement(ctx types.Context, name, namespace string) error {
 		Spec: ocmv1b1.PlacementSpec{
 			ClusterSets:      clusterSet,
 			NumberOfClusters: &numClusters,
+			// Restricts to the specified cluster using requiredClusterSelector.
+			Predicates: []ocmv1b1.ClusterPredicate{
+				{
+					RequiredClusterSelector: ocmv1b1.ClusterSelector{
+						LabelSelector: metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "name",
+									Operator: metav1.LabelSelectorOpIn,
+									Values:   []string{clusterName},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Create(context.Background(), placement)
+	err := ctx.Env().Hub.Client.Create(context.Background(), placement)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		log.Info("Placement already Exists")
+		log.Debugf("Placement \"%s/%s\" already exists in cluster %q", namespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Created placement \"%s/%s\" in cluster %q", namespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -120,14 +144,16 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Delete(context.Background(), placement)
+	err := ctx.Env().Hub.Client.Delete(context.Background(), placement)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
-		log.Info("Placement not found")
+		log.Debugf("Placement \"%s/%s\" not found in cluster %q", namespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Deleted placement \"%s/%s\" in cluster %q", namespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -135,6 +161,7 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 func CreateSubscription(ctx types.Context, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	w := ctx.Workload()
 	managementNamespace := ctx.ManagementNamespace()
 
@@ -142,7 +169,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	labels[AppLabelKey] = name
 
 	annotations := make(map[string]string)
-	annotations["apps.open-cluster-management.io/github-branch"] = w.GetRevision()
+	annotations["apps.open-cluster-management.io/github-branch"] = w.GetBranch()
 	annotations["apps.open-cluster-management.io/github-path"] = w.GetPath()
 
 	placementRef := corev1.ObjectReference{
@@ -161,7 +188,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 			Annotations: annotations,
 		},
 		Spec: subscriptionv1.SubscriptionSpec{
-			Channel:   util.GetChannelNamespace() + "/" + util.GetChannelName(),
+			Channel:   config.Channel.Namespace + "/" + config.Channel.Name,
 			Placement: placementRulePlacement,
 		},
 	}
@@ -176,14 +203,16 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 		})
 	}
 
-	err := util.Ctx.Hub.Client.Create(context.Background(), subscription)
+	err := ctx.Env().Hub.Client.Create(context.Background(), subscription)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		log.Info("Subscription already Exists")
+		log.Debugf("Subscription \"%s/%s\" already exists in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Created subscription \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -200,23 +229,25 @@ func DeleteSubscription(ctx types.Context, s Subscription) error {
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Delete(context.Background(), subscription)
+	err := ctx.Env().Hub.Client.Delete(context.Background(), subscription)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
-		log.Info("Subscription not found")
+		log.Debugf("Subscription \"%s/%s\" not found in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Deleted subscription \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
 
-func getSubscription(client client.Client, namespace, name string) (*subscriptionv1.Subscription, error) {
+func getSubscription(cluster types.Cluster, namespace, name string) (*subscriptionv1.Subscription, error) {
 	subscription := &subscriptionv1.Subscription{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
-	err := client.Get(context.Background(), key, subscription)
+	err := cluster.Client.Get(context.Background(), key, subscription)
 	if err != nil {
 		return nil, err
 	}
@@ -237,14 +268,16 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 
 	configMap := &corev1.ConfigMap{ObjectMeta: object, Data: data}
 
-	err := util.Ctx.Hub.Client.Create(context.Background(), configMap)
+	err := ctx.Env().Hub.Client.Create(context.Background(), configMap)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return fmt.Errorf("could not create configMap %q", cmName)
 		}
 
-		log.Infof("ConfigMap %q already Exists", cmName)
+		log.Debugf("ConfigMap \"%s/%s\" already exists in cluster %q", cmNamespace, cmName, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Created configMap \"%s/%s\" in cluster %q", cmNamespace, cmName, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -257,14 +290,16 @@ func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error
 		ObjectMeta: object,
 	}
 
-	err := util.Ctx.Hub.Client.Delete(context.Background(), configMap)
+	err := ctx.Env().Hub.Client.Delete(context.Background(), configMap)
 	if err != nil {
-		if !errors.IsNotFound(err) {
-			return fmt.Errorf("could not delete configMap %q", cmName)
+		if !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("could not delete configMap %q in cluster %q", cmName, ctx.Env().Hub.Name)
 		}
 
-		log.Infof("ConfigMap %q not found", cmName)
+		log.Debugf("ConfigMap \"%s/%s\" not found in cluster %q", cmNamespace, cmName, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Deleted configMap \"%s/%s\" in cluster %q", cmNamespace, cmName, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -275,6 +310,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	w := ctx.Workload()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
@@ -304,9 +340,9 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 				},
 				Spec: argocdv1alpha1hack.ApplicationSpec{
 					Source: &argocdv1alpha1hack.ApplicationSource{
-						RepoURL:        util.GetGitURL(),
+						RepoURL:        config.Repo.URL,
 						Path:           w.GetPath(),
-						TargetRevision: w.GetRevision(),
+						TargetRevision: w.GetBranch(),
 					},
 					Destination: argocdv1alpha1hack.ApplicationDestination{
 						Server:    "{{server}}",
@@ -339,14 +375,16 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 		appset.Spec.Template.Spec.Source.Kustomize = patches
 	}
 
-	err := util.Ctx.Hub.Client.Create(context.Background(), appset)
+	err := ctx.Env().Hub.Client.Create(context.Background(), appset)
 	if err != nil {
-		if !errors.IsAlreadyExists(err) {
+		if !k8serrors.IsAlreadyExists(err) {
 			return err
 		}
 
-		log.Info("Applicationset already Exists")
+		log.Debugf("Applicationset \"%s/%s\" already exists in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Created applicationset \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
@@ -363,32 +401,36 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 		},
 	}
 
-	err := util.Ctx.Hub.Client.Delete(context.Background(), appset)
+	err := ctx.Env().Hub.Client.Delete(context.Background(), appset)
 	if err != nil {
-		if !errors.IsNotFound(err) {
+		if !k8serrors.IsNotFound(err) {
 			return err
 		}
 
-		log.Info("Applicationset not found")
+		log.Debugf("Applicationset \"%s/%s\" not found in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 	}
+
+	log.Debugf("Deleted applicationset \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 
 	return nil
 }
 
 // check if only the last appset is in the argocd namespace
-func isLastAppsetInArgocdNs(namespace string) (bool, error) {
+func isLastAppsetInArgocdNs(ctx types.Context, namespace string) (bool, error) {
 	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
 
-	err := util.Ctx.Hub.Client.List(
+	err := ctx.Env().Hub.Client.List(
 		context.Background(), appsetList, client.InNamespace(namespace))
 	if err != nil {
-		return false, fmt.Errorf("failed to list applicationsets: %w", err)
+		return false, fmt.Errorf("failed to list applicationsets in cluster %q: %w", ctx.Env().Hub.Name, err)
 	}
 
 	return len(appsetList.Items) == 1, nil
 }
 
 func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
+	log := ctx.Logger()
+
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -412,6 +454,9 @@ func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {
 		return err
 	}
 
+	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
+		namespace, ctx.Workload().GetAppName(), cluster)
+
 	return nil
 }
 
@@ -419,8 +464,9 @@ type CombinedData map[string]interface{}
 
 func CreateKustomizationFile(ctx types.Context, dir string) error {
 	w := ctx.Workload()
+	config := ctx.Config()
 	yamlData := `resources:
-- ` + util.GetGitURL() + `/` + w.GetPath() + `?ref=` + w.GetRevision()
+- ` + config.Repo.URL + `/` + w.GetPath() + `?ref=` + w.GetBranch()
 
 	var yamlContent CombinedData
 

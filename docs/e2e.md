@@ -32,125 +32,172 @@ Create a `config.yaml` file by copying the `config.yaml.sample` template:
 cp config.yaml.sample config.yaml
 ```
 
-Update `config.yaml` by adding kubeconfig paths of the clusters, with format:
+Update `config.yaml` by uncommenting and adding cluster names and kubeconfig paths
+for the hub and managed clusters.
 
 ```yaml
 Clusters:
+  hub:
+    name: hub
+    kubeconfigpath: /path/to/kubeconfig/hub
   c1:
+    name: dr1
     kubeconfigpath: /path/to/kubeconfig/c1
   c2:
+    name: dr2
     kubeconfigpath: /path/to/kubeconfig/c2
-  hub:
-    kubeconfigpath: /path/to/kubeconfig/hub
 ```
 
-### Run all E2E tests
+### Validating the clusters
 
-`run.sh` is a shell script that runs the RamenDR E2E tests for regional DR.
-
-To run all the tests:
+Before running tests it is useful to validate that the clusters are accessible
+and ready for testing. You can verify it using:
 
 ```sh
-./run.sh
+./run.sh -test.run TestValidation
 ```
 
-### Run specific E2E tests
+Example output:
 
-The `-test.run` option is commonly used when debugging a failing test, developing
-a new test, or working on a new deployer or workload. It allows to selectively
-execute specific tests by matching full test names using regular expressions,
-making it easier to focus on specific scenarios.
+```console
+2025-03-06T16:52:54.122+0200    INFO    Using config file "config.yaml"
+2025-03-06T16:52:54.122+0200    INFO    Using log file "ramen-e2e.log"
+2025-03-06T16:52:54.127+0200    INFO    Using Timeout: 10m0s
+2025-03-06T16:52:54.127+0200    INFO    Using RetryInterval: 5s
+...
+2025-03-06T16:52:54.149+0200    INFO    Ramen hub operator pod "ramen-hub-operator-865bdf6799-bgxkn" is running in cluster "hub"
+2025-03-06T16:52:54.152+0200    INFO    Ramen dr cluster operator pod "ramen-dr-cluster-operator-67dff877f5-vntt7" is running in cluster "dr1"
+2025-03-06T16:52:54.152+0200    INFO    Ramen dr cluster operator pod "ramen-dr-cluster-operator-67dff877f5-6v5sh" is running in cluster "dr2"
+--- PASS: TestValidation (0.00s)
+    --- PASS: TestValidation/hub (0.02s)
+    --- PASS: TestValidation/c1 (0.03s)
+    --- PASS: TestValidation/c2 (0.03s)
+PASS
+```
 
-Refer to the [List of tests](#list-of-tests) for a detailed breakdown of
-available tests.
+Our clusters are ready for testing!
 
-#### Run a single test
+### Running DR tests
+
+To run all the DR tests run the TestDR test:
+
+```sh
+./run.sh -test.run TestDR
+```
+
+The test perform a full DR flow with a tiny workload with multiple deployemnet
+methods and storage configurations.
+
+> [!TIP]
+> The tests typically complete in 10 minutes, depending the machine running the tests.
+
+When all tests complete we will see a test summary showing the status of all
+tests and the time to complete every step:
+
+```console
+--- PASS: TestDR (7.14s)
+    --- PASS: TestDR/subscr-deploy-rbd-busybox (533.34s)
+        --- PASS: TestDR/subscr-deploy-rbd-busybox/Deploy (10.38s)
+        --- PASS: TestDR/subscr-deploy-rbd-busybox/Enable (96.47s)
+        --- PASS: TestDR/subscr-deploy-rbd-busybox/Failover (210.97s)
+        --- PASS: TestDR/subscr-deploy-rbd-busybox/Relocate (146.22s)
+        --- PASS: TestDR/subscr-deploy-rbd-busybox/Disable (61.05s)
+        --- PASS: TestDR/subscr-deploy-rbd-busybox/Undeploy (8.24s)
+    --- PASS: TestDR/disapp-deploy-rbd-busybox (546.11s)
+        --- PASS: TestDR/disapp-deploy-rbd-busybox/Deploy (3.07s)
+        --- PASS: TestDR/disapp-deploy-rbd-busybox/Enable (95.33s)
+        --- PASS: TestDR/disapp-deploy-rbd-busybox/Failover (207.88s)
+        --- PASS: TestDR/disapp-deploy-rbd-busybox/Relocate (176.84s)
+        --- PASS: TestDR/disapp-deploy-rbd-busybox/Disable (40.70s)
+        --- PASS: TestDR/disapp-deploy-rbd-busybox/Undeploy (22.30s)
+    --- PASS: TestDR/subscr-deploy-cephfs-busybox (652.06s)
+        --- PASS: TestDR/subscr-deploy-cephfs-busybox/Deploy (5.31s)
+        --- PASS: TestDR/subscr-deploy-cephfs-busybox/Enable (187.23s)
+        --- PASS: TestDR/subscr-deploy-cephfs-busybox/Failover (146.48s)
+        --- PASS: TestDR/subscr-deploy-cephfs-busybox/Relocate (276.36s)
+        --- PASS: TestDR/subscr-deploy-cephfs-busybox/Disable (30.44s)
+        --- PASS: TestDR/subscr-deploy-cephfs-busybox/Undeploy (6.23s)
+    --- PASS: TestDR/appset-deploy-cephfs-busybox (670.70s)
+        --- PASS: TestDR/appset-deploy-cephfs-busybox/Deploy (5.40s)
+        --- PASS: TestDR/appset-deploy-cephfs-busybox/Enable (126.50s)
+        --- PASS: TestDR/appset-deploy-cephfs-busybox/Failover (115.80s)
+        --- PASS: TestDR/appset-deploy-cephfs-busybox/Relocate (367.66s)
+        --- PASS: TestDR/appset-deploy-cephfs-busybox/Disable (55.21s)
+        --- PASS: TestDR/appset-deploy-cephfs-busybox/Undeploy (0.13s)
+    --- PASS: TestDR/appset-deploy-rbd-busybox (671.39s)
+        --- PASS: TestDR/appset-deploy-rbd-busybox/Deploy (5.41s)
+        --- PASS: TestDR/appset-deploy-rbd-busybox/Enable (96.44s)
+        --- PASS: TestDR/appset-deploy-rbd-busybox/Failover (266.11s)
+        --- PASS: TestDR/appset-deploy-rbd-busybox/Relocate (247.42s)
+        --- PASS: TestDR/appset-deploy-rbd-busybox/Disable (55.89s)
+        --- PASS: TestDR/appset-deploy-rbd-busybox/Undeploy (0.12s)
+    --- PASS: TestDR/disapp-deploy-cephfs-busybox (749.75s)
+        --- PASS: TestDR/disapp-deploy-cephfs-busybox/Deploy (3.09s)
+        --- PASS: TestDR/disapp-deploy-cephfs-busybox/Enable (185.70s)
+        --- PASS: TestDR/disapp-deploy-cephfs-busybox/Failover (181.02s)
+        --- PASS: TestDR/disapp-deploy-cephfs-busybox/Relocate (296.31s)
+        --- PASS: TestDR/disapp-deploy-cephfs-busybox/Disable (60.28s)
+        --- PASS: TestDR/disapp-deploy-cephfs-busybox/Undeploy (23.36s)
+PASS
+```
+
+All tests completed successfully!
+
+### Tests configuration
+
+The tests are defined in the configuration file. Each test specifies a deployer
+name, workload name, and PVCSpec:
+
+```yaml
+tests:
+  - deployer: appset
+    workload: deploy
+    pvcspec: rbd
+  ...
+```
+
+The tests are generated from the configuration as
+"TestDR/{deployer}-{workload}-{pvcspec}-busybox".
+See [Running DR tests](#running-dr-tests) section for complete test list.
+
+### Run specific DR tests
+
+Running specific tests is commonly used when debugging a failing test,
+developing a new test, or working on a new deployer or workload. It allows to
+selectively execute specific tests by matching full test names using regular
+expressions, making it easier to focus on specific scenarios.
+
+#### Run a single DR test
 
 Example:
 
 ```sh
-./run.sh -test.run TestSuites/Exhaustive/subscr-deploy-rbd-busybox
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox
 ```
 
 This command runs the specific test for subscription based RBD busybox application.
 
-#### Run tests using a specific deployer
+#### Run DR tests using a specific deployer
 
 Example:
 
 ```sh
-./run.sh -test.run //appset
+./run.sh -test.run TestDR/appset
 ```
 
-This command runs all tests related to ApplicationSet, covering both RBD and
+This command runs all DR tests related to ApplicationSet, covering both RBD and
 CephFS PVC based applications. Useful when focusing on a specific deployer.
 
-#### Run tests using a specific storage
+#### Run DR tests using a specific storage
 
 Example:
 
 ```sh
-./run.sh -test.run //rbd
+./run.sh -test.run TestDR/rbd
 ```
 
-This command runs all tests related to RBD PVCs across all deployers.
-Ideal for verifying functionality specific to a storage type.
-
-### List of tests
-
-The below test list is generated by executing all e2e tests using `./run.sh`
-and capturing the output shown at the end of the run.
-
-```console
---- PASS: TestSuites (0.05s)
-    --- PASS: TestSuites/Validate (0.05s)
-        --- PASS: TestSuites/Validate/hub (0.02s)
-        --- PASS: TestSuites/Validate/c1 (0.01s)
-        --- PASS: TestSuites/Validate/c2 (0.01s)
-    --- PASS: TestSuites/Exhaustive (6.11s)
-        --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox (425.72s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox/Deploy (5.17s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox/Enable (128.64s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox/Failover (165.50s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox/Relocate (90.24s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox/Disable (30.05s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-rbd-busybox/Undeploy (6.10s)
-        --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox (434.67s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox/Deploy (3.12s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox/Enable (145.74s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox/Failover (98.98s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox/Relocate (138.90s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox/Disable (30.09s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-cephfs-busybox/Undeploy (17.83s)
-        --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox (496.18s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox/Deploy (3.12s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox/Enable (135.70s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox/Failover (195.01s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox/Relocate (118.72s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox/Disable (25.07s)
-            --- PASS: TestSuites/Exhaustive/disapp-deploy-rbd-busybox/Undeploy (18.55s)
-        --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox (525.85s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox/Deploy (5.17s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox/Enable (183.82s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox/Failover (140.29s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox/Relocate (160.37s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox/Disable (30.08s)
-            --- PASS: TestSuites/Exhaustive/subscr-deploy-cephfs-busybox/Undeploy (6.12s)
-        --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox (536.09s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox/Deploy (0.25s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox/Enable (134.90s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox/Failover (145.46s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox/Relocate (225.37s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox/Disable (30.07s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-cephfs-busybox/Undeploy (0.04s)
-        --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox (733.34s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox/Deploy (0.26s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox/Enable (100.43s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox/Failover (258.76s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox/Relocate (250.45s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox/Disable (123.42s)
-            --- PASS: TestSuites/Exhaustive/appset-deploy-rbd-busybox/Undeploy (0.03s)
-```
+This command runs all DR tests related to RBD PVCs across all deployers. Ideal
+for verifying functionality specific to a storage type.
 
 ### Using multiple config files
 

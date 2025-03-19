@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -105,8 +104,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		// subscription, such as, the deployment, pods, services, etc., by an
 		// entity external to the VRG a la IaC.
 		if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
-			log.Info("Requeuing due to failure to upload PV object to S3 store(s)",
-				"errorValue", err)
+			log.Error(err, "Requeuing due to failure to upload PV object to S3 store(s)")
 
 			v.requeue()
 
@@ -573,13 +571,10 @@ func undoPVRetention(pv *corev1.PersistentVolume) {
 }
 
 func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
-	return fmt.Sprintf("%s-%s", pvcVRAnnotationArchivedVersionV1, strconv.Itoa(int(gen)))
+	return fmt.Sprintf("%s-%d", pvcVRAnnotationArchivedVersionV1, gen)
 }
 
 func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
-	pvHasAnnotation := false
-	pvcHasAnnotation := false
-
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		log.Error(err, "Failed to get PV to check if archived")
@@ -587,17 +582,11 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 		return false
 	}
 
-	pvcDesiredValue := v.generateArchiveAnnotation(pvc.Generation)
-	if v, ok := pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvcDesiredValue) {
-		pvcHasAnnotation = true
+	if pvc.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pvc.Generation) {
+		return false
 	}
 
-	pvDesiredValue := v.generateArchiveAnnotation(pv.Generation)
-	if v, ok := pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey]; ok && (v == pvDesiredValue) {
-		pvHasAnnotation = true
-	}
-
-	if !pvHasAnnotation || !pvcHasAnnotation {
+	if pv.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pv.Generation) {
 		return false
 	}
 
@@ -645,13 +634,11 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	}
 
 	if err := v.addArchivedAnnotationForPVC(pvc, log); err != nil {
-		msg := fmt.Sprintf("failed to add archived annotation for PVC (%s/%s) with error (%v)",
-			pvc.Namespace, pvc.Name, err)
-		v.log.Info(msg)
+		msg := fmt.Sprintf("failed to add archived annotation: %s", err)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonClusterDataAnnotationFailed, msg)
 
-		return errors.New(msg)
+		return fmt.Errorf("failed to add archived annotation for PVC (%s/%s): %w", pvc.Namespace, pvc.Name, err)
 	}
 
 	msg := fmt.Sprintf("Done uploading PV/PVC cluster data to %d of %d S3 profile(s): %v",
@@ -1931,37 +1918,40 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 		pvc.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pvc.Generation)
+	pvcAnnotationValue := v.generateArchiveAnnotation(pvc.Generation)
+	pvc.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = pvcAnnotationValue
 
 	if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-		log.Error(err, "Failed to update PersistentVolumeClaim annotation")
-
-		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s) belonging to "+
+		return fmt.Errorf("failed to update PersistentVolumeClaim (%s/%s) annotation (%s:%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			pvc.Namespace, pvc.Name, pvcVRAnnotationArchivedKey, pvcAnnotationValue, v.instance.Namespace,
+			v.instance.Name, err)
 	}
+
+	log.Info("Annotated PersistentVolumeClaim", "namespace", pvc.Namespace, "name", pvc.Name, "key",
+		pvcVRAnnotationArchivedKey, "value", pvcAnnotationValue)
 
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
-		log.Error(err, "Failed to get PV to add archived annotation")
-
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
-			"VolumeReplicationGroup (%s/%s), %w",
-			pv.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+		return fmt.Errorf("failed to get PersistentVolume (%s) belonging to VolumeReplicationGroup (%s/%s), %w",
+			pv.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
 	if pv.ObjectMeta.Annotations == nil {
 		pv.ObjectMeta.Annotations = map[string]string{}
 	}
 
-	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = v.generateArchiveAnnotation(pv.Generation)
-	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
-		log.Error(err, "Failed to update PersistentVolume annotation")
+	pvAnnotationValue := v.generateArchiveAnnotation(pv.Generation)
+	pv.ObjectMeta.Annotations[pvcVRAnnotationArchivedKey] = pvAnnotationValue
 
-		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s) belonging to "+
+	if err := v.reconciler.Update(v.ctx, &pv); err != nil {
+		return fmt.Errorf("failed to update PersistentVolume (%s) annotation (%s:%s) belonging to "+
 			"VolumeReplicationGroup (%s/%s), %w",
-			pvc.Name, pvcVRAnnotationArchivedKey, v.instance.Namespace, v.instance.Name, err)
+			pvc.Name, pvcVRAnnotationArchivedKey, pvAnnotationValue, v.instance.Namespace, v.instance.Name, err)
 	}
+
+	log.Info("Annotated PersistentVolume", "name", pv.Name, "key", pvcVRAnnotationArchivedKey, "value",
+		pvAnnotationValue)
 
 	return nil
 }
@@ -2034,7 +2024,6 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// PVC may cause a new PV to be created.
 		// Ignoring PVC restore errors helps with the upgrade from ODF-4.12.x to 4.13
 		pvcCount, err = v.restorePVCsFromObjectStore(objectStore, s3ProfileName)
-
 		if err != nil || pvCount != pvcCount {
 			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
 				pvCount, pvcCount, err))

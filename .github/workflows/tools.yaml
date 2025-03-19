@@ -145,8 +145,8 @@ jobs:
         run: make coverage
         working-directory: test
 
-  ramenctl:
-    name: ramenctl
+  ramendev:
+    name: ramendev
     strategy:
       matrix:
         os:
@@ -179,12 +179,12 @@ jobs:
 
       - name: Run flake8
         run: make flake8
-        working-directory: ramenctl
+        working-directory: ramendev
 
       - name: Run pylint
         run: make pylint
-        working-directory: ramenctl
+        working-directory: ramendev
 
       - name: Run black
         run: make black
-        working-directory: ramenctl
+        working-directory: ramendev

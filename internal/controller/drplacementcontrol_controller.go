@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -784,14 +785,14 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 ) error {
 	// Only after the VRGs have been deleted, we delete the MCVs for the VRGs and the NS
 	for _, drClusterName := range clusterNames {
-		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
 		// Delete MCV for the VRG
+		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
 		if err != nil {
 			return fmt.Errorf("failed to delete VRG MCV %w", err)
 		}
 
-		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
 		// Delete MCV for Namespace
+		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
 		if err != nil {
 			return fmt.Errorf("failed to delete namespace MCV %w", err)
 		}
@@ -1257,7 +1258,10 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 	// iteration of the reconcile loop.  Hence, the next attempt to update the
 	// status should be after the remaining duration of this polling interval has
 	// elapsed: (beforeProcessing + StatusCheckDelay - time.Now())
-	return time.Until(beforeProcessing.Add(StatusCheckDelay))
+	// If the scheduled time is already in the past, requeue immediately.
+	remaining := time.Until(beforeProcessing.Add(StatusCheckDelay))
+
+	return max(0, remaining)
 }
 
 // updateDRPCStatus updates the DRPC sub-resource status with,
@@ -1814,11 +1818,6 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 
 // Initial creation of the DRPC status condition. This will also preserve the ordering of conditions in the array
 func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	const DRPCTotalConditions = 3
-	if len(*conditions) == DRPCTotalConditions {
-		return
-	}
-
 	time := metav1.NewTime(time.Now())
 
 	setStatusConditionIfNotFound(conditions, metav1.Condition{
@@ -2371,7 +2370,7 @@ func ensureDRPCValidNamespace(drpc *rmn.DRPlacementControl, ramenConfig *rmn.Ram
 		return nil
 	}
 
-	if drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(drpc) {
 		adminNamespace := drpcAdminNamespaceName(*ramenConfig)
 
 		return fmt.Errorf("drpc in non-admin namespace(%v) cannot have protected namespaces, admin-namespaces: %v",
@@ -2394,7 +2393,7 @@ func drpcsProtectCommonNamespace(drpcProtectedNs []string, otherDRPCProtectedNs 
 func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) ([]string, error) {
-	if drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0 {
+	if isDiscoveredApp(drpc) {
 		return *drpc.Spec.ProtectedNamespaces, nil
 	}
 
@@ -2466,9 +2465,14 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
+	independentVMProtection := drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
+	if independentVMProtection {
+		return nil
+	}
+
 	conflict := drpcsProtectCommonNamespace(drpcProtectedNamespaces, otherDRPCProtectedNamespaces)
 	if conflict {
-		return fmt.Errorf("drpc: %s and drpc: %s protect the same namespace",
+		return fmt.Errorf("drpc: %s and drpc: %s protect common resources from the same namespace",
 			drpc.Name, otherDRPC.Name)
 	}
 
@@ -2498,4 +2502,29 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	otherDrpolicyClusters := rmnutil.DRPolicyClusterNamesAsASet(otherDrpolicy)
 
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
+}
+
+func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl,
+	ramenConfig *rmn.RamenConfig,
+) bool {
+	if (drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil) ||
+		(otherdrpc.Spec.KubeObjectProtection == nil || otherdrpc.Spec.KubeObjectProtection.RecipeRef == nil) {
+		return false
+	}
+
+	drpcRecipeName := drpc.Spec.KubeObjectProtection.RecipeRef.Name
+	otherDrpcRecipeName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
+
+	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
+	// Support for protecting independent VMs added for epic-6681
+	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
+		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
+
+		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
+			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
+			return true
+		}
+	}
+
+	return false
 }

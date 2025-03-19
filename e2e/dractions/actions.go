@@ -4,13 +4,12 @@
 package dractions
 
 import (
-	"strings"
-
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/util/retry"
+
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"k8s.io/client-go/util/retry"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -33,27 +32,24 @@ func EnableProtection(ctx types.Context) error {
 	w := ctx.Workload()
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
+	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
+	config := ctx.Config()
 
-	log.Infof("Protecting workload in namespace %q", managementNamespace)
-
-	drPolicyName := util.DefaultDRPolicyName
+	drPolicyName := config.DRPolicy
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
 
-	placementDecision, err := waitPlacementDecision(util.Ctx.Hub.Client, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
 	if err != nil {
 		return err
 	}
 
-	clusterName := placementDecision.Status.Decisions[0].ClusterName
-	log.Infof("Workload running on cluster %q", clusterName)
-
-	log.Info("Annotating placement")
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := getPlacement(util.Ctx.Hub.Client, managementNamespace, placementName)
+		placement, err := util.GetPlacement(ctx.Env().Hub, managementNamespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -64,25 +60,38 @@ func EnableProtection(ctx types.Context) error {
 
 		placement.Annotations[OcmSchedulingDisable] = "true"
 
-		return updatePlacement(util.Ctx.Hub.Client, placement)
+		if err := updatePlacement(ctx.Env().Hub, placement); err != nil {
+			return err
+		}
+
+		log.Debugf("Annotated placement \"%s/%s\" with \"%s: %s\" in cluster %q",
+			managementNamespace, placementName, OcmSchedulingDisable,
+			placement.Annotations[OcmSchedulingDisable], ctx.Env().Hub.Name)
+
+		return nil
 	})
 	if err != nil {
 		return err
 	}
 
-	log.Info("Creating drpc")
-
 	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
-	if err = createDRPC(util.Ctx.Hub.Client, drpc); err != nil {
+	if err = createDRPC(ctx, drpc); err != nil {
 		return err
 	}
 
 	// For volsync based replication we must create the cluster namespaces with special annotation.
-	if err := util.CreateNamespaceAndAddAnnotation(ctx.AppNamespace()); err != nil {
+	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), ctx.AppNamespace(), log); err != nil {
 		return err
 	}
 
-	return waitDRPCReady(ctx, util.Ctx.Hub.Client, managementNamespace, drpcName)
+	err = waitDRPCReady(ctx, managementNamespace, drpcName)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload protected")
+
+	return nil
 }
 
 // remove DRPC
@@ -95,49 +104,66 @@ func DisableProtection(ctx types.Context) error {
 
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
+	appNamespace := ctx.AppNamespace()
+	placementName := name
 	log := ctx.Logger()
 
-	log.Infof("Unprotecting workload in namespace %q", managementNamespace)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+
+		log.Debugf("Could not retrieve the cluster name: %s", err)
+		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
+	} else {
+		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
+			appNamespace, ctx.Workload().GetAppName(), clusterName)
+	}
 
 	drpcName := name
-	client := util.Ctx.Hub.Client
 
-	log.Info("Deleting drpc")
-
-	if err := deleteDRPC(client, managementNamespace, drpcName); err != nil {
+	if err := deleteDRPC(ctx, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
-	return waitDRPCDeleted(ctx, client, managementNamespace, drpcName)
+	err = waitDRPCDeleted(ctx, managementNamespace, drpcName)
+	if err != nil {
+		return err
+	}
+
+	log.Info("Workload unprotected")
+
+	return nil
 }
 
 func Failover(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
+	config := ctx.Config()
 
-	drpcName := name
-	client := util.Ctx.Hub.Client
-	drPolicyName := util.DefaultDRPolicyName
-
-	currentCluster, err := getCurrentCluster(client, managementNamespace, name)
+	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
+	targetCluster, err := getTargetCluster(ctx.Env().Hub, config.DRPolicy, currentCluster)
 	if err != nil {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(client, managementNamespace, drpcName, drpolicy)
+	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
+
+	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Failing over workload from cluster %q to cluster %q", currentCluster, targetCluster)
+	log.Info("Workload failed over")
 
-	return failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
+	return nil
 }
 
 // Determine DRPC
@@ -147,30 +173,30 @@ func Failover(ctx types.Context) error {
 func Relocate(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
+	config := ctx.Config()
 	name := ctx.Name()
 
-	drpcName := name
-	client := util.Ctx.Hub.Client
-	drPolicyName := util.DefaultDRPolicyName
-
-	currentCluster, err := getCurrentCluster(client, managementNamespace, name)
+	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
 	if err != nil {
 		return err
 	}
 
-	drpolicy, err := util.GetDRPolicy(client, drPolicyName)
+	targetCluster, err := getTargetCluster(ctx.Env().Hub, config.DRPolicy, currentCluster)
 	if err != nil {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(client, managementNamespace, drpcName, drpolicy)
+	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
+
+	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Relocating workload from cluster %q to cluster %q", currentCluster, targetCluster)
+	log.Info("Workload relocated")
 
-	return failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
+	return nil
 }
 
 func failoverRelocate(ctx types.Context,
@@ -186,37 +212,34 @@ func failoverRelocate(ctx types.Context,
 
 	drpcName := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
-	client := util.Ctx.Hub.Client
 
-	if err := waitAndUpdateDRPC(ctx, client, managementNamespace, drpcName, action, targetCluster); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
 	}
 
-	if err := waitDRPCPhase(ctx, client, managementNamespace, drpcName, state); err != nil {
+	if err := waitDRPCPhase(ctx, managementNamespace, drpcName, state); err != nil {
 		return err
 	}
 
-	return waitDRPCReady(ctx, client, managementNamespace, drpcName)
+	return waitDRPCReady(ctx, managementNamespace, drpcName)
 }
 
 func waitAndUpdateDRPC(
 	ctx types.Context,
-	client client.Client,
 	namespace, drpcName string,
 	action ramen.DRAction,
 	targetCluster string,
 ) error {
 	log := ctx.Logger()
+	hub := ctx.Env().Hub
 
 	// here we expect drpc should be ready before action
-	if err := waitDRPCReady(ctx, client, namespace, drpcName); err != nil {
+	if err := waitDRPCReady(ctx, namespace, drpcName); err != nil {
 		return err
 	}
 
-	log.Info("Updating drpc " + strings.ToLower(string(action)) + " to " + targetCluster)
-
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		drpc, err := getDRPC(client, namespace, drpcName)
+		drpc, err := getDRPC(hub, namespace, drpcName)
 		if err != nil {
 			return err
 		}
@@ -228,6 +251,13 @@ func waitAndUpdateDRPC(
 			drpc.Spec.PreferredCluster = targetCluster
 		}
 
-		return updateDRPC(client, drpc)
+		if err := updateDRPC(hub, drpc); err != nil {
+			return err
+		}
+
+		log.Debugf("Updated drpc \"%s/%s\" with action %q to target cluster %q",
+			namespace, drpcName, action, targetCluster)
+
+		return nil
 	})
 }

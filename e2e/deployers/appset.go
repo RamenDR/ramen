@@ -5,10 +5,8 @@ package deployers
 
 import (
 	"github.com/ramendr/ramen/e2e/types"
-)
-
-const (
-	argocdNamespace = "argocd"
+	"github.com/ramendr/ramen/e2e/util"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type ApplicationSet struct{}
@@ -17,16 +15,23 @@ type ApplicationSet struct{}
 func (a ApplicationSet) Deploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Infof("Deploying applicationset in namespace %q", managementNamespace)
-
-	err := CreateManagedClusterSetBinding(McsbName, managementNamespace)
+	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.DRPolicy)
 	if err != nil {
 		return err
 	}
 
-	err = CreatePlacement(ctx, name, managementNamespace)
+	log.Infof("Deploying applicationset app \"%s/%s\" in cluster %q",
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0])
+
+	err = CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
+	if err != nil {
+		return err
+	}
+
+	err = CreatePlacement(ctx, name, managementNamespace, drpolicy.Spec.DRClusters[0])
 	if err != nil {
 		return err
 	}
@@ -41,18 +46,32 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 		return err
 	}
 
-	return err
+	log.Info("Workload deployed")
+
+	return nil
 }
 
 // Undeploy deletes an ApplicationSet from the hub cluster, deleting the workload from the managed clusters.
 func (a ApplicationSet) Undeploy(ctx types.Context) error {
 	name := ctx.Name()
 	log := ctx.Logger()
+	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	log.Infof("Undeploying applicationset in namespace %q", managementNamespace)
+	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
 
-	err := DeleteApplicationSet(ctx, a)
+		log.Debugf("Could not retrieve the cluster name: %s", err)
+		log.Infof("Undeploying applicationset app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+	} else {
+		log.Infof("Undeploying applicationset app \"%s/%s\" in cluster %q",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+	}
+
+	err = DeleteApplicationSet(ctx, a)
 	if err != nil {
 		return err
 	}
@@ -69,17 +88,19 @@ func (a ApplicationSet) Undeploy(ctx types.Context) error {
 
 	// multiple appsets could use the same mcsb in argocd ns.
 	// so delete mcsb if only 1 appset is in argocd ns
-	lastAppset, err := isLastAppsetInArgocdNs(managementNamespace)
+	lastAppset, err := isLastAppsetInArgocdNs(ctx, managementNamespace)
 	if err != nil {
 		return err
 	}
 
 	if lastAppset {
-		err = DeleteManagedClusterSetBinding(ctx, McsbName, managementNamespace)
+		err = DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 		if err != nil {
 			return err
 		}
 	}
+
+	log.Info("Workload undeployed")
 
 	return nil
 }
@@ -88,8 +109,8 @@ func (a ApplicationSet) GetName() string {
 	return "appset"
 }
 
-func (a ApplicationSet) GetNamespace() string {
-	return argocdNamespace
+func (a ApplicationSet) GetNamespace(ctx types.Context) string {
+	return ctx.Config().Namespaces.ArgocdNamespace
 }
 
 func (a ApplicationSet) IsDiscovered() bool {

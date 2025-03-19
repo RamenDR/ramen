@@ -5,26 +5,38 @@ package workloads
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
-	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/e2e/types"
+)
+
+const (
+	deploymentName    = "deploy"
+	deploymentAppName = "busybox"
+	deploymentPath    = "workloads/deployment/base"
 )
 
 type Deployment struct {
-	Path     string
-	Revision string
-	AppName  string
-	Name     string
-	PVCSpec  util.PVCSpec
+	Name    string
+	Branch  string
+	PVCSpec types.PVCSpecConfig
+}
+
+func NewDeployment(branch string, pvcSpec types.PVCSpecConfig) types.Workload {
+	return &Deployment{
+		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
+		Branch:  branch,
+		PVCSpec: pvcSpec,
+	}
 }
 
 func (w Deployment) GetAppName() string {
-	return w.AppName
+	return deploymentAppName
 }
 
 func (w Deployment) GetName() string {
@@ -32,11 +44,11 @@ func (w Deployment) GetName() string {
 }
 
 func (w Deployment) GetPath() string {
-	return w.Path
+	return deploymentPath
 }
 
-func (w Deployment) GetRevision() string {
-	return w.Revision
+func (w Deployment) GetBranch() string {
+	return w.Branch
 }
 
 func (w Deployment) SupportsDeployer(d types.Deployer) bool {
@@ -78,16 +90,16 @@ func (w Deployment) GetResources() error {
 }
 
 // Check the workload health deployed in a cluster namespace
-func (w Deployment) Health(ctx types.Context, client client.Client, namespace string) error {
+func (w Deployment) Health(ctx types.Context, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
-	deploy, err := getDeployment(client, namespace, w.GetAppName())
+	deploy, err := getDeployment(cluster, namespace, w.GetAppName())
 	if err != nil {
 		return err
 	}
 
 	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		log.Info("Deployment is ready")
+		log.Debugf("Deployment \"%s/%s\" is ready in cluster %q", namespace, w.GetAppName(), cluster.Name)
 
 		return nil
 	}
@@ -95,11 +107,11 @@ func (w Deployment) Health(ctx types.Context, client client.Client, namespace st
 	return nil
 }
 
-func getDeployment(client client.Client, namespace, name string) (*appsv1.Deployment, error) {
+func getDeployment(cluster types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
-	err := client.Get(context.Background(), key, deploy)
+	err := cluster.Client.Get(context.Background(), key, deploy)
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,7 @@ from drenv import kubectl
 
 PVC_NAME = "cephfs-pvc"
 SNAP_NAME = "cephfs-snap"
-NAMESPACE = "drenv-addon-test"
+NAMESPACE = "rook-cephfs-test"
 
 
 def test_provisioning(cluster):

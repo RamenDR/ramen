@@ -5,7 +5,7 @@ go 1.22.5
 toolchain go1.22.7
 
 require (
-	github.com/ramendr/ramen/api v0.0.0-00010101000000-000000000000
+	github.com/ramendr/ramen/api v0.0.0-20250313143647-8dd671566929
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.0
 	k8s.io/api v0.31.1
@@ -76,5 +76,3 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
-
-replace github.com/ramendr/ramen/api => ../api

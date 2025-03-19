@@ -10,9 +10,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const logFilePath = "ramen-e2e.log"
-
-func CreateLogger() (*zap.SugaredLogger, error) {
+func CreateLogger(logFilePath string) (*zap.SugaredLogger, error) {
 	// In the console we don't want details such as file:line or stacktraces.
 	consoleConfig := zap.NewProductionEncoderConfig()
 	consoleConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -33,8 +31,8 @@ func CreateLogger() (*zap.SugaredLogger, error) {
 	}
 
 	core := zapcore.NewTee(
-		zapcore.NewCore(logfileEncoder, zapcore.AddSync(logfile), zapcore.DebugLevel),
-		zapcore.NewCore(consoleEncoder, zapcore.AddSync(os.Stderr), zapcore.InfoLevel),
+		zapcore.NewCore(logfileEncoder, zapcore.Lock(logfile), zapcore.DebugLevel),
+		zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stderr), zapcore.InfoLevel),
 	)
 	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
 

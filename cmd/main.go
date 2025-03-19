@@ -63,7 +63,9 @@ func configureLogOptions() *zap.Options {
 		ZapOpts: []uberzap.Option{
 			uberzap.AddCaller(),
 		},
-		TimeEncoder: zapcore.ISO8601TimeEncoder,
+		// Don't show stacktraces for log.Error.
+		StacktraceLevel: zapcore.FatalLevel,
+		TimeEncoder:     zapcore.ISO8601TimeEncoder,
 	}
 
 	return &opts

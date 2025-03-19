@@ -8,26 +8,59 @@ import (
 	"os"
 	"testing"
 
+	"go.uber.org/zap"
+
+	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/deployers"
+	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/test"
+	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-func init() {
-	flag.StringVar(&util.ConfigFile, "config", "", "Path to the config file")
+type Context struct {
+	log    *zap.SugaredLogger
+	env    *types.Env
+	config *types.Config
 }
 
-func TestMain(m *testing.M) {
-	var err error
+// The global test context
+var Ctx Context
 
+func TestMain(m *testing.M) {
+	var (
+		err        error
+		configFile string
+		logFile    string
+	)
+
+	flag.StringVar(&configFile, "config", "config.yaml", "e2e configuration file")
+	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
 	flag.Parse()
 
-	log, err := test.CreateLogger()
+	Ctx.log, err = test.CreateLogger(logFile)
 	if err != nil {
 		panic(err)
 	}
 	// TODO: Sync the log on exit
 
-	util.Ctx, err = util.NewContext(log, util.ConfigFile)
+	log := Ctx.log
+
+	log.Infof("Using config file %q", configFile)
+	log.Infof("Using log file %q", logFile)
+
+	options := config.Options{
+		Deployers: deployers.AvailableNames(),
+		Workloads: workloads.AvailableNames(),
+	}
+
+	Ctx.config, err = config.ReadConfig(configFile, options)
+	if err != nil {
+		log.Fatalf("Failed to read config: %s", err)
+	}
+
+	Ctx.env, err = env.New(Ctx.config, Ctx.log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}
@@ -36,26 +69,4 @@ func TestMain(m *testing.M) {
 	log.Infof("Using RetryInterval: %v", util.RetryInterval)
 
 	os.Exit(m.Run())
-}
-
-type testDef struct {
-	name string
-	test func(t *testing.T)
-}
-
-var Suites = []testDef{
-	{"Exhaustive", Exhaustive},
-}
-
-func TestSuites(dt *testing.T) {
-	t := test.WithLog(dt, util.Ctx.Log)
-	t.Log(t.Name())
-
-	if !t.Run("Validate", Validate) {
-		t.FailNow()
-	}
-
-	for _, suite := range Suites {
-		t.Run(suite.name, suite.test)
-	}
 }

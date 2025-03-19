@@ -159,7 +159,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 		drCConfig = &ramen.DRClusterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "local"},
-			Spec:       ramen.DRClusterConfigSpec{},
+			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
 

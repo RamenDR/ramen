@@ -63,8 +63,8 @@ func (d *DRPCInstance) EnsureVolSyncReplicationSetup(srcCluster string) error {
 	pskSecretNameCluster := volsync.GetVolSyncPSKSecretNameFromVRGName(d.instance.GetName()) // VRG name == DRPC name
 
 	clustersToPropagateSecret := []string{}
-	for clusterName := range d.vrgs {
-		clustersToPropagateSecret = append(clustersToPropagateSecret, clusterName)
+	for _, drCluster := range d.drClusters {
+		clustersToPropagateSecret = append(clustersToPropagateSecret, drCluster.Name)
 	}
 
 	err = volsync.PropagateSecretToClusters(d.ctx, d.reconciler.Client, pskSecretHub,

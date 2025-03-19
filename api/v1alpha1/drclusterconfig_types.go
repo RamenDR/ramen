@@ -21,6 +21,8 @@ type DRClusterConfigSpec struct {
 	// provider reconcilers
 	ReplicationSchedules []string `json:"replicationSchedules,omitempty"`
 
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ClusterID is immutable"
 	// ClusterID would carry the ManagedCluster identity from the ManagedCluster claim value for `id.k8s.io`
 	ClusterID string `json:"clusterID,omitempty"`
 

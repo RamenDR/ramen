@@ -8,82 +8,58 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/e2e/types"
 )
 
-const (
-	ramenSystemNamespace = "ramen-system"
-)
-
-func ValidateRamenHubOperator(k8sClient client.Client) error {
+func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
-	ramenNameSpace, err := GetRamenNameSpace(k8sClient)
-	if err != nil {
-		return err
-	}
-
-	pod, err := FindPod(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.Namespaces.RamenHubNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
 
 	if pod.Status.Phase != "Running" {
-		return fmt.Errorf("ramen hub operator pod %q not running (phase %q)",
-			pod.Name, pod.Status.Phase)
+		return fmt.Errorf("ramen hub operator pod %q not running (phase %q) in cluster %q",
+			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen hub operator pod %q is running", pod.Name)
+	log.Infof("Ramen hub operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(k8sClient client.Client, clusterName string) error {
+func ValidateRamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
-	ramenNameSpace, err := GetRamenNameSpace(k8sClient)
-	if err != nil {
-		return err
-	}
-
-	pod, err := FindPod(k8sClient, ramenNameSpace, labelSelector, podIdentifier)
+	pod, err := FindPod(cluster, config.Namespaces.RamenDRClusterNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
 
 	if pod.Status.Phase != "Running" {
-		return fmt.Errorf("ramen dr cluster operator pod %q not running (phase %q)",
-			pod.Name, pod.Status.Phase)
+		return fmt.Errorf("ramen dr cluster operator pod %q not running (phase %q) in cluster %q",
+			pod.Name, pod.Status.Phase, cluster.Name)
 	}
 
-	Ctx.Log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, clusterName)
+	log.Infof("Ramen dr cluster operator pod %q is running in cluster %q", pod.Name, cluster.Name)
 
 	return nil
-}
-
-func GetRamenNameSpace(k8sClient client.Client) (string, error) {
-	isOpenShift, err := IsOpenShiftCluster(k8sClient)
-	if err != nil {
-		return "", err
-	}
-
-	if isOpenShift {
-		return "openshift-operators", nil
-	}
-
-	return ramenSystemNamespace, nil
 }
 
 // IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
 // It returns true if the cluster is OpenShift, false otherwise, along with any error encountered.
-func IsOpenShiftCluster(k8sClient client.Client) (bool, error) {
+func IsOpenShiftCluster(cluster types.Cluster) (bool, error) {
 	configList := &unstructured.Unstructured{}
 	configList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "config.openshift.io",
@@ -91,7 +67,7 @@ func IsOpenShiftCluster(k8sClient client.Client) (bool, error) {
 		Kind:    "ClusterVersion",
 	})
 
-	err := k8sClient.List(context.TODO(), configList)
+	err := cluster.Client.List(context.TODO(), configList)
 	if err == nil {
 		// found OpenShift only resource type, it is OpenShift
 		return true, nil
@@ -108,12 +84,12 @@ func IsOpenShiftCluster(k8sClient client.Client) (bool, error) {
 }
 
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
-func FindPod(k8sClient client.Client, namespace, labelSelector, podIdentifier string) (
+func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
 ) {
 	ls, err := labels.Parse(labelSelector)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse label selector %q: %v", labelSelector, err)
+		return nil, fmt.Errorf("failed to parse label selector %q in cluster %q: %v", labelSelector, cluster.Name, err)
 	}
 
 	pods := &v1.PodList{}
@@ -124,9 +100,9 @@ func FindPod(k8sClient client.Client, namespace, labelSelector, podIdentifier st
 		},
 	}
 
-	err = k8sClient.List(context.Background(), pods, listOptions...)
+	err = cluster.Client.List(context.Background(), pods, listOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pods in namespace %s: %v", namespace, err)
+		return nil, fmt.Errorf("failed to list pods in namespace %s in cluster %q: %v", namespace, cluster.Name, err)
 	}
 
 	for i := range pods.Items {
@@ -136,6 +112,6 @@ func FindPod(k8sClient client.Client, namespace, labelSelector, podIdentifier st
 		}
 	}
 
-	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q",
-		labelSelector, podIdentifier, namespace)
+	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q in cluster %q",
+		labelSelector, podIdentifier, namespace, cluster.Name)
 }

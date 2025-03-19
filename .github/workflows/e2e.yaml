@@ -64,7 +64,7 @@ jobs:
     - name: Deploy ramen
       run: |
         source venv
-        ramenctl deploy test/envs/regional-dr.yaml
+        ramendev deploy test/envs/regional-dr.yaml
 
     - name: Configure ramen
       uses: nick-fields/retry@v3
@@ -73,13 +73,19 @@ jobs:
         max_attempts: 3
         command: |
           source venv
-          ramenctl config test/envs/regional-dr.yaml
+          ramendev config test/envs/regional-dr.yaml
 
-    - name: Run e2e tests
-      run: |
-        cat e2e/config.yaml.sample >> e2e/config.yaml
-        cat ~/.config/drenv/rdr/config.yaml >> e2e/config.yaml
-        make e2e-rdr
+    - name: Prepare e2e config
+      working-directory: e2e
+      run: cat config.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
+
+    - name: Run e2e validation
+      working-directory: e2e
+      run: ./run.sh -test.run TestValidation -logfile validation.log
+
+    - name: Run e2e dr tests
+      working-directory: e2e
+      run: ./run.sh -test.run TestDR -logfile dr.log
 
     - name: Gather environment data
       if: always()
@@ -88,13 +94,13 @@ jobs:
       timeout-minutes: 3
       run: drenv gather --directory gather.rdr envs/regional-dr.yaml
 
-    # Tar manually to work around github limitations with special chracters (:)
-    # in file names, and getting much smaller archives comapred with zip (6m vs
+    # Tar manually to work around github limitations with special characters (:)
+    # in file names, and getting much smaller archives compared with zip (6m vs
     # 12m). This is also useful to collect all files in one archive.
     # https://github.com/actions/upload-artifact/issues/546
     - name: Archive artifacts
       if: always()
-      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/ramen-e2e.log
+      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/*.log
 
     - name: Upload artifacts
       if: always()
