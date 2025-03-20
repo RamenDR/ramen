@@ -19,7 +19,6 @@ import (
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 	placementrulev1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
@@ -413,19 +412,6 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 	log.Debugf("Deleted applicationset \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 
 	return nil
-}
-
-// check if only the last appset is in the argocd namespace
-func isLastAppsetInArgocdNs(ctx types.Context, namespace string) (bool, error) {
-	appsetList := &argocdv1alpha1hack.ApplicationSetList{}
-
-	err := ctx.Env().Hub.Client.List(
-		context.Background(), appsetList, client.InNamespace(namespace))
-	if err != nil {
-		return false, fmt.Errorf("failed to list applicationsets in cluster %q: %w", ctx.Env().Hub.Name, err)
-	}
-
-	return len(appsetList.Items) == 1, nil
 }
 
 func DeleteDiscoveredApps(ctx types.Context, namespace, cluster string) error {

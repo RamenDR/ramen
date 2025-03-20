@@ -6,6 +6,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.uber.org/zap"
@@ -114,4 +115,27 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 
 	return nil, fmt.Errorf("no pod with label selector %q and identifier %q in namespace %q in cluster %q",
 		labelSelector, podIdentifier, namespace, cluster.Name)
+}
+
+// ValidateClustersInDRPolicy checks if configured clusters match the configured
+// drpolicy. Returns an error if cluster names are not the same as drpolicy
+// drclusters. The reason for a failure may be wrong cluster name or wrong
+// drpolicy.
+func ValidateClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	drpolicy, err := GetDRPolicy(env.Hub, config.DRPolicy)
+	if err != nil {
+		return err
+	}
+
+	clusters := []types.Cluster{env.C1, env.C2}
+	for _, cluster := range clusters {
+		if !slices.Contains(drpolicy.Spec.DRClusters, cluster.Name) {
+			return fmt.Errorf("cluster %q is not defined in drpolicy %q, clusters in drpolicy: %q",
+				cluster.Name, config.DRPolicy, drpolicy.Spec.DRClusters)
+		}
+	}
+
+	log.Infof("Validated clusters [%q, %q] in DRPolicy %q", clusters[0].Name, clusters[1].Name, config.DRPolicy)
+
+	return nil
 }
