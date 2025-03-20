@@ -10,6 +10,7 @@ import (
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
+	"github.com/ramendr/ramen/e2e/validate"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
@@ -21,7 +22,7 @@ func TestDR(dt *testing.T) {
 		t.Fatal("No tests found in the configuration file")
 	}
 
-	if err := util.ValidateClustersInDRPolicy(Ctx.env, Ctx.config, Ctx.log); err != nil {
+	if err := validate.ClustersInDRPolicy(Ctx.env, Ctx.config, Ctx.log); err != nil {
 		t.Fatalf("Failed to validate clusters with DRPolicy: %s", err)
 	}
 
