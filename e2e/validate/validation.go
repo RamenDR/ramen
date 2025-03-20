@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package validate
 
 import (
 	"context"
@@ -18,9 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/e2e/types"
+	"github.com/ramendr/ramen/e2e/util"
 )
 
-func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func RamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
@@ -39,7 +40,7 @@ func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func RamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
@@ -121,8 +122,8 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 // drpolicy. Returns an error if cluster names are not the same as drpolicy
 // drclusters. The reason for a failure may be wrong cluster name or wrong
 // drpolicy.
-func ValidateClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
-	drpolicy, err := GetDRPolicy(env.Hub, config.DRPolicy)
+func ClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	drpolicy, err := util.GetDRPolicy(env.Hub, config.DRPolicy)
 	if err != nil {
 		return err
 	}
