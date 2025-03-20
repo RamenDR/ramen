@@ -173,21 +173,40 @@ func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key typ
 	Expect(retryErr).NotTo(HaveOccurred())
 }
 
-func drclusterConfigConditionExpectEventually(
+func objectConditionExpectEventually(
 	apiReader client.Reader,
-	drclusterConfig *ramen.DRClusterConfig,
+	obj client.Object,
+	status metav1.ConditionStatus,
 	reasonMatcher,
 	messageMatcher gomegaTypes.GomegaMatcher,
+	conditionType string,
+	disabled ...bool,
 ) {
-	drclusterConfigConditionExpect(
-		apiReader,
-		drclusterConfig,
-		metav1.ConditionTrue,
-		reasonMatcher,
-		messageMatcher,
-		ramen.DRClusterConfigConfigurationProcessed,
-		false,
-	)
+	switch objActual := obj.(type) {
+	case *ramen.DRCluster:
+		drclusterConditionExpect(
+			apiReader,
+			objActual,
+			disabled[0],
+			status,
+			reasonMatcher,
+			messageMatcher,
+			conditionType,
+			false,
+		)
+	case *ramen.DRClusterConfig:
+		drclusterConfigConditionExpect(
+			apiReader,
+			objActual,
+			status,
+			reasonMatcher,
+			messageMatcher,
+			conditionType,
+			false,
+		)
+	default:
+		return
+	}
 }
 
 func drclusterConfigConditionExpect(
@@ -241,27 +260,6 @@ func drclusterConfigConditionExpect(
 	if status == metav1.ConditionFalse {
 		return
 	}
-}
-
-func drclusterConditionExpectEventually(
-	apiReader client.Reader,
-	drcluster *ramen.DRCluster,
-	disabled bool,
-	status metav1.ConditionStatus,
-	reasonMatcher,
-	messageMatcher gomegaTypes.GomegaMatcher,
-	conditionType string,
-) {
-	drclusterConditionExpect(
-		apiReader,
-		drcluster,
-		disabled,
-		status,
-		reasonMatcher,
-		messageMatcher,
-		conditionType,
-		false,
-	)
 }
 
 func drclusterConditionExpectConsistently(
