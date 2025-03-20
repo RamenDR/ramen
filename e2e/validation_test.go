@@ -14,6 +14,10 @@ func TestValidation(dt *testing.T) {
 	t := test.WithLog(dt, Ctx.log)
 	t.Parallel()
 
+	if err := validate.TestConfig(Ctx.env, Ctx.config, Ctx.log); err != nil {
+		t.Fatal(err.Error())
+	}
+
 	t.Run("hub", func(dt *testing.T) {
 		t := test.WithLog(dt, Ctx.log)
 		t.Parallel()
