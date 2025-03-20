@@ -162,11 +162,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
-		drclusterConfigConditionExpectEventually(
+		objectConditionExpectEventually(
 			apiReader,
 			drCConfig,
+			metav1.ConditionTrue,
 			Equal("Succeeded"),
 			Equal("Configuration processed and validated"),
+			ramen.DRClusterConfigConfigurationProcessed,
 		)
 
 		By("Defining basic Classes")
@@ -232,11 +234,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 					drCConfig.Spec.ReplicationSchedules = append(drCConfig.Spec.ReplicationSchedules, "* * * * *")
 					Expect(k8sClient.Update(context.TODO(), drCConfig)).To(Succeed())
-					drclusterConfigConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
+						metav1.ConditionTrue,
 						Equal("Succeeded"),
 						Equal("Configuration processed and validated"),
+						ramen.DRClusterConfigConfigurationProcessed,
 					)
 				})
 			})
@@ -255,11 +259,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					claimCount++
 					ensureClusterClaim(apiReader, "storage.class", "sc1")
 					ensureClaimCount(apiReader, claimCount)
-					drclusterConfigConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
+						metav1.ConditionTrue,
 						Equal("Succeeded"),
 						Equal("Configuration processed and validated"),
+						ramen.DRClusterConfigConfigurationProcessed,
 					)
 				})
 			})
@@ -271,11 +277,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 					claimCount--
 					ensureClaimCount(apiReader, claimCount)
-					drclusterConfigConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
+						metav1.ConditionTrue,
 						Equal("Succeeded"),
 						Equal("Configuration processed and validated"),
+						ramen.DRClusterConfigConfigurationProcessed,
 					)
 				})
 			})
@@ -295,11 +303,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					ensureClusterClaim(apiReader, "storage.class", "sc1")
 					ensureClusterClaim(apiReader, "storage.class", "sc2")
 					ensureClaimCount(apiReader, claimCount)
-					drclusterConfigConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
+						metav1.ConditionTrue,
 						Equal("Succeeded"),
 						Equal("Configuration processed and validated"),
+						ramen.DRClusterConfigConfigurationProcessed,
 					)
 				})
 			})
@@ -313,11 +323,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					claimCount--
 					ensureClaimCount(apiReader, claimCount)
 					ensureClusterClaim(apiReader, "storage.class", "sc2")
-					drclusterConfigConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
+						metav1.ConditionTrue,
 						Equal("Succeeded"),
 						Equal("Configuration processed and validated"),
+						ramen.DRClusterConfigConfigurationProcessed,
 					)
 				})
 			})
@@ -333,11 +345,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount++
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
 				ensureClaimCount(apiReader, claimCount)
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -349,11 +363,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -373,11 +389,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc2")
 				ensureClaimCount(apiReader, claimCount)
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -391,11 +409,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
 				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -410,11 +430,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount++
 				ensureClusterClaim(apiReader, "replication.class", "vrc1")
 				ensureClaimCount(apiReader, claimCount)
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -426,11 +448,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -450,11 +474,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				ensureClusterClaim(apiReader, "replication.class", "vrc1")
 				ensureClusterClaim(apiReader, "replication.class", "vrc2")
 				ensureClaimCount(apiReader, claimCount)
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
@@ -468,11 +494,13 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				claimCount--
 				ensureClaimCount(apiReader, claimCount)
 				ensureClusterClaim(apiReader, "replication.class", "vrc1")
-				drclusterConfigConditionExpectEventually(
+				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
+					metav1.ConditionTrue,
 					Equal("Succeeded"),
 					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
 				)
 			})
 		})
