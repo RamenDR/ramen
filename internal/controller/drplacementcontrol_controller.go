@@ -2516,14 +2516,34 @@ func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementC
 	otherDrpcRecipeName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
 
 	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
-	// Support for protecting independent VMs added for epic-6681
+	// Support for protecting independent VMs
 	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
 		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
 			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
-			return true
+			return !twoVMDRPCsConflict(drpc, otherdrpc)
 		}
+	}
+
+	return false
+}
+
+func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl) bool {
+	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
+	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
+
+	conflict := drpcVMList.Intersection(otherdrpcVMList)
+
+	if len(conflict) == 0 {
+		return false
+	}
+
+	// Mark the latest drpc as unavailable if conflicting resources found
+
+	if (drpc.Status.ObservedGeneration == 0) ||
+		(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
+		return true
 	}
 
 	return false
