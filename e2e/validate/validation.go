@@ -118,14 +118,25 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 		labelSelector, podIdentifier, namespace, cluster.Name)
 }
 
-// ValidateClustersInDRPolicy checks if configured clusters match the configured
+// TestConfig is a wrapper function which performs validation checks on
+// the test environment configurations with the DR resources on the clusters.
+// Returns an error if any validation fails.
+func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	if err := clustersInDRPolicy(env, config, log); err != nil {
+		return fmt.Errorf("failed to validate test config: %w", err)
+	}
+
+	return nil
+}
+
+// clustersInDRPolicy checks if configured clusters match the configured
 // drpolicy. Returns an error if cluster names are not the same as drpolicy
 // drclusters. The reason for a failure may be wrong cluster name or wrong
 // drpolicy.
-func ClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+func clustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
 	drpolicy, err := util.GetDRPolicy(env.Hub, config.DRPolicy)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get DRPolicy %q: %w", config.DRPolicy, err)
 	}
 
 	clusters := []types.Cluster{env.C1, env.C2}
