@@ -126,21 +126,21 @@ var testCasesData = []testCases{
 
 	Adding the commented TCs which are to pass when the improvements are done.
 	*/
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[0].status} == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonStatefulset,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
-	// 	result:        true,
-	// 	jsonText:      jsonStatefulset,
-	// },
+	{
+		jsonPathExprs: "{$.status.conditions[0].status} == {True}",
+		result:        false,
+		jsonText:      jsonStatefulset,
+	},
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
+	{
+		jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
+		result:        true,
+		jsonText:      jsonStatefulset,
+	},
 	// {
 	// 	jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
 	// 	result:        true,
