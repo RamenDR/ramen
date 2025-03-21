@@ -30,8 +30,9 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 	// Deploys the application on the first DR cluster (c1).
 	cluster := ctx.Env().C1
 
-	// create namespace in both dr clusters
-	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log); err != nil {
+	// Create namespace on the first DR cluster (c1)
+	err := util.CreateNamespace(cluster, appNamespace, log)
+	if err != nil {
 		return err
 	}
 

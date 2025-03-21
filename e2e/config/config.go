@@ -16,8 +16,8 @@ import (
 
 const (
 	// Kubernetes distributions
-	distroK8s = "k8s"
-	distroOcp = "ocp"
+	DistroK8s = "k8s"
+	DistroOcp = "ocp"
 
 	// Channel
 	defaultChannelNamespace = "e2e-gitops"
@@ -107,13 +107,13 @@ func readConfig(configFile string, config *types.Config) error {
 
 func validateDistro(config *types.Config) error {
 	switch config.Distro {
-	case distroK8s:
+	case DistroK8s:
 		config.Namespaces = k8sNamespaces
-	case distroOcp:
+	case DistroOcp:
 		config.Namespaces = ocpNamespaces
 	default:
 		return fmt.Errorf("invalid distro %q: (choose one of %q, %q)",
-			config.Distro, distroK8s, distroOcp)
+			config.Distro, DistroK8s, DistroOcp)
 	}
 
 	return nil
