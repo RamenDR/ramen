@@ -2016,6 +2016,11 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 			continue
 		}
 
+		// If no PVs found in the s3 store, the next profile will be retried
+		if v.instance.Spec.Action != "" && pvCount == 0 {
+			continue
+		}
+
 		// Attempt to restore all PVCs from this profile. If a PVC is missing from this s3 stores or fails
 		// to restore, there will be a warning, but not a failure (no retry). In such cases, the PVC may be
 		// created when the application is created and it will bind to the PV correctly if the PVC name
