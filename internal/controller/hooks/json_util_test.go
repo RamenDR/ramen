@@ -99,19 +99,14 @@ var rep int32 = 1
 
 var testCasesData = []testCases{
 	{
-		jsonPathExprs: "{$.status.conditions[0].status} == True",
+		jsonPathExprs: "{$.status.conditions[0].status} == {True}",
 		result:        true,
 		jsonText:      jsonDeployment,
 	},
 	{
 		jsonPathExprs: "{$.spec.replicas} == 1",
-		result:        true,
-		jsonText:      jsonPod,
-	},
-	{
-		jsonPathExprs: "{$.status.conditions[0].status} == {True}",
 		result:        false,
-		jsonText:      jsonStatefulset,
+		jsonText:      jsonPod,
 	},
 	/* The json expression that can be provided as a condition in the check hook spec follows the format
 
@@ -126,21 +121,21 @@ var testCasesData = []testCases{
 
 	Adding the commented TCs which are to pass when the improvements are done.
 	*/
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[0].status} == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonStatefulset,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
-	// 	result:        true,
-	// 	jsonText:      jsonStatefulset,
-	// },
+	{
+		jsonPathExprs: "{$.status.conditions[0].status} == True",
+		result:        false,
+		jsonText:      jsonStatefulset,
+	},
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
+	{
+		jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
+		result:        true,
+		jsonText:      jsonStatefulset,
+	},
 	// {
 	// 	jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
 	// 	result:        true,
