@@ -2516,15 +2516,56 @@ func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementC
 	otherDrpcRecipeName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
 
 	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
-	// Support for protecting independent VMs added for epic-6681
+	// Support for protecting independent VMs
 	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
 		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
 			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
-			return true
+			return !twoVMDRPCsConflict(drpc, otherdrpc)
 		}
 	}
 
 	return false
+}
+
+func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl) bool {
+	drpcNsList := drpc.Spec.ProtectedNamespaces
+	otherdrpcNsList := otherdrpc.Spec.ProtectedNamespaces
+
+	drpcVMList := []string{}
+	otherdrpcVMList := []string{}
+	// Assuming ProtectedNamespaces holds only one NS name
+	if reflect.DeepEqual(drpcNsList, otherdrpcNsList) {
+		drpcVMList = drpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]
+		otherdrpcVMList = otherdrpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]
+	}
+
+	conflict := intersection(drpcVMList, otherdrpcVMList)
+	if len(conflict) == 0 {
+		return false
+	}
+
+	// Mark the latest drpc as unavailable if conflicting resources found
+	if drpc.Status.ObservedGeneration > 0 {
+		return false
+	}
+
+	return true
+}
+
+func intersection(protectedVMList1, protectedVMList2 []string) []string {
+	out := []string{}
+	commonResourceList := map[string]bool{}
+
+	for _, i := range protectedVMList1 {
+		for _, j := range protectedVMList2 {
+			if i == j && !commonResourceList[i] {
+				out = append(out, i)
+				commonResourceList[i] = true
+			}
+		}
+	}
+
+	return out
 }
