@@ -126,6 +126,10 @@ func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) er
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
 
+	if err := clustersInClusterSet(env, config, log); err != nil {
+		return fmt.Errorf("failed to validate test config: %w", err)
+	}
+
 	return nil
 }
 
@@ -148,6 +152,32 @@ func clustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLo
 	}
 
 	log.Infof("Validated clusters [%q, %q] in DRPolicy %q", clusters[0].Name, clusters[1].Name, config.DRPolicy)
+
+	return nil
+}
+
+// clustersInClusterSet checks if configured clusters exists in configured clusterset.
+// Returns an error if provided cluster names are not the same as managedclusters in clusterset.
+// The reason for a failure may be wrong cluster name or wrong clusterset.
+func clustersInClusterSet(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	if _, err := getClusterSet(env.Hub, config.ClusterSet); err != nil {
+		return err
+	}
+
+	clusterNames, err := getManagedClustersFromClusterSet(env.Hub, config.ClusterSet)
+	if err != nil {
+		return err
+	}
+
+	clusters := []types.Cluster{env.C1, env.C2}
+	for _, cluster := range clusters {
+		if !slices.Contains(clusterNames, cluster.Name) {
+			return fmt.Errorf("cluster %q is not defined in ClusterSet %q, clusters in ClusterSet: %q",
+				cluster.Name, config.ClusterSet, clusterNames)
+		}
+	}
+
+	log.Infof("Validated clusters [%q, %q] in ClusterSet %q", clusters[0].Name, clusters[1].Name, config.ClusterSet)
 
 	return nil
 }
