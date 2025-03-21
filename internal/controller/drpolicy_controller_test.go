@@ -193,14 +193,14 @@ var _ = Describe("DRPolicyController", func() {
 			Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 			updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 			updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
-			drclusterConditionExpectEventually(
+			objectConditionExpectEventually(
 				apiReader,
 				drcluster,
-				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
 				metav1.ConditionTrue,
 				Equal("Succeeded"),
 				Ignore(),
 				ramen.DRClusterValidated,
+				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
 			)
 		}
 	}
