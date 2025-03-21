@@ -44,7 +44,7 @@ func (e ExecHook) Execute(log logr.Logger) error {
 		return fmt.Errorf("either nameSelector or labelSelector should be provided to get resources")
 	}
 
-	execPods := e.getPodsToExecuteCommands(log)
+	execPods := e.GetPodsToExecuteCommands(log)
 
 	for _, execPod := range execPods {
 		err := executeCommand(&execPod, e.Hook, e.Scheme, log)
@@ -108,7 +108,7 @@ func executeCommand(execPod *ExecPodSpec, hook *kubeobjects.HookSpec, scheme *ru
 	return nil
 }
 
-func (e ExecHook) getPodsToExecuteCommands(log logr.Logger) []ExecPodSpec {
+func (e ExecHook) GetPodsToExecuteCommands(log logr.Logger) []ExecPodSpec {
 	var execPods []ExecPodSpec
 	/*
 		1. If the labelSelector is provided, get the pods using the labelSelector.
