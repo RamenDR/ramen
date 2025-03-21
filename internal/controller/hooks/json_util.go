@@ -6,6 +6,7 @@ package hooks
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"k8s.io/client-go/util/jsonpath"
@@ -27,45 +28,49 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	if a.Kind() == reflect.Ptr {
 		a = a.Elem()
 	}
-
 	if b.Kind() == reflect.Ptr {
 		b = b.Elem()
 	}
 
-	if a.Kind() == reflect.Int ||
-		a.Kind() == reflect.Int8 ||
-		a.Kind() == reflect.Int16 ||
-		a.Kind() == reflect.Int32 ||
-		a.Kind() == reflect.Int64 {
-		a = reflect.ValueOf(float64(a.Int()))
+	// Convert interface{} to actual type instead of just converting to string
+	if a.Kind() == reflect.Interface {
+		a = reflect.ValueOf(a.Interface())
+	}
+	if b.Kind() == reflect.Interface {
+		b = reflect.ValueOf(b.Interface())
 	}
 
-	if b.Kind() == reflect.Int ||
-		b.Kind() == reflect.Int8 ||
-		b.Kind() == reflect.Int16 ||
-		b.Kind() == reflect.Int32 ||
-		b.Kind() == reflect.Int64 {
+	// Convert all integer types to float64 for consistency
+	if isKindInt(a.Kind()) {
+		a = reflect.ValueOf(float64(a.Int()))
+	}
+	if isKindInt(b.Kind()) {
 		b = reflect.ValueOf(float64(b.Int()))
 	}
 
-	// if they are just an interface then we convert them to string
-	if a.Kind() == reflect.Interface {
-		a = reflect.ValueOf(fmt.Sprintf("%v", a.Interface()))
+	// Convert numeric strings to float64 for valid comparison
+	if a.Kind() == reflect.String && isNumericString(a.String()) {
+		num, _ := strconv.ParseFloat(a.String(), 64)
+		a = reflect.ValueOf(num)
+	}
+	if b.Kind() == reflect.String && isNumericString(b.String()) {
+		num, _ := strconv.ParseFloat(b.String(), 64)
+		b = reflect.ValueOf(num)
 	}
 
-	if b.Kind() == reflect.Interface {
-		b = reflect.ValueOf(fmt.Sprintf("%v", b.Interface()))
-	}
+	// Convert string "True"/"False" to boolean before comparison
+	a = convertToBoolean(a)
+	b = convertToBoolean(b)
 
+	// Ensure operands are of the same type before comparison
 	if a.Kind() != b.Kind() {
-		return false, fmt.Errorf("operands of different kinds can't be compared %v, %v", a.Kind(), b.Kind())
+		return false, fmt.Errorf("operands of different kinds can't be compared: %v, %v", a.Kind(), b.Kind())
 	}
 
-	// At this point, both a and b should be of the same kind
+	// Validate the operator for the given types
 	if operator != "==" && operator != "!=" {
-		if !isKindStringOrFloat64(a.Kind()) || !isKindStringOrFloat64(b.Kind()) {
-			return false, fmt.Errorf("operands not supported for operator: %v, %v, %s",
-				a.Kind(), b.Kind(), operator)
+		if !isKindStringOrFloat64(a.Kind()) {
+			return false, fmt.Errorf("unsupported operands for operator: %v, %v, %s", a.Kind(), b.Kind(), operator)
 		}
 	}
 
@@ -77,11 +82,41 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 		return false, fmt.Errorf("unsupported kind for comparison: %v, %v", a.Kind(), b.Kind())
 	}
 
-	if isKindBool(a.Kind()) && isKindBool(b.Kind()) {
+	if isKindBool(a.Kind()) {
 		return compareBool(a.Bool(), b.Bool(), operator)
 	}
 
 	return compareValues(a.Interface(), b.Interface(), operator)
+}
+
+func isKindInt(kind reflect.Kind) bool {
+	return kind >= reflect.Int && kind <= reflect.Int64
+}
+
+func isNumericString(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
+// Convert a string reflect.Value to boolean if it contains "true"/"false"
+func convertToBoolean(v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.String {
+		strVal := strings.TrimSpace(v.String())
+
+		// Remove surrounding double quotes, if present
+		if strings.HasPrefix(strVal, "\"") && strings.HasSuffix(strVal, "\"") {
+			strVal = strVal[1 : len(strVal)-1]
+		}
+
+		// Convert "true"/"false" strings to booleans
+		switch strings.ToLower(strVal) {
+		case "true":
+			return reflect.ValueOf(true)
+		case "false":
+			return reflect.ValueOf(false)
+		}
+	}
+	return v
 }
 
 func compareBool(a, b bool, operator string) (bool, error) {
