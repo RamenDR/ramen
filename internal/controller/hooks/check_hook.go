@@ -7,9 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -306,23 +304,5 @@ func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) 
 }
 
 func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
-	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
-	}
-
-	operand := make([]reflect.Value, len(jsonPaths))
-
-	for i, jsonPath := range jsonPaths {
-		if strings.HasPrefix(jsonPath, "$") {
-			operand[i], err = QueryJSONPath(jsonData, jsonPath)
-			if err != nil {
-				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
-			}
-		} else {
-			operand[i] = reflect.ValueOf(jsonPath)
-		}
-	}
-
-	return compare(operand[0], operand[1], op)
+	return evaluateBooleanExpression(booleanExpression, jsonData)
 }
