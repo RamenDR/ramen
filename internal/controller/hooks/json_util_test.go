@@ -110,7 +110,7 @@ var testCasesData = []testCases{
 	},
 	{
 		jsonPathExprs: "{$.status.conditions[0].status} == {True}",
-		result:        false,
+		result:        true,
 		jsonText:      jsonStatefulset,
 	},
 	/* The json expression that can be provided as a condition in the check hook spec follows the format
@@ -126,36 +126,31 @@ var testCasesData = []testCases{
 
 	Adding the commented TCs which are to pass when the improvements are done.
 	*/
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[0].status} == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonStatefulset,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
-	// 	result:        true,
-	// 	jsonText:      jsonStatefulset,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1} && $.status.conditions[0].status == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
+	{
+		jsonPathExprs: "{$.status.conditions[0].status} == {\"True\"}",
+		result:        true,
+		jsonText:      jsonStatefulset,
+	},
+	{
+		jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1} && $.status.conditions[0].status == {True}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
 }
 
 var testCasesObjectData = []testCasesObject{
