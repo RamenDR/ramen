@@ -136,11 +136,11 @@ var testCasesData = []testCases{
 		result:        true,
 		jsonText:      jsonStatefulset,
 	},
-	// {
-	// 	jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
+	{
+		jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
 	// {
 	// 	jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
 	// 	result:        true,
@@ -165,8 +165,13 @@ var testCasesObjectData = []testCasesObject{
 		jsonObj: getPodContent(),
 	},
 	{
-		hook:    getHookSpec("Pod", "{$.status.containerStatuses[0].restartCount} == 2"),
+		hook:    getHookSpec("Pod", "{$.status.containerStatuses[0].restartCount} == {2}"),
 		result:  true,
+		jsonObj: getPodContent(),
+	},
+	{
+		hook:    getHookSpec("Pod", "{$.status.containerStatuses[0].restartCount} == 2"),
+		result:  false,
 		jsonObj: getPodContent(),
 	},
 	{
@@ -239,40 +244,47 @@ func Test_isValidJsonPathExpression(t *testing.T) {
 		want bool
 	}{
 		/* Same comments as above */
-		// {
-		// 	name: "String expression",
-		// 	args: args{
-		// 		expr: "{True}",
-		// 	},
-		// 	want: true,
-		// },
-		// {
-		// 	name: "String expression 1",
-		// 	args: args{
-		// 		expr: "{\"Ready\"}",
-		// 	},
-		// 	want: true,
-		// },
-		// {
-		// 	name: "Number expression",
-		// 	args: args{
-		// 		expr: "{10}",
-		// 	},
-		// 	want: true,
-		// },
+		{
+			name: "String expression",
+			args: args{
+				expr: "{True}",
+			},
+			want: true,
+		},
+		{
+			name: "String expression 1",
+			args: args{
+				expr: "{\"Ready\"}",
+			},
+			want: true,
+		},
+		{
+			name: "Number expression",
+			args: args{
+				expr: "{10}",
+			},
+			want: true,
+		},
+		{
+			name: "Number expression",
+			args: args{
+				expr: "10",
+			},
+			want: false,
+		},
 		{
 			name: "Simple expression",
 			args: args{
 				expr: "$.spec.replicas",
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "no $ at the start",
 			args: args{
 				expr: "{.spec.replicas}",
 			},
-			want: true,
+			want: false,
 		},
 		{
 			name: "element in array",
@@ -300,14 +312,14 @@ func Test_isValidJsonPathExpression(t *testing.T) {
 			args: args{
 				expr: "{True}",
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "spec 3b",
 			args: args{
 				expr: "{False}",
 			},
-			want: false,
+			want: true,
 		},
 		{
 			name: "spec 3c",
@@ -333,42 +345,42 @@ func Test_isValidJsonPathExpression(t *testing.T) {
 		{
 			name: "expression with == operator",
 			args: args{
-				expr: "$.store.book[?(@.price > 10)].title==$.store.book[0].title",
+				expr: "{$.store.book[?(@.price > 10)].title==$.store.book[0].title}",
 			},
 			want: true,
 		},
 		{
 			name: "expression with > operator",
 			args: args{
-				expr: "$.store.book[?(@.author CONTAINS 'Smith')].price>20",
+				expr: "{$.store.book[?(@.author CONTAINS 'Smith')].price>20}",
 			},
 			want: true,
 		},
 		{
 			name: "expression with >= operator",
 			args: args{
-				expr: "$.user.age>=$.minimum.age",
+				expr: "{$.user.age>=$.minimum.age}",
 			},
 			want: true,
 		},
 		{
 			name: "expression with < operator",
 			args: args{
-				expr: "$.user.age<$.maximum.age",
+				expr: "{$.user.age<$.maximum.age}",
 			},
 			want: true,
 		},
 		{
 			name: "expression with <= operator",
 			args: args{
-				expr: "$.user.age<=$.maximum.age",
+				expr: "{$.user.age<=$.maximum.age}",
 			},
 			want: true,
 		},
 		{
 			name: "expression with != operator",
 			args: args{
-				expr: "$.user.age!=$.maximum.age",
+				expr: "{$.user.age!=$.maximum.age}",
 			},
 			want: true,
 		},
