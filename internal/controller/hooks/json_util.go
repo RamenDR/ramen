@@ -322,7 +322,42 @@ func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 }
 
 func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
-	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
+	return evaluateBooleanExpression(booleanExpression, jsonData)
+}
+
+func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
+	// handle OR (||)
+	orParts := splitOutsideBraces(expression, "||")
+	if len(orParts) > 1 {
+		for _, part := range orParts {
+			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
+			if err != nil {
+				return false, err
+			}
+			if result {
+				return true, nil // Short-circuit: If any part is true
+			}
+		}
+		return false, nil
+	}
+
+	// handle AND (&&)
+	andParts := splitOutsideBraces(expression, "&&")
+	if len(andParts) > 1 {
+		for _, part := range andParts {
+			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
+			if err != nil {
+				return false, err
+			}
+			if !result {
+				return false, nil // Short-circuit: If any part is false
+			}
+		}
+		return true, nil
+	}
+
+	// No logical operator
+	op, jsonPaths, err := parseBooleanExpression(expression)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
 	}
@@ -334,14 +369,38 @@ func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool,
 			if err != nil {
 				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
 			}
-			fmt.Printf("The value of operand[%d] is: %v\n", i, operand[i])
 		} else {
 			operand[i] = reflect.ValueOf(jsonPath)
-			fmt.Printf("The value of operand[%d] is: %v\n", i, operand[i])
 		}
 	}
 
+	if !operand[0].IsValid() || !operand[1].IsValid() {
+		return false, fmt.Errorf("comparison failed: one of the operands is invalid")
+	}
+
 	return compare(operand[0], operand[1], op)
+}
+
+func splitOutsideBraces(expression, delimiter string) []string {
+	var result []string
+	braces := 0
+	lastIndex := 0
+
+	for i := 0; i <= len(expression)-len(delimiter); i++ {
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		if braces == 0 && expression[i:i+len(delimiter)] == delimiter {
+			result = append(result, expression[lastIndex:i])
+			lastIndex = i + len(delimiter)
+		}
+	}
+
+	result = append(result, expression[lastIndex:])
+	return result
 }
 
 // compare compares two interfaces using the specified operator
