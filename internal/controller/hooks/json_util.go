@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/oliveagle/jsonpath"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/util/jsonpath"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -329,9 +329,15 @@ func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool,
 
 	operand := make([]reflect.Value, len(jsonPaths))
 	for i, jsonPath := range jsonPaths {
-		operand[i], err = QueryJSONPath(jsonData, jsonPath)
-		if err != nil {
-			return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+		if strings.HasPrefix(jsonPath, "$") {
+			operand[i], err = QueryJSONPath(jsonData, jsonPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+			}
+			fmt.Printf("The value of operand[%d] is: %v\n", i, operand[i])
+		} else {
+			operand[i] = reflect.ValueOf(jsonPath)
+			fmt.Printf("The value of operand[%d] is: %v\n", i, operand[i])
 		}
 	}
 
@@ -528,66 +534,125 @@ func isKindStringOrFloat64(kind reflect.Kind) bool {
 }
 
 func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []string, err error) {
+	// List of valid operators
 	operators := []string{"==", "!=", ">=", ">", "<=", "<"}
 
-	// TODO
-	// If one of the jsonpaths have the operator that we are looking for,
-	// then strings.Split with split it at that point and not in the middle.
+	// Find the first occurrence of an operator that is outside curly braces
+	var operatorIndex int = -1
+	var foundOperator string
 
-	for _, op := range operators {
-		exprs := strings.Split(booleanExpression, op)
-
-		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
-
-		if len(exprs) == expectedNumberOfJSONPaths &&
-			IsValidJSONPathExpression(jsonPaths[0]) &&
-			IsValidJSONPathExpression(jsonPaths[1]) {
-			return op, jsonPaths, nil
+	for _, operator := range operators {
+		index := findOperatorOutsideBraces(booleanExpression, operator)
+		if index != -1 && (operatorIndex == -1 || index < operatorIndex) {
+			operatorIndex = index
+			foundOperator = operator
 		}
 	}
 
-	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
+	if operatorIndex == -1 {
+		return "", nil, fmt.Errorf("unable to find a valid boolean operator in expression: %v", booleanExpression)
+	}
+
+	// Split using the found operator
+	operand1 := strings.TrimSpace(booleanExpression[:operatorIndex])
+	operand2 := strings.TrimSpace(booleanExpression[operatorIndex+len(foundOperator):])
+
+	// Remove {}
+	if strings.HasPrefix(operand1, "{") && strings.HasSuffix(operand1, "}") {
+		operand1 = strings.TrimPrefix(operand1, "{")
+		operand1 = strings.TrimSuffix(operand1, "}")
+	}
+
+	if strings.HasPrefix(operand2, "{") && strings.HasSuffix(operand2, "}") {
+		operand2 = strings.TrimPrefix(operand2, "{")
+		operand2 = strings.TrimSuffix(operand2, "}")
+	}
+
+	fmt.Printf("Operands in parseBooleanExpression: %s : %s\n", operand1, operand2)
+
+	// Validate JSONPath and literals correctly
+	if !IsValidJSONPathExpression(operand1) || !IsValidJSONPathExpression(operand2) {
+		return "", nil, fmt.Errorf("invalid JSONPath or literal in boolean expression: %v", booleanExpression)
+	}
+
+	return foundOperator, []string{operand1, operand2}, nil
+}
+
+func findOperatorOutsideBraces(expression string, operator string) int {
+	braces := 0
+
+	for i := 0; i <= len(expression)-len(operator); i++ {
+		// Track opening `{` and closing `}`
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		// Found operator outside `{}`?
+		if braces == 0 && expression[i:i+len(operator)] == operator {
+			return i
+		}
+	}
+
+	return -1 // Not found
+}
+
+func isLiteralValue(expr string) bool {
+	expr = strings.TrimSpace(expr)
+
+	// Allow unwrapped True/False, numbers, quoted strings, and lists
+	literalRegex := regexp.MustCompile(`^(True|False|[0-9]+|"[^"]*"|\[.*\])$`)
+
+	// Ensure valid lists (basic check for square brackets inside {})
+	if strings.HasPrefix(expr, "[") && strings.HasSuffix(expr, "]") {
+		return true
+	}
+
+	return literalRegex.MatchString(expr)
 }
 
 func IsValidJSONPathExpression(expr string) bool {
-	jp := jsonpath.New("validator").AllowMissingKeys(true)
+	expr = strings.TrimSpace(expr)
 
-	err := jp.Parse(expr)
-	if err != nil {
-		return false
+	jsonPathRegex := regexp.MustCompile(`^\$[.\w\[\]\(\)\@\=\?\-"']+$`)
+	if jsonPathRegex.MatchString(expr) {
+		return true
 	}
 
-	_, err = QueryJSONPath("{}", expr)
+	if isLiteralValue(expr) {
+		return true
+	}
 
-	return err == nil
+	return false
 }
 
 func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
-	jp := jsonpath.New("extractor").AllowMissingKeys(true)
+	// Fix `==` issue inside JSONPath library used
+	jsonPath = strings.Replace(jsonPath, "==", "=", -1)
 
-	if err := jp.Parse(jsonPath); err != nil {
-		return reflect.Value{}, fmt.Errorf("failed to get value invalid jsonpath %w", err)
-	}
-
-	results, err := jp.FindResults(data)
+	expr, err := jsonpath.Compile(jsonPath)
 	if err != nil {
-		return reflect.Value{}, fmt.Errorf("failed to get value from data using jsonpath %w", err)
+		return reflect.Value{}, fmt.Errorf("failed to compile JSONPath: %w", err)
 	}
 
-	if len(results) == 0 || len(results[0]) == 0 {
-		return reflect.Value{}, nil
+	result, err := expr.Lookup(data)
+	if err != nil {
+		return reflect.Value{}, fmt.Errorf("failed to get value using JSONPath: %w", err)
 	}
 
-	return results[0][0], nil
-}
+	fmt.Printf("The value QueryJSONPath returned is: %v\n", result)
+	val := reflect.ValueOf(result)
 
-func trimLeadingTrailingWhiteSpace(paths []string) []string {
-	tPaths := make([]string, len(paths))
-
-	for i, path := range paths {
-		tpath := strings.TrimSpace(path)
-		tPaths[i] = tpath
+	// Extract first element if JSONPath returns a slice
+	if val.Kind() == reflect.Slice && val.Len() > 0 {
+		val = val.Index(0)
 	}
 
-	return tPaths
+	// Check if value is nil or invalid
+	if !val.IsValid() || (val.Kind() == reflect.Ptr && val.IsNil()) {
+		return reflect.Value{}, fmt.Errorf("JSONPath %v returned nil or empty", jsonPath)
+	}
+
+	return val, nil
 }
