@@ -304,6 +304,9 @@ func (r *DRClusterConfigReconciler) ensureClusterClaim(
 	cc := &clusterv1alpha1.ClusterClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: claimName(prefix, name),
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 	}
 

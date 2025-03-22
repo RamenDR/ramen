@@ -78,6 +78,7 @@ func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log
 			Namespace: secretNamespace,
 			Labels: map[string]string{
 				rmnutil.OCMBackupLabelKey: rmnutil.OCMBackupLabelValue,
+				createdByRamenLabel:       "true",
 			},
 		},
 		StringData: map[string]string{

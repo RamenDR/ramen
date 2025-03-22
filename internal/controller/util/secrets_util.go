@@ -44,6 +44,8 @@ const (
 	SecretPolicyFinalizer string = "drpolicies.ramendr.openshift.io/policy-protection"
 
 	VeleroSecretKeyNameDefault = "ramengenerated"
+
+	createdByRamenLabel = "ramendr.openshift.io/resource-created-by-ramen"
 )
 
 // TargetSecretFormat defines the secret format to deliver to the cluster
@@ -189,6 +191,9 @@ func newPlacementRuleBinding(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 		PlacementRef: gppv1.PlacementSubject{
 			APIGroup: plrv1.Resource("PlacementRule").Group,
@@ -217,6 +222,9 @@ func newPlacementRule(name string, namespace string,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 		Spec: plrv1.PlacementRuleSpec{
 			GenericPlacementFields: plrv1.GenericPlacementFields{
@@ -282,6 +290,9 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      s3SecretRef.Name,
 			Namespace: targetns,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 		Data: map[string]string{
 			"AWS_ACCESS_KEY_ID": "{{hub fromSecret " +
@@ -305,6 +316,9 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GenerateVeleroSecretName(s3SecretRef.Name),
 			Namespace: veleroNS,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 		/*
 			keyName contains, base 64 encoded data as follows:
@@ -334,6 +348,9 @@ func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.Co
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
+			},
 		},
 		Spec: &cpcv1.ConfigurationPolicySpec{
 			RemediationAction: cpcv1.Enforce,
@@ -359,6 +376,9 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 			Namespace: namespace,
 			Annotations: map[string]string{
 				PolicyTriggerAnnotation: triggerValue,
+			},
+			Labels: map[string]string{
+				createdByRamenLabel: "true",
 			},
 		},
 		Spec: gppv1.PolicySpec{
