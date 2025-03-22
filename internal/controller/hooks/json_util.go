@@ -6,6 +6,7 @@ package hooks
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,12 +23,13 @@ const (
 
 // compare compares two interfaces using the specified operator
 //
-//nolint:gocognit,gocyclo,cyclop
+//nolint:funlen,gocognit,gocyclo,cyclop
 func compare(a, b reflect.Value, operator string) (bool, error) {
 	// convert pointer to interface
 	if a.Kind() == reflect.Ptr {
 		a = a.Elem()
 	}
+
 	if b.Kind() == reflect.Ptr {
 		b = b.Elem()
 	}
@@ -36,6 +38,7 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	if a.Kind() == reflect.Interface {
 		a = reflect.ValueOf(a.Interface())
 	}
+
 	if b.Kind() == reflect.Interface {
 		b = reflect.ValueOf(b.Interface())
 	}
@@ -44,17 +47,27 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	if isKindInt(a.Kind()) {
 		a = reflect.ValueOf(float64(a.Int()))
 	}
+
 	if isKindInt(b.Kind()) {
 		b = reflect.ValueOf(float64(b.Int()))
 	}
 
 	// Convert numeric strings to float64 for valid comparison
 	if a.Kind() == reflect.String && isNumericString(a.String()) {
-		num, _ := strconv.ParseFloat(a.String(), 64)
+		num, err := strconv.ParseFloat(a.String(), 64)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert string to float64: %w", err)
+		}
+
 		a = reflect.ValueOf(num)
 	}
+
 	if b.Kind() == reflect.String && isNumericString(b.String()) {
-		num, _ := strconv.ParseFloat(b.String(), 64)
+		num, err := strconv.ParseFloat(b.String(), 64)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert string to float64: %w", err)
+		}
+
 		b = reflect.ValueOf(num)
 	}
 
@@ -95,6 +108,7 @@ func isKindInt(kind reflect.Kind) bool {
 
 func isNumericString(s string) bool {
 	_, err := strconv.ParseFloat(s, 64)
+
 	return err == nil
 }
 
@@ -116,6 +130,7 @@ func convertToBoolean(v reflect.Value) reflect.Value {
 			return reflect.ValueOf(false)
 		}
 	}
+
 	return v
 }
 
@@ -209,39 +224,112 @@ func isKindStringOrFloat64(kind reflect.Kind) bool {
 	return isKindString(kind) || isKindFloat64(kind)
 }
 
+// nolint:cyclop
 func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []string, err error) {
+	// List of valid operators
 	operators := []string{"==", "!=", ">=", ">", "<=", "<"}
 
-	// TODO
-	// If one of the jsonpaths have the operator that we are looking for,
-	// then strings.Split with split it at that point and not in the middle.
+	// Find the first occurrence of an operator that is outside curly braces
+	operatorIndex := -1
 
-	for _, op := range operators {
-		exprs := strings.Split(booleanExpression, op)
+	var foundOperator string
 
-		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
-
-		if len(exprs) == expectedNumberOfJSONPaths &&
-			IsValidJSONPathExpression(jsonPaths[0]) &&
-			IsValidJSONPathExpression(jsonPaths[1]) {
-			return op, jsonPaths, nil
+	for _, operator := range operators {
+		index := findOperatorOutsideBraces(booleanExpression, operator)
+		if index != -1 && (operatorIndex == -1 || index < operatorIndex) {
+			operatorIndex = index
+			foundOperator = operator
 		}
 	}
 
-	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
+	if operatorIndex == -1 {
+		return "", nil, fmt.Errorf("unable to find a valid boolean operator in expression: %v", booleanExpression)
+	}
+
+	// Split using the found operator
+	operand1 := strings.TrimSpace(booleanExpression[:operatorIndex])
+	operand2 := strings.TrimSpace(booleanExpression[operatorIndex+len(foundOperator):])
+
+	// Validate JSONPath and literals correctly
+	if !IsValidJSONPathExpression(operand1) || !IsValidJSONPathExpression(operand2) {
+		return "", nil, fmt.Errorf("invalid JSONPath or literal in boolean expression: %v", booleanExpression)
+	}
+
+	return foundOperator, []string{operand1, operand2}, nil
 }
 
-func IsValidJSONPathExpression(expr string) bool {
-	jp := jsonpath.New("validator").AllowMissingKeys(true)
+func findOperatorOutsideBraces(expression string, operator string) int {
+	braces := 0
 
-	err := jp.Parse(expr)
-	if err != nil {
+	for i := 0; i <= len(expression)-len(operator); i++ {
+		// Track opening `{` and closing `}`
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		// Found operator outside `{}`?
+		if braces == 0 && expression[i:i+len(operator)] == operator {
+			return i
+		}
+	}
+
+	return -1 // Not found
+}
+
+// IsValidJSONPathExpression checks if a given expression is a valid JSONPath expression
+//
+//nolint:cyclop
+func IsValidJSONPathExpression(expr string) bool {
+	expr = strings.TrimSpace(expr)
+
+	if !(strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}")) {
 		return false
 	}
 
-	_, err = QueryJSONPath("{}", expr)
+	innerExpr := strings.Trim(expr, "{}")
 
-	return err == nil
+	if innerExpr == "true" || innerExpr == "false" || innerExpr == "True" || innerExpr == "False" {
+		return true
+	}
+
+	if isLiteralValue(innerExpr) {
+		return true
+	}
+
+	if !strings.HasPrefix(innerExpr, "$") {
+		return false
+	}
+
+	// JSONPath expressions and comparisons
+	jsonPathRegex := regexp.MustCompile(`^\$([\.\w\[\]\"'\(\)\@\?\=\-]+)$`)
+	jsonPathComparisonRegex := regexp.MustCompile(`^\$([\.\w\[\]\"'\(\)\@\?\=\-]+)` +
+		`(\s*(==|!=|>=|<=|>|<)\s*(\$\S+|\d+|".*"|'.*'|\{.*\}))$`)
+	jsonPathFilterRegex := regexp.MustCompile(`^\$.*\[\?\(@.*\)\].*$`)
+
+	if jsonPathRegex.MatchString(innerExpr) || jsonPathComparisonRegex.MatchString(innerExpr) ||
+		jsonPathFilterRegex.MatchString(innerExpr) {
+		return true
+	}
+
+	return false
+}
+
+// Checks if a value is a valid literal (number or string)
+func isLiteralValue(expr string) bool {
+	// Check if it's a quoted string (single or double quotes)
+	if (strings.HasPrefix(expr, "\"") && strings.HasSuffix(expr, "\"")) ||
+		(strings.HasPrefix(expr, "'") && strings.HasSuffix(expr, "'")) {
+		return true
+	}
+
+	// Check if it's a valid number
+	if _, err := strconv.ParseFloat(expr, 64); err == nil {
+		return true
+	}
+
+	return false
 }
 
 func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
@@ -251,25 +339,14 @@ func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
 		return reflect.Value{}, fmt.Errorf("failed to get value invalid jsonpath %w", err)
 	}
 
-	results, err := jp.FindResults(data)
+	result, err := jp.FindResults(data)
 	if err != nil {
 		return reflect.Value{}, fmt.Errorf("failed to get value from data using jsonpath %w", err)
 	}
 
-	if len(results) == 0 || len(results[0]) == 0 {
+	if len(result) == 0 || len(result[0]) == 0 {
 		return reflect.Value{}, nil
 	}
 
-	return results[0][0], nil
-}
-
-func trimLeadingTrailingWhiteSpace(paths []string) []string {
-	tPaths := make([]string, len(paths))
-
-	for i, path := range paths {
-		tpath := strings.TrimSpace(path)
-		tPaths[i] = tpath
-	}
-
-	return tPaths
+	return result[0][0], nil
 }

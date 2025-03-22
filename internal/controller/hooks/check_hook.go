@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -311,10 +312,15 @@ func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool,
 	}
 
 	operand := make([]reflect.Value, len(jsonPaths))
+
 	for i, jsonPath := range jsonPaths {
-		operand[i], err = QueryJSONPath(jsonData, jsonPath)
-		if err != nil {
-			return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+		if strings.HasPrefix(jsonPath, "$") {
+			operand[i], err = QueryJSONPath(jsonData, jsonPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+			}
+		} else {
+			operand[i] = reflect.ValueOf(jsonPath)
 		}
 	}
 
