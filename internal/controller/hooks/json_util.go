@@ -21,6 +21,88 @@ const (
 	pInterval                 = 100
 )
 
+// nolint:gocognit,cyclop
+func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
+	// handle OR (||)
+	orParts := splitOutsideBraces(expression, "||")
+	if len(orParts) > 1 {
+		for _, part := range orParts {
+			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
+			if err != nil {
+				return false, err
+			}
+
+			if result {
+				return true, nil // Short-circuit: If any part is true
+			}
+		}
+
+		return false, nil
+	}
+
+	// handle AND (&&)
+	andParts := splitOutsideBraces(expression, "&&")
+	if len(andParts) > 1 {
+		for _, part := range andParts {
+			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
+			if err != nil {
+				return false, err
+			}
+
+			if !result {
+				return false, nil // Short-circuit: If any part is false
+			}
+		}
+
+		return true, nil
+	}
+
+	// No logical operator
+	op, jsonPaths, err := parseBooleanExpression(expression)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
+	}
+
+	operand := make([]reflect.Value, len(jsonPaths))
+
+	for i, jsonPath := range jsonPaths {
+		if strings.HasPrefix(jsonPath, "$") {
+			operand[i], err = QueryJSONPath(jsonData, jsonPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+			}
+		} else {
+			operand[i] = reflect.ValueOf(jsonPath)
+		}
+	}
+
+	return compare(operand[0], operand[1], op)
+}
+
+func splitOutsideBraces(expression, delimiter string) []string {
+	var result []string
+
+	braces := 0
+	lastIndex := 0
+
+	for i := 0; i <= len(expression)-len(delimiter); i++ {
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		if braces == 0 && expression[i:i+len(delimiter)] == delimiter {
+			result = append(result, expression[lastIndex:i])
+			lastIndex = i + len(delimiter)
+		}
+	}
+
+	result = append(result, expression[lastIndex:])
+
+	return result
+}
+
 // compare compares two interfaces using the specified operator
 //
 //nolint:funlen,gocognit,gocyclo,cyclop
