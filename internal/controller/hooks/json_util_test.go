@@ -141,16 +141,16 @@ var testCasesData = []testCases{
 		result:        true,
 		jsonText:      jsonPod,
 	},
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
-	// {
-	// 	jsonPathExprs: "{$.spec.replicas} == {1} && $.status.conditions[0].status == {True}",
-	// 	result:        true,
-	// 	jsonText:      jsonPod,
-	// },
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1} || $.status.conditions[0].status == {True}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
+	{
+		jsonPathExprs: "{$.spec.replicas} == {1} && $.status.conditions[0].status == {True}",
+		result:        true,
+		jsonText:      jsonPod,
+	},
 }
 
 var testCasesObjectData = []testCasesObject{
