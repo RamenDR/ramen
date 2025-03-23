@@ -113,8 +113,8 @@ func failoverRelocateDiscoveredApps(
 	ctx types.Context,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentCluster string,
-	targetCluster string,
+	currentClusterName string,
+	targetClusterName string,
 ) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
@@ -122,7 +122,7 @@ func failoverRelocateDiscoveredApps(
 
 	drpcName := name
 
-	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetClusterName); err != nil {
 		return err
 	}
 
@@ -131,8 +131,13 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
+	currentCluster, err := env.GetCluster(ctx.Env(), currentClusterName)
+	if err != nil {
+		return err
+	}
+
 	// delete pvc and deployment from dr cluster
-	if err := deployers.DeleteDiscoveredApps(ctx, appNamespace, currentCluster); err != nil {
+	if err := deployers.DeleteDiscoveredApps(ctx, currentCluster, appNamespace); err != nil {
 		return err
 	}
 
@@ -144,10 +149,10 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	drCluster, err := env.GetCluster(ctx.Env(), targetCluster)
+	targetCluster, err := env.GetCluster(ctx.Env(), targetClusterName)
 	if err != nil {
 		return err
 	}
 
-	return deployers.WaitWorkloadHealth(ctx, drCluster, appNamespace)
+	return deployers.WaitWorkloadHealth(ctx, targetCluster, appNamespace)
 }

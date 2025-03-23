@@ -51,7 +51,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 		appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", appNamespace,
-		"--context", cluster.Name, "--timeout=5m")
+		"--kubeconfig", cluster.Kubeconfig, "--timeout=5m")
 
 	if out, err := cmd.Output(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -73,23 +73,17 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 // Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApp) Undeploy(ctx types.Context) error {
 	log := ctx.Logger()
-	config := ctx.Config()
 	appNamespace := ctx.AppNamespace()
 
-	drpolicy, err := util.GetDRPolicy(ctx.Env().Hub, config.DRPolicy)
-	if err != nil {
-		return err
-	}
-
 	log.Infof("Undeploying discovered app \"%s/%s\" in clusters %q and %q",
-		appNamespace, ctx.Workload().GetAppName(), drpolicy.Spec.DRClusters[0], drpolicy.Spec.DRClusters[1])
+		appNamespace, ctx.Workload().GetAppName(), ctx.Env().C1.Name, ctx.Env().C2.Name)
 
 	// delete app on both clusters
-	if err := DeleteDiscoveredApps(ctx, appNamespace, drpolicy.Spec.DRClusters[0]); err != nil {
+	if err := DeleteDiscoveredApps(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
 
-	if err := DeleteDiscoveredApps(ctx, appNamespace, drpolicy.Spec.DRClusters[1]); err != nil {
+	if err := DeleteDiscoveredApps(ctx, ctx.Env().C2, appNamespace); err != nil {
 		return err
 	}
 
