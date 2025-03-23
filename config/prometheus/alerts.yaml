@@ -40,3 +40,12 @@ spec:
           annotations:
             description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions for details."
             alert_type: "DisasterRecovery"
+        - alert: PVCConflictDetected
+          expr: ramen_pvc_conflict_detected == 1
+          for: 30s
+          labels:
+            severity: critical
+          annotations:
+            description: "PVC conflict detected in cluster {{ $labels.cluster_name }} (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Investigate the VRG status conditions for conflict resolution."
+            alert_type: "DisasterRecovery"
+

@@ -4,6 +4,8 @@
 package controllers
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -22,6 +24,7 @@ const (
 	LastSyncDurationSeconds  = "last_sync_duration_seconds"
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
+	PVCConflictDetected      = "pvc_conflict_detected"
 )
 
 type SyncTimeMetrics struct {
@@ -50,12 +53,18 @@ type SyncMetrics struct {
 	SyncDataBytesMetrics
 }
 
+type PVCConflictMetrics struct {
+	PVCConflictDetected prometheus.Gauge
+}
+
 const (
 	ObjType            = "obj_type"
 	ObjName            = "obj_name"
 	ObjNamespace       = "obj_namespace"
 	Policyname         = "policyname"
 	SchedulingInterval = "scheduling_interval"
+	IsPrimaryCluster   = "is_primary_cluster"
+	ClusterName        = "cluster_name"
 )
 
 var (
@@ -89,6 +98,14 @@ var (
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
+	}
+
+	pvcConflictStatusLabels = []string{
+		ObjType,          // Type of the resource [drpc]
+		ObjName,          // Name of the resource [drpc-name]
+		ObjNamespace,     // Namespace of the DRPC resource
+		IsPrimaryCluster, // "true" if conflict is in primary, "false" for secondary
+		ClusterName,      // Name of the cluster where the conflict occurred
 	}
 )
 
@@ -136,6 +153,15 @@ var (
 			Help:      "Status regarding workload protection health",
 		},
 		workloadProtectionStatusLabels,
+	)
+
+	pvcConflictDetected = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      PVCConflictDetected,
+			Namespace: metricNamespace,
+			Help:      "Indicates PVC conflict status (1: detected, 0: no conflict)",
+		},
+		pvcConflictStatusLabels,
 	)
 )
 
@@ -241,4 +267,29 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDuration)
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
+	metrics.Registry.MustRegister(pvcConflictDetected)
+}
+
+func PVCConflictMetricLabels(
+	drpc *rmn.DRPlacementControl,
+	isPrimaryVRG bool,
+	clusterName string,
+) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:          "DRPlacementControl",
+		ObjName:          drpc.Name,
+		ObjNamespace:     drpc.Namespace,
+		IsPrimaryCluster: strconv.FormatBool(isPrimaryVRG),
+		ClusterName:      clusterName,
+	}
+}
+
+func NewPVCConflictMetric(labels prometheus.Labels) PVCConflictMetrics {
+	return PVCConflictMetrics{
+		PVCConflictDetected: pvcConflictDetected.With(labels),
+	}
+}
+
+func DeletePVCConflictMetric(labels prometheus.Labels) bool {
+	return pvcConflictDetected.Delete(labels)
 }

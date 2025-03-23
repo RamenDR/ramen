@@ -219,12 +219,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if requeue {
-		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger, nil)
 	}
 
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
 	if err != nil && !errors.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
-		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger, nil)
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
@@ -263,7 +263,7 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 	needsUpdate := addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 		drpc.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
-		err := r.updateDRPCStatus(ctx, drpc, placementObj, log)
+		err := r.updateDRPCStatus(ctx, drpc, placementObj, log, nil)
 		if err != nil {
 			log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
@@ -702,6 +702,8 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
 	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
+
+	r.clearPVCConflictMetricsForClusters(drpc, drPolicy)
 
 	return nil
 }
@@ -1271,7 +1273,11 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 //
 //nolint:cyclop
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	userPlacement client.Object,
+	log logr.Logger,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
 	log.Info("Updating DRPC status")
 
@@ -1279,7 +1285,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
-		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
+		if err := r.setDRPCMetrics(ctx, drpc, log, vrgs); err != nil {
 			// log the error but do not return the error
 			log.Info("Failed to set drpc metrics", "errMSg", err)
 		}
@@ -1442,12 +1448,15 @@ func (r *DRPlacementControlReconciler) clusterForVRGStatus(
 }
 
 func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
-	drpc *rmn.DRPlacementControl, log logr.Logger,
+	drpc *rmn.DRPlacementControl, log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
 	log.Info("setting WorkloadProtectionMetrics")
 
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
 	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+
+	// set conflict metrics
+	r.handlePVCConflictMetrics(drpc, vrgs, log)
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
@@ -2547,4 +2556,74 @@ func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacement
 	}
 
 	return false
+}
+
+func (r *DRPlacementControlReconciler) handlePVCConflictMetrics(
+	drpc *rmn.DRPlacementControl,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
+	log logr.Logger,
+) {
+	log.Info("Setting PVCConflictMetrics")
+
+	for clusterName, vrg := range vrgs {
+		// Skip if VRG is not secondary or is being deleted
+		if !isVRGSecondary(vrg) || rmnutil.ResourceIsDeleted(vrg) {
+			continue
+		}
+
+		condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
+
+		// Pushes '1' for conflict detection, otherwise '0'
+		metricsInstance := r.createPVCConflictMetricsInstance(drpc, false, clusterName)
+		conflictDetected := condition != nil &&
+			condition.Status == metav1.ConditionFalse &&
+			condition.Reason == VRGConditionReasonPVCConflict
+		r.setPVCConflictMetric(metricsInstance, conflictDetected, log)
+	}
+}
+
+// setPVCConflictMetric sets the PVC conflict info metric,
+// where 0 indicates no conflict and 1 indicates conflict
+func (r *DRPlacementControlReconciler) setPVCConflictMetric(
+	metrics *PVCConflictMetrics,
+	conflictDetected bool,
+	log logr.Logger,
+) {
+	if metrics == nil {
+		log.Info("Skipping metric update: PVCConflictMetrics is nil")
+
+		return
+	}
+
+	log.Info("Updating PVC conflict metric", "metric", PVCConflictDetected)
+
+	// Set metric to 1 if conflict detected, otherwise 0
+	if conflictDetected {
+		metrics.PVCConflictDetected.Set(1)
+	} else {
+		metrics.PVCConflictDetected.Set(0)
+	}
+}
+
+func (r *DRPlacementControlReconciler) createPVCConflictMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+	isPrimaryVRG bool,
+	clusterName string,
+) *PVCConflictMetrics {
+	pvcConflictLabels := PVCConflictMetricLabels(drpc, isPrimaryVRG, clusterName)
+	pvcConflictMetrics := NewPVCConflictMetric(pvcConflictLabels)
+
+	return &PVCConflictMetrics{
+		PVCConflictDetected: pvcConflictMetrics.PVCConflictDetected,
+	}
+}
+
+func (r *DRPlacementControlReconciler) clearPVCConflictMetricsForClusters(
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+) {
+	for _, cluster := range rmnutil.DRPolicyClusterNames(drPolicy) {
+		labels := PVCConflictMetricLabels(drpc, false, cluster)
+		DeletePVCConflictMetric(labels)
+	}
 }
