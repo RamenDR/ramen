@@ -5,9 +5,11 @@ package dractions
 
 import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"go.uber.org/zap"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -34,9 +36,9 @@ func EnableProtection(ctx types.Context) error {
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 	log := ctx.Logger()
-	config := ctx.Config()
+	cfg := ctx.Config()
 
-	drPolicyName := config.DRPolicy
+	drPolicyName := cfg.DRPolicy
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
@@ -79,8 +81,7 @@ func EnableProtection(ctx types.Context) error {
 		return err
 	}
 
-	// For volsync based replication we must create the cluster namespaces with special annotation.
-	if err := util.CreateNamespaceAndAddAnnotation(ctx.Env(), ctx.AppNamespace(), log); err != nil {
+	if err := createNamespaces(ctx, appNamespace, log); err != nil {
 		return err
 	}
 
@@ -260,4 +261,15 @@ func waitAndUpdateDRPC(
 
 		return nil
 	})
+}
+
+// createNamespaces creates namespaces and annotations for managed app protection on
+// both DR clusters for Volsync based replication if the distribution is Kubernetes.
+// Returns an error if namespace creation or annotation fails.
+func createNamespaces(ctx types.Context, appNamespace string, log *zap.SugaredLogger) error {
+	if ctx.Config().Distro == config.DistroK8s {
+		return util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log)
+	}
+
+	return nil
 }

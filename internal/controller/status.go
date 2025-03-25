@@ -57,7 +57,9 @@ const (
 	VRGConditionReasonDataProtected               = "DataProtected"
 	VRGConditionReasonProgressing                 = "Progressing"
 	VRGConditionReasonClusterDataRestored         = "Restored"
+	VRGConditionReasonClusterDataUnused           = "Unused"
 	VRGConditionReasonKubeObjectsRestored         = "KubeObjectsRestored"
+	VRGConditionReasonKubeObjectsUnused           = "Unused"
 	VRGConditionReasonError                       = "Error"
 	VRGConditionReasonErrorUnknown                = "UnknownError"
 	VRGConditionReasonUploading                   = "Uploading"
@@ -310,6 +312,17 @@ func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGen
 	})
 }
 
+// Used to set condition when VRG is Secondary
+func setVRGClusterDataReadyConditionUnused(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonClusterDataUnused,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
 // sets conditions when PV cluster data failed to restore
 func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	setStatusCondition(conditions, metav1.Condition{
@@ -383,6 +396,17 @@ func setVRGKubeObjectsReadyCondition(conditions *[]metav1.Condition, observedGen
 	setStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeKubeObjectsReady,
 		Reason:             VRGConditionReasonKubeObjectsRestored,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// Used to set condition when VRG is Secondary
+func setVRGKubeObjectsReadyConditionUnused(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	setStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeKubeObjectsReady,
+		Reason:             VRGConditionReasonKubeObjectsUnused,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package util
+package validate
 
 import (
 	"context"
@@ -18,9 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/e2e/types"
+	"github.com/ramendr/ramen/e2e/util"
 )
 
-func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func RamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
@@ -39,7 +40,7 @@ func ValidateRamenHubOperator(cluster types.Cluster, config *types.Config, log *
 	return nil
 }
 
-func ValidateRamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func RamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
@@ -117,14 +118,29 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 		labelSelector, podIdentifier, namespace, cluster.Name)
 }
 
-// ValidateClustersInDRPolicy checks if configured clusters match the configured
+// TestConfig is a wrapper function which performs validation checks on
+// the test environment configurations with the DR resources on the clusters.
+// Returns an error if any validation fails.
+func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	if err := clustersInDRPolicy(env, config, log); err != nil {
+		return fmt.Errorf("failed to validate test config: %w", err)
+	}
+
+	if err := clustersInClusterSet(env, config, log); err != nil {
+		return fmt.Errorf("failed to validate test config: %w", err)
+	}
+
+	return nil
+}
+
+// clustersInDRPolicy checks if configured clusters match the configured
 // drpolicy. Returns an error if cluster names are not the same as drpolicy
 // drclusters. The reason for a failure may be wrong cluster name or wrong
 // drpolicy.
-func ValidateClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
-	drpolicy, err := GetDRPolicy(env.Hub, config.DRPolicy)
+func clustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	drpolicy, err := util.GetDRPolicy(env.Hub, config.DRPolicy)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get DRPolicy %q: %w", config.DRPolicy, err)
 	}
 
 	clusters := []types.Cluster{env.C1, env.C2}
@@ -136,6 +152,32 @@ func ValidateClustersInDRPolicy(env *types.Env, config *types.Config, log *zap.S
 	}
 
 	log.Infof("Validated clusters [%q, %q] in DRPolicy %q", clusters[0].Name, clusters[1].Name, config.DRPolicy)
+
+	return nil
+}
+
+// clustersInClusterSet checks if configured clusters exists in configured clusterset.
+// Returns an error if provided cluster names are not the same as managedclusters in clusterset.
+// The reason for a failure may be wrong cluster name or wrong clusterset.
+func clustersInClusterSet(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	if _, err := getClusterSet(env.Hub, config.ClusterSet); err != nil {
+		return err
+	}
+
+	clusterNames, err := getManagedClustersFromClusterSet(env.Hub, config.ClusterSet)
+	if err != nil {
+		return err
+	}
+
+	clusters := []types.Cluster{env.C1, env.C2}
+	for _, cluster := range clusters {
+		if !slices.Contains(clusterNames, cluster.Name) {
+			return fmt.Errorf("cluster %q is not defined in ClusterSet %q, clusters in ClusterSet: %q",
+				cluster.Name, config.ClusterSet, clusterNames)
+		}
+	}
+
+	log.Infof("Validated clusters [%q, %q] in ClusterSet %q", clusters[0].Name, clusters[1].Name, config.ClusterSet)
 
 	return nil
 }
