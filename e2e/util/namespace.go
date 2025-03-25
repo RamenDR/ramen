@@ -13,6 +13,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -105,26 +106,29 @@ func CreateNamespaceAndAddAnnotation(env *types.Env, namespace string, log *zap.
 
 func addNamespaceAnnotationForVolSync(cluster types.Cluster, namespace string, log *zap.SugaredLogger) error {
 	key := k8stypes.NamespacedName{Name: namespace}
-	objNs := &corev1.Namespace{}
 
-	if err := cluster.Client.Get(context.Background(), key, objNs); err != nil {
-		return err
-	}
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		objNs := &corev1.Namespace{}
 
-	annotations := objNs.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
+		if err := cluster.Client.Get(context.Background(), key, objNs); err != nil {
+			return err
+		}
 
-	annotations[volsyncPrivilegedMovers] = "true"
-	objNs.SetAnnotations(annotations)
+		annotations := objNs.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
 
-	if err := cluster.Client.Update(context.Background(), objNs); err != nil {
-		return err
-	}
+		annotations[volsyncPrivilegedMovers] = "true"
+		objNs.SetAnnotations(annotations)
 
-	log.Debugf("Annotated namespace %q with \"%s: %s\" in cluster %q",
-		namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers], cluster.Name)
+		if err := cluster.Client.Update(context.Background(), objNs); err != nil {
+			return err
+		}
 
-	return nil
+		log.Debugf("Annotated namespace %q with \"%s: %s\" in cluster %q",
+			namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers], cluster.Name)
+
+		return nil
+	})
 }
