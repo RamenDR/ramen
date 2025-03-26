@@ -40,7 +40,7 @@ type Options struct {
 }
 
 // Default namespace mappings for Kubernetes (k8s) clusters.
-var k8sNamespaces = types.NamespacesConfig{
+var K8sNamespaces = types.NamespacesConfig{
 	RamenHubNamespace:       "ramen-system",
 	RamenDRClusterNamespace: "ramen-system",
 	RamenOpsNamespace:       "ramen-ops",
@@ -48,7 +48,7 @@ var k8sNamespaces = types.NamespacesConfig{
 }
 
 // Default namespace mappings for OpenShift (ocp) clusters.
-var ocpNamespaces = types.NamespacesConfig{
+var OcpNamespaces = types.NamespacesConfig{
 	RamenHubNamespace:       "openshift-operators",
 	RamenDRClusterNamespace: "openshift-dr-system",
 	RamenOpsNamespace:       "openshift-dr-ops",
@@ -108,9 +108,9 @@ func readConfig(configFile string, config *types.Config) error {
 func validateDistro(config *types.Config) error {
 	switch config.Distro {
 	case DistroK8s:
-		config.Namespaces = k8sNamespaces
+		config.Namespaces = K8sNamespaces
 	case DistroOcp:
-		config.Namespaces = ocpNamespaces
+		config.Namespaces = OcpNamespaces
 	default:
 		return fmt.Errorf("invalid distro %q: (choose one of %q, %q)",
 			config.Distro, DistroK8s, DistroOcp)
