@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -59,32 +60,6 @@ func RamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *za
 	return nil
 }
 
-// IsOpenShiftCluster checks if the given Kubernetes cluster is an OpenShift cluster.
-// It returns true if the cluster is OpenShift, false otherwise, along with any error encountered.
-func IsOpenShiftCluster(cluster types.Cluster) (bool, error) {
-	configList := &unstructured.Unstructured{}
-	configList.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "config.openshift.io",
-		Version: "v1",
-		Kind:    "ClusterVersion",
-	})
-
-	err := cluster.Client.List(context.TODO(), configList)
-	if err == nil {
-		// found OpenShift only resource type, it is OpenShift
-		return true, nil
-	}
-
-	if meta.IsNoMatchError(err) {
-		// api server says no match for OpenShift only resource type,
-		// it is not OpenShift
-		return false, nil
-	}
-
-	// unexpected error
-	return false, err
-}
-
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
 func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
@@ -122,6 +97,10 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 // the test environment configurations with the DR resources on the clusters.
 // Returns an error if any validation fails.
 func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
+	if err := detectDistro(env, config, log); err != nil {
+		return fmt.Errorf("failed to validate test config: %w", err)
+	}
+
 	if err := clustersInDRPolicy(env, config, log); err != nil {
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
@@ -180,4 +159,74 @@ func clustersInClusterSet(env *types.Env, config *types.Config, log *zap.Sugared
 	log.Infof("Validated clusters [%q, %q] in ClusterSet %q", clusters[0].Name, clusters[1].Name, config.ClusterSet)
 
 	return nil
+}
+
+// detectDistro detects the cluster distribution. If distro is set in config, it uses the user
+// provided distro. Otherwise, it determines the distro, sets config.Distro and config.Namespaces.
+// Returns an error if distro detection fails or if clusters have inconsistent distributions.
+func detectDistro(env *types.Env, cfg *types.Config, log *zap.SugaredLogger) error {
+	if cfg.Distro != "" {
+		log.Infof("Using user selected kubernetes distribution: %q", cfg.Distro)
+
+		return nil
+	}
+
+	var detectedDistro string
+
+	clusters := []*types.Cluster{&env.Hub, &env.C1, &env.C2}
+	for _, cluster := range clusters {
+		distro, err := probeDistro(cluster)
+		if err != nil {
+			return fmt.Errorf("failed to determine distro for cluster %q: %w", cluster.Name, err)
+		}
+
+		if detectedDistro == "" {
+			detectedDistro = distro
+		} else if detectedDistro != distro {
+			return fmt.Errorf("clusters have inconsistent distributions, cluster %q has distro %q, expected %q",
+				cluster.Name, distro, detectedDistro)
+		}
+	}
+
+	cfg.Distro = detectedDistro
+
+	switch cfg.Distro {
+	case config.DistroOcp:
+		cfg.Namespaces = config.OcpNamespaces
+	case config.DistroK8s:
+		cfg.Namespaces = config.K8sNamespaces
+	default:
+		panic(fmt.Sprintf("unexpected distro: %q", cfg.Distro))
+	}
+
+	log.Infof("Detected kubernetes distribution: %q", cfg.Distro)
+	log.Infof("Using namespaces: %+v", cfg.Namespaces)
+
+	return nil
+}
+
+// probeDistro determines the distribution of the given Kubernetes cluster.
+// Returns the detected distribution name ("ocp" or "k8s") or an error if detection fails.
+func probeDistro(cluster *types.Cluster) (string, error) {
+	configList := &unstructured.Unstructured{}
+	configList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "config.openshift.io",
+		Version: "v1",
+		Kind:    "ClusterVersion",
+	})
+
+	err := cluster.Client.List(context.TODO(), configList)
+	if err == nil {
+		// found OpenShift only resource type, it is OpenShift
+		return config.DistroOcp, nil
+	}
+
+	if meta.IsNoMatchError(err) {
+		// api server says no match for OpenShift only resource type,
+		// it is not OpenShift
+		return config.DistroK8s, nil
+	}
+
+	// unexpected error
+	return "", err
 }

@@ -106,6 +106,11 @@ func readConfig(configFile string, config *types.Config) error {
 }
 
 func validateDistro(config *types.Config) error {
+	// Discover distro during validation if the distro is not configured
+	if config.Distro == "" {
+		return nil
+	}
+
 	switch config.Distro {
 	case DistroK8s:
 		config.Namespaces = K8sNamespaces
