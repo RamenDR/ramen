@@ -53,7 +53,6 @@ def dump_e2e_config(env):
             f.write(data)
 
         e2e_clusters[e2e_name] = {
-            "name": cluster_name,
             "kubeconfig": kubeconfig,
         }
 
