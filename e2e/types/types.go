@@ -38,7 +38,6 @@ type PVCSpecConfig struct {
 }
 
 type ClusterConfig struct {
-	Name       string
 	Kubeconfig string
 }
 
