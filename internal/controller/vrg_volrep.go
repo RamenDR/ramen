@@ -2730,3 +2730,35 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 
 	return result
 }
+
+func (v *VRGInstance) aggregateVolRepClusterDataConflictCondition() *metav1.Condition {
+	noClusterDataConflictCondition := &metav1.Condition{
+		Status:             metav1.ConditionFalse,
+		Type:               VRGConditionTypeClusterDataConflict,
+		Reason:             VRGConditionReasonNoClusterDataConflict,
+		ObservedGeneration: v.instance.Generation,
+		Message:            "No cluster data conflict detected",
+	}
+
+	if conflictCondition := v.validateSecondaryPVCConflictForVolRep(); conflictCondition != nil {
+		return conflictCondition
+	}
+
+	return noClusterDataConflictCondition
+}
+
+func (v *VRGInstance) isSecondaryWithVolRepProtectedPVCs() bool {
+	return v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && len(v.volRepPVCs) > 0
+}
+
+func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition {
+	if v.isSecondaryWithVolRepProtectedPVCs() {
+		return newVRGAsClusterDataConflictCondition(
+			v.instance.Generation,
+			"No PVC on the secondary should match the label selector",
+			VRGConditionReasonClusterDataConflictSecondary,
+		)
+	}
+
+	return nil
+}
