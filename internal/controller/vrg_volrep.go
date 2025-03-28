@@ -2730,3 +2730,52 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 
 	return result
 }
+
+func (v *VRGInstance) aggregateVolRepClusterDataConflictCondition() *metav1.Condition {
+	noClusterDataConflictCondition := &metav1.Condition{
+		Status:             metav1.ConditionTrue,
+		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             VRGConditionReasonConflictResolved,
+		ObservedGeneration: v.instance.Generation,
+		Message:            "No PVC conflict detected for VolumeReplication scheme",
+	}
+
+	if conflictCondition := v.validateSecondaryPVCConflictForVolRep(); conflictCondition != nil {
+		return conflictCondition
+	}
+
+	return noClusterDataConflictCondition
+}
+
+func (v *VRGInstance) IsSecondaryVRG() bool {
+	spec := v.instance.Spec
+	status := v.instance.Status
+
+	isSecondary := spec.ReplicationState == ramendrv1alpha1.Secondary
+	isStateSecondary := status.State == ramendrv1alpha1.SecondaryState
+	isRelocateOrNone := spec.Action == ramendrv1alpha1.VRGActionRelocate || spec.Action == ""
+	isPrepareForFinalSyncFalse := !spec.PrepareForFinalSync
+	isRunFinalSyncFalse := !spec.RunFinalSync
+
+	return isSecondary &&
+		isStateSecondary &&
+		isRelocateOrNone &&
+		isPrepareForFinalSyncFalse &&
+		isRunFinalSyncFalse
+}
+
+func (v *VRGInstance) isSecondaryWithVolRepProtectedPVCs() bool {
+	return v.IsSecondaryVRG() && len(v.volRepPVCs) > 0
+}
+
+func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition {
+	if v.isSecondaryWithVolRepProtectedPVCs() {
+		return newVRGAsClusterDataConflictCondition(
+			v.instance.Generation,
+			"No PVC on the secondary should match the label selector",
+			VRGConditionReasonClusterDataConflictSecondary,
+		)
+	}
+
+	return nil
+}
