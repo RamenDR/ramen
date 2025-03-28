@@ -122,7 +122,6 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[deployers.AppLabelKey] = name
-	clusterSet := []string{"default"}
 	annotations := make(map[string]string)
 	annotations[OcmSchedulingDisable] = "true"
 
@@ -136,7 +135,7 @@ func createPlacementManagedByRamen(ctx types.Context, name, namespace string) er
 		},
 		// Predicate is not required since OCM is not managing this app.
 		Spec: clusterv1beta1.PlacementSpec{
-			ClusterSets:      clusterSet,
+			ClusterSets:      []string{ctx.Config().ClusterSet},
 			NumberOfClusters: &numClusters,
 		},
 	}

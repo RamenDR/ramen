@@ -36,6 +36,7 @@ data:
       veleroNamespaceName: velero
     volSync:
       disabled: $volsync_disabled
+      destinationCopyMethod: Direct
     multiNamespace:
       FeatureEnabled: true
       volsyncSupported: true
