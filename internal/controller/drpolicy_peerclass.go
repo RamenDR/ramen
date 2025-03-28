@@ -58,7 +58,7 @@ func peerClassMatchesPeer(pc ramen.PeerClass, peer peerInfo) bool {
 		return false
 	}
 
-	if !slices.Equal(pc.ClusterIDs, peer.clusterIDs) {
+	if !equalClusterIDSlices(pc.ClusterIDs, peer.clusterIDs) {
 		return false
 	}
 
