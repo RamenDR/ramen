@@ -703,6 +703,8 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
 	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
 
+	r.clearClusterDataConflictMetrics(drpc, log)
+
 	return nil
 }
 
@@ -1448,6 +1450,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
 	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+
+	// set conflict metrics
+	r.handleClusterDataConflictMetrics(drpc, log)
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
@@ -2547,4 +2552,71 @@ func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacement
 	}
 
 	return false
+}
+
+func (r *DRPlacementControlReconciler) handleClusterDataConflictMetrics(
+	drpc *rmn.DRPlacementControl,
+	log logr.Logger,
+) {
+	log.Info("Setting ClusterDataConflictMetrics")
+
+	// Skip if DRPC is being deleted
+	if rmnutil.ResourceIsDeleted(drpc) {
+		log.Info("Skipping conflict metric update: DRPC is being deleted")
+
+		return
+	}
+
+	metricsInstance := r.createClusterDataConflictMetricsInstance(drpc)
+	condition := meta.FindStatusCondition(
+		drpc.Status.ResourceConditions.Conditions, VRGConditionTypeNoClusterDataConflict,
+	)
+
+	// Determine conflict status: 0 = No conflict, 1 = Secondary conflict, 2 = Primary conflict,
+	conflictStatus := 0
+
+	if condition != nil && condition.Status == metav1.ConditionFalse {
+		conflictStatus = 2
+		if condition.Reason == VRGConditionReasonClusterDataConflictSecondary {
+			conflictStatus = 1
+		}
+	}
+
+	log.Info("Setting ClusterDataConflictMetric", "conflictStatus", conflictStatus)
+	r.setClusterDataConflictMetric(metricsInstance, conflictStatus, log)
+}
+
+// setClusterDataConflictMetric sets the cluster data conflict metric,
+func (r *DRPlacementControlReconciler) setClusterDataConflictMetric(
+	metrics *ClusterDataConflictMetrics,
+	severity int,
+	log logr.Logger,
+) {
+	if metrics == nil {
+		log.Info("Skipping metric update: ClusterDataConflictMetrics is nil")
+
+		return
+	}
+
+	log.Info("Updating cluster data conflict metric", "metric", ClusterDataConflict, "severity", severity)
+
+	metrics.ClusterDataConflict.Set(float64(severity))
+}
+
+func (r *DRPlacementControlReconciler) createClusterDataConflictMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *ClusterDataConflictMetrics {
+	labels := ClusterDataConflictMetricLabels(drpc)
+	metrics := NewClusterDataConflictMetric(labels)
+
+	return &ClusterDataConflictMetrics{
+		ClusterDataConflict: metrics.ClusterDataConflict,
+	}
+}
+
+func (r *DRPlacementControlReconciler) clearClusterDataConflictMetrics(
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) {
+	log.Info("Clearing ClusterDataConflict metrics", "DRPC", drpc.Name, "Namespace", drpc.Namespace)
+	DeleteClusterDataConflictMetric(ClusterDataConflictMetricLabels(drpc))
 }
