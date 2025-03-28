@@ -40,12 +40,22 @@ spec:
           annotations:
             description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions for details."
             alert_type: "DisasterRecovery"
-        - alert: PVCConflictDetected
-          expr: ramen_pvc_conflict_detected == 1
+        - alert: ClusterDataConflictCritical
+          expr: ramen_cluster_data_conflict == 2
           for: 30s
           labels:
             severity: critical
           annotations:
-            description: "PVC conflict detected in cluster {{ $labels.cluster_name }} (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Investigate the VRG status conditions for conflict resolution."
+            description: "Cluster data conflict detected in primary (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Immediate action required. ({{ with $console_url := \"console_url\" | query }}{{ if ne (len (label \"url\" (first $console_url))) 0 }}{{ label \"url\" (first $console_url) }}/k8s/ns/{{ $labels.obj_namespace }}/ramendr.openshift.io~v1alpha1~DRPlacementControl/{{ $labels.obj_name }}{{ end }}{{ end }})"
             alert_type: "DisasterRecovery"
+        - alert: ClusterDataConflictWarning
+          expr: ramen_cluster_data_conflict == 1
+          for: 30s
+          labels:
+            severity: warning
+          annotations:
+            description: "Cluster data conflict detected in primary (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). ({{ with $console_url := \"console_url\" | query }}{{ if ne (len (label \"url\" (first $console_url))) 0 }}{{ label \"url\" (first $console_url) }}/k8s/ns/{{ $labels.obj_namespace }}/ramendr.openshift.io~v1alpha1~DRPlacementControl/{{ $labels.obj_name }}{{ end }}{{ end }})"
+            alert_type: "DisasterRecovery"
+        
+
 

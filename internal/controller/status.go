@@ -45,6 +45,10 @@ const (
 	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
+
+	// Indicates a conflict in PVC and Kubernetes resource data
+	// between primary and secondary clusters.
+	VRGConditionTypeClusterDataConflict = "ClusterDataConflict"
 )
 
 // VRG condition reasons
@@ -73,6 +77,11 @@ const (
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
 	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
+	// Indicates a conflict in cluster data detected on the primary cluster.
+	VRGConditionReasonClusterDataConflictPrimary = "ClusterDataConflictPrimary"
+
+	// Indicates a conflict in cluster data detected on the secondary cluster.
+	VRGConditionReasonClusterDataConflictSecondary = "ClusterDataConflictSecondary"
 )
 
 const (
