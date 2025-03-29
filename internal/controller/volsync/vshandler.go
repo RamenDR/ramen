@@ -29,6 +29,7 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -200,6 +201,7 @@ func RDStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 	return true
 }
 
+//nolint:funlen
 func (v *VSHandler) createOrUpdateRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, pskSecretName string,
 	dstPVC *string) (*volsyncv1alpha1.ReplicationDestination, error,
@@ -222,6 +224,8 @@ func (v *VSHandler) createOrUpdateRD(
 			Namespace: rdSpec.ProtectedPVC.Namespace,
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(rd)
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rd, func() error {
 		if !v.vrgInAdminNamespace {
@@ -446,6 +450,8 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			Namespace: rsSpec.ProtectedPVC.Namespace,
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(rs)
 
 	// Handle final sync by retaining the PV and creating a tmpPVC used for final sync
 	stop := v.setupForFinalSync(&rsSpec, runFinalSync)
@@ -1408,6 +1414,8 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		},
 	}
 
+	core.ObjectCreatedByRamenSetLabel(pvc)
+
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
 		if !v.vrgInAdminNamespace {
 			if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
@@ -1573,6 +1581,8 @@ func (v *VSHandler) ensurePVCFromSnapshot(rdSpec ramendrv1alpha1.VolSyncReplicat
 			Namespace: rdSpec.ProtectedPVC.Namespace,
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(pvc)
 
 	pvcRequestedCapacity := rdSpec.ProtectedPVC.Resources.Requests.Storage()
 	if snapRestoreSize != nil {
@@ -2135,6 +2145,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			}
 		}
 
+		core.ObjectCreatedByRamenSetLabel(lrd)
 		util.AddLabel(lrd, VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrd, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddLabel(lrd, VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal)
@@ -2208,6 +2219,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			}
 		}
 
+		core.ObjectCreatedByRamenSetLabel(lrs)
 		util.AddLabel(lrs, VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrs, VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
@@ -2337,6 +2349,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	return v.createPVCFromSnapshot(rd, rdSpec, snapshotRef, restoreSize)
 }
 
+//nolint:funlen
 func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
@@ -2355,6 +2368,8 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 			Namespace: rd.GetNamespace(),
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(pvc)
 
 	pvcRequestedCapacity := rd.Spec.RsyncTLS.Capacity
 	if snapRestoreSize != nil {

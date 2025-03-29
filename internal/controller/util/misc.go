@@ -10,6 +10,7 @@ import (
 	"reflect"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -231,6 +232,7 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			ns.Name = namespace
+			core.ObjectCreatedByRamenSetLabel(ns)
 
 			err = k8sClient.Create(ctx, ns)
 			if err != nil {

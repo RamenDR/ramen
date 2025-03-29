@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -274,7 +275,7 @@ func (in *localSecret) DeepCopyInto(out *localSecret) {
 }
 
 func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) *localSecret {
-	return &localSecret{
+	localsecret := &localSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: "v1",
@@ -294,10 +295,14 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 				"\"AWS_SECRET_ACCESS_KEY\" hub}}",
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(localsecret)
+
+	return localsecret
 }
 
 func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) *localSecret {
-	return &localSecret{
+	localsecret := &localSecret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: "v1",
@@ -324,6 +329,10 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 				") | base64enc }}",
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(localsecret)
+
+	return localsecret
 }
 
 func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
@@ -373,6 +382,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 	}
 }
 
+// nolint:funlen
 func (sutil *SecretsUtil) createPolicyResources(
 	secret *corev1.Secret,
 	cluster, namespace, targetNS string,
@@ -401,6 +411,8 @@ func (sutil *SecretsUtil) createPolicyResources(
 	}
 
 	plRuleBindingObject := newPlacementRuleBinding(plBindingName, namespace, plRuleName, subjects)
+	core.ObjectCreatedByRamenSetLabel(plRuleBindingObject)
+
 	if err := sutil.Client.Create(sutil.Ctx, plRuleBindingObject); err != nil && !k8serrors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement binding", "secret", secret.Name, "cluster", cluster)
 
@@ -410,11 +422,14 @@ func (sutil *SecretsUtil) createPolicyResources(
 	// Create a Policy object for the secret
 	configObject := newConfigurationPolicy(configPolicyName,
 		sutil.policyObject(secret.Name, namespace, targetNS, format, veleroNS))
+	core.ObjectCreatedByRamenSetLabel(configObject)
 
 	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
 
 	policyObject := newPolicy(policyName, namespace,
 		secret.ResourceVersion, runtime.RawExtension{Object: configObject})
+	core.ObjectCreatedByRamenSetLabel(policyObject)
+
 	if err := sutil.Client.Create(sutil.Ctx, policyObject); err != nil && !k8serrors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create policy", "secret", secret.Name, "cluster", cluster)
 
@@ -423,6 +438,8 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 	// Create a PlacementRule, including cluster
 	plRuleObject := newPlacementRule(plRuleName, namespace, []string{cluster})
+	core.ObjectCreatedByRamenSetLabel(plRuleObject)
+
 	if err := sutil.Client.Create(sutil.Ctx, plRuleObject); err != nil && !k8serrors.IsAlreadyExists(err) {
 		sutil.Log.Error(err, "unable to create placement rule", "secret", secret.Name, "cluster", cluster)
 

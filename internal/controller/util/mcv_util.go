@@ -21,6 +21,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -386,12 +387,15 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 	meta metav1.ObjectMeta, viewscope viewv1beta1.ViewScope, logger logr.Logger,
 ) (*viewv1beta1.ManagedClusterView, error) {
 	key := types.NamespacedName{Name: meta.Name, Namespace: meta.Namespace}
+
 	mcv := &viewv1beta1.ManagedClusterView{
 		ObjectMeta: meta,
 		Spec: viewv1beta1.ViewSpec{
 			Scope: viewscope,
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(mcv)
 
 	err := m.Get(context.TODO(), key, mcv)
 	if err != nil {
