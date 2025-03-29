@@ -576,6 +576,8 @@ func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string
 }
 
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
+	delete(pvc.Labels, ConsistencyGroupLabel)
+
 	if !VolumeUnprotectionEnabledForAsyncVolSync {
 		log.Info("Volume unprotection disabled for VolSync")
 
