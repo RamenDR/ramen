@@ -13,10 +13,10 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 
 	// "github.com/ramendr/ramen/internal/controller/util"
+	"github.com/ramendr/ramen/internal/controller/testutils"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -45,8 +45,7 @@ func TestUtil(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	// onsi.github.io/gomega/#adjusting-output
-	format.MaxLength = 0
+	testutils.ConfigureGinkgo()
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,
