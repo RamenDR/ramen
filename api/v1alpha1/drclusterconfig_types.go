@@ -29,12 +29,17 @@ type DRClusterConfigSpec struct {
 	// TODO: PeerClusters []ClusterID; to decide if we really need this!
 }
 
+const (
+	DRClusterConfigConfigurationProcessed string = "Processed"
+	DRClusterConfigS3Reachable            string = "Reachable"
+)
+
 // DRClusterConfigStatus defines the observed state of DRClusterConfig
 type DRClusterConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// TODO: handle no status for this resource, and remove required RBAC/kubebuilder artifacts for the same
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 //+kubebuilder:object:root=true
