@@ -327,7 +327,7 @@ func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 
 	for _, snapshot := range volumeSnapshotList.Items {
 		for _, owner := range snapshot.ObjectMeta.OwnerReferences {
-			if owner.Kind == "VolumeGroupSnapshot" && owner.Name == vgs.Name {
+			if owner.Kind == "VolumeGroupSnapshot" && owner.Name == vgs.Name && owner.UID == vgs.UID {
 				volumeSnapshots = append(volumeSnapshots, snapshot)
 
 				break
