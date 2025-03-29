@@ -40,3 +40,11 @@ spec:
           annotations:
             description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions for details."
             alert_type: "DisasterRecovery"
+        - alert: DRClusterAvailableStatus
+          expr: drcluster_available_status == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            description: "DRCluster availability is degraded (DRCluster: {{ $labels.obj_name }}, Error: {{ $labels.error_message }})."
+            alert_type: "DisasterRecovery"
