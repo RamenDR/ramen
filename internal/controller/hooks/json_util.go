@@ -9,16 +9,17 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/oliveagle/jsonpath"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/util/jsonpath"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -321,25 +322,94 @@ func getTimeoutValue(hook *kubeobjects.HookSpec) int {
 }
 
 func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
-	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
+	return evaluateBooleanExpression(booleanExpression, jsonData)
+}
+
+// nolint:gocognit,cyclop
+func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
+	// handle OR (||)
+	orParts := splitOutsideBraces(expression, "||")
+	if len(orParts) > 1 {
+		for _, part := range orParts {
+			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
+			if err != nil {
+				return false, err
+			}
+
+			if result {
+				return true, nil // Short-circuit: If any part is true
+			}
+		}
+
+		return false, nil
+	}
+
+	// handle AND (&&)
+	andParts := splitOutsideBraces(expression, "&&")
+	if len(andParts) > 1 {
+		for _, part := range andParts {
+			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
+			if err != nil {
+				return false, err
+			}
+
+			if !result {
+				return false, nil // Short-circuit: If any part is false
+			}
+		}
+
+		return true, nil
+	}
+
+	// No logical operator
+	op, jsonPaths, err := parseBooleanExpression(expression)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
 	}
 
 	operand := make([]reflect.Value, len(jsonPaths))
+
 	for i, jsonPath := range jsonPaths {
-		operand[i], err = QueryJSONPath(jsonData, jsonPath)
-		if err != nil {
-			return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+		if strings.HasPrefix(jsonPath, "$") {
+			operand[i], err = QueryJSONPath(jsonData, jsonPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+			}
+		} else {
+			operand[i] = reflect.ValueOf(jsonPath)
 		}
 	}
 
 	return compare(operand[0], operand[1], op)
 }
 
+func splitOutsideBraces(expression, delimiter string) []string {
+	var result []string
+
+	braces := 0
+	lastIndex := 0
+
+	for i := 0; i <= len(expression)-len(delimiter); i++ {
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		if braces == 0 && expression[i:i+len(delimiter)] == delimiter {
+			result = append(result, expression[lastIndex:i])
+			lastIndex = i + len(delimiter)
+		}
+	}
+
+	result = append(result, expression[lastIndex:])
+
+	return result
+}
+
 // compare compares two interfaces using the specified operator
 //
-//nolint:gocognit,gocyclo,cyclop
+//nolint:funlen,gocognit,gocyclo,cyclop
 func compare(a, b reflect.Value, operator string) (bool, error) {
 	// convert pointer to interface
 	if a.Kind() == reflect.Ptr {
@@ -350,40 +420,56 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 		b = b.Elem()
 	}
 
-	if a.Kind() == reflect.Int ||
-		a.Kind() == reflect.Int8 ||
-		a.Kind() == reflect.Int16 ||
-		a.Kind() == reflect.Int32 ||
-		a.Kind() == reflect.Int64 {
-		a = reflect.ValueOf(float64(a.Int()))
-	}
-
-	if b.Kind() == reflect.Int ||
-		b.Kind() == reflect.Int8 ||
-		b.Kind() == reflect.Int16 ||
-		b.Kind() == reflect.Int32 ||
-		b.Kind() == reflect.Int64 {
-		b = reflect.ValueOf(float64(b.Int()))
-	}
-
-	// if they are just an interface then we convert them to string
+	// Convert interface{} to actual type instead of just converting to string
 	if a.Kind() == reflect.Interface {
-		a = reflect.ValueOf(fmt.Sprintf("%v", a.Interface()))
+		a = reflect.ValueOf(a.Interface())
 	}
 
 	if b.Kind() == reflect.Interface {
-		b = reflect.ValueOf(fmt.Sprintf("%v", b.Interface()))
+		b = reflect.ValueOf(b.Interface())
 	}
 
+	// Convert all integer types to float64 for consistency
+	if isKindInt(a.Kind()) {
+		a = reflect.ValueOf(float64(a.Int()))
+	}
+
+	if isKindInt(b.Kind()) {
+		b = reflect.ValueOf(float64(b.Int()))
+	}
+
+	// Convert numeric strings to float64 for valid comparison
+	if a.Kind() == reflect.String && isNumericString(a.String()) {
+		num, err := strconv.ParseFloat(a.String(), 64)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert string to float64: %w", err)
+		}
+
+		a = reflect.ValueOf(num)
+	}
+
+	if b.Kind() == reflect.String && isNumericString(b.String()) {
+		num, err := strconv.ParseFloat(b.String(), 64)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert string to float64: %w", err)
+		}
+
+		b = reflect.ValueOf(num)
+	}
+
+	// Convert string "True"/"False" to boolean before comparison
+	a = convertToBoolean(a)
+	b = convertToBoolean(b)
+
+	// Ensure operands are of the same type before comparison
 	if a.Kind() != b.Kind() {
-		return false, fmt.Errorf("operands of different kinds can't be compared %v, %v", a.Kind(), b.Kind())
+		return false, fmt.Errorf("operands of different kinds can't be compared: %v, %v", a.Kind(), b.Kind())
 	}
 
-	// At this point, both a and b should be of the same kind
+	// Validate the operator for the given types
 	if operator != "==" && operator != "!=" {
-		if !isKindStringOrFloat64(a.Kind()) || !isKindStringOrFloat64(b.Kind()) {
-			return false, fmt.Errorf("operands not supported for operator: %v, %v, %s",
-				a.Kind(), b.Kind(), operator)
+		if !isKindStringOrFloat64(a.Kind()) {
+			return false, fmt.Errorf("unsupported operands for operator: %v, %v, %s", a.Kind(), b.Kind(), operator)
 		}
 	}
 
@@ -395,11 +481,43 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 		return false, fmt.Errorf("unsupported kind for comparison: %v, %v", a.Kind(), b.Kind())
 	}
 
-	if isKindBool(a.Kind()) && isKindBool(b.Kind()) {
+	if isKindBool(a.Kind()) {
 		return compareBool(a.Bool(), b.Bool(), operator)
 	}
 
 	return compareValues(a.Interface(), b.Interface(), operator)
+}
+
+func isKindInt(kind reflect.Kind) bool {
+	return kind >= reflect.Int && kind <= reflect.Int64
+}
+
+func isNumericString(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+
+	return err == nil
+}
+
+// Convert a string reflect.Value to boolean if it contains "true"/"false"
+func convertToBoolean(v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.String {
+		strVal := strings.TrimSpace(v.String())
+
+		// Remove surrounding double quotes, if present
+		if strings.HasPrefix(strVal, "\"") && strings.HasSuffix(strVal, "\"") {
+			strVal = strVal[1 : len(strVal)-1]
+		}
+
+		// Convert "true"/"false" strings to booleans
+		switch strings.ToLower(strVal) {
+		case "true":
+			return reflect.ValueOf(true)
+		case "false":
+			return reflect.ValueOf(false)
+		}
+	}
+
+	return v
 }
 
 func compareBool(a, b bool, operator string) (bool, error) {
@@ -492,67 +610,139 @@ func isKindStringOrFloat64(kind reflect.Kind) bool {
 	return isKindString(kind) || isKindFloat64(kind)
 }
 
+// nolint:cyclop
 func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []string, err error) {
+	// List of valid operators
 	operators := []string{"==", "!=", ">=", ">", "<=", "<"}
 
-	// TODO
-	// If one of the jsonpaths have the operator that we are looking for,
-	// then strings.Split with split it at that point and not in the middle.
+	// Find the first occurrence of an operator that is outside curly braces
+	operatorIndex := -1
 
-	for _, op := range operators {
-		exprs := strings.Split(booleanExpression, op)
+	var foundOperator string
 
-		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
-
-		if len(exprs) == expectedNumberOfJSONPaths &&
-			IsValidJSONPathExpression(jsonPaths[0]) &&
-			IsValidJSONPathExpression(jsonPaths[1]) {
-			return op, jsonPaths, nil
+	for _, operator := range operators {
+		index := findOperatorOutsideBraces(booleanExpression, operator)
+		if index != -1 && (operatorIndex == -1 || index < operatorIndex) {
+			operatorIndex = index
+			foundOperator = operator
 		}
 	}
 
-	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
+	if operatorIndex == -1 {
+		return "", nil, fmt.Errorf("unable to find a valid boolean operator in expression: %v", booleanExpression)
+	}
+
+	// Split using the found operator
+	operand1 := strings.TrimSpace(booleanExpression[:operatorIndex])
+	operand2 := strings.TrimSpace(booleanExpression[operatorIndex+len(foundOperator):])
+
+	// Validate JSONPath and literals correctly
+	if !IsValidJSONPathExpression(operand1) || !IsValidJSONPathExpression(operand2) {
+		return "", nil, fmt.Errorf("invalid JSONPath or literal in boolean expression: %v", booleanExpression)
+	}
+
+	return foundOperator, []string{operand1, operand2}, nil
 }
 
-func IsValidJSONPathExpression(expr string) bool {
-	jp := jsonpath.New("validator").AllowMissingKeys(true)
+func findOperatorOutsideBraces(expression string, operator string) int {
+	braces := 0
 
-	err := jp.Parse(expr)
-	if err != nil {
+	for i := 0; i <= len(expression)-len(operator); i++ {
+		// Track opening `{` and closing `}`
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		// Found operator outside `{}`?
+		if braces == 0 && expression[i:i+len(operator)] == operator {
+			return i
+		}
+	}
+
+	return -1 // Not found
+}
+
+// IsValidJSONPathExpression checks if a given expression is a valid JSONPath expression
+//
+//nolint:cyclop
+func IsValidJSONPathExpression(expr string) bool {
+	expr = strings.TrimSpace(expr)
+
+	if !(strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}")) {
 		return false
 	}
 
-	_, err = QueryJSONPath("{}", expr)
+	innerExpr := strings.Trim(expr, "{}")
 
-	return err == nil
+	if innerExpr == "true" || innerExpr == "false" || innerExpr == "True" || innerExpr == "False" {
+		return true
+	}
+
+	if isLiteralValue(innerExpr) {
+		return true
+	}
+
+	if !strings.HasPrefix(innerExpr, "$") {
+		return false
+	}
+
+	// JSONPath expressions and comparisons
+	jsonPathRegex := regexp.MustCompile(`^\$([\.\w\[\]\"'\(\)\@\?\=\-]+)$`)
+	jsonPathComparisonRegex := regexp.MustCompile(`^\$([\.\w\[\]\"'\(\)\@\?\=\-]+)` +
+		`(\s*(==|!=|>=|<=|>|<)\s*(\$\S+|\d+|".*"|'.*'|\{.*\}))$`)
+	jsonPathFilterRegex := regexp.MustCompile(`^\$.*\[\?\(@.*\)\].*$`)
+
+	if jsonPathRegex.MatchString(innerExpr) || jsonPathComparisonRegex.MatchString(innerExpr) ||
+		jsonPathFilterRegex.MatchString(innerExpr) {
+		return true
+	}
+
+	return false
+}
+
+// Checks if a value is a valid literal (number or string)
+func isLiteralValue(expr string) bool {
+	// Check if it's a quoted string (single or double quotes)
+	if (strings.HasPrefix(expr, "\"") && strings.HasSuffix(expr, "\"")) ||
+		(strings.HasPrefix(expr, "'") && strings.HasSuffix(expr, "'")) {
+		return true
+	}
+
+	// Check if it's a valid number
+	if _, err := strconv.ParseFloat(expr, 64); err == nil {
+		return true
+	}
+
+	return false
 }
 
 func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
-	jp := jsonpath.New("extractor").AllowMissingKeys(true)
+	// Fix `==` issue inside JSONPath library used
+	jsonPath = strings.ReplaceAll(jsonPath, "==", "=")
 
-	if err := jp.Parse(jsonPath); err != nil {
-		return reflect.Value{}, fmt.Errorf("failed to get value invalid jsonpath %w", err)
-	}
-
-	results, err := jp.FindResults(data)
+	expr, err := jsonpath.Compile(jsonPath)
 	if err != nil {
-		return reflect.Value{}, fmt.Errorf("failed to get value from data using jsonpath %w", err)
+		return reflect.Value{}, fmt.Errorf("failed to compile JSONPath: %w", err)
 	}
 
-	if len(results) == 0 || len(results[0]) == 0 {
-		return reflect.Value{}, nil
+	result, err := expr.Lookup(data)
+	if err != nil {
+		return reflect.Value{}, fmt.Errorf("failed to get value using JSONPath: %w", err)
 	}
 
-	return results[0][0], nil
-}
+	val := reflect.ValueOf(result)
 
-func trimLeadingTrailingWhiteSpace(paths []string) []string {
-	tPaths := make([]string, len(paths))
-
-	for i, path := range paths {
-		tpath := strings.TrimSpace(path)
-		tPaths[i] = tpath
+	// Extract first element if JSONPath returns a slice
+	if val.Kind() == reflect.Slice && val.Len() > 0 {
+		val = val.Index(0)
 	}
 
-	return tPaths
+	// Check if value is nil or invalid
+	if !val.IsValid() || (val.Kind() == reflect.Ptr && val.IsNil()) {
+		return reflect.Value{}, fmt.Errorf("JSONPath %v returned nil or empty", jsonPath)
+	}
+
+	return val, nil
 }
