@@ -11,8 +11,7 @@ resources:
 - https://github.com/stolostron/multicloud-operators-foundation.git/deploy/foundation/hub/overlays/ocm-controller?ref=main&timeout=300s
 images:
 - name: quay.io/stolostron/multicloud-manager
-  newName: quay.io/nirsof/multicloud-manager
-  newTag: 2025-03-24
+  newTag: latest
 patches:
 # Ammend upstream kustomization since it does not add an image tag. We want an
 # image tag to pin to specific version.
@@ -25,4 +24,4 @@ patches:
       value: "--agent-addon-image=quay.io/stolostron/multicloud-manager"
     - op: replace
       path: /spec/template/spec/containers/0/args/2
-      value: "--agent-addon-image=quay.io/nirsof/multicloud-manager:2025-03-24"
+      value: "--agent-addon-image=quay.io/stolostron/multicloud-manager:latest"
