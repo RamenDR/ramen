@@ -1,8 +1,10 @@
 module github.com/ramendr/ramen
 
-go 1.22.8
+// Required minimum version, must be available in downstream builders.
+go 1.23.5
 
-toolchain go1.22.9
+// Recommended version: latest go 1.23 release.
+toolchain go1.23.7
 
 // This replace should always be here for ease of development.
 replace github.com/ramendr/ramen/api => ./api
