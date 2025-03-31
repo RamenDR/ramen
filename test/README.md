@@ -59,6 +59,7 @@ environment.
    For more info see
    [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
    Version v0.8.1 or later is required.
+   Tested with version v0.11.0-0-g73281f6.
 
 1. Install the `subctl` tool
 
@@ -180,6 +181,7 @@ environment.
    For more info see
    [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
    Version v0.8.1 or later is required.
+   Tested with version v0.11.0-0-g73281f6.
 
 1. Install the `subctl` tool
 
