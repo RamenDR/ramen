@@ -42,6 +42,7 @@ import (
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	virtv1 "kubevirt.io/api/core/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -123,6 +124,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(recipe.AddToScheme(scheme))
 		utilruntime.Must(apiextensions.AddToScheme(scheme))
 		utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
+		utilruntime.Must(virtv1.AddToScheme(scheme))
 	}
 
 	return nil
