@@ -1,8 +1,10 @@
 module github.com/ramendr/ramen/e2e
 
-go 1.22.5
+// Required minimum version, must be available in downstream builders.
+go 1.23.5
 
-toolchain go1.22.7
+// Recommended version: latest go 1.23 release.
+toolchain go1.23.7
 
 require (
 	github.com/ramendr/ramen/api v0.0.0-20250313143647-8dd671566929
@@ -58,11 +60,11 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/oauth2 v0.21.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.36.0 // indirect
+	golang.org/x/oauth2 v0.27.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
