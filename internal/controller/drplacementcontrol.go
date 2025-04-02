@@ -368,7 +368,11 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
-		ready := d.checkReadiness(failoverCluster)
+		ready, err := d.checkReadiness(failoverCluster)
+		if err != nil {
+			return !done, err
+		}
+
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
 			d.setProgression(rmn.ProgressionWaitForReadiness)
@@ -821,7 +825,7 @@ func checkActivationForStorageIdentifier(
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:gocognit,cyclop,funlen
+//nolint:gocognit,gocyclo,cyclop,funlen
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -852,7 +856,11 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		d.setDRState(rmn.Relocating)
 		d.updatePreferredDecision()
 
-		ready := d.checkReadiness(preferredCluster)
+		ready, err := d.checkReadiness(preferredCluster)
+		if err != nil {
+			return !done, err
+		}
+
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish relocation")
 			d.setProgression(rmn.ProgressionWaitForReadiness)
@@ -1186,22 +1194,49 @@ func (d *DRPCInstance) readyToSwitchOver(homeCluster string, preferredCluster st
 		}
 	}
 	// Allow switch over when PV data is ready and the cluster data is protected
-	return d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady) &&
-		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataProtected)
-}
+	dataReady, err := d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady)
+	if err != nil {
+		d.log.Info("readyToSwitchOver", "Error", err.Error())
 
-func (d *DRPCInstance) checkReadiness(homeCluster string) bool {
-	vrg := d.vrgs[homeCluster]
-	if vrg == nil {
 		return false
 	}
 
-	return d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady) &&
-		d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataReady) &&
-		vrg.Status.State == rmn.PrimaryState
+	clusterDataReady, err := d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataProtected)
+	if err != nil {
+		d.log.Info("readyToSwitchOver", "Error", err.Error())
+
+		return false
+	}
+
+	return dataReady && clusterDataReady
 }
 
-func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) bool {
+func (d *DRPCInstance) checkReadiness(homeCluster string) (bool, error) {
+	vrg := d.vrgs[homeCluster]
+	if vrg == nil {
+		return false, fmt.Errorf("VRG not available on cluster %s", homeCluster)
+	}
+
+	if vrg.Status.State != rmn.PrimaryState {
+		d.log.Info(fmt.Sprintf("checkReadiness: VRG is not in Primary state on cluster %s", homeCluster))
+
+		return false, nil
+	}
+
+	dataReady, err := d.isVRGConditionMet(homeCluster, VRGConditionTypeDataReady)
+	if err != nil {
+		return false, err
+	}
+
+	clusterDataReady, err := d.isVRGConditionMet(homeCluster, VRGConditionTypeClusterDataReady)
+	if err != nil {
+		return false, err
+	}
+
+	return dataReady && clusterDataReady, nil
+}
+
+func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) (bool, error) {
 	const ready = true
 
 	d.log.Info(fmt.Sprintf("Checking if VRG is %s on cluster %s", conditionType, cluster))
@@ -1209,22 +1244,21 @@ func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) b
 	vrg := d.vrgs[cluster]
 
 	if vrg == nil {
-		d.log.Info(fmt.Sprintf("isVRGConditionMet: VRG not available on cluster %s", cluster))
-
-		return !ready
+		return !ready, fmt.Errorf("VRG not available on cluster %s", cluster)
 	}
 
 	condition := findCondition(vrg.Status.Conditions, conditionType)
 	if condition == nil {
-		d.log.Info(fmt.Sprintf("VRG %s condition not available on cluster %s", conditionType, cluster))
-
-		return !ready
+		return !ready, fmt.Errorf("VRG %s condition not available on cluster %s", conditionType, cluster)
 	}
 
 	d.log.Info(fmt.Sprintf("VRG status condition: %s is %s", conditionType, condition.Status))
 
-	return condition.Status == metav1.ConditionTrue &&
-		condition.ObservedGeneration == vrg.Generation
+	if condition.ObservedGeneration != vrg.Generation {
+		return !ready, fmt.Errorf("generation mismatch in %s condition on cluster %s", conditionType, cluster)
+	}
+
+	return condition.Status == metav1.ConditionTrue, nil
 }
 
 func (d *DRPCInstance) relocate(preferredCluster, preferredClusterNamespace string, drState rmn.DRState) (bool, error) {
@@ -1323,7 +1357,12 @@ func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace str
 		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
 	}
 
-	if !d.checkReadiness(targetCluster) {
+	ready, err := d.checkReadiness(targetCluster)
+	if err != nil {
+		return err
+	}
+
+	if !ready {
 		d.setProgression(rmn.ProgressionWaitingForResourceRestore)
 
 		return fmt.Errorf("%w)", ErrWaitForAppResourceRestoreToComplete)
