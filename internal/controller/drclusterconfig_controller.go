@@ -58,7 +58,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("name", req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("drclusterconfig", req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")

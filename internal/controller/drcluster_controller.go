@@ -356,7 +356,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
-	log := r.Log.WithValues("name", req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("drcluster", req.NamespacedName.Name, "rid", uuid.New())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
