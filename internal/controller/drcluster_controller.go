@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -357,7 +356,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
-	log := r.Log.WithValues("name", req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("drc", req.NamespacedName.Name, "rid", util.GetRID())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")

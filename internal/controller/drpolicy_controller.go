@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -82,7 +81,7 @@ const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
 //
 //nolint:cyclop,funlen
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("DRPolicy", req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("drp", req.NamespacedName.Name, "rid", util.GetRID())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
