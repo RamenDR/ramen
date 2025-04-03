@@ -1137,21 +1137,21 @@ func getPeerFromPolicy(ctx context.Context, reconciler *DRClusterReconciler, log
 }
 
 func setDRClusterInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterValidated,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -1166,14 +1166,14 @@ func setDRClusterInitialCondition(conditions *[]metav1.Condition, observedGenera
 // status of it.
 // unfence = true, fence = false, clean = true
 func setDRClusterFencingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonFencing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFencing,
 		ObservedGeneration: observedGeneration,
@@ -1190,14 +1190,14 @@ func setDRClusterFencingCondition(conditions *[]metav1.Condition, observedGenera
 // due to NetworkFence CR.
 // unfence = false, fence = true, clean = false
 func setDRClusterUnfencingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonUnfencing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonUnfencing,
 		ObservedGeneration: observedGeneration,
@@ -1215,14 +1215,14 @@ func setDRClusterUnfencingCondition(conditions *[]metav1.Condition, observedGene
 // unfence = true, fence = false, clean = false
 // TODO: Remove the linter skip when this function is used
 func setDRClusterCleaningCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonCleaning,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonCleaning,
 		ObservedGeneration: observedGeneration,
@@ -1233,7 +1233,7 @@ func setDRClusterCleaningCondition(conditions *[]metav1.Condition, observedGener
 
 // DRCluster is validated
 func setDRClusterValidatedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterValidated,
 		Reason:             DRClusterConditionReasonValidated,
 		ObservedGeneration: observedGeneration,
@@ -1247,14 +1247,14 @@ func setDRClusterValidatedCondition(conditions *[]metav1.Condition, observedGene
 // Hence clean is false.
 // unfence = false, fence = true, clean = false
 func setDRClusterFencedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonFenced,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFenced,
 		ObservedGeneration: observedGeneration,
@@ -1268,14 +1268,14 @@ func setDRClusterFencedCondition(conditions *[]metav1.Condition, observedGenerat
 // Hence clean is false.
 // unfence = true, fence = false, clean = false
 func setDRClusterUnfencedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonUnfenced,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFenced,
 		ObservedGeneration: observedGeneration,
@@ -1289,14 +1289,14 @@ func setDRClusterUnfencedCondition(conditions *[]metav1.Condition, observedGener
 // CR is done after a successful unfence,
 // unfence = true, fence = false, clean = true
 func setDRClusterCleanCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonClean,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonClean,
 		ObservedGeneration: observedGeneration,
@@ -1312,14 +1312,14 @@ func setDRClusterCleanCondition(conditions *[]metav1.Condition, observedGenerati
 // unfence = true, fence = false, clean = true
 // TODO: Remove the linter skip when this function is used
 func setDRClusterFencingFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonFenceError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonFenceError,
 		ObservedGeneration: observedGeneration,
@@ -1334,14 +1334,14 @@ func setDRClusterFencingFailedCondition(conditions *[]metav1.Condition, observed
 // unfence = false, fence = true, clean = false
 // TODO: Remove the linter skip when this function is used
 func setDRClusterUnfencingFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonUnfenceError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonUnfenceError,
 		ObservedGeneration: observedGeneration,
@@ -1357,14 +1357,14 @@ func setDRClusterUnfencingFailedCondition(conditions *[]metav1.Condition, observ
 //
 //nolint:deadcode,unused
 func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,
 		Reason:             DRClusterConditionReasonCleanError,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonCleanError,
 		ObservedGeneration: observedGeneration,

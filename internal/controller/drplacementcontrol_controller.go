@@ -1806,13 +1806,13 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 		Message:            msg,
 	}
 
-	existingCondition := findCondition(*conditions, conditionType)
+	existingCondition := rmnutil.FindCondition(*conditions, conditionType)
 	if existingCondition == nil ||
 		existingCondition.Status != newCondition.Status ||
 		existingCondition.ObservedGeneration != newCondition.ObservedGeneration ||
 		existingCondition.Reason != newCondition.Reason ||
 		existingCondition.Message != newCondition.Message {
-		setStatusCondition(conditions, newCondition)
+		rmnutil.SetStatusCondition(conditions, newCondition)
 
 		return true
 	}
@@ -1824,7 +1824,7 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	time := metav1.NewTime(time.Now())
 
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	rmnutil.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionAvailable,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
@@ -1832,7 +1832,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	rmnutil.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionPeerReady,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
@@ -1840,7 +1840,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	rmnutil.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionProtected,
 		Reason:             string(rmn.ReasonProtectedUnknown),
 		ObservedGeneration: observedGeneration,

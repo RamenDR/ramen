@@ -197,3 +197,66 @@ func mergedCondition(conditions []*metav1.Condition, ignoreReasons []string) met
 
 	return merged
 }
+
+func SetStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
+	if existingConditions == nil {
+		existingConditions = &[]metav1.Condition{}
+	}
+
+	existingCondition := FindCondition(*existingConditions, newCondition.Type)
+	if existingCondition == nil {
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		*existingConditions = append(*existingConditions, newCondition)
+
+		return
+	}
+}
+
+func SetStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) metav1.Condition {
+	if existingConditions == nil {
+		existingConditions = &[]metav1.Condition{}
+	}
+
+	existingCondition := FindCondition(*existingConditions, newCondition.Type)
+	if existingCondition == nil {
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		*existingConditions = append(*existingConditions, newCondition)
+
+		return newCondition
+	}
+
+	if existingCondition.Status != newCondition.Status {
+		existingCondition.Status = newCondition.Status
+		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
+	}
+
+	defaultValue := "none"
+	if newCondition.Reason == "" {
+		newCondition.Reason = defaultValue
+	}
+
+	if newCondition.Message == "" {
+		newCondition.Message = defaultValue
+	}
+
+	existingCondition.Reason = newCondition.Reason
+	existingCondition.Message = newCondition.Message
+	// TODO: Why not update lastTranTime if the above change?
+
+	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
+		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
+		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
+	}
+
+	return *existingCondition
+}
+
+func FindCondition(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {
+	for i := range existingConditions {
+		if existingConditions[i].Type == conditionType {
+			return &existingConditions[i]
+		}
+	}
+
+	return nil
+}

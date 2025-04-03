@@ -227,7 +227,7 @@ func ensureDRClustersAvailable(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClu
 			if cluster.Name == specCluster {
 				found++
 
-				condition := findCondition(cluster.Status.Conditions, ramen.DRClusterValidated)
+				condition := util.FindCondition(cluster.Status.Conditions, ramen.DRClusterValidated)
 				if condition != nil && condition.Status == metav1.ConditionTrue {
 					validated++
 				}
