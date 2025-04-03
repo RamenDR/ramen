@@ -106,8 +106,9 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 				Name: drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
-				Kind: "placement",
-				Name: placementName,
+				Kind:      "placement",
+				Name:      placementName,
+				Namespace: namespace,
 			},
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appname": appname},
@@ -184,8 +185,9 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 				Name: drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
-				Kind: "placement",
-				Name: placementName,
+				Kind:      "placement",
+				Name:      placementName,
+				Namespace: namespace,
 			},
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appname": appname},
