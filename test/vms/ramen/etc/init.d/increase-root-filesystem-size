@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+LOGFILE="/var/log/resize-filesystem.log"
+
+case "$1" in
+    start)
+        echo "Starting resize..." | tee -a "$LOGFILE"
+        df -h / >> "$LOGFILE"
+        DEVICE=$(df -h / | grep -vE '^Filesystem|tmpfs|cdrom' | awk '{print $1}')
+        echo "Device: $DEVICE" | tee -a "$LOGFILE"
+        resize-filesystem "$DEVICE" 2>&1 | tee -a "$LOGFILE"
+        df -h / >> "$LOGFILE"
+        echo "Resize complete" | tee -a "$LOGFILE"
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start}"
+        exit 1
+        ;;
+esac
+
+exit 0
