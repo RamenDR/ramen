@@ -15,7 +15,6 @@ import (
 	"golang.org/x/time/rate"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
-	"github.com/google/uuid"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
@@ -409,7 +408,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 //
 //nolint:funlen
 func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("VolumeReplicationGroup", req.NamespacedName, "rid", uuid.New())
+	log := r.Log.WithValues("vrg", req.NamespacedName, "rid", util.GetRID())
 
 	log.Info("Entering reconcile loop")
 
