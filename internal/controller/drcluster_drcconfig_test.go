@@ -168,14 +168,14 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		Context("Given ManagedCluster resource status", func() {
 			When("There is no ManagedCluster resource", func() {
 				It("reports DRCluster validated as false", func() {
-					drclusterConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCluster1,
-						false,
 						metav1.ConditionFalse,
 						Equal("DRClusterConfigInProgress"),
 						Ignore(),
 						ramen.DRClusterValidated,
+						false,
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
@@ -187,14 +187,14 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					By("creating a ManagedCluster resource without status")
 					mc = createManagedCluster(k8sClient, drCluster1Name)
 					Expect(mc != nil)
-					drclusterConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCluster1,
-						false,
 						metav1.ConditionFalse,
 						Equal("DRClusterConfigInProgress"),
 						Ignore(),
 						ramen.DRClusterValidated,
+						false,
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
@@ -224,14 +224,14 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Status().Update(context.TODO(), mc)).To(Succeed())
 
-					drclusterConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCluster1,
-						false,
 						metav1.ConditionFalse,
 						Equal("DRClusterConfigInProgress"),
 						Ignore(),
 						ramen.DRClusterValidated,
+						false,
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
@@ -271,14 +271,14 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Status().Update(context.TODO(), mc)).To(Succeed())
 
-					drclusterConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCluster1,
-						false,
 						metav1.ConditionFalse,
 						Equal("DRClusterConfigInProgress"),
 						Ignore(),
 						ramen.DRClusterValidated,
+						false,
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
@@ -322,14 +322,14 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					}
 					Expect(k8sClient.Status().Update(context.TODO(), mc)).To(Succeed())
 
-					drclusterConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCluster1,
-						false,
 						metav1.ConditionFalse,
 						Equal("DRClusterConfigInProgress"),
 						Ignore(),
 						ramen.DRClusterValidated,
+						false,
 					)
 				})
 				It("fails to create the DRClusterConfig manifest", func() {
@@ -376,14 +376,14 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 					By("marking DRClusterConfig manifest as applied")
 					updateDRClusterConfigMWStatus(k8sClient, apiReader, drCluster1Name)
 
-					drclusterConditionExpectEventually(
+					objectConditionExpectEventually(
 						apiReader,
 						drCluster1,
-						false,
 						metav1.ConditionTrue,
 						Equal(ramencontrollers.DRClusterConditionReasonValidated),
 						Ignore(),
 						ramen.DRClusterValidated,
+						false,
 					)
 				})
 				It("creates the DRClusterConfig manifest", func() {
