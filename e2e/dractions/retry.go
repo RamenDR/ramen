@@ -32,7 +32,15 @@ func waitDRPCReady(ctx types.Context, namespace string, drpcName string) error {
 		available := conditionMet(drpc.Status.Conditions, ramen.ConditionAvailable)
 		peerReady := conditionMet(drpc.Status.Conditions, ramen.ConditionPeerReady)
 
-		if available && peerReady && drpc.Status.LastGroupSyncTime != nil {
+		// Not sure if checking for progression completed is needed.
+		// Ideally, conditions should be enough.
+		// see https://github.com/RamenDR/ramen/issues/1988
+		progressionCompleted := drpc.Status.Progression == ramen.ProgressionCompleted
+
+		if available &&
+			peerReady &&
+			progressionCompleted &&
+			drpc.Status.LastGroupSyncTime != nil {
 			log.Debugf("drpc \"%s/%s\" is ready in cluster %q", namespace, drpcName, hub.Name)
 
 			return nil
@@ -40,8 +48,8 @@ func waitDRPCReady(ctx types.Context, namespace string, drpcName string) error {
 
 		if time.Since(startTime) > util.Timeout {
 			return fmt.Errorf("timeout waiting for drpc to become ready in cluster %q"+
-				" (Available: %v, PeerReady: %v, lastGroupSyncTime: %v)",
-				hub.Name, available, peerReady, drpc.Status.LastGroupSyncTime)
+				" (Available: %v, PeerReady: %v, ProgressionCompleted: %v, lastGroupSyncTime: %v)",
+				hub.Name, available, peerReady, progressionCompleted, drpc.Status.LastGroupSyncTime)
 		}
 
 		time.Sleep(util.RetryInterval)
