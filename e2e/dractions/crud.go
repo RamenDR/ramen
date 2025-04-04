@@ -106,7 +106,7 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 				Name: drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
-				Kind:      "placement",
+				Kind:      "Placement",
 				Name:      placementName,
 				Namespace: namespace,
 			},
@@ -185,7 +185,7 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 				Name: drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
-				Kind:      "placement",
+				Kind:      "Placement",
 				Name:      placementName,
 				Namespace: namespace,
 			},
