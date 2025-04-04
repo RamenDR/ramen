@@ -157,6 +157,18 @@ var testCasesData = []testCases{
 		result:   true,
 		jsonText: jsonPod,
 	},
+	{
+		jsonPathExprs: "({$.spec.replicas} == {$.status.readyReplicas}) && (({$.spec.replicas} ==" +
+			" {$.status.updatedReplicas}) || ({$.spec.revisionHistoryLimit} != {11}))",
+		result:   true,
+		jsonText: jsonPod,
+	},
+	{
+		jsonPathExprs: "(({$.spec.replicas} == {$.status.readyReplicas}) && ({$.spec.replicas} ==" +
+			" {$.status.updatedReplicas})) || ({$.spec.revisionHistoryLimit} != {11})",
+		result:   true,
+		jsonText: jsonPod,
+	},
 }
 
 var testCasesObjectData = []testCasesObject{
