@@ -25,7 +25,6 @@ func New(name, branch string, pvcSpec types.PVCSpecConfig) (types.Workload, erro
 }
 
 func AvailableNames() []string {
-	// TODO: Use maps.Keys() when we have Go 1.23.
 	keys := make([]string, 0, len(registry))
 	for k := range registry {
 		keys = append(keys, k)
