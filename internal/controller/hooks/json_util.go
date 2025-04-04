@@ -23,84 +23,111 @@ const (
 
 // nolint:gocognit,cyclop
 func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
-	// handle OR (||)
-	orParts := splitOutsideBraces(expression, "||")
-	if len(orParts) > 1 {
-		for _, part := range orParts {
-			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
-			if err != nil {
-				return false, err
-			}
+	expression = strings.TrimSpace(expression)
 
-			if result {
-				return true, nil // Short-circuit: If any part is true
-			}
-		}
+	// Handle nested parentheses
+	if isFullyEnclosed(expression) {
+		exprContent := expression[1 : len(expression)-1]
 
-		return false, nil
+		return evaluateBooleanExpression(strings.TrimSpace(exprContent), jsonData)
 	}
 
-	// handle AND (&&)
-	andParts := splitOutsideBraces(expression, "&&")
-	if len(andParts) > 1 {
-		for _, part := range andParts {
-			result, err := evaluateBooleanExpression(strings.TrimSpace(part), jsonData)
-			if err != nil {
-				return false, err
-			}
-
-			if !result {
-				return false, nil // Short-circuit: If any part is false
-			}
+	// Split top-level expressions
+	left, operator, right := splitOutsideBrackets(expression)
+	if operator != "" {
+		leftResult, err := evaluateBooleanExpression(strings.TrimSpace(left), jsonData)
+		if err != nil {
+			return false, err
 		}
 
-		return true, nil
+		if operator == "||" && leftResult {
+			return true, nil // Short-circuit for OR
+		}
+
+		if operator == "&&" && !leftResult {
+			return false, nil // Short-circuit for AND
+		}
+
+		rightResult, err := evaluateBooleanExpression(strings.TrimSpace(right), jsonData)
+		if err != nil {
+			return false, err
+		}
+
+		return rightResult, nil
 	}
 
-	// No logical operator
+	// Evaluate simplified boolean expression
 	op, jsonPaths, err := parseBooleanExpression(expression)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
 	}
 
-	operand := make([]reflect.Value, len(jsonPaths))
+	operands := make([]reflect.Value, len(jsonPaths))
 
 	for i, jsonPath := range jsonPaths {
 		if strings.HasPrefix(jsonPath, "$") {
-			operand[i], err = QueryJSONPath(jsonData, jsonPath)
+			operands[i], err = QueryJSONPath(jsonData, jsonPath)
 			if err != nil {
 				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
 			}
 		} else {
-			operand[i] = reflect.ValueOf(jsonPath)
+			operands[i] = reflect.ValueOf(jsonPath)
 		}
 	}
 
-	return compare(operand[0], operand[1], op)
+	return compare(operands[0], operands[1], op)
 }
 
-func splitOutsideBraces(expression, delimiter string) []string {
-	var result []string
+func splitOutsideBrackets(expression string) (string, string, string) {
+	braces, parens := 0, 0
 
-	braces := 0
-	lastIndex := 0
-
-	for i := 0; i <= len(expression)-len(delimiter); i++ {
-		if expression[i] == '{' {
+	for i := range len(expression) - 1 {
+		switch expression[i] {
+		case '{':
 			braces++
-		} else if expression[i] == '}' {
+		case '}':
 			braces--
+		case '(':
+			parens++
+		case ')':
+			parens--
 		}
 
-		if braces == 0 && expression[i:i+len(delimiter)] == delimiter {
-			result = append(result, expression[lastIndex:i])
-			lastIndex = i + len(delimiter)
+		if braces == 0 && parens == 0 {
+			if strings.HasPrefix(expression[i:], "&&") {
+				return expression[:i], "&&", expression[i+2:]
+			}
+
+			if strings.HasPrefix(expression[i:], "||") {
+				return expression[:i], "||", expression[i+2:]
+			}
 		}
 	}
 
-	result = append(result, expression[lastIndex:])
+	return expression, "", ""
+}
 
-	return result
+func isFullyEnclosed(expression string) bool {
+	if !(strings.HasPrefix(expression, "(") && strings.HasSuffix(expression, ")")) {
+		return false
+	}
+
+	parens := 0
+
+	for i, ch := range expression {
+		switch ch {
+		case '(':
+			parens++
+		case ')':
+			parens--
+		}
+
+		if i > 0 && parens == 0 {
+			return i == len(expression)-1
+		}
+	}
+
+	return false
 }
 
 // compare compares two interfaces using the specified operator
