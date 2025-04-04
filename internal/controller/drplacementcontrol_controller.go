@@ -122,7 +122,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 //
 //nolint:funlen,gocognit,gocyclo,cyclop
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
+	logger := r.Log.WithValues("drpc", req.NamespacedName, "rid", uuid.New())
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")

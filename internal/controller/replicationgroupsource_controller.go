@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	vgsv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -16,7 +18,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -58,6 +59,7 @@ type ReplicationGroupSourceReconciler struct {
 	APIReader                        client.Reader
 	Scheme                           *runtime.Scheme
 	volumeGroupSnapshotCRsAreWatched bool
+	Log                              logr.Logger
 }
 
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources,verbs=get;list;watch;create;update;patch;delete
@@ -73,7 +75,7 @@ type ReplicationGroupSourceReconciler struct {
 
 //nolint:funlen
 func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+	logger := r.Log.WithValues("rgs", req.NamespacedName, "rid", uuid.New())
 	logger.Info("Get ReplicationGroupSource")
 
 	if !r.volumeGroupSnapshotCRsAreWatched {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/workqueue"
@@ -30,6 +31,7 @@ type ProtectedVolumeReplicationGroupListReconciler struct {
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	RateLimiter    *workqueue.TypedRateLimiter[reconcile.Request]
+	Log            logr.Logger
 }
 
 type ProtectedVolumeReplicationGroupListInstance struct {
@@ -60,7 +62,7 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 	s := ProtectedVolumeReplicationGroupListInstance{
 		reconciler: r,
 		ctx:        ctx,
-		log:        ctrl.Log.WithName("pvrgl").WithValues("name", req.NamespacedName.Name),
+		log:        r.Log.WithValues("pvrgl", req.NamespacedName.Name, "rid", uuid.New()),
 		instance:   &ramendrv1alpha1.ProtectedVolumeReplicationGroupList{},
 	}
 
