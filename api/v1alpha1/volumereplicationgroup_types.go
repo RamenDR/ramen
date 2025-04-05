@@ -121,8 +121,6 @@ const (
 	VRGActionRelocate = VRGAction("Relocate")
 )
 
-const ReservedBackupName = "use-backup-not-restore"
-
 type KubeObjectProtectionSpec struct {
 	// Preferred time between captures
 	//+optional
