@@ -42,7 +42,9 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -383,6 +385,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
+// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -461,6 +464,12 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	log.Info("Reconcile return", "result", res,
 		"VolRep count", len(v.volRepPVCs), "VolSync count", len(v.volSyncPVCs))
 
+	if v.isVMRecipeProtection() {
+		reconcilePeriod := ReconcileInterval * time.Second
+
+		return ctrl.Result{RequeueAfter: reconcilePeriod, Requeue: true}, nil
+	}
+
 	return res, nil
 }
 
@@ -523,6 +532,9 @@ const (
 
 	// VolumeReplicationClass schedule parameter key
 	VRClassScheduleKey = "schedulingInterval"
+
+	// set reconcile frequency for VM-Recipe
+	ReconcileInterval = 60
 )
 
 func (v *VRGInstance) requeue() {
@@ -1668,6 +1680,9 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.vrgObjectProtected,
 		v.kubeObjectsProtected,
 	)
+	logAndSet(VRGConditionTypeNoClusterDataConflict,
+		v.aggregateVRGNoClusterDataConflictCondition(),
+	)
 	v.updateVRGLastGroupSyncTime()
 	v.updateVRGLastGroupSyncDuration()
 	v.updateLastGroupSyncBytes()
@@ -1949,4 +1964,128 @@ func (r *VolumeReplicationGroupReconciler) addKubeObjectsOwnsAndWatches(ctrlBuil
 	r.veleroCRsAreWatched = true
 
 	return ctrlBuilder
+}
+
+func (v *VRGInstance) validateVMsForStandaloneProtection() error {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		err := v.CheckForVMConflictOnSecondary()
+		if err != nil {
+			return err
+		}
+	}
+
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		err := v.CheckForVMConflictOnPrimary()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
+	vmNamespace := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	labelSelector := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]
+	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	var foundVMsArr []string
+
+	var err error
+
+	if foundVMsArr, err = util.ListVMsByLabelSelector(v.ctx, v.reconciler.APIReader, v.log,
+		labelSelector,
+		vmNamespace,
+	); err != nil {
+		return err
+	}
+
+	foundVMsSet := sets.NewString(foundVMsArr...)
+	protectedVMsSet := sets.NewString(vmList...)
+
+	if !(foundVMsSet.Equal(protectedVMsSet)) {
+		return fmt.Errorf("protected  VMs list is not matching the VMs matching label selector")
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) CheckForVMConflictOnSecondary() error {
+	vmNamespaceList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	if err := v.CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList); err != nil {
+		return err
+	}
+
+	labelSelector := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]
+
+	if foundVMs, err := util.ListVMsByLabelSelector(v.ctx, v.reconciler.APIReader, v.log,
+		labelSelector,
+		vmNamespaceList,
+	); len(foundVMs) > 0 || err != nil {
+		if err != nil {
+			v.log.Error(err, "Failed to list VMs on secondary cluster")
+
+			return err
+		}
+
+		return fmt.Errorf("conflicting VMs found on secondary cluster")
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList []string) error {
+	if _, err := util.ListVMsByVMNamespace(v.ctx, v.reconciler.APIReader,
+		v.log, vmNamespaceList, vmList); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("failed to lookup virtualmachine resources, check rbacs")
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("found conflicting VMs on secondary")
+}
+
+func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condition {
+	var msg string
+
+	if v.isVMRecipeProtection() {
+		msg = fmt.Sprintf("Conflicting VMs validation failed for VM protection on %s cluster",
+			v.instance.Spec.ReplicationState)
+
+		if err := v.validateVMsForStandaloneProtection(); err != nil {
+			return v.clusterDataConflict(msg)
+		}
+	}
+
+	msg = "No resource conflict"
+
+	return newVRGNoClusterDataConflictCondition(v.instance.Generation, msg)
+}
+
+func (v *VRGInstance) clusterDataConflict(msg string) *metav1.Condition {
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		return updateVRGNoClusterDataConflictCondition(
+			v.instance.Status.ObservedGeneration, metav1.ConditionFalse, VRGConditionReasonDataConflictPrimary,
+			msg)
+	} else if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		return updateVRGNoClusterDataConflictCondition(
+			v.instance.Status.ObservedGeneration, metav1.ConditionFalse, VRGConditionReasonDataConflictSecondary,
+			msg)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) isVMRecipeProtection() bool {
+	if v.instance.Spec.KubeObjectProtection != nil && v.instance.Spec.KubeObjectProtection.RecipeRef != nil {
+		if v.instance.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
+			return true
+		}
+	}
+
+	return false
 }
