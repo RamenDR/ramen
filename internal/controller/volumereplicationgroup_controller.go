@@ -1167,11 +1167,36 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 	return nil
 }
 
+func (v *VRGInstance) resetKubeObjectsCaptureStatusIfRequired() {
+	if v.kubeObjectProtectionDisabled("capture") {
+		// set the in-memory condition to nil to indicate that we don't need
+		// kube objects protected for this vrg
+		v.kubeObjectsCaptureStatusNil()
+
+		return
+	}
+
+	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
+		// if we are in final sync, then we don't reset the condition
+		return
+	}
+
+	// clusterDataProtected looks at the v.kubeObjectsProtected condition
+	// to determine if the cluster data is protected. If it is nil, then it is
+	// considered as success. So we should set it as false here and set it as
+	// true if protection is not required or if protection is successful.
+	v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureNotStarted", "Kube objects capture has not started")
+}
+
 // processAsPrimary reconciles the current instance of VRG as primary
+//
+//nolint:cyclop,funlen,gocognit
 func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup as Primary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+
+	v.resetKubeObjectsCaptureStatusIfRequired()
 
 	if err := v.pvcsDeselectedUnprotect(); err != nil {
 		return v.dataError(err, "PVCs deselected unprotect failed", v.result.Requeue)
@@ -1193,21 +1218,38 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	v.reconcileAsPrimary()
 
+	if v.result.Requeue {
+		return v.updateVRGConditionsAndStatus(v.result)
+	}
+
 	if v.shouldRestoreKubeObjects() {
 		err := v.kubeObjectsRecover(&v.result)
 		if err != nil {
 			v.log.Info("Kube objects restore failed", "error", err)
 			v.errorConditionLogAndSet(err, "Failed to restore kube objects", setVRGKubeObjectsErrorCondition)
 
-			return v.updateVRGStatus(v.result)
+			return v.updateVRGConditionsAndStatus(v.result)
 		}
 
+		// save status and requeue if kube objects are restored
 		v.log.Info("Kube objects restored")
 		setVRGKubeObjectsReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, "Kube objects restored")
+		v.result.Requeue = true
+
+		return v.updateVRGConditionsAndStatus(v.result)
 	}
 
 	v.kubeObjectsProtectPrimary(&v.result)
+
+	if v.result.Requeue {
+		return v.updateVRGConditionsAndStatus(v.result)
+	}
+
 	v.vrgObjectProtect(&v.result)
+
+	if v.result.Requeue {
+		return v.updateVRGConditionsAndStatus(v.result)
+	}
 
 	// If requeue is false, then VRG was successfully processed as primary.
 	// Hence the event to be generated is Success of type normal.
