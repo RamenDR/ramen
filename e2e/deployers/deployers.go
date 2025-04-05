@@ -34,7 +34,6 @@ func New(name string) (types.Deployer, error) {
 }
 
 func AvailableNames() []string {
-	// TODO: Use maps.Keys() when we have Go 1.23.
 	keys := make([]string, 0, len(registry))
 	for k := range registry {
 		keys = append(keys, k)
