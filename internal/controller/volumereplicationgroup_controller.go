@@ -567,6 +567,13 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to label PVCs for consistency groups", true)
 	}
 
+	v.log.Info("states",
+		"state", v.instance.Spec.ReplicationState,
+		"status", v.instance.Status.State,
+		"action", v.instance.Spec.Action,
+		"preparefinalsync", v.instance.Spec.PrepareForFinalSync,
+		"runfinalsync", v.instance.Spec.RunFinalSync)
+
 	v.log = v.log.WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
 
