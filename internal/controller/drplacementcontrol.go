@@ -21,6 +21,7 @@ import (
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -428,7 +429,7 @@ func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRClu
 			continue
 		}
 
-		drClusterFencedCondition := findCondition(drClusters[i].Status.Conditions, rmn.DRClusterConditionTypeFenced)
+		drClusterFencedCondition := rmnutil.FindCondition(drClusters[i].Status.Conditions, rmn.DRClusterConditionTypeFenced)
 		if drClusterFencedCondition == nil {
 			d.log.Info("drCluster fenced condition not available", "cluster", drClusters[i].Name)
 
@@ -1114,7 +1115,7 @@ func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 }
 
 func (d *DRPCInstance) validatePeerReady() bool {
-	condition := findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+	condition := rmnutil.FindCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 	if condition == nil || condition.Status == metav1.ConditionTrue {
 		return true
 	}
@@ -1214,7 +1215,7 @@ func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) b
 		return !ready
 	}
 
-	condition := findCondition(vrg.Status.Conditions, conditionType)
+	condition := rmnutil.FindCondition(vrg.Status.Conditions, conditionType)
 	if condition == nil {
 		d.log.Info(fmt.Sprintf("VRG %s condition not available on cluster %s", conditionType, cluster))
 
@@ -1866,6 +1867,8 @@ func (d *DRPCInstance) newVRG(
 		},
 	}
 
+	core.ObjectCreatedByRamenSetLabel(&vrg)
+
 	d.updateVRGOptionalFields(&vrg, vrgFromView, dstCluster)
 
 	return vrg
@@ -1963,7 +1966,7 @@ func isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
-	condition := findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+	condition := rmnutil.FindCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 
 	// Because we init conditions we will always find the condition and not move it to ReasonProgressing?
 	if condition == nil {
@@ -1972,7 +1975,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionFalse, rmn.ReasonProgressing, msg)
 
-		condition = findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+		condition = rmnutil.FindCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 	}
 
 	if condition.Reason == rmn.ReasonSuccess &&
@@ -2151,7 +2154,7 @@ func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
 		return false
 	}
 
-	dataProtectedCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
+	dataProtectedCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
 	if dataProtectedCondition == nil {
 		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
 			clusterName, vrg))
