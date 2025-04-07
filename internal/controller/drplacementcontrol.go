@@ -2396,6 +2396,7 @@ func IsPreRelocateProgression(status rmn.ProgressionStatus) bool {
 		rmn.ProgressionRunningFinalSync,
 		rmn.ProgressionFinalSyncComplete,
 		rmn.ProgressionEnsuringVolumesAreSecondary,
+		rmn.ProgressionWaitOnUserToCleanUp,
 	}
 
 	return slices.Contains(preRelocateProgressions, status)
