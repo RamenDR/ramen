@@ -1,9 +1,6 @@
 # Configuration for RamenDR End to End testing.
 
 ---
-# Kubernetes distribution (possible distro values: k8s, ocp)
-distro: k8s
-
 # Git repository url and branch containing application manifests
 # to be deployed on the clusters.
 repo:
@@ -52,15 +49,12 @@ tests:
     pvcspec: cephfs
 
 # Sample cluster configurations:
-# Uncomment and edit the following lines to set cluster names
-# and their kubeconfig paths for the hub and managed clusters.
+# Uncomment and edit the following lines to set the cluster
+# kubeconfig paths for the hub and managed clusters.
 # clusters:
 #   hub:
-#     name: hub
 #     kubeconfig: hub/config
 #   c1:
-#     name: dr1
 #     kubeconfig: dr1/config
 #   c2:
-#     name: dr2
 #     kubeconfig: dr2/config

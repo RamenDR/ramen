@@ -4,26 +4,16 @@
 package hooks
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
-	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/util/jsonpath"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	defaultTimeoutValue       = 300
 	expectedNumberOfJSONPaths = 2
 	podType                   = "pod"
 	deploymentType            = "deployment"
@@ -31,315 +21,118 @@ const (
 	pInterval                 = 100
 )
 
-func EvaluateCheckHook(k8sClient client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
-	if hook.LabelSelector == nil && hook.NameSelector == "" {
-		return false, fmt.Errorf("either nameSelector or labelSelector should be provided to get resources")
+// nolint:gocognit,cyclop
+func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
+	expression = strings.TrimSpace(expression)
+
+	// Handle nested parentheses
+	if isFullyEnclosed(expression) {
+		exprContent := expression[1 : len(expression)-1]
+
+		return evaluateBooleanExpression(strings.TrimSpace(exprContent), jsonData)
 	}
 
-	timeout := getTimeoutValue(hook)
-
-	pollInterval := pInterval * time.Microsecond
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
-	for int(pollInterval.Seconds()) < timeout {
-		select {
-		case <-ctx.Done():
-			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
-		case <-ticker.C:
-			objs, err := getResourcesList(k8sClient, hook, log)
-			if err != nil {
-				return false, err // Some other error occurred, return it
-			}
-
-			if len(objs) == 0 {
-				pollInterval *= 2
-				ticker.Reset(pollInterval)
-
-				continue
-			}
-
-			return EvaluateCheckHookForObjects(objs, hook, log)
-		}
-	}
-
-	return false, nil
-}
-
-func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
-	finalRes := true
-
-	var err error
-
-	for _, obj := range objs {
-		data, err := ConvertClientObjectToMap(obj)
+	// Split top-level expressions
+	left, operator, right := splitOutsideBrackets(expression)
+	if operator != "" {
+		leftResult, err := evaluateBooleanExpression(strings.TrimSpace(left), jsonData)
 		if err != nil {
-			log.Info("error converting object to map", "for", hook.Name, "with error", err)
-
 			return false, err
 		}
 
-		res, err := EvaluateCheckHookExp(hook.Chk.Condition, data)
-		finalRes = finalRes && res
+		if operator == "||" && leftResult {
+			return true, nil // Short-circuit for OR
+		}
 
+		if operator == "&&" && !leftResult {
+			return false, nil // Short-circuit for AND
+		}
+
+		rightResult, err := evaluateBooleanExpression(strings.TrimSpace(right), jsonData)
 		if err != nil {
-			log.Info("error executing check hook", "for", hook.Name, "with error", err)
-
 			return false, err
 		}
 
-		log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
-			obj.GetName(), "in ns", obj.GetNamespace(), "with execution result", res)
+		return rightResult, nil
 	}
 
-	return finalRes, err
-}
-
-func ConvertClientObjectToMap(obj client.Object) (map[string]interface{}, error) {
-	var jsonData map[string]interface{}
-
-	jsonBytes, err := json.Marshal(obj)
-	if err != nil {
-		return jsonData, fmt.Errorf("error marshaling object %w", err)
-	}
-
-	err = json.Unmarshal(jsonBytes, &jsonData)
-	if err != nil {
-		return jsonData, fmt.Errorf("error unmarshalling object %w", err)
-	}
-
-	return jsonData, nil
-}
-
-func getResourcesList(k8sClient client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) ([]client.Object, error) {
-	resourceList := make([]client.Object, 0)
-
-	var objList client.ObjectList
-
-	switch hook.SelectResource {
-	case podType:
-		objList = &corev1.PodList{}
-	case deploymentType:
-		objList = &appsv1.DeploymentList{}
-	case statefulsetType:
-		objList = &appsv1.StatefulSetList{}
-	default:
-		return resourceList, fmt.Errorf("unsupported resource type %s", hook.SelectResource)
-	}
-
-	if hook.NameSelector != "" {
-		log.Info("getting resources using nameSelector", "nameSelector", hook.NameSelector)
-
-		objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sClient, hook, objList)
-		if err != nil {
-			return resourceList, fmt.Errorf("error getting resources using nameSelector: %w", err)
-		}
-
-		resourceList = append(resourceList, objsUsingNameSelector...)
-	}
-
-	if hook.LabelSelector != nil {
-		log.Info("getting resources using labelSelector", "labelSelector", hook.LabelSelector)
-
-		objsUsingLabelSelector, err := getResourcesUsingLabelSelector(k8sClient, hook, objList)
-		if err != nil {
-			return resourceList, fmt.Errorf("error getting resources using labelSelector: %w", err)
-		}
-
-		resourceList = append(resourceList, objsUsingLabelSelector...)
-	}
-
-	return resourceList, nil
-}
-
-func getResourcesUsingLabelSelector(c client.Reader, hook *kubeobjects.HookSpec,
-	objList client.ObjectList,
-) ([]client.Object, error) {
-	filteredObjs := make([]client.Object, 0)
-
-	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
-	if err != nil {
-		return filteredObjs, fmt.Errorf("error converting labelSelector to selector")
-	}
-
-	listOps := &client.ListOptions{
-		Namespace:     hook.Namespace,
-		LabelSelector: selector,
-	}
-
-	err = c.List(context.Background(), objList, listOps)
-	if err != nil {
-		return filteredObjs, fmt.Errorf("error listing resources using labelSelector: %w", err)
-	}
-
-	return getObjectsBasedOnType(objList), nil
-}
-
-func getResourcesUsingNameSelector(c client.Reader, hook *kubeobjects.HookSpec,
-	objList client.ObjectList,
-) ([]client.Object, error) {
-	filteredObjs := make([]client.Object, 0)
-
-	var err error
-
-	if isValidK8sName(hook.NameSelector) {
-		// use nameSelector for Matching field
-		listOps := &client.ListOptions{
-			Namespace: hook.Namespace,
-			FieldSelector: fields.SelectorFromSet(fields.Set{
-				"metadata.name": hook.NameSelector, // needs exact matching with the name
-			}),
-		}
-
-		err = c.List(context.Background(), objList, listOps)
-		if err != nil {
-			return filteredObjs, fmt.Errorf("error listing resources using nameSelector: %w", err)
-		}
-
-		return getObjectsBasedOnType(objList), nil
-	} else if isValidRegex(hook.NameSelector) {
-		// after listing without the fields selector, match with the regex for filtering
-		listOps := &client.ListOptions{
-			Namespace: hook.Namespace,
-		}
-
-		re, err := regexp.Compile(hook.NameSelector)
-		if err != nil {
-			return filteredObjs, err
-		}
-
-		err = c.List(context.Background(), objList, listOps)
-		if err != nil {
-			return filteredObjs, err
-		}
-
-		return getObjectsBasedOnTypeAndRegex(objList, re), nil
-	}
-
-	return filteredObjs, fmt.Errorf("nameSelector is neither distinct name nor regex")
-}
-
-// Based on the type of resource, slice of objects is returned.
-func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
-	objs := make([]client.Object, 0)
-
-	switch v := objList.(type) {
-	case *corev1.PodList:
-		for _, pod := range v.Items {
-			objs = append(objs, &pod)
-		}
-	case *appsv1.DeploymentList:
-		for _, dep := range v.Items {
-			objs = append(objs, &dep)
-		}
-	case *appsv1.StatefulSetList:
-		for _, ss := range v.Items {
-			objs = append(objs, &ss)
-		}
-	}
-
-	return objs
-}
-
-// Based on the type of resource and regex match, slice of objects is returned.
-func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	switch v := objList.(type) {
-	case *corev1.PodList:
-		objs = getMatchingPods(v, re)
-	case *appsv1.DeploymentList:
-		objs = getMatchingDeployments(v, re)
-	case *appsv1.StatefulSetList:
-		objs = getMatchingStatefulSets(v, re)
-	}
-
-	return objs
-}
-
-func getMatchingPods(pList *corev1.PodList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range pList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
-	}
-
-	return objs
-}
-
-func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range dList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
-	}
-
-	return objs
-}
-
-func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range ssList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
-	}
-
-	return objs
-}
-
-func isValidK8sName(nameSelector string) bool {
-	regex := `^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`
-	re := regexp.MustCompile(regex)
-
-	return re.MatchString(nameSelector)
-}
-
-func isValidRegex(nameSelector string) bool {
-	_, err := regexp.Compile(nameSelector)
-
-	return err == nil
-}
-
-func getTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Chk.Timeout != 0 {
-		return hook.Chk.Timeout
-	} else if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
-}
-
-func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
-	op, jsonPaths, err := parseBooleanExpression(booleanExpression)
+	// Evaluate simplified boolean expression
+	op, jsonPaths, err := parseBooleanExpression(expression)
 	if err != nil {
 		return false, fmt.Errorf("failed to parse boolean expression: %w", err)
 	}
 
-	operand := make([]reflect.Value, len(jsonPaths))
+	operands := make([]reflect.Value, len(jsonPaths))
+
 	for i, jsonPath := range jsonPaths {
-		operand[i], err = QueryJSONPath(jsonData, jsonPath)
-		if err != nil {
-			return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+		if strings.HasPrefix(jsonPath, "$") {
+			operands[i], err = QueryJSONPath(jsonData, jsonPath)
+			if err != nil {
+				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
+			}
+		} else {
+			operands[i] = reflect.ValueOf(jsonPath)
 		}
 	}
 
-	return compare(operand[0], operand[1], op)
+	return compare(operands[0], operands[1], op)
+}
+
+func splitOutsideBrackets(expression string) (string, string, string) {
+	braces, parens := 0, 0
+
+	for i := range len(expression) - 1 {
+		switch expression[i] {
+		case '{':
+			braces++
+		case '}':
+			braces--
+		case '(':
+			parens++
+		case ')':
+			parens--
+		}
+
+		if braces == 0 && parens == 0 {
+			if strings.HasPrefix(expression[i:], "&&") {
+				return expression[:i], "&&", expression[i+2:]
+			}
+
+			if strings.HasPrefix(expression[i:], "||") {
+				return expression[:i], "||", expression[i+2:]
+			}
+		}
+	}
+
+	return expression, "", ""
+}
+
+func isFullyEnclosed(expression string) bool {
+	if !(strings.HasPrefix(expression, "(") && strings.HasSuffix(expression, ")")) {
+		return false
+	}
+
+	parens := 0
+
+	for i, ch := range expression {
+		switch ch {
+		case '(':
+			parens++
+		case ')':
+			parens--
+		}
+
+		if i > 0 && parens == 0 {
+			return i == len(expression)-1
+		}
+	}
+
+	return false
 }
 
 // compare compares two interfaces using the specified operator
 //
-//nolint:gocognit,gocyclo,cyclop
+//nolint:funlen,gocognit,gocyclo,cyclop
 func compare(a, b reflect.Value, operator string) (bool, error) {
 	// convert pointer to interface
 	if a.Kind() == reflect.Ptr {
@@ -350,40 +143,56 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 		b = b.Elem()
 	}
 
-	if a.Kind() == reflect.Int ||
-		a.Kind() == reflect.Int8 ||
-		a.Kind() == reflect.Int16 ||
-		a.Kind() == reflect.Int32 ||
-		a.Kind() == reflect.Int64 {
-		a = reflect.ValueOf(float64(a.Int()))
-	}
-
-	if b.Kind() == reflect.Int ||
-		b.Kind() == reflect.Int8 ||
-		b.Kind() == reflect.Int16 ||
-		b.Kind() == reflect.Int32 ||
-		b.Kind() == reflect.Int64 {
-		b = reflect.ValueOf(float64(b.Int()))
-	}
-
-	// if they are just an interface then we convert them to string
+	// Convert interface{} to actual type instead of just converting to string
 	if a.Kind() == reflect.Interface {
-		a = reflect.ValueOf(fmt.Sprintf("%v", a.Interface()))
+		a = reflect.ValueOf(a.Interface())
 	}
 
 	if b.Kind() == reflect.Interface {
-		b = reflect.ValueOf(fmt.Sprintf("%v", b.Interface()))
+		b = reflect.ValueOf(b.Interface())
 	}
 
+	// Convert all integer types to float64 for consistency
+	if isKindInt(a.Kind()) {
+		a = reflect.ValueOf(float64(a.Int()))
+	}
+
+	if isKindInt(b.Kind()) {
+		b = reflect.ValueOf(float64(b.Int()))
+	}
+
+	// Convert numeric strings to float64 for valid comparison
+	if a.Kind() == reflect.String && isNumericString(a.String()) {
+		num, err := strconv.ParseFloat(a.String(), 64)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert string to float64: %w", err)
+		}
+
+		a = reflect.ValueOf(num)
+	}
+
+	if b.Kind() == reflect.String && isNumericString(b.String()) {
+		num, err := strconv.ParseFloat(b.String(), 64)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert string to float64: %w", err)
+		}
+
+		b = reflect.ValueOf(num)
+	}
+
+	// Convert string "True"/"False" to boolean before comparison
+	a = convertToBoolean(a)
+	b = convertToBoolean(b)
+
+	// Ensure operands are of the same type before comparison
 	if a.Kind() != b.Kind() {
-		return false, fmt.Errorf("operands of different kinds can't be compared %v, %v", a.Kind(), b.Kind())
+		return false, fmt.Errorf("operands of different kinds can't be compared: %v, %v", a.Kind(), b.Kind())
 	}
 
-	// At this point, both a and b should be of the same kind
+	// Validate the operator for the given types
 	if operator != "==" && operator != "!=" {
-		if !isKindStringOrFloat64(a.Kind()) || !isKindStringOrFloat64(b.Kind()) {
-			return false, fmt.Errorf("operands not supported for operator: %v, %v, %s",
-				a.Kind(), b.Kind(), operator)
+		if !isKindStringOrFloat64(a.Kind()) {
+			return false, fmt.Errorf("unsupported operands for operator: %v, %v, %s", a.Kind(), b.Kind(), operator)
 		}
 	}
 
@@ -395,11 +204,43 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 		return false, fmt.Errorf("unsupported kind for comparison: %v, %v", a.Kind(), b.Kind())
 	}
 
-	if isKindBool(a.Kind()) && isKindBool(b.Kind()) {
+	if isKindBool(a.Kind()) {
 		return compareBool(a.Bool(), b.Bool(), operator)
 	}
 
 	return compareValues(a.Interface(), b.Interface(), operator)
+}
+
+func isKindInt(kind reflect.Kind) bool {
+	return kind >= reflect.Int && kind <= reflect.Int64
+}
+
+func isNumericString(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+
+	return err == nil
+}
+
+// Convert a string reflect.Value to boolean if it contains "true"/"false"
+func convertToBoolean(v reflect.Value) reflect.Value {
+	if v.Kind() == reflect.String {
+		strVal := strings.TrimSpace(v.String())
+
+		// Remove surrounding double quotes, if present
+		if strings.HasPrefix(strVal, "\"") && strings.HasSuffix(strVal, "\"") {
+			strVal = strVal[1 : len(strVal)-1]
+		}
+
+		// Convert "true"/"false" strings to booleans
+		switch strings.ToLower(strVal) {
+		case "true":
+			return reflect.ValueOf(true)
+		case "false":
+			return reflect.ValueOf(false)
+		}
+	}
+
+	return v
 }
 
 func compareBool(a, b bool, operator string) (bool, error) {
@@ -492,39 +333,112 @@ func isKindStringOrFloat64(kind reflect.Kind) bool {
 	return isKindString(kind) || isKindFloat64(kind)
 }
 
+// nolint:cyclop
 func parseBooleanExpression(booleanExpression string) (op string, jsonPaths []string, err error) {
+	// List of valid operators
 	operators := []string{"==", "!=", ">=", ">", "<=", "<"}
 
-	// TODO
-	// If one of the jsonpaths have the operator that we are looking for,
-	// then strings.Split with split it at that point and not in the middle.
+	// Find the first occurrence of an operator that is outside curly braces
+	operatorIndex := -1
 
-	for _, op := range operators {
-		exprs := strings.Split(booleanExpression, op)
+	var foundOperator string
 
-		jsonPaths = trimLeadingTrailingWhiteSpace(exprs)
-
-		if len(exprs) == expectedNumberOfJSONPaths &&
-			IsValidJSONPathExpression(jsonPaths[0]) &&
-			IsValidJSONPathExpression(jsonPaths[1]) {
-			return op, jsonPaths, nil
+	for _, operator := range operators {
+		index := findOperatorOutsideBraces(booleanExpression, operator)
+		if index != -1 && (operatorIndex == -1 || index < operatorIndex) {
+			operatorIndex = index
+			foundOperator = operator
 		}
 	}
 
-	return "", []string{}, fmt.Errorf("unable to parse boolean expression %v", booleanExpression)
+	if operatorIndex == -1 {
+		return "", nil, fmt.Errorf("unable to find a valid boolean operator in expression: %v", booleanExpression)
+	}
+
+	// Split using the found operator
+	operand1 := strings.TrimSpace(booleanExpression[:operatorIndex])
+	operand2 := strings.TrimSpace(booleanExpression[operatorIndex+len(foundOperator):])
+
+	// Validate JSONPath and literals correctly
+	if !IsValidJSONPathExpression(operand1) || !IsValidJSONPathExpression(operand2) {
+		return "", nil, fmt.Errorf("invalid JSONPath or literal in boolean expression: %v", booleanExpression)
+	}
+
+	return foundOperator, []string{operand1, operand2}, nil
 }
 
-func IsValidJSONPathExpression(expr string) bool {
-	jp := jsonpath.New("validator").AllowMissingKeys(true)
+func findOperatorOutsideBraces(expression string, operator string) int {
+	braces := 0
 
-	err := jp.Parse(expr)
-	if err != nil {
+	for i := 0; i <= len(expression)-len(operator); i++ {
+		// Track opening `{` and closing `}`
+		if expression[i] == '{' {
+			braces++
+		} else if expression[i] == '}' {
+			braces--
+		}
+
+		// Found operator outside `{}`?
+		if braces == 0 && expression[i:i+len(operator)] == operator {
+			return i
+		}
+	}
+
+	return -1 // Not found
+}
+
+// IsValidJSONPathExpression checks if a given expression is a valid JSONPath expression
+//
+//nolint:cyclop
+func IsValidJSONPathExpression(expr string) bool {
+	expr = strings.TrimSpace(expr)
+
+	if !(strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}")) {
 		return false
 	}
 
-	_, err = QueryJSONPath("{}", expr)
+	innerExpr := strings.Trim(expr, "{}")
 
-	return err == nil
+	if innerExpr == "true" || innerExpr == "false" || innerExpr == "True" || innerExpr == "False" {
+		return true
+	}
+
+	if isLiteralValue(innerExpr) {
+		return true
+	}
+
+	if !strings.HasPrefix(innerExpr, "$") {
+		return false
+	}
+
+	// JSONPath expressions and comparisons
+	jsonPathRegex := regexp.MustCompile(`^\$([\.\w\[\]\"'\(\)\@\?\=\-]+)$`)
+	jsonPathComparisonRegex := regexp.MustCompile(`^\$([\.\w\[\]\"'\(\)\@\?\=\-]+)` +
+		`(\s*(==|!=|>=|<=|>|<)\s*(\$\S+|\d+|".*"|'.*'|\{.*\}))$`)
+	jsonPathFilterRegex := regexp.MustCompile(`^\$.*\[\?\(@.*\)\].*$`)
+
+	if jsonPathRegex.MatchString(innerExpr) || jsonPathComparisonRegex.MatchString(innerExpr) ||
+		jsonPathFilterRegex.MatchString(innerExpr) {
+		return true
+	}
+
+	return false
+}
+
+// Checks if a value is a valid literal (number or string)
+func isLiteralValue(expr string) bool {
+	// Check if it's a quoted string (single or double quotes)
+	if (strings.HasPrefix(expr, "\"") && strings.HasSuffix(expr, "\"")) ||
+		(strings.HasPrefix(expr, "'") && strings.HasSuffix(expr, "'")) {
+		return true
+	}
+
+	// Check if it's a valid number
+	if _, err := strconv.ParseFloat(expr, 64); err == nil {
+		return true
+	}
+
+	return false
 }
 
 func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
@@ -534,25 +448,14 @@ func QueryJSONPath(data interface{}, jsonPath string) (reflect.Value, error) {
 		return reflect.Value{}, fmt.Errorf("failed to get value invalid jsonpath %w", err)
 	}
 
-	results, err := jp.FindResults(data)
+	result, err := jp.FindResults(data)
 	if err != nil {
 		return reflect.Value{}, fmt.Errorf("failed to get value from data using jsonpath %w", err)
 	}
 
-	if len(results) == 0 || len(results[0]) == 0 {
+	if len(result) == 0 || len(result[0]) == 0 {
 		return reflect.Value{}, nil
 	}
 
-	return results[0][0], nil
-}
-
-func trimLeadingTrailingWhiteSpace(paths []string) []string {
-	tPaths := make([]string, len(paths))
-
-	for i, path := range paths {
-		tpath := strings.TrimSpace(path)
-		tPaths[i] = tpath
-	}
-
-	return tPaths
+	return result[0][0], nil
 }

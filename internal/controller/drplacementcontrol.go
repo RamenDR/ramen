@@ -21,6 +21,7 @@ import (
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -428,7 +429,7 @@ func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRClu
 			continue
 		}
 
-		drClusterFencedCondition := findCondition(drClusters[i].Status.Conditions, rmn.DRClusterConditionTypeFenced)
+		drClusterFencedCondition := rmnutil.FindCondition(drClusters[i].Status.Conditions, rmn.DRClusterConditionTypeFenced)
 		if drClusterFencedCondition == nil {
 			d.log.Info("drCluster fenced condition not available", "cluster", drClusters[i].Name)
 
@@ -1114,7 +1115,7 @@ func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 }
 
 func (d *DRPCInstance) validatePeerReady() bool {
-	condition := findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+	condition := rmnutil.FindCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 	if condition == nil || condition.Status == metav1.ConditionTrue {
 		return true
 	}
@@ -1214,7 +1215,7 @@ func (d *DRPCInstance) isVRGConditionMet(cluster string, conditionType string) b
 		return !ready
 	}
 
-	condition := findCondition(vrg.Status.Conditions, conditionType)
+	condition := rmnutil.FindCondition(vrg.Status.Conditions, conditionType)
 	if condition == nil {
 		d.log.Info(fmt.Sprintf("VRG %s condition not available on cluster %s", conditionType, cluster))
 
@@ -1573,13 +1574,67 @@ func (d *DRPCInstance) ensureVRGManifestWork(homeCluster string) error {
 	return d.mwu.UpdateVRGManifestWork(vrg, mw)
 }
 
+// equalClusterIDSlices compares 2 slices of clusterID strings and reports true if both contain the same clusterIDs.
+// This is not a generic routine that can be used for any pair of string slices for equality checks, as a case of,
+// - ["a", "b", "b"] compared to ["b", "a", "a"], would return true
+// It is used for clusterIDs with the limitation, because clusterIDs are based on UUIDs and collision has ignorable
+// probability
+func equalClusterIDSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for _, v := range b {
+		if !slices.Contains(a, v) {
+			return false
+		}
+	}
+
+	// check the other way to ensure there are no extra elements in a that are not contained in b
+	for _, v := range a {
+		if !slices.Contains(b, v) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
+// a replicationID then the from should also claim a replicationID, else both should not. This ensures that a peerClass
+// is updated with latest storage/replication IDs, but only if the underlying replication scheme remains unchanged.
+func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, scName string) {
+	for toIdx := range to {
+		if (to[toIdx].StorageClassName != scName) ||
+			(!equalClusterIDSlices(to[toIdx].ClusterIDs, from.ClusterIDs)) {
+			continue
+		}
+
+		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" {
+			to[toIdx] = from
+
+			break
+		}
+
+		if to[toIdx].ReplicationID != "" && from.ReplicationID != "" {
+			to[toIdx] = from
+
+			break
+		}
+
+		log.Info("Unable to update mismatching peerClass", "peerClass", to[toIdx], "from", from)
+
+		break
+	}
+}
+
 // hasPeerClass finds a peer in the passed in list of peerClasses and returns true if a peer matches the passed in
 // storage class name and represents the cluster in the clusterIDs list
 // Also see peerClassMatchesPeer
 func hasPeerClass(vrgPeerClasses []rmn.PeerClass, scName string, clusterIDs []string) bool {
 	for peerClassVRGIdx := range vrgPeerClasses {
 		if (vrgPeerClasses[peerClassVRGIdx].StorageClassName == scName) &&
-			(slices.Equal(vrgPeerClasses[peerClassVRGIdx].ClusterIDs, clusterIDs)) {
+			(equalClusterIDSlices(vrgPeerClasses[peerClassVRGIdx].ClusterIDs, clusterIDs)) {
 			return true
 		}
 	}
@@ -1589,6 +1644,7 @@ func hasPeerClass(vrgPeerClasses []rmn.PeerClass, scName string, clusterIDs []st
 
 // updatePeers see updateVRGDRTypeSpec
 func updatePeers(
+	log logr.Logger,
 	vrgFromView *rmn.VolumeReplicationGroup,
 	vrgPeerClasses, policyPeerClasses []rmn.PeerClass,
 ) []rmn.PeerClass {
@@ -1601,21 +1657,38 @@ func updatePeers(
 		}
 
 		for policyPeerClassIdx := range policyPeerClasses {
-			if policyPeerClasses[policyPeerClassIdx].StorageClassName ==
+			if policyPeerClasses[policyPeerClassIdx].StorageClassName !=
 				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName {
-				if hasPeerClass(
-					vrgPeerClasses,
-					*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
-					policyPeerClasses[policyPeerClassIdx].ClusterIDs,
-				) {
-					break
-				}
+				continue
+			}
 
-				peerClasses = append(
+			if hasPeerClass(
+				vrgPeerClasses,
+				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
+				policyPeerClasses[policyPeerClassIdx].ClusterIDs,
+			) {
+				updatePeerClass(
+					log,
 					peerClasses,
 					policyPeerClasses[policyPeerClassIdx],
+					*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
 				)
+
+				break
 			}
+
+			if hasPeerClass(
+				peerClasses,
+				*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
+				policyPeerClasses[policyPeerClassIdx].ClusterIDs,
+			) {
+				break
+			}
+
+			peerClasses = append(
+				peerClasses,
+				policyPeerClasses[policyPeerClassIdx],
+			)
 		}
 	}
 
@@ -1645,7 +1718,12 @@ func (d *DRPCInstance) updateVRGAsyncSpec(vrgFromView, vrg *rmn.VolumeReplicatio
 		return
 	}
 
-	asyncSpec.PeerClasses = updatePeers(vrgFromView, vrg.Spec.Async.PeerClasses, d.drPolicy.Status.Async.PeerClasses)
+	asyncSpec.PeerClasses = updatePeers(
+		d.log,
+		vrgFromView,
+		vrg.Spec.Async.PeerClasses,
+		d.drPolicy.Status.Async.PeerClasses,
+	)
 
 	// TODO: prune peerClasses not in policy and not in use by VRG
 
@@ -1675,7 +1753,7 @@ func (d *DRPCInstance) updateVRGSyncSpec(vrgFromView, vrg *rmn.VolumeReplication
 		return
 	}
 
-	syncSpec.PeerClasses = updatePeers(vrgFromView, vrg.Spec.Sync.PeerClasses, d.drPolicy.Status.Sync.PeerClasses)
+	syncSpec.PeerClasses = updatePeers(d.log, vrgFromView, vrg.Spec.Sync.PeerClasses, d.drPolicy.Status.Sync.PeerClasses)
 
 	// TODO: prune peerClasses not in policy and not in use by VRG
 
@@ -1686,11 +1764,11 @@ func (d *DRPCInstance) updateVRGSyncSpec(vrgFromView, vrg *rmn.VolumeReplication
 // Update works to ensure VRG is updated with peerClasses that it requires, based on reported PVCs that the VRG is
 // attempting to protect. If a VRG is attempting to protect a PVC for which is is lacking a peerClass and that is
 // available as part of the DRPolicy its peerClasses are updated. For existing peerClasses the VRG information is
-// not updated, this is done to avoid any protection mechanism conflicts. For example, if a VRG carried a peerClass
-// without the replicationID (ie it would choose to protect the PVC using Volsync and VolumeSnapshots), then it is not
-// updated with a peerClass that NOW supports native VolumeReplication, as that would void existing protection.
-// To change replication schemes a workload needs to be DR disabled and then reenabled to catch up to the latest
-// available peer information for an SC.
+// updated conditionally (see updatePeerClass), this is done to avoid any protection mechanism conflicts.
+// For example, if a VRG carried a peerClass without the replicationID (ie it would choose to protect the PVC using
+// Volsync and VolumeSnapshots), then it is not updated with a peerClass that NOW supports native VolumeReplication,
+// as that would void existing protection. To change replication schemes a workload needs to be DR disabled and then
+// reenabled to catch up to the latest available peer information for an SC.
 func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.VolumeReplicationGroup) {
 	switch d.drType {
 	case DRTypeSync:
@@ -1789,6 +1867,8 @@ func (d *DRPCInstance) newVRG(
 		},
 	}
 
+	core.ObjectCreatedByRamenSetLabel(&vrg)
+
 	d.updateVRGOptionalFields(&vrg, vrgFromView, dstCluster)
 
 	return vrg
@@ -1886,7 +1966,7 @@ func isVRGSecondary(vrg *rmn.VolumeReplicationGroup) bool {
 func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	d.log.Info("ensuring cleanup on secondaries")
 
-	condition := findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+	condition := rmnutil.FindCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 
 	// Because we init conditions we will always find the condition and not move it to ReasonProgressing?
 	if condition == nil {
@@ -1895,7 +1975,7 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 			metav1.ConditionFalse, rmn.ReasonProgressing, msg)
 
-		condition = findCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
+		condition = rmnutil.FindCondition(d.instance.Status.Conditions, rmn.ConditionPeerReady)
 	}
 
 	if condition.Reason == rmn.ReasonSuccess &&
@@ -2074,7 +2154,7 @@ func (d *DRPCInstance) ensureDataProtectedOnCluster(clusterName string) bool {
 		return false
 	}
 
-	dataProtectedCondition := findCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
+	dataProtectedCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
 	if dataProtectedCondition == nil {
 		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
 			clusterName, vrg))

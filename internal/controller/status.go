@@ -6,6 +6,7 @@ package controllers
 import (
 	"time"
 
+	"github.com/ramendr/ramen/internal/controller/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -57,7 +58,9 @@ const (
 	VRGConditionReasonDataProtected               = "DataProtected"
 	VRGConditionReasonProgressing                 = "Progressing"
 	VRGConditionReasonClusterDataRestored         = "Restored"
+	VRGConditionReasonClusterDataUnused           = "Unused"
 	VRGConditionReasonKubeObjectsRestored         = "KubeObjectsRestored"
+	VRGConditionReasonKubeObjectsUnused           = "Unused"
 	VRGConditionReasonError                       = "Error"
 	VRGConditionReasonErrorUnknown                = "UnknownError"
 	VRGConditionReasonUploading                   = "Uploading"
@@ -83,7 +86,7 @@ const (
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	time := metav1.NewTime(time.Now())
 
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -91,7 +94,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataProtected,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -99,7 +102,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataReady,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -107,7 +110,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -115,7 +118,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeKubeObjectsReady,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
@@ -127,7 +130,7 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
 func setVRGDataReplicatingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions,
+	util.SetStatusCondition(conditions,
 		*newVRGDataReplicatingCondition(observedGeneration, VRGConditionReasonReplicating, message))
 }
 
@@ -143,7 +146,7 @@ func newVRGDataReplicatingCondition(observedGeneration int64, reason, message st
 
 // sets conditions when VRG as Secondary has completed its data sync with Primary.
 func setVRGDataReplicatedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGDataReplicatedCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGDataReplicatedCondition(observedGeneration, message))
 }
 
 func newVRGDataReplicatedCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -167,7 +170,7 @@ func newVRGDataReplicatedCondition(observedGeneration int64, message string) *me
 func setVRGAsDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	// This means, for this VRG (as secondary) data sync has happened
 	// with a remote peer. Hence DataProtected is true
-	setStatusCondition(conditions, *newVRGAsDataProtectedCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGAsDataProtectedCondition(observedGeneration, message))
 }
 
 func newVRGAsDataProtectedCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -191,7 +194,7 @@ func newVRGAsDataProtectedUnusedCondition(observedGeneration int64, message stri
 }
 
 func setVRGAsDataNotProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGAsDataNotProtectedCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGAsDataNotProtectedCondition(observedGeneration, message))
 }
 
 func newVRGAsDataNotProtectedCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -205,7 +208,7 @@ func newVRGAsDataNotProtectedCondition(observedGeneration int64, message string)
 }
 
 func setVRGDataProtectionProgressCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGDataProtectionProgressCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGDataProtectionProgressCondition(observedGeneration, message))
 }
 
 func newVRGDataProtectionProgressCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -220,7 +223,8 @@ func newVRGDataProtectionProgressCondition(observedGeneration int64, message str
 
 // sets conditions when Primary VRG data replication is established
 func setVRGAsPrimaryReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGAsPrimaryReadyCondition(observedGeneration, VRGConditionReasonReady, message))
+	util.SetStatusCondition(conditions, *newVRGAsPrimaryReadyCondition(observedGeneration, VRGConditionReasonReady,
+		message))
 }
 
 func newVRGAsPrimaryReadyCondition(observedGeneration int64, reason, message string) *metav1.Condition {
@@ -235,7 +239,7 @@ func newVRGAsPrimaryReadyCondition(observedGeneration int64, reason, message str
 
 // sets conditions when VRG data is progressing
 func setVRGDataProgressingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGDataProgressingCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGDataProgressingCondition(observedGeneration, message))
 }
 
 func newVRGDataProgressingCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -250,7 +254,7 @@ func newVRGDataProgressingCondition(observedGeneration int64, message string) *m
 
 // sets conditions when VRG sees failures in data sync
 func setVRGDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGDataErrorCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGDataErrorCondition(observedGeneration, message))
 }
 
 func newVRGDataErrorCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -268,7 +272,7 @@ func newVRGDataErrorCondition(observedGeneration int64, message string) *metav1.
 // server and it is not known what the current state of
 // the VolumeReplication resource (including its existence).
 func setVRGDataErrorUnknownCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonErrorUnknown,
 		ObservedGeneration: observedGeneration,
@@ -279,7 +283,7 @@ func setVRGDataErrorUnknownCondition(conditions *[]metav1.Condition, observedGen
 
 // sets condition when PV storageID not found
 func setVRGDataStorageIDNotFoundCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonStorageIDNotFound,
 		ObservedGeneration: observedGeneration,
@@ -290,7 +294,7 @@ func setVRGDataStorageIDNotFoundCondition(conditions *[]metav1.Condition, observ
 
 // sets condition when PeerClass is not found
 func setVRGDataPeerClassNotFoundCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeDataReady,
 		Reason:             VRGConditionReasonPeerClassNotFound,
 		ObservedGeneration: observedGeneration,
@@ -301,7 +305,7 @@ func setVRGDataPeerClassNotFoundCondition(conditions *[]metav1.Condition, observ
 
 // sets conditions when PV cluster data is restored
 func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataReady,
 		Reason:             VRGConditionReasonClusterDataRestored,
 		ObservedGeneration: observedGeneration,
@@ -310,9 +314,20 @@ func setVRGClusterDataReadyCondition(conditions *[]metav1.Condition, observedGen
 	})
 }
 
+// Used to set condition when VRG is Secondary
+func setVRGClusterDataReadyConditionUnused(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeClusterDataReady,
+		Reason:             VRGConditionReasonClusterDataUnused,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
 // sets conditions when PV cluster data failed to restore
 func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeClusterDataReady,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
@@ -323,7 +338,7 @@ func setVRGClusterDataErrorCondition(conditions *[]metav1.Condition, observedGen
 
 // sets conditions when PV cluster data is protected
 func setVRGClusterDataProtectedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGClusterDataProtectedCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGClusterDataProtectedCondition(observedGeneration, message))
 }
 
 func newVRGClusterDataProtectedCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -348,7 +363,7 @@ func newVRGClusterDataProtectedUnusedCondition(observedGeneration int64, message
 
 // sets conditions when PV cluster data is being protected
 func setVRGClusterDataProtectingCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, *newVRGClusterDataProtectingCondition(observedGeneration, message))
+	util.SetStatusCondition(conditions, *newVRGClusterDataProtectingCondition(observedGeneration, message))
 }
 
 func newVRGClusterDataProtectingCondition(observedGeneration int64, message string) *metav1.Condition {
@@ -365,7 +380,7 @@ func newVRGClusterDataProtectingCondition(observedGeneration int64, message stri
 func setVRGClusterDataUnprotectedCondition(
 	conditions *[]metav1.Condition, observedGeneration int64, reason, message string,
 ) {
-	setStatusCondition(conditions, *newVRGClusterDataUnprotectedCondition(observedGeneration, reason, message))
+	util.SetStatusCondition(conditions, *newVRGClusterDataUnprotectedCondition(observedGeneration, reason, message))
 }
 
 func newVRGClusterDataUnprotectedCondition(observedGeneration int64, reason, message string) *metav1.Condition {
@@ -380,7 +395,7 @@ func newVRGClusterDataUnprotectedCondition(observedGeneration int64, reason, mes
 
 // sets conditions when Kube objects are restored
 func setVRGKubeObjectsReadyCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeKubeObjectsReady,
 		Reason:             VRGConditionReasonKubeObjectsRestored,
 		ObservedGeneration: observedGeneration,
@@ -389,9 +404,20 @@ func setVRGKubeObjectsReadyCondition(conditions *[]metav1.Condition, observedGen
 	})
 }
 
+// Used to set condition when VRG is Secondary
+func setVRGKubeObjectsReadyConditionUnused(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeKubeObjectsReady,
+		Reason:             VRGConditionReasonKubeObjectsUnused,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
 // sets conditions when Kube objects failed to restore
 func setVRGKubeObjectsErrorCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeKubeObjectsReady,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
@@ -400,74 +426,11 @@ func setVRGKubeObjectsErrorCondition(conditions *[]metav1.Condition, observedGen
 	})
 }
 
-func setStatusConditionIfNotFound(existingConditions *[]metav1.Condition, newCondition metav1.Condition) {
-	if existingConditions == nil {
-		existingConditions = &[]metav1.Condition{}
-	}
-
-	existingCondition := findCondition(*existingConditions, newCondition.Type)
-	if existingCondition == nil {
-		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
-		*existingConditions = append(*existingConditions, newCondition)
-
-		return
-	}
-}
-
-func setStatusCondition(existingConditions *[]metav1.Condition, newCondition metav1.Condition) metav1.Condition {
-	if existingConditions == nil {
-		existingConditions = &[]metav1.Condition{}
-	}
-
-	existingCondition := findCondition(*existingConditions, newCondition.Type)
-	if existingCondition == nil {
-		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
-		*existingConditions = append(*existingConditions, newCondition)
-
-		return newCondition
-	}
-
-	if existingCondition.Status != newCondition.Status {
-		existingCondition.Status = newCondition.Status
-		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
-	}
-
-	defaultValue := "none"
-	if newCondition.Reason == "" {
-		newCondition.Reason = defaultValue
-	}
-
-	if newCondition.Message == "" {
-		newCondition.Message = defaultValue
-	}
-
-	existingCondition.Reason = newCondition.Reason
-	existingCondition.Message = newCondition.Message
-	// TODO: Why not update lastTranTime if the above change?
-
-	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
-		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
-		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
-	}
-
-	return *existingCondition
-}
-
-func findCondition(existingConditions []metav1.Condition, conditionType string) *metav1.Condition {
-	for i := range existingConditions {
-		if existingConditions[i].Type == conditionType {
-			return &existingConditions[i]
-		}
-	}
-
-	return nil
-}
-
 // sets conditions when Primary VolSync has finished setting up the Replication Source
 func setVRGConditionTypeVolSyncRepSourceSetupComplete(conditions *[]metav1.Condition, observedGeneration int64,
 	message string,
 ) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncRepSourceSetup,
 		Reason:             VRGConditionReasonVolSyncRepSourceInited,
 		ObservedGeneration: observedGeneration,
@@ -480,7 +443,7 @@ func setVRGConditionTypeVolSyncRepSourceSetupComplete(conditions *[]metav1.Condi
 func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Condition, observedGeneration int64,
 	message string,
 ) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncRepSourceSetup,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,
@@ -493,7 +456,7 @@ func setVRGConditionTypeVolSyncRepSourceSetupError(conditions *[]metav1.Conditio
 func setVRGConditionTypeVolSyncPVRestoreComplete(conditions *[]metav1.Condition, observedGeneration int64,
 	message string,
 ) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncPVsRestored,
 		Reason:             VRGConditionReasonVolSyncPVsRestored,
 		ObservedGeneration: observedGeneration,
@@ -506,7 +469,7 @@ func setVRGConditionTypeVolSyncPVRestoreComplete(conditions *[]metav1.Condition,
 func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, observedGeneration int64,
 	message string,
 ) {
-	setStatusCondition(conditions, metav1.Condition{
+	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               VRGConditionTypeVolSyncPVsRestored,
 		Reason:             VRGConditionReasonError,
 		ObservedGeneration: observedGeneration,

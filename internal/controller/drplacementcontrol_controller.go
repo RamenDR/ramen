@@ -1097,6 +1097,8 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
+	recipecore.ObjectCreatedByRamenSetLabel(clonedPlRule)
+
 	userPlRule.DeepCopyInto(clonedPlRule)
 
 	clonedPlRule.Name = clonedPlRuleName
@@ -1275,7 +1277,7 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 ) error {
 	log.Info("Updating DRPC status")
 
-	r.updateResourceCondition(ctx, drpc, userPlacement)
+	r.updateResourceCondition(ctx, drpc, userPlacement, log)
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
@@ -1317,18 +1319,18 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 //
 //nolint:funlen
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
+	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
 ) {
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, userPlacement)
+	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, userPlacement)
 	if err != nil {
-		r.Log.Info("Failed to select VRG namespace", "error", err)
+		log.Info("Failed to select VRG namespace", "error", err)
 
 		return
 	}
 
-	clusterName := r.clusterForVRGStatus(drpc, userPlacement, r.Log)
+	clusterName := r.clusterForVRGStatus(drpc, userPlacement, log)
 	if clusterName == "" {
-		r.Log.Info("Unable to determine managed cluster from which to inspect VRG, " +
+		log.Info("Unable to determine managed cluster from which to inspect VRG, " +
 			"skipping processing ResourceConditions")
 
 		return
@@ -1341,14 +1343,14 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace,
 		clusterName, annotations)
 	if err != nil {
-		r.Log.Info("Failed to get VRG from managed cluster. Trying s3 store...", "errMsg", err.Error())
+		log.Info("Failed to get VRG from managed cluster. Trying s3 store...", "errMsg", err.Error())
 
 		// The VRG from the s3 store might be stale, however, the worst case should be at most around 1 minute.
 		vrg = GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
-			GetAvailableS3Profiles(ctx, r.Client, drpc, r.Log),
-			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, r.Log)
+			GetAvailableS3Profiles(ctx, r.Client, drpc, log),
+			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, log)
 		if vrg == nil {
-			r.Log.Info("Failed to get VRG from s3 store")
+			log.Info("Failed to get VRG from s3 store")
 
 			drpc.Status.ResourceConditions = rmn.VRGConditions{}
 
@@ -1358,7 +1360,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		}
 
 		if vrg.ResourceVersion < drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion {
-			r.Log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
+			log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
 			// if the VRG resourceVersion is less, then leave the DRPC ResourceConditions.ResourceMeta.ResourceVersion as is.
 			return
 		}
@@ -1703,6 +1705,8 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 		rmnutil.ExcludeFromVeleroBackup: "true",
 	}
 
+	recipecore.ObjectCreatedByRamenSetLabel(plDecision)
+
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
 
@@ -1802,13 +1806,13 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 		Message:            msg,
 	}
 
-	existingCondition := findCondition(*conditions, conditionType)
+	existingCondition := rmnutil.FindCondition(*conditions, conditionType)
 	if existingCondition == nil ||
 		existingCondition.Status != newCondition.Status ||
 		existingCondition.ObservedGeneration != newCondition.ObservedGeneration ||
 		existingCondition.Reason != newCondition.Reason ||
 		existingCondition.Message != newCondition.Message {
-		setStatusCondition(conditions, newCondition)
+		rmnutil.SetStatusCondition(conditions, newCondition)
 
 		return true
 	}
@@ -1820,7 +1824,7 @@ func addOrUpdateCondition(conditions *[]metav1.Condition, conditionType string,
 func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	time := metav1.NewTime(time.Now())
 
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	rmnutil.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionAvailable,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
@@ -1828,7 +1832,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	rmnutil.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionPeerReady,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
@@ -1836,7 +1840,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		LastTransitionTime: time,
 		Message:            message,
 	})
-	setStatusConditionIfNotFound(conditions, metav1.Condition{
+	rmnutil.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               rmn.ConditionProtected,
 		Reason:             string(rmn.ReasonProtectedUnknown),
 		ObservedGeneration: observedGeneration,
@@ -2516,14 +2520,34 @@ func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementC
 	otherDrpcRecipeName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
 
 	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
-	// Support for protecting independent VMs added for epic-6681
+	// Support for protecting independent VMs
 	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
 		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
 			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
-			return true
+			return !twoVMDRPCsConflict(drpc, otherdrpc)
 		}
+	}
+
+	return false
+}
+
+func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl) bool {
+	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
+	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
+
+	conflict := drpcVMList.Intersection(otherdrpcVMList)
+
+	if len(conflict) == 0 {
+		return false
+	}
+
+	// Mark the latest drpc as unavailable if conflicting resources found
+
+	if (drpc.Status.ObservedGeneration == 0) ||
+		(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
+		return true
 	}
 
 	return false

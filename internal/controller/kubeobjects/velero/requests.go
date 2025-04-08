@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -246,9 +247,11 @@ func backupDummyStatusProcessAndRestore(
 		)
 	case velero.BackupPhaseNew,
 		velero.BackupPhaseInProgress,
-		velero.BackupPhaseUploading,
-		velero.BackupPhaseUploadingPartialFailure,
-		velero.BackupPhaseDeleting:
+		velero.BackupPhaseWaitingForPluginOperations,
+		velero.BackupPhaseWaitingForPluginOperationsPartiallyFailed,
+		velero.BackupPhaseDeleting,
+		velero.BackupPhaseFinalizing,
+		velero.BackupPhaseFinalizingPartiallyFailed:
 		return nil, kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation:
 		return nil, errors.New("backup" + string(backup.Status.Phase))
@@ -282,7 +285,11 @@ func restoreStatusProcess(
 	case velero.RestorePhaseCompleted:
 		return nil
 	case velero.RestorePhaseNew,
-		velero.RestorePhaseInProgress:
+		velero.RestorePhaseInProgress,
+		velero.RestorePhaseWaitingForPluginOperations,
+		velero.RestorePhaseWaitingForPluginOperationsPartiallyFailed,
+		velero.RestorePhaseFinalizing,
+		velero.RestorePhaseFinalizingPartiallyFailed:
 		return kubeobjects.RequestProcessingErrorCreate("restore" + string(restore.Status.Phase))
 	case velero.RestorePhaseFailed,
 		velero.RestorePhaseFailedValidation,
@@ -396,9 +403,11 @@ func backupRealStatusProcess(
 		return nil
 	case velero.BackupPhaseNew,
 		velero.BackupPhaseInProgress,
-		velero.BackupPhaseUploading,
-		velero.BackupPhaseUploadingPartialFailure,
-		velero.BackupPhaseDeleting:
+		velero.BackupPhaseWaitingForPluginOperations,
+		velero.BackupPhaseWaitingForPluginOperationsPartiallyFailed,
+		velero.BackupPhaseDeleting,
+		velero.BackupPhaseFinalizing,
+		velero.BackupPhaseFinalizingPartiallyFailed:
 		return kubeobjects.RequestProcessingErrorCreate("backup" + string(backup.Status.Phase))
 	case velero.BackupPhaseFailedValidation,
 		velero.BackupPhasePartiallyFailed,
@@ -459,6 +468,9 @@ func backupRequestCreate(
 		caCertificates,
 		labels,
 	)
+
+	core.ObjectCreatedByRamenSetLabel(backupLocation)
+
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
 	}

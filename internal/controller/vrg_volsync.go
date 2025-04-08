@@ -480,7 +480,7 @@ func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 		if protectedPVC.ProtectedByVolSync {
 			protectedByVolSyncCount++
 
-			condition := findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
+			condition := util.FindCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncRepSourceSetup)
 			if condition == nil || condition.Status != metav1.ConditionTrue {
 				ready = false
 
@@ -490,7 +490,7 @@ func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 			}
 
 			// IFF however, we are running the final sync, then we have to wait
-			condition = findCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
+			condition = util.FindCondition(protectedPVC.Conditions, VRGConditionTypeVolSyncFinalSyncInProgress)
 			if condition != nil && condition.Status != metav1.ConditionTrue {
 				ready = false
 
@@ -542,7 +542,7 @@ func (v VRGInstance) isVolSyncProtectedPVCConditionReady(conType string) bool {
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
 		if protectedPVC.ProtectedByVolSync {
-			condition := findCondition(protectedPVC.Conditions, conType)
+			condition := util.FindCondition(protectedPVC.Conditions, conType)
 			if condition == nil || condition.Status != metav1.ConditionTrue {
 				ready = false
 

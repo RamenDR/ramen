@@ -16,8 +16,8 @@ import (
 
 const (
 	// Kubernetes distributions
-	distroK8s = "k8s"
-	distroOcp = "ocp"
+	DistroK8s = "k8s"
+	DistroOcp = "ocp"
 
 	// Channel
 	defaultChannelNamespace = "e2e-gitops"
@@ -40,7 +40,7 @@ type Options struct {
 }
 
 // Default namespace mappings for Kubernetes (k8s) clusters.
-var k8sNamespaces = types.NamespacesConfig{
+var K8sNamespaces = types.NamespacesConfig{
 	RamenHubNamespace:       "ramen-system",
 	RamenDRClusterNamespace: "ramen-system",
 	RamenOpsNamespace:       "ramen-ops",
@@ -48,7 +48,7 @@ var k8sNamespaces = types.NamespacesConfig{
 }
 
 // Default namespace mappings for OpenShift (ocp) clusters.
-var ocpNamespaces = types.NamespacesConfig{
+var OcpNamespaces = types.NamespacesConfig{
 	RamenHubNamespace:       "openshift-operators",
 	RamenDRClusterNamespace: "openshift-dr-system",
 	RamenOpsNamespace:       "openshift-dr-ops",
@@ -106,14 +106,19 @@ func readConfig(configFile string, config *types.Config) error {
 }
 
 func validateDistro(config *types.Config) error {
+	// Discover distro during validation if the distro is not configured
+	if config.Distro == "" {
+		return nil
+	}
+
 	switch config.Distro {
-	case distroK8s:
-		config.Namespaces = k8sNamespaces
-	case distroOcp:
-		config.Namespaces = ocpNamespaces
+	case DistroK8s:
+		config.Namespaces = K8sNamespaces
+	case DistroOcp:
+		config.Namespaces = OcpNamespaces
 	default:
 		return fmt.Errorf("invalid distro %q: (choose one of %q, %q)",
-			config.Distro, distroK8s, distroOcp)
+			config.Distro, DistroK8s, DistroOcp)
 	}
 
 	return nil

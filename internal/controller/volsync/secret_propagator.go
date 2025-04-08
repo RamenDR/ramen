@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
@@ -167,6 +168,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 		},
 	}
 
+	core.ObjectCreatedByRamenSetLabel(policy)
+
 	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, policy, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, policy, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference on policy")
@@ -259,6 +262,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 		},
 	}
 
+	core.ObjectCreatedByRamenSetLabel(placementRule)
+
 	clustersToApply := []plrulev1.GenericClusterReference{}
 	for _, clusterName := range sp.DestClusters {
 		clustersToApply = append(clustersToApply, plrulev1.GenericClusterReference{Name: clusterName})
@@ -303,6 +308,8 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 			Namespace: sp.Owner.GetNamespace(),
 		},
 	}
+
+	core.ObjectCreatedByRamenSetLabel(placementBinding)
 
 	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementBinding, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, placementBinding, sp.Client.Scheme()); err != nil {

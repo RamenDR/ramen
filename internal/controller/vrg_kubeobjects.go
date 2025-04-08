@@ -274,14 +274,17 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	for groupNumber, captureGroup := range captureSteps {
 		var err error
 
+		var isEssentialStep bool
+
 		var loopCount int
 
 		cg := captureGroup
 		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
-		isEssentialStep := cg.GroupEssential != nil && *cg.GroupEssential
 
 		if cg.IsHook {
-			executor, err1 := hooks.GetHookExecutor(cg.Hook)
+			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
+
+			executor, err1 := hooks.GetHookExecutor(cg.Hook, v.reconciler.APIReader, v.reconciler.Scheme)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", cg.Hook)
@@ -289,10 +292,11 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 				continue
 			}
 
-			err = executor.Execute(v.reconciler.Client, log1)
+			err = executor.Execute(log1)
 		}
 
 		if !cg.IsHook {
+			isEssentialStep = cg.GroupEssential != nil && *cg.GroupEssential
 			loopCount, err = v.kubeObjectsGroupCapture(
 				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
 				captureInProgressStatusUpdate,
@@ -319,11 +323,13 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			essentialStepsCount++
 		}
 
-		requestsProcessedCount += len(v.s3StoreAccessors)
-		if requestsCompletedCount < requestsProcessedCount {
-			log1.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
+		if !cg.IsHook {
+			requestsProcessedCount += len(v.s3StoreAccessors)
+			if requestsCompletedCount < requestsProcessedCount {
+				log.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
 
-			return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
+				return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
+			}
 		}
 	}
 
@@ -734,7 +740,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	return v.kubeObjectsRecoverRequestsDelete(result, v.veleroNamespaceName(), labels)
 }
 
-// nolint: gocognit,cyclop
+// nolint: gocognit,cyclop,funlen
 func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier, captureRequests,
 	recoverRequests map[string]kubeobjects.Request, requests []kubeobjects.Request, log logr.Logger,
@@ -748,12 +754,15 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 	for groupNumber, recoverGroup := range recoverSteps {
 		var err error
 
+		var isEssentialStep bool
+
 		rg := recoverGroup
 		log1 := log.WithValues("group", groupNumber, "name", rg.BackupName)
-		isEssentialStep := rg.GroupEssential != nil && *rg.GroupEssential
 
 		if rg.IsHook {
-			executor, err1 := hooks.GetHookExecutor(rg.Hook)
+			isEssentialStep = rg.Hook.Essential != nil && *rg.Hook.Essential
+
+			executor, err1 := hooks.GetHookExecutor(rg.Hook, v.reconciler.APIReader, v.reconciler.Scheme)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", rg.Hook)
@@ -761,10 +770,11 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 				continue
 			}
 
-			err = executor.Execute(v.reconciler.Client, log1)
+			err = executor.Execute(log1)
 		}
 
 		if !rg.IsHook {
+			isEssentialStep = rg.GroupEssential != nil && *rg.GroupEssential
 			err = v.executeRecoverGroup(result, s3StoreAccessor,
 				captureToRecoverFromIdentifier, captureRequests,
 				recoverRequests, labels, groupNumber, rg,

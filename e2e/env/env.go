@@ -4,6 +4,7 @@
 package env
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -17,6 +18,8 @@ import (
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	// ManagedClusterSetBinding
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
+	// ClusterClaim
+	ocmv1a1 "open-cluster-management.io/api/cluster/v1alpha1"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
@@ -26,18 +29,16 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-const (
-	defaultHubClusterName = "hub"
-	defaultC1ClusterName  = "c1"
-	defaultC2ClusterName  = "c2"
-)
-
 func addToScheme(scheme *runtime.Scheme) error {
 	if err := ocmv1b1.AddToScheme(scheme); err != nil {
 		return err
 	}
 
 	if err := ocmv1b2.AddToScheme(scheme); err != nil {
+		return err
+	}
+
+	if err := ocmv1a1.AddToScheme(scheme); err != nil {
 		return err
 	}
 
@@ -85,42 +86,68 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 	return client, nil
 }
 
-func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
-	var err error
+func setupCluster(
+	cluster *types.Cluster,
+	key string,
+	clusterConfig types.ClusterConfig,
+	log *zap.SugaredLogger,
+) error {
+	client, err := setupClient(clusterConfig.Kubeconfig)
+	if err != nil {
+		return fmt.Errorf("failed to setup cluster %q: %w", key, err)
+	}
 
+	cluster.Client = client
+	cluster.Kubeconfig = clusterConfig.Kubeconfig
+
+	switch key {
+	case "hub":
+		// For hub cluster, use generic name "hub"
+		cluster.Name = "hub"
+		log.Infof("Using %q cluster name: %q", key, cluster.Name)
+	case "c1", "c2":
+		// For c1 and c2 clusters, get the cluster name from ClusterClaim
+		cluster.Name, err = getClusterClaimName(cluster)
+		if err != nil {
+			return fmt.Errorf("failed to get ClusterClaim name for the %q managed cluster: %w", key, err)
+		}
+
+		log.Infof("Detected %q managed cluster name: %q", key, cluster.Name)
+	default:
+		// Panic for unexpected keys
+		panic(fmt.Sprintf("Unexpected cluster key: %q, expected \"hub\", \"c1\", or \"c2\"", key))
+	}
+
+	return nil
+}
+
+// getClusterClaimName gets the cluster name using clusterclaims/name resource.
+// Returns an error if the resource is not found or retrieval fails.
+func getClusterClaimName(cluster *types.Cluster) (string, error) {
+	clusterClaim := &ocmv1a1.ClusterClaim{}
+	key := client.ObjectKey{Name: "name"}
+
+	err := cluster.Client.Get(context.TODO(), key, clusterClaim)
+	if err != nil {
+		return "", fmt.Errorf("failed to get ClusterClaim name: %w", err)
+	}
+
+	return clusterClaim.Spec.Value, nil
+}
+
+func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	env := &types.Env{}
 
-	env.Hub.Name = config.Clusters["hub"].Name
-	if env.Hub.Name == "" {
-		env.Hub.Name = defaultHubClusterName
-		log.Infof("Cluster \"hub\" name not set, using default name %q", defaultHubClusterName)
+	if err := setupCluster(&env.Hub, "hub", config.Clusters["hub"], log); err != nil {
+		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
-	env.Hub.Client, err = setupClient(config.Clusters["hub"].Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clients for hub cluster: %w", err)
+	if err := setupCluster(&env.C1, "c1", config.Clusters["c1"], log); err != nil {
+		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
-	env.C1.Name = config.Clusters["c1"].Name
-	if env.C1.Name == "" {
-		env.C1.Name = defaultC1ClusterName
-		log.Infof("Cluster \"c1\" name not set, using default name %q", defaultC1ClusterName)
-	}
-
-	env.C1.Client, err = setupClient(config.Clusters["c1"].Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clients for c1 cluster: %w", err)
-	}
-
-	env.C2.Name = config.Clusters["c2"].Name
-	if env.C2.Name == "" {
-		env.C2.Name = defaultC2ClusterName
-		log.Infof("Cluster \"c2\" name not set, using default name %q", defaultC2ClusterName)
-	}
-
-	env.C2.Client, err = setupClient(config.Clusters["c2"].Kubeconfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clients for c2 cluster: %w", err)
+	if err := setupCluster(&env.C2, "c2", config.Clusters["c2"], log); err != nil {
+		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
 	return env, nil

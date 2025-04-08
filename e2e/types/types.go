@@ -11,68 +11,68 @@ import (
 // ChannelConfig defines the name and namespace for the channel CR.
 // This is not user-configurable and always uses default values.
 type ChannelConfig struct {
-	Name      string
-	Namespace string
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 // NamespacesConfig are determined by distro and are not user-configurable.
 type NamespacesConfig struct {
-	RamenHubNamespace       string
-	RamenDRClusterNamespace string
-	RamenOpsNamespace       string
-	ArgocdNamespace         string
+	RamenHubNamespace       string `json:"ramenHubNamespace"`
+	RamenDRClusterNamespace string `json:"ramenDRClusterNamespace"`
+	RamenOpsNamespace       string `json:"ramenOpsNamespace"`
+	ArgocdNamespace         string `json:"argocdNamespace"`
 }
 
 // RepoConfig represents the user-configurable git repository settings.
 // It includes the repository url and branch to be used for deploying workload.
 type RepoConfig struct {
-	URL    string
-	Branch string
+	URL    string `json:"url"`
+	Branch string `json:"branch"`
 }
 
 type PVCSpecConfig struct {
-	Name                 string
-	StorageClassName     string
-	AccessModes          string
-	UnsupportedDeployers []string
+	Name                 string   `json:"name"`
+	StorageClassName     string   `json:"storageClassName"`
+	AccessModes          string   `json:"accessModes"`
+	UnsupportedDeployers []string `json:"unsupportedDeployers,omitempty"`
 }
 
 type ClusterConfig struct {
-	Name       string
-	Kubeconfig string
+	Kubeconfig string `json:"kubeconfig"`
 }
 
 type TestConfig struct {
-	Workload string
-	Deployer string
-	PVCSpec  string
+	Workload string `json:"workload"`
+	Deployer string `json:"deployer"`
+	PVCSpec  string `json:"pvcSpec"`
 }
 
 type Config struct {
 	// User configurable values.
-	Distro     string
-	Repo       RepoConfig
-	DRPolicy   string
-	ClusterSet string
-	Clusters   map[string]ClusterConfig
-	PVCSpecs   []PVCSpecConfig
-	Tests      []TestConfig
+	Distro     string                   `json:"distro"`
+	Repo       RepoConfig               `json:"repo"`
+	DRPolicy   string                   `json:"drPolicy"`
+	ClusterSet string                   `json:"clusterSet"`
+	Clusters   map[string]ClusterConfig `json:"clusters"`
+	PVCSpecs   []PVCSpecConfig          `json:"pvcSpecs"`
+	Tests      []TestConfig             `json:"tests"`
 
 	// Generated values
-	Channel    ChannelConfig
-	Namespaces NamespacesConfig
+	Channel    ChannelConfig    `json:"channel"`
+	Namespaces NamespacesConfig `json:"namespaces"`
 }
 
 // Clsuter can be a hub cluster or a managed cluster.
 type Cluster struct {
-	Name   string
-	Client client.Client
+	Name       string        `json:"name"`
+	Client     client.Client `json:"-"`
+	Kubeconfig string        `json:"kubeconfig"`
 }
 
 type Env struct {
-	Hub Cluster
-	C1  Cluster
-	C2  Cluster
+	Hub Cluster `json:"hub"`
+	C1  Cluster `json:"c1"`
+	C2  Cluster `json:"c2"`
 }
 
 // Deployer interface has methods to deploy a workload to a cluster

@@ -382,6 +382,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -1220,27 +1221,45 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	return v.updateVRGConditionsAndStatus(v.result)
 }
 
+// nolint: dupl
 func (v *VRGInstance) shouldRestoreClusterData() bool {
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
-		msg := "PV restore skipped, as VRG is orchestrating final sync"
-		setVRGClusterDataReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGClusterDataReadyCondition(
+			&v.instance.Status.Conditions,
+			v.instance.Generation,
+			"PV and PVC restore skipped, as VRG is orchestrating final sync",
+		)
 
 		return false
 	}
 
-	clusterDataReady := findCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
-	if clusterDataReady != nil {
-		v.log.Info("ClusterDataReady condition",
-			"status", clusterDataReady.Status,
-			"reason", clusterDataReady.Reason,
-			"message", clusterDataReady.Message,
-			"observedGeneration", clusterDataReady.ObservedGeneration,
-			"generation", v.instance.Generation,
-		)
+	clusterDataReady := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
+	if clusterDataReady == nil {
+		return true
+	}
 
-		if clusterDataReady.Status == metav1.ConditionTrue &&
-			clusterDataReady.ObservedGeneration == v.instance.Generation {
-			v.log.Info("VRG's ClusterDataReady condition found. PV restore must have already been applied")
+	v.log.Info("ClusterDataReady condition",
+		"status", clusterDataReady.Status,
+		"reason", clusterDataReady.Reason,
+		"message", clusterDataReady.Message,
+		"observedGeneration", clusterDataReady.ObservedGeneration,
+		"generation", v.instance.Generation,
+	)
+
+	if clusterDataReady.Status == metav1.ConditionTrue {
+		if clusterDataReady.ObservedGeneration == v.instance.Generation {
+			return false
+		}
+
+		// If generation is older, and reason is restored, then skip the restore. Reason is updated as Secondary to
+		// ensure that a VRG that is changed from Secondary to Primary would perform the restore initially.
+		// Also, update the condition such that a newer generation is recorded.
+		if clusterDataReady.Reason == VRGConditionReasonClusterDataRestored {
+			setVRGClusterDataReadyCondition(
+				&v.instance.Status.Conditions,
+				v.instance.Generation,
+				"PV and PVC restore skipped, an older generation as Primary has already applied the restore",
+			)
 
 			return false
 		}
@@ -1249,27 +1268,45 @@ func (v *VRGInstance) shouldRestoreClusterData() bool {
 	return true
 }
 
+// nolint: dupl
 func (v *VRGInstance) shouldRestoreKubeObjects() bool {
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
-		msg := "kube objects restore skipped, as VRG is orchestrating final sync"
-		setVRGKubeObjectsReadyCondition(&v.instance.Status.Conditions, v.instance.Generation, msg)
+		setVRGKubeObjectsReadyCondition(
+			&v.instance.Status.Conditions,
+			v.instance.Generation,
+			"k8s resource restore skipped, as VRG is orchestrating final sync",
+		)
 
 		return false
 	}
 
-	KubeObjectsRestored := findCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
-	if KubeObjectsRestored != nil {
-		v.log.Info("KubeObjectsReady condition",
-			"status", KubeObjectsRestored.Status,
-			"reason", KubeObjectsRestored.Reason,
-			"message", KubeObjectsRestored.Message,
-			"observedGeneration", KubeObjectsRestored.ObservedGeneration,
-			"generation", v.instance.Generation,
-		)
+	KubeObjectsRestored := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
+	if KubeObjectsRestored == nil {
+		return true
+	}
 
-		if KubeObjectsRestored.Status == metav1.ConditionTrue &&
-			KubeObjectsRestored.ObservedGeneration == v.instance.Generation {
-			v.log.Info("VRG's KubeObjectsReady condition found. All kube objects must have already been restored")
+	v.log.Info("KubeObjectsReady condition",
+		"status", KubeObjectsRestored.Status,
+		"reason", KubeObjectsRestored.Reason,
+		"message", KubeObjectsRestored.Message,
+		"observedGeneration", KubeObjectsRestored.ObservedGeneration,
+		"generation", v.instance.Generation,
+	)
+
+	if KubeObjectsRestored.Status == metav1.ConditionTrue {
+		if KubeObjectsRestored.ObservedGeneration == v.instance.Generation {
+			return false
+		}
+
+		// If generation is older, and reason is restored, then skip the restore. Reason is updated as Secondary to
+		// ensure that a VRG that is changed from Secondary to Primary would perform the restore initially.
+		// Also, update the condition such that a newer generation is recorded.
+		if KubeObjectsRestored.Reason == VRGConditionReasonKubeObjectsRestored {
+			setVRGKubeObjectsReadyCondition(
+				&v.instance.Status.Conditions,
+				v.instance.Generation,
+				"k8s resource restore skipped, an older generation as Primary has already applied the restore",
+			)
 
 			return false
 		}
@@ -1368,6 +1405,12 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 
 	v.instance.Status.LastGroupSyncTime = nil
 
+	if v.resetInitialStatusAsSecondary() {
+		v.result.Requeue = true
+
+		return v.result
+	}
+
 	result := v.reconcileAsSecondary()
 
 	// If requeue is false, then VRG was successfully processed as Secondary.
@@ -1403,6 +1446,41 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	}
 
 	return result
+}
+
+// resetInitialStatusAsSecondary resets required initial conditions to start processing VRG as Secondary, if these are
+// updated, VRG needs to be requeued for a reconcile to ensure the updates are preserved before further processing.
+func (v *VRGInstance) resetInitialStatusAsSecondary() bool {
+	clusterDataReady := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeClusterDataReady)
+	kubeObjectsReady := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
+
+	update := false
+	if clusterDataReady == nil || clusterDataReady.Reason != VRGConditionReasonClusterDataUnused {
+		update = true
+	}
+
+	if kubeObjectsReady == nil || kubeObjectsReady.Reason != VRGConditionReasonClusterDataUnused {
+		update = true
+	}
+
+	// Set the conditions to the current generation irresepective of update required
+	setVRGClusterDataReadyConditionUnused(
+		&v.instance.Status.Conditions,
+		v.instance.Generation,
+		"PV and PVC restore skipped as Secondary",
+	)
+
+	setVRGKubeObjectsReadyConditionUnused(
+		&v.instance.Status.Conditions,
+		v.instance.Generation,
+		"k8s resource restore skipped as Secondary",
+	)
+
+	if update {
+		v.updateVRGStatus(v.result)
+	}
+
+	return update
 }
 
 func (v *VRGInstance) invalid(err error, msg string, requeue bool) ctrl.Result {
@@ -1459,7 +1537,7 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 			return result
 		}
 
-		dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+		dataReadyCondition := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
 		v.log.Info(fmt.Sprintf("Updated VRG Status VolRep pvccount (%d), VolSync pvccount(%d)"+
 			" DataReady Condition (%s)",
 			len(v.volRepPVCs), len(v.volSyncPVCs), dataReadyCondition))
@@ -1489,7 +1567,7 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 // status.State as Primary is a final state, when VRG is rolled out initially before the workload is placed
 // on the cluster
 func (v *VRGInstance) updateStatusState() {
-	dataReadyCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+	dataReadyCondition := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
 	if dataReadyCondition.Status != metav1.ConditionTrue ||
 		dataReadyCondition.ObservedGeneration != v.instance.Generation {
 		v.instance.Status.State = ramendrv1alpha1.UnknownState
@@ -1516,7 +1594,7 @@ func (v *VRGInstance) updateStatusStateForSecondary() {
 		return
 	}
 
-	dataProtectedCondition := findCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
+	dataProtectedCondition := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeDataProtected)
 	if dataProtectedCondition == nil {
 		if len(v.volRepPVCs) == 0 {
 			// VRG is exclusively using volsync
@@ -1561,7 +1639,7 @@ func (v *VRGInstance) updateVRGConditions() {
 	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
 		msg := fmt.Sprintf("merging %s condition", conditionName)
 		v.log.Info(msg, "subconditions", subconditions)
-		finalCondition := util.MergeConditions(setStatusCondition,
+		finalCondition := util.MergeConditions(util.SetStatusCondition,
 			&v.instance.Status.Conditions,
 			[]string{VRGConditionReasonUnused},
 			subconditions...)

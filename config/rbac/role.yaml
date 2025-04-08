@@ -63,6 +63,12 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+- apiGroups:
   - addon.open-cluster-management.io
   resources:
   - managedclusteraddons
