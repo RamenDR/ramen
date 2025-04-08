@@ -14,7 +14,6 @@ import (
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -183,88 +182,6 @@ func getObjectListBasedOnResourceType(selectResource string) (client.ObjectList,
 	default:
 		return nil, fmt.Errorf("unsupported resource type %s", selectResource)
 	}
-}
-
-func getResourcesUsingNameSelector(r client.Reader, hook *kubeobjects.HookSpec,
-	objList client.ObjectList,
-) ([]client.Object, error) {
-	filteredObjs := make([]client.Object, 0)
-
-	var err error
-
-	if isValidK8sName(hook.NameSelector) {
-		// use nameSelector for Matching field
-		listOps := &client.ListOptions{
-			Namespace: hook.Namespace,
-			FieldSelector: fields.SelectorFromSet(fields.Set{
-				"metadata.name": hook.NameSelector, // needs exact matching with the name
-			}),
-		}
-
-		err = r.List(context.Background(), objList, listOps)
-		if err != nil {
-			return filteredObjs, fmt.Errorf("error listing resources using nameSelector: %w", err)
-		}
-
-		return getObjectsBasedOnType(objList), nil
-	} else if isValidRegex(hook.NameSelector) {
-		// after listing without the fields selector, match with the regex for filtering
-		listOps := &client.ListOptions{
-			Namespace: hook.Namespace,
-		}
-
-		re, err := regexp.Compile(hook.NameSelector)
-		if err != nil {
-			return filteredObjs, err
-		}
-
-		err = r.List(context.Background(), objList, listOps)
-		if err != nil {
-			return filteredObjs, err
-		}
-
-		return getObjectsBasedOnTypeAndRegex(objList, re), nil
-	}
-
-	return filteredObjs, fmt.Errorf("nameSelector is neither distinct name nor regex")
-}
-
-// Based on the type of resource, slice of objects is returned.
-func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
-	objs := make([]client.Object, 0)
-
-	switch v := objList.(type) {
-	case *corev1.PodList:
-		for _, pod := range v.Items {
-			objs = append(objs, &pod)
-		}
-	case *appsv1.DeploymentList:
-		for _, dep := range v.Items {
-			objs = append(objs, &dep)
-		}
-	case *appsv1.StatefulSetList:
-		for _, ss := range v.Items {
-			objs = append(objs, &ss)
-		}
-	}
-
-	return objs
-}
-
-// Based on the type of resource and regex match, slice of objects is returned.
-func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	switch v := objList.(type) {
-	case *corev1.PodList:
-		objs = getMatchingPods(v, re)
-	case *appsv1.DeploymentList:
-		objs = getMatchingDeployments(v, re)
-	case *appsv1.StatefulSetList:
-		objs = getMatchingStatefulSets(v, re)
-	}
-
-	return objs
 }
 
 func getMatchingPods(pList *corev1.PodList, re *regexp.Regexp) []client.Object {
