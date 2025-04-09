@@ -16,7 +16,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/remotecommand"
@@ -110,6 +112,275 @@ func executeCommand(execPod *ExecPodSpec, hook *kubeobjects.HookSpec, scheme *ru
 
 func (e ExecHook) GetPodsToExecuteCommands(log logr.Logger) []ExecPodSpec {
 	var execPods []ExecPodSpec
+
+	if e.Hook.SinglePodOnly {
+		eps, err := e.getExecPodsForSinglePodOnly(log)
+		if err != nil {
+			log.Error(err, "error occurred while getting pods for non singlePodOnly")
+		}
+
+		execPods = append(execPods, eps...)
+	} else {
+		eps := e.getAllPossibleExecPods(log)
+
+		execPods = append(execPods, eps...)
+	}
+
+	return execPods
+}
+
+func (e ExecHook) getExecPodsForSinglePodOnly(log logr.Logger) ([]ExecPodSpec, error) {
+	execPods := make([]ExecPodSpec, 0)
+
+	var err error
+
+	if e.Hook.SelectResource == "" || e.Hook.SelectResource == "pod" {
+		// considering the default value for selectResource as Pod
+		eps := e.getAllPossibleExecPods(log)
+		if len(eps) > 0 {
+			execPods = append(execPods, eps[0])
+
+			return execPods, nil
+		}
+
+		return execPods, fmt.Errorf("no pods found using labelSelector or nameSelector when singlePodOnly is true")
+	}
+
+	if e.Hook.SelectResource == "deployment" {
+		execPods, err = e.getExecPodsFromDepForSinglePodOnly(log)
+		if err != nil {
+			return execPods, err
+		}
+
+		return execPods, nil
+	}
+
+	if e.Hook.SelectResource == "statefulset" {
+		execPods, err = e.getExecPodsFromStatefulSetForSinglePodOnly(log)
+		if err != nil {
+			return execPods, err
+		}
+
+		return execPods, nil
+	}
+
+	return execPods, err
+}
+
+func (e ExecHook) getExecPodsFromStatefulSetForSinglePodOnly(log logr.Logger) ([]ExecPodSpec, error) {
+	statefulSetList := &appsv1.StatefulSetList{}
+	ss := make([]appsv1.StatefulSet, 0)
+	execPods := make([]ExecPodSpec, 0)
+
+	if e.Hook.LabelSelector != nil {
+		err := getResourcesUsingLabelSelector(e.Reader, e.Hook, statefulSetList)
+		if err != nil {
+			return execPods, err
+		}
+
+		ss = append(ss, statefulSetList.Items...)
+
+		log.Info("statefulsets count obtained using label selector for", "hook", e.Hook.Name,
+			"labelSelector", e.Hook.LabelSelector, "statefulSetCount", len(ss))
+	}
+
+	if e.Hook.NameSelector != "" {
+		objs, err := getResourcesUsingNameSelector(e.Reader, e.Hook, statefulSetList)
+		if err != nil {
+			return execPods, err
+		}
+
+		for _, obj := range objs {
+			s, ok := obj.(*appsv1.StatefulSet)
+			if ok {
+				ss = append(ss, *s)
+			}
+		}
+
+		log.Info("statefulsets count obtained using name selector for", "hook", e.Hook.Name,
+			"nameSelector", e.Hook.NameSelector, "statefulSetCount", len(ss))
+	}
+
+	return e.getPodsFromStatefulsets(ss)
+}
+
+func (e ExecHook) getPodsFromStatefulsets(ss []appsv1.StatefulSet) ([]ExecPodSpec, error) {
+	execPods := make([]ExecPodSpec, 0)
+
+	for _, statefulSet := range ss {
+		if statefulSet.Status.ReadyReplicas > 0 {
+			pod := &corev1.Pod{}
+
+			err := e.Reader.Get(context.Background(), client.ObjectKey{
+				Name:      statefulSet.Name + "-0",
+				Namespace: statefulSet.Namespace,
+			}, pod)
+			if err != nil {
+				return execPods, fmt.Errorf("error occurred while getting pod for statefulset: %w", err)
+			}
+
+			cmd, err := covertCommandToStringArray(e.Hook.Op.Command)
+			if err != nil {
+				return execPods, fmt.Errorf("error converting command to string array: %w", err)
+			}
+
+			execPods = append(execPods, ExecPodSpec{
+				PodName:   pod.Name,
+				Namespace: pod.Namespace,
+				Command:   cmd,
+				Container: getContainerName(e.Hook.Op.Container, pod),
+			})
+		}
+	}
+
+	return execPods, nil
+}
+
+func (e ExecHook) getExecPodsFromDepForSinglePodOnly(log logr.Logger) ([]ExecPodSpec, error) {
+	execPods := make([]ExecPodSpec, 0)
+
+	deps, err := e.getDeploymentsForSinglePodOnly(log)
+	if err != nil {
+		log.Error(err, "error occurred while getting deployments for singlePodOnly")
+
+		return execPods, fmt.Errorf("error occurred while getting deployments"+
+			" for singlePodOnly: %w", err)
+	}
+
+	for _, dep := range deps {
+		rs, err := e.getReplicaSetFromDepForSinglePodOnly(dep.Name, dep.Namespace)
+		if err != nil {
+			log.Error(err, "error occurred while getting replicaset for deployment")
+
+			return execPods, fmt.Errorf("error occurred while getting replicaset"+
+				" for deployment: %w", err)
+		}
+
+		eps, err := e.getPodExecFromReplicaSetForSinglePodOnly(rs.Name, rs.Namespace)
+		if err != nil {
+			log.Error(err, "error occurred while getting pod exec from replicaset")
+
+			return execPods, fmt.Errorf("error occurred while getting pod exec"+
+				" from replicaset: %w", err)
+		}
+
+		execPods = append(execPods, eps)
+	}
+
+	return execPods, nil
+}
+
+func (e ExecHook) getPodExecFromReplicaSetForSinglePodOnly(rsName, rsNS string) (ExecPodSpec, error) {
+	podList := &corev1.PodList{}
+
+	err := e.Reader.List(context.Background(), podList, client.InNamespace(rsNS))
+	if err != nil {
+		return ExecPodSpec{}, fmt.Errorf("error listing pods: %w", err)
+	}
+
+	for _, pod := range podList.Items {
+		if IsPodOwnedByRS(&pod, rsName) {
+			cmd, err := covertCommandToStringArray(e.Hook.Op.Command)
+			if err != nil {
+				return ExecPodSpec{}, fmt.Errorf("error converting command to string array: %w", err)
+			}
+
+			return ExecPodSpec{
+				PodName:   pod.Name,
+				Namespace: pod.Namespace,
+				Command:   cmd,
+				Container: getContainerName(e.Hook.Op.Container, &pod),
+			}, nil
+		}
+	}
+
+	return ExecPodSpec{}, nil
+}
+
+func (e ExecHook) getReplicaSetFromDepForSinglePodOnly(depName, depNS string) (*appsv1.ReplicaSet, error) {
+	// get the replicaset of the deployment
+	replicaSet := &appsv1.ReplicaSetList{}
+
+	err := e.Reader.List(context.Background(), replicaSet, client.InNamespace(depNS))
+	if err != nil {
+		return nil, fmt.Errorf("error listing replicaset: %w", err)
+	}
+
+	for _, rs := range replicaSet.Items {
+		if IsRSOwnedByDeployment(&rs, depName) {
+			return &rs, nil
+		}
+	}
+
+	return nil, fmt.Errorf("replicaset not found for deployment %s in namespace %s", depName, depNS)
+}
+
+func IsPodOwnedByRS(pod *corev1.Pod, rsName string) bool {
+	for _, ownerRef := range pod.OwnerReferences {
+		if isOwnerCorrect(&ownerRef, rsName, "ReplicaSet") && pod.Status.Phase == corev1.PodRunning {
+			return true
+		}
+	}
+
+	return false
+}
+
+func IsRSOwnedByDeployment(rs *appsv1.ReplicaSet, depName string) bool {
+	for _, ownerRef := range rs.OwnerReferences {
+		if isOwnerCorrect(&ownerRef, depName, "Deployment") && rs.Status.Replicas > 0 && rs.Status.ReadyReplicas > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isOwnerCorrect(ownerRef *metav1.OwnerReference, ownerName, ownerKind string) bool {
+	return ownerRef.Kind == ownerKind && ownerRef.Name == ownerName && ownerRef.Controller != nil && *ownerRef.Controller
+}
+
+func (e ExecHook) getDeploymentsForSinglePodOnly(log logr.Logger) ([]appsv1.Deployment, error) {
+	deps := make([]appsv1.Deployment, 0)
+	deploymentList := &appsv1.DeploymentList{}
+
+	var err error
+
+	if e.Hook.LabelSelector != nil {
+		err = getResourcesUsingLabelSelector(e.Reader, e.Hook, deploymentList)
+		if err != nil {
+			return nil, err
+		}
+
+		deps = append(deps, deploymentList.Items...)
+
+		log.Info("deployments count obtained using label selector for", "hook", e.Hook.Name,
+			"labelSelector", e.Hook.LabelSelector, "deploymentCount", len(deps))
+	}
+
+	if e.Hook.NameSelector != "" {
+		objs, err := getResourcesUsingNameSelector(e.Reader, e.Hook, deploymentList)
+		if err != nil {
+			return deps, err
+		}
+
+		for _, dep := range objs {
+			d, ok := dep.(*appsv1.Deployment)
+
+			if ok {
+				deps = append(deps, *d)
+			}
+		}
+
+		log.Info("deployments count obtained using name selector for", "hook", e.Hook.Name,
+			"nameSelector", e.Hook.NameSelector, "deploymentCount", len(deps))
+	}
+
+	return deps, err
+}
+
+func (e ExecHook) getAllPossibleExecPods(log logr.Logger) []ExecPodSpec {
+	execPods := make([]ExecPodSpec, 0)
+
 	/*
 		1. If the labelSelector is provided, get the pods using the labelSelector.
 		2. If the nameSelector is provided, get the pods using the nameSelector.
@@ -123,6 +394,9 @@ func (e ExecHook) GetPodsToExecuteCommands(log logr.Logger) []ExecPodSpec {
 		}
 
 		execPods = append(execPods, eps...)
+
+		log.Info("all pods count obtained using label selector for", "hook", e.Hook.Name,
+			"labelSelector", e.Hook.LabelSelector, "podCount", len(execPods))
 	}
 
 	if e.Hook.NameSelector != "" {
@@ -132,6 +406,9 @@ func (e ExecHook) GetPodsToExecuteCommands(log logr.Logger) []ExecPodSpec {
 		}
 
 		execPods = append(execPods, eps...)
+
+		log.Info("all pods count obtained using name selector for", "hook", e.Hook.Name,
+			"nameSelector", e.Hook.NameSelector, "podCount", len(execPods))
 	}
 
 	return execPods
@@ -145,9 +422,6 @@ func (e ExecHook) getExecPodsUsingLabelSelector(log logr.Logger) ([]ExecPodSpec,
 	if err != nil {
 		return execPods, err
 	}
-
-	log.Info("pods count obtained using label selector for", "hook", e.Hook.Name,
-		"labelSelector", e.Hook.LabelSelector, "podCount", len(podList.Items))
 
 	execPods, err = e.getExecPodSpecsFromObjList(podList, log)
 	if err != nil {
@@ -163,24 +437,23 @@ func (e ExecHook) getExecPodsUsingNameSelector(log logr.Logger) ([]ExecPodSpec, 
 	execPods := make([]ExecPodSpec, 0)
 	podList := &corev1.PodList{}
 
-	if isValidK8sName(e.Hook.NameSelector) {
-		// use nameSelector for Matching field
+	// For selectResource other than pod, if the given name is valid k8s name, then .* needs to be appended.
+	nameSelector := e.Hook.NameSelector
+
+	if e.Hook.SelectResource == "deployment" || e.Hook.SelectResource == "statefulset" {
+		nameSelector = fmt.Sprintf("%s.*", nameSelector)
+	}
+
+	if isValidK8sName(nameSelector) {
 		listOps := &client.ListOptions{
-			Namespace: e.Hook.Namespace,
-			FieldSelector: fields.SelectorFromSet(fields.Set{
-				"metadata.name": e.Hook.NameSelector, // needs exact matching with the name
-			}),
+			Namespace:     e.Hook.Namespace,
+			FieldSelector: fields.SelectorFromSet(fields.Set{"metadata.name": e.Hook.NameSelector}),
 		}
 
 		err = e.Reader.List(context.Background(), podList, listOps)
 		if err != nil {
-			log.Error(err, "error listing resources using nameSelector")
-
 			return execPods, fmt.Errorf("error listing resources using nameSelector: %w", err)
 		}
-
-		log.Info("pods count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "podCount", len(podList.Items))
 
 		execPods, err = e.getExecPodSpecsFromObjList(podList, log)
 		if err != nil {
@@ -190,11 +463,8 @@ func (e ExecHook) getExecPodsUsingNameSelector(log logr.Logger) ([]ExecPodSpec, 
 		return execPods, nil
 	}
 
-	if isValidRegex(e.Hook.NameSelector) {
-		// after listing without the fields selector, match with the regex for filtering
-		listOps := &client.ListOptions{
-			Namespace: e.Hook.Namespace,
-		}
+	if isValidRegex(nameSelector) {
+		listOps := &client.ListOptions{Namespace: e.Hook.Namespace}
 
 		re, err := regexp.Compile(e.Hook.NameSelector)
 		if err != nil {
@@ -205,9 +475,6 @@ func (e ExecHook) getExecPodsUsingNameSelector(log logr.Logger) ([]ExecPodSpec, 
 		if err != nil {
 			return execPods, fmt.Errorf("error listing resources using nameSelector: %w", err)
 		}
-
-		log.Info("pods count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "podCount", len(podList.Items))
 
 		execPods, err = e.filterExecPodsUsingRegex(podList, re, log)
 		if err != nil {
@@ -236,11 +503,6 @@ func (e ExecHook) filterExecPodsUsingRegex(podList *corev1.PodList, re *regexp.R
 		if re.MatchString(pod.Name) {
 			execPods = append(execPods, getExecPodSpec(e.Hook.Op.Container, cmd, &pod))
 		}
-
-		// If singlePodOnly, only one should be used.
-		if e.Hook.SinglePodOnly {
-			break
-		}
 	}
 
 	return execPods, nil
@@ -258,11 +520,6 @@ func (e ExecHook) getExecPodSpecsFromObjList(podList *corev1.PodList, log logr.L
 
 	for _, pod := range podList.Items {
 		execPods = append(execPods, getExecPodSpec(e.Hook.Op.Container, cmd, &pod))
-
-		// If singlePodOnly, only one should be used.
-		if e.Hook.SinglePodOnly {
-			break
-		}
 	}
 
 	return execPods, nil
