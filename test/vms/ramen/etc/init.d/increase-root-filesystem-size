@@ -7,15 +7,23 @@ LOGFILE="/var/log/resize-filesystem.log"
 
 case "$1" in
     start)
-        echo "Starting resize..." | tee -a "$LOGFILE"
-        df -h / >> "$LOGFILE"
-        DEVICE=$(df -h / | grep -vE '^Filesystem|tmpfs|cdrom' | awk '{print $1}')
-        echo "Device: $DEVICE" | tee -a "$LOGFILE"
-        resize-filesystem "$DEVICE" 2>&1 | tee -a "$LOGFILE"
-        df -h / >> "$LOGFILE"
-        echo "Resize complete" | tee -a "$LOGFILE"
-        ;;
-    stop)
+        ROOT_PART=$(mount | awk '$3 == "/" { print $1 }')
+        echo "Root device: $ROOT_PART" | tee -a "$LOGFILE"
+
+        FS_KB=$(dumpe2fs -h "$ROOT_PART" 2>/dev/null | awk '/Block count:/ { blk=$3 } /Block size:/ { bs=$3 } END { print blk * bs / 1024 }')
+        DEV_KB=$(blockdev --getsize64 "$ROOT_PART" 2>/dev/null)
+        DEV_KB=$((DEV_KB / 1024))
+
+        echo "Filesystem size (KB): $FS_KB" | tee -a "$LOGFILE"
+        echo "Device size     (KB): $DEV_KB" | tee -a "$LOGFILE"
+
+        # Resize only if there's a difference of > 1MB
+        if [ $((DEV_KB - FS_KB)) -gt 1024 ]; then
+            echo "Resizing filesystem on $ROOT_PART..." | tee -a "$LOGFILE"
+            resize2fs "$ROOT_PART" 2>&1 | tee -a "$LOGFILE"
+        else
+            echo "No resize needed; filesystem already uses full device." | tee -a "$LOGFILE"
+        fi
         ;;
     *)
         echo "Usage: $0 {start}"
