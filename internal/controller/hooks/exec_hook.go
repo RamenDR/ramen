@@ -136,9 +136,9 @@ func (e ExecHook) getExecPodsForSinglePodOnly(log logr.Logger) ([]ExecPodSpec, e
 
 	if e.Hook.SelectResource == "" || e.Hook.SelectResource == "pod" {
 		// considering the default value for selectResource as Pod
-		execPods = e.getAllPossibleExecPods(log)
-		if len(execPods) > 0 {
-			execPods = append(execPods, execPods[0])
+		eps := e.getAllPossibleExecPods(log)
+		if len(eps) > 0 {
+			execPods = append(execPods, eps[0])
 
 			return execPods, nil
 		}
@@ -279,7 +279,7 @@ func (e ExecHook) getPodExecFromReplicaSetForSinglePodOnly(rsName, rsNS string) 
 	}
 
 	for _, pod := range podList.Items {
-		if isPodOwnedByRS(&pod, rsName) {
+		if IsPodOwnedByRS(&pod, rsName) {
 			cmd, err := covertCommandToStringArray(e.Hook.Op.Command)
 			if err != nil {
 				return ExecPodSpec{}, fmt.Errorf("error converting command to string array: %w", err)
@@ -307,7 +307,7 @@ func (e ExecHook) getReplicaSetFromDepForSinglePodOnly(depName, depNS string) (*
 	}
 
 	for _, rs := range replicaSet.Items {
-		if isRSOwnedByDeployment(&rs, depName) {
+		if IsRSOwnedByDeployment(&rs, depName) {
 			return &rs, nil
 		}
 	}
@@ -315,7 +315,7 @@ func (e ExecHook) getReplicaSetFromDepForSinglePodOnly(depName, depNS string) (*
 	return nil, fmt.Errorf("replicaset not found for deployment %s in namespace %s", depName, depNS)
 }
 
-func isPodOwnedByRS(pod *corev1.Pod, rsName string) bool {
+func IsPodOwnedByRS(pod *corev1.Pod, rsName string) bool {
 	for _, ownerRef := range pod.OwnerReferences {
 		if isOwnerCorrect(&ownerRef, rsName, "ReplicaSet") && pod.Status.Phase == corev1.PodRunning {
 			return true
@@ -325,7 +325,7 @@ func isPodOwnedByRS(pod *corev1.Pod, rsName string) bool {
 	return false
 }
 
-func isRSOwnedByDeployment(rs *appsv1.ReplicaSet, depName string) bool {
+func IsRSOwnedByDeployment(rs *appsv1.ReplicaSet, depName string) bool {
 	for _, ownerRef := range rs.OwnerReferences {
 		if isOwnerCorrect(&ownerRef, depName, "Deployment") && rs.Status.Replicas > 0 && rs.Status.ReadyReplicas > 0 {
 			return true
@@ -336,7 +336,7 @@ func isRSOwnedByDeployment(rs *appsv1.ReplicaSet, depName string) bool {
 }
 
 func isOwnerCorrect(ownerRef *metav1.OwnerReference, ownerName, ownerKind string) bool {
-	return ownerRef.Kind == ownerKind && ownerRef.Name == ownerName && *ownerRef.Controller
+	return ownerRef.Kind == ownerKind && ownerRef.Name == ownerName && ownerRef.Controller != nil && *ownerRef.Controller
 }
 
 func (e ExecHook) getDeploymentsForSinglePodOnly(log logr.Logger) ([]appsv1.Deployment, error) {
