@@ -7,6 +7,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/hooks"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/stretchr/testify/assert"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,10 +33,10 @@ func setup(t *testing.T) client.Client {
 	return fakeClient
 }
 
-func getPodSpec() *corev1.Pod {
+func getPodSpec(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-pod",
+			Name:      name,
 			Namespace: "test-ns",
 			Labels: map[string]string{
 				"appname": "busybox",
@@ -64,9 +65,26 @@ func getOpHookSpec() *kubeobjects.HookSpec {
 	}
 }
 
+func getRS() *appsv1.ReplicaSet {
+	return &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-rs",
+			Namespace: "test-ns",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "test-deployment",
+					UID:        "test-uid",
+				},
+			},
+		},
+	}
+}
+
 func TestExecuteWithNoSelector(t *testing.T) {
 	fakeClient := setup(t)
-	pod := getPodSpec()
+	pod := getPodSpec("test-pod")
 
 	err := fakeClient.Create(context.TODO(), pod)
 	assert.NoError(t, err)
@@ -85,7 +103,7 @@ func TestExecuteWithNoSelector(t *testing.T) {
 
 func TestGetPodsToExecuteCommandsUsingLabelSelector(t *testing.T) {
 	fakeClient := setup(t)
-	pod := getPodSpec()
+	pod := getPodSpec("test-pod")
 
 	err := fakeClient.Create(context.TODO(), pod)
 	assert.NoError(t, err)
@@ -117,7 +135,7 @@ func TestGetPodsToExecuteCommandsUsingLabelSelector(t *testing.T) {
 
 func TestGetPodsToExecuteCommandsUsingNameSelector(t *testing.T) {
 	fakeClient := setup(t)
-	pod := getPodSpec()
+	pod := getPodSpec("test-pod")
 
 	err := fakeClient.Create(context.TODO(), pod)
 	assert.NoError(t, err)
@@ -143,4 +161,79 @@ func TestGetPodsToExecuteCommandsUsingNameSelector(t *testing.T) {
 		Container: "test-container",
 	}
 	assert.Equal(t, expectedPodSpec, pods[0])
+}
+
+func TestGetPodsToExecuteCommandsForSinglePodOnly(t *testing.T) {
+	fakeClient := setup(t)
+	pod := getPodSpec("test-pod")
+
+	err := fakeClient.Create(context.TODO(), pod)
+	assert.NoError(t, err)
+
+	pod = getPodSpec("test-pod-2")
+	err = fakeClient.Create(context.TODO(), pod)
+	assert.NoError(t, err)
+
+	hookSpec := getOpHookSpec()
+	hookSpec.NameSelector = "test-pod.*"
+	hookSpec.SinglePodOnly = true
+
+	eHook := hooks.ExecHook{
+		Hook:   hookSpec,
+		Reader: fakeClient,
+		Scheme: fakeClient.Scheme(),
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+
+	pods := eHook.GetPodsToExecuteCommands(log)
+	assert.Equal(t, 1, len(pods))
+
+	expectedPodSpec := hooks.ExecPodSpec{
+		PodName:   "test-pod",
+		Namespace: "test-ns",
+		Command:   []string{"echo", "hello"},
+		Container: "test-container",
+	}
+	assert.Equal(t, expectedPodSpec, pods[0])
+}
+
+func TestIsPodOwnedByRS(t *testing.T) {
+	pod := getPodSpec("test-pod")
+	pod.OwnerReferences = []metav1.OwnerReference{
+		{
+			APIVersion: "apps/v1",
+			Kind:       "ReplicaSet",
+			Name:       "test-rs",
+			UID:        "test-uid",
+		},
+	}
+
+	assert.False(t, hooks.IsPodOwnedByRS(pod, "test-rs"))
+
+	pod.Status = corev1.PodStatus{
+		Phase: corev1.PodRunning,
+	}
+
+	assert.False(t, hooks.IsPodOwnedByRS(pod, "test-rs"))
+
+	isController := true
+	pod.OwnerReferences[0].Controller = &isController
+	assert.True(t, hooks.IsPodOwnedByRS(pod, "test-rs"))
+}
+
+func TestIsRSOwnedByDeployment(t *testing.T) {
+	rs := getRS()
+	assert.False(t, hooks.IsRSOwnedByDeployment(rs, "test-deployment"))
+
+	rs.OwnerReferences[0].Controller = nil
+	assert.False(t, hooks.IsRSOwnedByDeployment(rs, "test-deployment"))
+
+	isController := true
+	rs.OwnerReferences[0].Controller = &isController
+	rs.Status = appsv1.ReplicaSetStatus{
+		Replicas:      1,
+		ReadyReplicas: 1,
+	}
+	assert.True(t, hooks.IsRSOwnedByDeployment(rs, "test-deployment"))
 }
