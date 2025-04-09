@@ -60,6 +60,12 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
+	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
+		v.log.Info("Skipping kube objects capture in final sync case")
+
+		return
+	}
+
 	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
 		func() {},
 	)
@@ -125,7 +131,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		v.ctx, v.reconciler.APIReader, veleroNamespaceName, labels)
 	if err != nil {
 		log.Error(err, "Kube objects capture in-progress query error")
-		v.kubeObjectsCaptureFailed("KubeObjectsCaptureRequestsQueryError", err.Error())
+		v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureRequestsQueryError", err.Error())
 
 		result.Requeue = true
 
@@ -168,8 +174,10 @@ func kubeObjectsCaptureStartConditionallyPrimary(
 	captureStart func(),
 ) {
 	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
-		v.log.Info("Kube objects capture start delay", "delay", delay, "interval", captureStartInterval)
+		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
+			"interval", captureStartInterval)
 		delaySetIfLess(result, delay, v.log)
+		v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 		return
 	}
@@ -187,7 +195,7 @@ func (v *VRGInstance) kubeObjectsCapturesDelete(
 				"number", captureNumber,
 				"profile", s3StoreAccessor.S3ProfileName,
 			)
-			v.kubeObjectsCaptureFailed("KubeObjectsReplicaDeleteError", err.Error())
+			v.kubeObjectsCaptureStatusFalse("KubeObjectsReplicaDeleteError", err.Error())
 
 			result.Requeue = true
 
@@ -232,7 +240,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	if allEssentialStepsFailed {
 		result.Requeue = true
 
-		v.kubeObjectsCaptureFailed("KubeObjectsCaptureError", "Kube objects capture failed")
+		v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "Kube objects capture failed")
 
 		return
 	}
@@ -307,7 +315,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 
 		if err != nil {
 			if shouldStopExecution(failOn, isEssentialStep) {
-				v.kubeObjectsCaptureFailed("KubeObjectsWorkflowError", err.Error())
+				v.kubeObjectsCaptureStatusFalse("KubeObjectsWorkflowError", err.Error())
 
 				return false, err
 			}
@@ -475,15 +483,14 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	); err != nil {
 		v.log.Error(err, "Kube objects capture requests delete error",
 			"number", captureToRecoverFromIdentifier.Number)
-		v.kubeObjectsCaptureFailed("KubeObjectsCaptureRequestsDeleteError", err.Error())
+		v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureRequestsDeleteError", err.Error())
 
 		result.Requeue = true
 
 		return
 	}
 
-	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, VRGConditionReasonUploaded,
-		kubeObjectsClusterDataProtectedTrueMessage)
+	v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
@@ -497,15 +504,25 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	)
 }
 
-func (v *VRGInstance) kubeObjectsCaptureFailed(reason, message string) {
-	v.kubeObjectsCaptureStatusFalse(reason, message)
-}
-
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
 	v.kubeObjectsCaptureStatus(metav1.ConditionFalse, reason, message)
 }
 
+func (v *VRGInstance) kubeObjectsCaptureStatusTrue(reason, message string) {
+	v.kubeObjectsCaptureStatus(metav1.ConditionTrue, reason, message)
+}
+
+func (v *VRGInstance) kubeObjectsCaptureStatusNil() {
+	v.kubeObjectsCaptureStatus("", "", "")
+}
+
 func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, reason, message string) {
+	if status == "" {
+		v.kubeObjectsProtected = nil
+
+		return
+	}
+
 	v.kubeObjectsProtected = &metav1.Condition{
 		Type:               VRGConditionTypeClusterDataProtected,
 		Status:             status,
