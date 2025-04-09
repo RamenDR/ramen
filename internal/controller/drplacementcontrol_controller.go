@@ -2473,7 +2473,7 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
-	independentVMProtection := drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
+	independentVMProtection := r.drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
 	if independentVMProtection {
 		return nil
 	}
@@ -2512,7 +2512,8 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
 }
 
-func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl,
+func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementControl,
+	otherdrpc *rmn.DRPlacementControl,
 	ramenConfig *rmn.RamenConfig,
 ) bool {
 	if (drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil) ||
@@ -2530,28 +2531,45 @@ func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementC
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
 			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
-			return !twoVMDRPCsConflict(drpc, otherdrpc)
+			return !r.twoVMDRPCsConflict(drpc, otherdrpc)
 		}
 	}
 
 	return false
 }
 
-func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl) bool {
-	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
-	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
+func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementControl,
+	otherdrpc *rmn.DRPlacementControl,
+) bool {
+	// "PROTECTED_VMS"
+	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]...)
+	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]...)
 
-	conflict := drpcVMList.Intersection(otherdrpcVMList)
-
-	if len(conflict) == 0 {
-		return false
-	}
+	vmListConflict := drpcVMList.Intersection(otherdrpcVMList)
 
 	// Mark the latest drpc as unavailable if conflicting resources found
 
-	if (drpc.Status.ObservedGeneration == 0) ||
-		(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
-		return true
+	// "K8S_RESOURCE_LIST"
+	drpcK8SLabelSelector := sets.NewString(
+		drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]...)
+	otherdrpcK8SLabelSelector := sets.NewString(
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]...)
+
+	k8sLabelSelectorConflict := drpcK8SLabelSelector.Intersection(otherdrpcK8SLabelSelector)
+	// "PVC_RESOURCE_LIST"
+	drpcPVCLabelSelector := sets.NewString(
+		drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.PVCLabelSelector]...)
+	otherdrpcPVCLabelSelector := sets.NewString(
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.PVCLabelSelector]...)
+
+	pvcLabelSelectorConflict := drpcPVCLabelSelector.Intersection(otherdrpcPVCLabelSelector)
+
+	// Mark the latest drpc as unavailable if conflicting resources found
+	if len(vmListConflict) > 0 || len(k8sLabelSelectorConflict) > 0 || len(pvcLabelSelectorConflict) > 0 {
+		if (drpc.Status.ObservedGeneration == 0) ||
+			(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
+			return true
+		}
 	}
 
 	return false
