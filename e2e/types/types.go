@@ -95,7 +95,7 @@ type Workload interface {
 	GetPath() string
 	GetBranch() string
 
-	// SupportsDeployer returns tue if this workload is compatible with deployer.
+	// SupportsDeployer returns true if this workload is compatible with deployer.
 	SupportsDeployer(Deployer) bool
 
 	Health(ctx Context, cluster Cluster, namespace string) error

@@ -79,7 +79,6 @@ spec:
                 - message: s3ProfileName is immutable
                   rule: self == oldSelf
             required:
-            - region
             - s3ProfileName
             type: object
           status:
