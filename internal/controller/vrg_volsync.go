@@ -639,3 +639,51 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 
 	return nil
 }
+
+func (v *VRGInstance) isSecondaryWithVolSyncProtectedPVCs() bool {
+	return v.IsSecondaryVRG() && len(v.volSyncPVCs) > 0
+}
+
+func (v *VRGInstance) validateSecondaryPVCConflictForVolsync() bool {
+	if !v.isSecondaryWithVolSyncProtectedPVCs() {
+		return false
+	}
+
+	// Validate that only replication destination PVCs match the label selector.
+	for _, pvc := range v.volSyncPVCs {
+		matchFound := false
+
+		for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+			if pvc.GetName() == rdSpec.ProtectedPVC.Name {
+				matchFound = true
+
+				break // Found a match, no need to check further for this PVC
+			}
+		}
+
+		if !matchFound {
+			return true // No match found for this PVC, conflict detected!
+		}
+	}
+
+	return false // No conflicts found
+}
+
+func (v *VRGInstance) aggregateVolSyncClusterDataConflictCondition() *metav1.Condition {
+	noClusterDataConflictCondition := &metav1.Condition{
+		Status:             metav1.ConditionTrue,
+		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             VRGConditionReasonConflictResolved,
+		ObservedGeneration: v.instance.Generation,
+		Message:            "No PVC conflict detected for VolumeSync scheme",
+	}
+
+	if v.validateSecondaryPVCConflictForVolsync() {
+		return newVRGAsClusterDataConflictCondition(v.instance.Generation,
+			"A PVC that is not a replication destination should not match the label selector.",
+			VRGConditionReasonClusterDataConflictSecondary,
+		)
+	}
+
+	return noClusterDataConflictCondition
+}
