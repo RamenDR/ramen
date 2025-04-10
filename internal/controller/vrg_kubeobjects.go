@@ -642,29 +642,6 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 	vrg := v.instance
 	annotations := map[string]string{}
 
-	if recoverGroup.BackupName == ramen.ReservedBackupName {
-		backupSequenceNumber := 1 - captureToRecoverFromIdentifier.Number // is this a good way to do this?
-		pathName, capturePathName, namePrefix := kubeObjectsCapturePathNamesAndNamePrefix(
-			vrg.Namespace, vrg.Name, backupSequenceNumber, v.reconciler.kubeObjects)
-		backupName := fmt.Sprintf("%s-restore-%d", recoverGroup.BackupName, groupNumber)
-		captureName := kubeObjectsCaptureName(namePrefix, backupName, s3StoreAccessor.S3ProfileName)
-		request, ok := captureRequests[captureName]
-
-		return request, ok, func() (kubeobjects.Request, error) {
-				return v.reconciler.kubeObjects.ProtectRequestCreate(
-					v.ctx, v.reconciler.Client, v.log,
-					s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
-					s3StoreAccessor.VeleroNamespaceSecretKeyRef,
-					s3StoreAccessor.CACertificates,
-					recoverGroup.Spec, v.veleroNamespaceName(),
-					captureName,
-					labels, annotations)
-			},
-			func(request kubeobjects.Request) {
-				v.kubeObjectsCaptureAndCaptureRequestDelete(request, s3StoreAccessor, capturePathName, log)
-			}
-	}
-
 	recoverNamePrefix := kubeObjectsRecoverNamePrefix(vrg.Namespace, vrg.Name)
 	recoverName := kubeObjectsRecoverName(recoverNamePrefix, groupNumber)
 	recoverRequest, ok := recoverRequests[recoverName]
