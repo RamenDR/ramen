@@ -157,7 +157,8 @@ func (r *DRPolicyReconciler) reconcile(
 	// we will be able to validate conflicts only after PeerClass is updated
 	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drclusters)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("%s: %w", ReasonValidationFailed, err) // we can change the message later.
+		return ctrl.Result{}, fmt.Errorf("DRPolicy conflict found: %w",
+			u.validatedSetFalse("DRPolicyConflictFound", err))
 	}
 
 	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
@@ -294,7 +295,7 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterLi
 
 		// None of the common managed clusters should belong to Metro Regions in either of the drpolicies.
 		if haveOverlappingMetroZones(match, drp, drclusters) {
-			return fmt.Errorf("drpolicy: %v has overlapping metro region with another drpolicy %v", match.Name, drp.Name)
+			return fmt.Errorf("drpolicy: %v has overlapping clusters with another drpolicy %v", match.Name, drp.Name)
 		}
 	}
 
@@ -323,9 +324,9 @@ func getStorageIDsFromPeerClass(drpolicy *ramen.DRPolicy) []string {
 	return sids
 }
 
-func hasCommonClusters(metroMap map[string][]string, commonClusterIDs, commonClusters []string) bool {
+func hasCommonClusters(metroMap map[string][]string, commonSIDs, commonClusters []string) bool {
 	for _, v := range metroMap {
-		if sets.NewString(v...).HasAny(commonClusterIDs...) {
+		if sets.NewString(v...).HasAny(commonSIDs...) {
 			return true
 		}
 
