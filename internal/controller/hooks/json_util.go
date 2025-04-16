@@ -65,12 +65,13 @@ func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, e
 	operands := make([]reflect.Value, len(jsonPaths))
 
 	for i, jsonPath := range jsonPaths {
-		if strings.HasPrefix(jsonPath, "$") {
+		if strings.HasPrefix(jsonPath, "{$") {
 			operands[i], err = QueryJSONPath(jsonData, jsonPath)
 			if err != nil {
 				return false, fmt.Errorf("failed to get value for %v: %w", jsonPath, err)
 			}
 		} else {
+			jsonPath = strings.Trim(jsonPath, "{}")
 			operands[i] = reflect.ValueOf(jsonPath)
 		}
 	}
@@ -181,8 +182,8 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	}
 
 	// Convert string "True"/"False" to boolean before comparison
-	a = convertToBoolean(a)
-	b = convertToBoolean(b)
+	a = convertString(a)
+	b = convertString(b)
 
 	// Ensure operands are of the same type before comparison
 	if a.Kind() != b.Kind() {
@@ -221,13 +222,17 @@ func isNumericString(s string) bool {
 	return err == nil
 }
 
-// Convert a string reflect.Value to boolean if it contains "true"/"false"
-func convertToBoolean(v reflect.Value) reflect.Value {
+// Convert a string reflect.Value to boolean or formatted string like "true"/"false"/"Ready"/"Running"
+func convertString(v reflect.Value) reflect.Value {
 	if v.Kind() == reflect.String {
 		strVal := strings.TrimSpace(v.String())
 
 		// Remove surrounding double quotes, if present
 		if strings.HasPrefix(strVal, "\"") && strings.HasSuffix(strVal, "\"") {
+			strVal = strVal[1 : len(strVal)-1]
+		}
+
+		if strings.HasPrefix(strVal, "'") && strings.HasSuffix(strVal, "'") {
 			strVal = strVal[1 : len(strVal)-1]
 		}
 
@@ -237,6 +242,8 @@ func convertToBoolean(v reflect.Value) reflect.Value {
 			return reflect.ValueOf(true)
 		case "false":
 			return reflect.ValueOf(false)
+		default:
+			return reflect.ValueOf(strVal)
 		}
 	}
 
@@ -435,6 +442,10 @@ func isLiteralValue(expr string) bool {
 
 	// Check if it's a valid number
 	if _, err := strconv.ParseFloat(expr, 64); err == nil {
+		return true
+	}
+
+	if regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`).MatchString(expr) {
 		return true
 	}
 
