@@ -137,7 +137,7 @@ var testCasesData = []testCases{
 		jsonText:      jsonStatefulset,
 	},
 	{
-		jsonPathExprs: "{$.status.conditions[?(@type.==\"Progressing\")].status} == {True}",
+		jsonPathExprs: "{$.status.conditions[?(@.type==\"Progressing\")].status} == {True}",
 		result:        true,
 		jsonText:      jsonPod,
 	},
@@ -151,29 +151,21 @@ var testCasesData = []testCases{
 		result:        true,
 		jsonText:      jsonPod,
 	},
-	{
-		jsonPathExprs: "{$.spec.replicas} == {$.status.readyReplicas} || {$.spec.replicas} == {$.status.updatedReplicas}" +
-			" && {$.spec.revisionHistoryLimit} == {10}",
-		result:   true,
-		jsonText: jsonPod,
-	},
-	{
-		jsonPathExprs: "({$.spec.replicas} == {$.status.readyReplicas}) && (({$.spec.replicas} ==" +
-			" {$.status.updatedReplicas}) || ({$.spec.revisionHistoryLimit} != {11}))",
-		result:   true,
-		jsonText: jsonPod,
-	},
-	{
-		jsonPathExprs: "(({$.spec.replicas} == {$.status.readyReplicas}) && ({$.spec.replicas} ==" +
-			" {$.status.updatedReplicas})) || ({$.spec.revisionHistoryLimit} != {11})",
-		result:   true,
-		jsonText: jsonPod,
-	},
 }
 
 var testCasesObjectData = []testCasesObject{
 	{
 		hook:    getHookSpec("Pod", "{$.status.phase} == {'Running'}"),
+		result:  true,
+		jsonObj: getPodContent(),
+	},
+	{
+		hook:    getHookSpec("Pod", "{$.status.phase} == Running"),
+		result:  false,
+		jsonObj: getPodContent(),
+	},
+	{
+		hook:    getHookSpec("Pod", "{$.status.phase} == {Running}"),
 		result:  true,
 		jsonObj: getPodContent(),
 	},
@@ -202,6 +194,29 @@ var testCasesObjectData = []testCasesObject{
 		result:  true,
 		jsonObj: getStatefulSetContent(),
 	},
+	{
+		hook:    getHookSpec("Deployment", "{$.status.conditions[0].status} == {True}"),
+		result:  true,
+		jsonObj: getDeploymentContent(),
+	},
+	{
+		hook: getHookSpec("Deployment", "{$.spec.replicas} == {$.status.readyReplicas}"+
+			" || {$.spec.replicas} == {$.status.updatedReplicas} && {$.spec.revisionHistoryLimit} == {10}"),
+		result:  true,
+		jsonObj: getDeploymentContent(),
+	},
+	{
+		hook: getHookSpec("Deployment", "({$.spec.replicas} == {$.status.readyReplicas}) && (({$.spec.replicas} =="+
+			" {$.status.updatedReplicas}) || ({$.spec.revisionHistoryLimit} != {11}))"),
+		result:  true,
+		jsonObj: getDeploymentContent(),
+	},
+	{
+		hook: getHookSpec("Deployment", "(({$.spec.replicas} == {$.status.readyReplicas}) && ({$.spec.replicas} =="+
+			" {$.status.updatedReplicas})) || ({$.spec.revisionHistoryLimit} != {11})"),
+		result:  true,
+		jsonObj: getDeploymentContent(),
+	},
 }
 
 func getHookSpec(resourceType, condition string) *kubeobjects.HookSpec {
@@ -227,9 +242,13 @@ func TestEvaluateCheckHookExp(t *testing.T) {
 				t.Error(err)
 			}
 
-			_, err = hooks.EvaluateCheckHookExp(test.jsonPathExprs, jsonData)
-			if (err == nil) != test.result {
-				t.Errorf("EvaluateCheckHookExp() = %v, want %v", err, test.result)
+			actualRes, err := hooks.EvaluateCheckHookExp(test.jsonPathExprs, jsonData)
+			if err != nil {
+				t.Logf("EvaluateCheckHookExp() = %v", err)
+			}
+
+			if actualRes != test.result {
+				t.Errorf("EvaluateCheckHookExp(), got %v want %v", actualRes, test.result)
 			}
 		})
 	}
@@ -243,9 +262,13 @@ func TestEvaluateCheckHookForObjects(t *testing.T) {
 		objs := []client.Object{test.jsonObj}
 
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			_, err := hooks.EvaluateCheckHookForObjects(objs, test.hook, log)
-			if (err == nil) != test.result {
-				t.Errorf("EvaluateCheckHookExpObject() = %v, want %v", err, test.result)
+			actualRes, err := hooks.EvaluateCheckHookForObjects(objs, test.hook, log)
+			if err != nil {
+				t.Logf("EvaluateCheckHookExp() = %v", err)
+			}
+
+			if actualRes != test.result {
+				t.Errorf("EvaluateCheckHookExp(), got %v want %v", actualRes, test.result)
 			}
 		})
 	}
@@ -465,7 +488,8 @@ func getDeploymentContent() *appsv1.Deployment {
 					Status: corev1.ConditionTrue,
 				},
 			},
-			ReadyReplicas: 1,
+			ReadyReplicas:   1,
+			UpdatedReplicas: 1,
 		},
 	}
 }
