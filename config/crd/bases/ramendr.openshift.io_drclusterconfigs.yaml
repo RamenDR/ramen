@@ -44,6 +44,8 @@ spec:
               the same at the hub cluster.
               It is expected to be watched and used by storage providers that require meta information regarding the cluster
               and to prepare and manage required storage resources.
+              It also reports detected configuration and health of the cluster, which is used by the OCM hub cluster to process
+              further cross cluster configuration (specifically peerClasses) and report health of the cluster at the hub.
             properties:
               clusterID:
                 description: ClusterID would carry the ManagedCluster identity from
@@ -123,6 +125,26 @@ spec:
                   - status
                   - type
                   type: object
+                type: array
+              storageClasses:
+                description: StorageClasses lists the detected storage classes on
+                  the cluster that carry the ramen storageid label
+                items:
+                  type: string
+                type: array
+              volumeReplicationClasses:
+                description: |-
+                  VolumeReplicationClasses lists the detected volume replication classes on the cluster that carry the ramen
+                  replicationid label
+                items:
+                  type: string
+                type: array
+              volumeSnapshotClasses:
+                description: |-
+                  VolumeSnapshotClasses lists the detected volume snapshot classes on the cluster that carry the ramen
+                  storageid label
+                items:
+                  type: string
                 type: array
             type: object
         type: object
