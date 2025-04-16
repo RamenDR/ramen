@@ -5,9 +5,9 @@ package controllers_test
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -22,7 +22,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 	config "k8s.io/component-base/config/v1alpha1"
-	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -33,38 +32,18 @@ import (
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
 )
 
-func ensureClaimCount(apiReader client.Reader, count int) {
-	Eventually(func() bool {
-		claims := &clusterv1alpha1.ClusterClaimList{}
+func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig, scs, vscs, vrcs []string) {
+	Eventually(func(g Gomega) {
+		drClusterConfig := &ramen.DRClusterConfig{}
 
-		err := apiReader.List(context.TODO(), claims)
-		if err != nil {
-			return false
-		}
+		g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{
+			Name: drCConfig.Name,
+		}, drClusterConfig)).To(Succeed())
 
-		return len(claims.Items) == count
-	}, timeout, interval).Should(BeTrue())
-}
-
-func ensureClusterClaim(apiReader client.Reader, class, name string) {
-	Eventually(func() error {
-		ccName := types.NamespacedName{
-			Name: class + "." + name,
-		}
-
-		cc := &clusterv1alpha1.ClusterClaim{}
-		err := apiReader.Get(context.TODO(), ccName, cc)
-		if err != nil {
-			return err
-		}
-
-		if cc.Spec.Value != name {
-			return fmt.Errorf("mismatched spec.value in ClusterClaim, expected %s, got %s",
-				name, cc.Spec.Value)
-		}
-
-		return nil
-	}, timeout, interval).Should(BeNil())
+		g.Expect(drClusterConfig.Status.StorageClasses).To(ConsistOf(scs))
+		g.Expect(drClusterConfig.Status.VolumeSnapshotClasses).To(ConsistOf(vscs))
+		g.Expect(drClusterConfig.Status.VolumeReplicationClasses).To(ConsistOf(vrcs))
+	}, timeout, interval).Should(Succeed())
 }
 
 var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
@@ -79,7 +58,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 		baseSC, sc1, sc2    *storagev1.StorageClass
 		baseVSC, vsc1, vsc2 *snapv1.VolumeSnapshotClass
 		baseVRC, vrc1, vrc2 *volrep.VolumeReplicationClass
-		claimCount          int
+		scs, vscs, vrcs     []string
 	)
 
 	BeforeAll(func() {
@@ -218,9 +197,6 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			return k8serrors.IsNotFound(err)
 		}, timeout, interval).Should(BeTrue())
 
-		By("ensuring claim count is 0 post deletion")
-		ensureClaimCount(apiReader, 0)
-
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
 		err := testEnv.Stop()
@@ -256,9 +232,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					sc1.Name = "sc1"
 					Expect(k8sClient.Create(context.TODO(), sc1)).To(Succeed())
 
-					claimCount++
-					ensureClusterClaim(apiReader, "storage.class", "sc1")
-					ensureClaimCount(apiReader, claimCount)
+					scs = append(scs, "sc1")
+					slices.Sort(scs)
+
+					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -275,8 +252,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 					Expect(k8sClient.Delete(context.TODO(), sc1)).To(Succeed())
 
-					claimCount--
-					ensureClaimCount(apiReader, claimCount)
+					scs = []string{}
+
+					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -299,10 +277,11 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					sc2.Name = "sc2"
 					Expect(k8sClient.Create(context.TODO(), sc2)).To(Succeed())
 
-					claimCount += 2
-					ensureClusterClaim(apiReader, "storage.class", "sc1")
-					ensureClusterClaim(apiReader, "storage.class", "sc2")
-					ensureClaimCount(apiReader, claimCount)
+					scs = append(scs, "sc1")
+					scs = append(scs, "sc2")
+					slices.Sort(scs)
+
+					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -320,9 +299,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 					sc1.Labels = map[string]string{}
 					Expect(k8sClient.Update(context.TODO(), sc1)).To(Succeed())
 
-					claimCount--
-					ensureClaimCount(apiReader, claimCount)
-					ensureClusterClaim(apiReader, "storage.class", "sc2")
+					scs = []string{"sc2"}
+
+					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -342,9 +321,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				vsc1.Name = "vsc1"
 				Expect(k8sClient.Create(context.TODO(), vsc1)).To(Succeed())
 
-				claimCount++
-				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
-				ensureClaimCount(apiReader, claimCount)
+				vscs = append(vscs, "vsc1")
+				slices.Sort(vscs)
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -361,8 +341,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vsc1)).To(Succeed())
 
-				claimCount--
-				ensureClaimCount(apiReader, claimCount)
+				vscs = []string{}
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -385,10 +366,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				vsc2.Name = "vsc2"
 				Expect(k8sClient.Create(context.TODO(), vsc2)).To(Succeed())
 
-				claimCount += 2
-				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
-				ensureClusterClaim(apiReader, "snapshot.class", "vsc2")
-				ensureClaimCount(apiReader, claimCount)
+				vscs = append(vscs, "vsc1")
+				vscs = append(vscs, "vsc2")
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -406,9 +387,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				vsc2.Labels = map[string]string{}
 				Expect(k8sClient.Update(context.TODO(), vsc2)).To(Succeed())
 
-				claimCount--
-				ensureClaimCount(apiReader, claimCount)
-				ensureClusterClaim(apiReader, "snapshot.class", "vsc1")
+				vscs = []string{"vsc1"}
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -427,9 +408,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				vrc1.Name = "vrc1"
 				Expect(k8sClient.Create(context.TODO(), vrc1)).To(Succeed())
 
-				claimCount++
-				ensureClusterClaim(apiReader, "replication.class", "vrc1")
-				ensureClaimCount(apiReader, claimCount)
+				vrcs = append(vrcs, "vrc1")
+				slices.Sort(vrcs)
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -446,8 +428,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vrc1)).To(Succeed())
 
-				claimCount--
-				ensureClaimCount(apiReader, claimCount)
+				vrcs = []string{}
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -470,10 +453,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				vrc2.Name = "vrc2"
 				Expect(k8sClient.Create(context.TODO(), vrc2)).To(Succeed())
 
-				claimCount += 2
-				ensureClusterClaim(apiReader, "replication.class", "vrc1")
-				ensureClusterClaim(apiReader, "replication.class", "vrc2")
-				ensureClaimCount(apiReader, claimCount)
+				vrcs = append(vrcs, "vrc1")
+				vrcs = append(vrcs, "vrc2")
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -491,9 +474,9 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				vrc2.Labels = map[string]string{}
 				Expect(k8sClient.Update(context.TODO(), vrc2)).To(Succeed())
 
-				claimCount--
-				ensureClaimCount(apiReader, claimCount)
-				ensureClusterClaim(apiReader, "replication.class", "vrc1")
+				vrcs = []string{"vrc1"}
+
+				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
