@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -140,9 +141,93 @@ func validateClusters(config *types.Config) error {
 	return nil
 }
 
+// validatePVCSpecs runs all PVCSpec config validations
 func validatePVCSpecs(config *types.Config) error {
 	if len(config.PVCSpecs) == 0 {
 		return fmt.Errorf("failed to find pvcs in configuration")
+	}
+
+	if err := validateDuplicatePVCSpecsNames(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	if err := validateDuplicatePVCSpecsContent(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	if err := validateStorageClassNameFormat(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	if err := validateAccessModes(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateDuplicatePVCSpecsNames ensures no PVCSpec has a duplicate name
+func validateDuplicatePVCSpecsNames(pvcSpecs []types.PVCSpecConfig) error {
+	seen := make(map[string]types.PVCSpecConfig)
+	for _, spec := range pvcSpecs {
+		if existing, exists := seen[spec.Name]; exists {
+			return fmt.Errorf("duplicate pvcSpec name %q found:\n	%+v\n	%+v", spec.Name, existing, spec)
+		}
+
+		seen[spec.Name] = spec
+	}
+
+	return nil
+}
+
+// validateDuplicatePVCSpecsContent ensures no two PVCSpecs have the same storageClassName and accessModes
+func validateDuplicatePVCSpecsContent(pvcSpecs []types.PVCSpecConfig) error {
+	seen := make(map[types.PVCSpecConfig]types.PVCSpecConfig)
+
+	for _, spec := range pvcSpecs {
+		key := types.PVCSpecConfig{
+			StorageClassName: spec.StorageClassName,
+			AccessModes:      spec.AccessModes,
+		}
+
+		if duplicate, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate pvcSpec content found:\n	%+v\n	%+v", duplicate, spec)
+		}
+
+		seen[key] = spec
+	}
+
+	return nil
+}
+
+// validateStorageClassNameFormat validates the format of the storageClassName in the pvcSpecs.
+// It uses the validateK8sResourceName function to ensure the name follows Kubernetes naming conventions.
+func validateStorageClassNameFormat(pvcSpecs []types.PVCSpecConfig) error {
+	for _, spec := range pvcSpecs {
+		if err := validateK8sResourceName(spec.StorageClassName); err != nil {
+			return fmt.Errorf("invalid storageClassName %q in pvcSpec %q: %w",
+				spec.StorageClassName, spec.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// validateAccessModes validates that accessModes is one of the supported values
+func validateAccessModes(pvcSpecs []types.PVCSpecConfig) error {
+	// Valid access modes based on PersistentVolumeAccessMode from Kubernetes
+	validModes := map[corev1.PersistentVolumeAccessMode]struct{}{
+		corev1.ReadWriteOnce:    {},
+		corev1.ReadOnlyMany:     {},
+		corev1.ReadWriteMany:    {},
+		corev1.ReadWriteOncePod: {},
+	}
+
+	for _, spec := range pvcSpecs {
+		mode := corev1.PersistentVolumeAccessMode(spec.AccessModes)
+		if _, valid := validModes[mode]; !valid {
+			return fmt.Errorf("invalid accessMode %q in pvcSpec %q", mode, spec.Name)
+		}
 	}
 
 	return nil
@@ -193,6 +278,29 @@ func PVCSpecsMap(config *types.Config) map[string]types.PVCSpecConfig {
 	}
 
 	return res
+}
+
+// validateK8sResourceName validates a Kubernetes resource name according to RFC 1123 subdomain format.
+// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names.
+// It ensures that the resource name:
+// 1. Has a length no greater than 253 characters.
+// 2. Contains only lowercase alphanumeric characters, '-' or '.'.
+// 3. Starts and ends with an alphanumeric character.
+// Returns an error if the name does not meet these criteria.
+func validateK8sResourceName(resourceName string) error {
+	const maxLen = 253
+
+	regex := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+
+	if len(resourceName) > maxLen {
+		return fmt.Errorf("resource name %q must be no more than %d characters", resourceName, maxLen)
+	}
+
+	if !regex.MatchString(resourceName) {
+		return fmt.Errorf("resource name %q is invalid, must match RFC 1123 subdomain name format", resourceName)
+	}
+
+	return nil
 }
 
 // resourceName convert a URL to conventional k8s resource name:
