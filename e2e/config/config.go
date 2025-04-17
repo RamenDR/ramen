@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/validation"
 
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -143,6 +145,91 @@ func validateClusters(config *types.Config) error {
 func validatePVCSpecs(config *types.Config) error {
 	if len(config.PVCSpecs) == 0 {
 		return fmt.Errorf("failed to find pvcs in configuration")
+	}
+
+	if err := validateDuplicatePVCSpecsNames(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	if err := validateDuplicatePVCSpecsContent(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	if err := validateStorageClassNameFormat(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	if err := validateAccessModes(config.PVCSpecs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateDuplicatePVCSpecsNames ensures no PVCSpec has a duplicate name
+func validateDuplicatePVCSpecsNames(pvcSpecs []types.PVCSpecConfig) error {
+	seen := make(map[string]types.PVCSpecConfig)
+	for _, spec := range pvcSpecs {
+		if existing, exists := seen[spec.Name]; exists {
+			return fmt.Errorf("duplicate pvcSpec name %q found:\n	%+v\n	%+v", spec.Name, existing, spec)
+		}
+
+		seen[spec.Name] = spec
+	}
+
+	return nil
+}
+
+// validateDuplicatePVCSpecsContent ensures no two PVCSpecs have the same storageClassName and accessModes
+func validateDuplicatePVCSpecsContent(pvcSpecs []types.PVCSpecConfig) error {
+	seen := make(map[types.PVCSpecConfig]types.PVCSpecConfig)
+
+	for _, spec := range pvcSpecs {
+		key := types.PVCSpecConfig{
+			StorageClassName: spec.StorageClassName,
+			AccessModes:      spec.AccessModes,
+		}
+
+		if duplicate, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate pvcSpec content found:\n	%+v\n	%+v", duplicate, spec)
+		}
+
+		seen[key] = spec
+	}
+
+	return nil
+}
+
+// validateStorageClassNameFormat checks that each StorageClassName in the given PVC specs
+// conforms to Kubernetes DNS subdomain naming rules (RFC 1123).
+// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+// Returns an error if any StorageClassName in pvcSpec is invalid.
+func validateStorageClassNameFormat(pvcSpecs []types.PVCSpecConfig) error {
+	for _, spec := range pvcSpecs {
+		errs := validation.NameIsDNSSubdomain(spec.StorageClassName, false)
+		if len(errs) > 0 {
+			return fmt.Errorf("invalid storageClassName %q in pvcSpec %q: %v",
+				spec.StorageClassName, spec.Name, errs)
+		}
+	}
+
+	return nil
+}
+
+// validateAccessModes validates that accessModes is one of the supported values
+func validateAccessModes(pvcSpecs []types.PVCSpecConfig) error {
+	validModes := map[corev1.PersistentVolumeAccessMode]struct{}{
+		corev1.ReadWriteOnce:    {},
+		corev1.ReadOnlyMany:     {},
+		corev1.ReadWriteMany:    {},
+		corev1.ReadWriteOncePod: {},
+	}
+
+	for _, spec := range pvcSpecs {
+		mode := corev1.PersistentVolumeAccessMode(spec.AccessModes)
+		if _, valid := validModes[mode]; !valid {
+			return fmt.Errorf("invalid accessMode %q in pvcSpec %q", mode, spec.Name)
+		}
 	}
 
 	return nil
