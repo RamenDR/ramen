@@ -42,6 +42,10 @@ type ManagedClusterViewGetter interface {
 
 	ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
+	GetDRClusterConfigFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*rmn.DRClusterConfig, error)
+
 	GetSClassFromManagedCluster(
 		resourceName, managedCluster string,
 		annotations map[string]string) (*storagev1.StorageClass, error)
@@ -192,6 +196,27 @@ func (m ManagedClusterViewGetterImpl) listMCVsWithLabel(cluster string, matchLab
 
 func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return m.listMCVsWithLabel(cluster, map[string]string{MModesLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetDRClusterConfigFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*rmn.DRClusterConfig, error) {
+	drcConfig := &rmn.DRClusterConfig{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(resourceName, "", MWTypeDRCConfig),
+		"DRClusterConfig",
+		rmn.GroupVersion.Group,
+		rmn.GroupVersion.Version,
+		drcConfig,
+	)
+
+	return drcConfig, err
 }
 
 func (m ManagedClusterViewGetterImpl) GetSClassFromManagedCluster(resourceName, managedCluster string,
