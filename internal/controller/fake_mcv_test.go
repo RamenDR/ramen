@@ -32,6 +32,13 @@ type FakeMCVGetter struct {
 	apiReader client.Reader
 }
 
+func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
+	resourceName, managedCluster string,
+	annotations map[string]string,
+) (*rmn.DRClusterConfig, error) {
+	return nil, nil
+}
+
 func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
 ) (*storagev1.StorageClass, error) {
 	return nil, nil
