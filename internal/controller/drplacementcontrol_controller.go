@@ -406,7 +406,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 
 	d.drType = DRTypeAsync
 
-	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters)
+	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters, nil)
 	if isMetro {
 		d.volSyncDisabled = true
 		d.drType = DRTypeSync
@@ -1466,7 +1466,7 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	}
 
 	// do not set sync metrics if metro-dr
-	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters)
+	isMetro, _ := dRPolicySupportsMetro(drPolicy, drClusters, nil)
 	if isMetro {
 		return nil
 	}

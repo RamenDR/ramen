@@ -1890,49 +1890,69 @@ func (d *DRPCInstance) newVRGSpecSync() *rmn.VRGSyncSpec {
 	}
 }
 
-func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (bool, map[string][]string) {
-	syncPeerClasses := drpolicy.Status.Sync.PeerClasses
-	aSyncPeerClasses := drpolicy.Status.Async.PeerClasses
-
-	if len(syncPeerClasses) == 0 && len(aSyncPeerClasses) == 0 {
+// dRPolicySupportsMetro returns a boolean indicating that the policy supports a Metro(Sync) DR capability, and a
+// list of list of strings, where each list of strings contains the name of the clusters that are in a Sync
+// relationship
+func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster, drClusterIDsToNames map[string]string) (
+	supportsMetro bool,
+	metroClustersInPolicy [][]string,
+) {
+	if len(drpolicy.Status.Sync.PeerClasses) == 0 && len(drpolicy.Status.Async.PeerClasses) == 0 {
 		return checkMetroSupportUsingRegion(drpolicy, drclusters)
 	}
 
-	if len(syncPeerClasses) != 0 {
-		return checkMetroSupportUsingPeerClass(drpolicy)
+	if len(drpolicy.Status.Sync.PeerClasses) != 0 {
+		return checkMetroSupportUsingPeerClass(drpolicy, drClusterIDsToNames)
 	}
 
 	return false, nil
 }
 
-func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy) (bool, map[string][]string) {
-	peerClasses := drPolicy.Status.Sync.PeerClasses
-	if len(peerClasses) == 0 {
+func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy, drClusterIDsToNames map[string]string) (bool, [][]string) {
+	if len(drPolicy.Status.Sync.PeerClasses) == 0 {
 		return false, nil
 	}
 
-	metroMap := make(map[string][]string)
-	for _, peerClass := range peerClasses {
-		metroMap[peerClass.StorageClassName] = peerClass.ClusterIDs
+	if drClusterIDsToNames == nil {
+		return true, nil
 	}
 
-	return true, metroMap
+	metroClustersInPolicy := [][]string{}
+
+	for idx := range drPolicy.Status.Sync.PeerClasses {
+		if len(drPolicy.Status.Sync.PeerClasses[idx].StorageID) != 1 {
+			continue
+		}
+
+		if len(drPolicy.Status.Sync.PeerClasses[idx].ClusterIDs) == 0 {
+			return false, nil
+		}
+
+		peerClusterNames := []string{}
+		for _, cID := range drPolicy.Status.Sync.PeerClasses[idx].ClusterIDs {
+			peerClusterNames = append(peerClusterNames, drClusterIDsToNames[cID])
+		}
+
+		if len(peerClusterNames) != len(drPolicy.Status.Sync.PeerClasses[idx].ClusterIDs) {
+			return false, nil
+		}
+
+		metroClustersInPolicy = append(metroClustersInPolicy, peerClusterNames)
+	}
+
+	return true, metroClustersInPolicy
 }
 
 func checkMetroSupportUsingRegion(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
 	supportsMetro bool,
-	metroMap map[string][]string,
+	metroClustersInPolicy [][]string,
 ) {
 	allRegionsMap := make(map[rmn.Region][]string)
-	metroMap = make(map[string][]string)
+	metroClustersInPolicy = [][]string{}
 
 	for _, managedCluster := range rmnutil.DRPolicyClusterNames(drpolicy) {
 		for _, v := range drclusters {
 			if v.Name == managedCluster {
-				if v.Spec.Region == "" {
-					return supportsMetro, metroMap
-				}
-
 				allRegionsMap[v.Spec.Region] = append(
 					allRegionsMap[v.Spec.Region],
 					managedCluster)
@@ -1940,14 +1960,15 @@ func checkMetroSupportUsingRegion(drpolicy *rmn.DRPolicy, drclusters []rmn.DRClu
 		}
 	}
 
-	for k, v := range allRegionsMap {
+	for _, v := range allRegionsMap {
 		if len(v) > 1 {
 			supportsMetro = true
-			metroMap[string(k)] = v
+
+			metroClustersInPolicy = append(metroClustersInPolicy, v)
 		}
 	}
 
-	return supportsMetro, metroMap
+	return supportsMetro, metroClustersInPolicy
 }
 
 func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
