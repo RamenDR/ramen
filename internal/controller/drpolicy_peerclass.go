@@ -541,7 +541,7 @@ func getClusterClasses(
 	annotations := make(map[string]string)
 	annotations[AllDRPolicyAnnotation] = cluster
 
-	drcConfig, err := m.GetDRClusterConfigFromManagedCluster(cluster, cluster, annotations)
+	drcConfig, err := m.GetDRClusterConfigFromManagedCluster(cluster, annotations)
 	if err != nil {
 		return classLists{}, err
 	}

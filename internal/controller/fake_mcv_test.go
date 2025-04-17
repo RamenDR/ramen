@@ -33,10 +33,14 @@ type FakeMCVGetter struct {
 }
 
 func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
-	resourceName, managedCluster string,
+	resourceName string,
 	annotations map[string]string,
 ) (*rmn.DRClusterConfig, error) {
 	return nil, nil
+}
+
+func (f FakeMCVGetter) DeleteDRClusterConfigManagedClusterView(clusterName string) error {
+	return nil
 }
 
 func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
