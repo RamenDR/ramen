@@ -249,6 +249,10 @@ func drClusterUndeploy(
 		return err
 	}
 
+	if err := mcv.DeleteDRClusterConfigManagedClusterView(drcluster.GetName()); err != nil {
+		return err
+	}
+
 	if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(util.MWTypeDRCConfig), drcluster.GetName()); err != nil {
 		return err
 	}

@@ -43,8 +43,10 @@ type ManagedClusterViewGetter interface {
 	ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
 	GetDRClusterConfigFromManagedCluster(
-		resourceName, managedCluster string,
+		resourceName string,
 		annotations map[string]string) (*rmn.DRClusterConfig, error)
+
+	DeleteDRClusterConfigManagedClusterView(clusterName string) error
 
 	GetSClassFromManagedCluster(
 		resourceName, managedCluster string,
@@ -198,18 +200,19 @@ func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1bet
 	return m.listMCVsWithLabel(cluster, map[string]string{MModesLabel: ""})
 }
 
-func (m ManagedClusterViewGetterImpl) GetDRClusterConfigFromManagedCluster(resourceName, managedCluster string,
+func (m ManagedClusterViewGetterImpl) GetDRClusterConfigFromManagedCluster(
+	clusterName string,
 	annotations map[string]string,
 ) (*rmn.DRClusterConfig, error) {
 	drcConfig := &rmn.DRClusterConfig{}
 
 	err := m.getResourceFromManagedCluster(
-		resourceName,
+		clusterName,
 		"",
-		managedCluster,
+		clusterName,
 		annotations,
 		nil,
-		BuildManagedClusterViewName(resourceName, "", MWTypeDRCConfig),
+		BuildManagedClusterViewName(clusterName, "", MWTypeDRCConfig),
 		"DRClusterConfig",
 		rmn.GroupVersion.Group,
 		rmn.GroupVersion.Version,
@@ -475,6 +478,13 @@ func (m ManagedClusterViewGetterImpl) DeleteNFManagedClusterView(
 	mcvNameNF := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeNF)
 
 	return m.DeleteManagedClusterView(clusterName, mcvNameNF, logger)
+}
+
+func (m ManagedClusterViewGetterImpl) DeleteDRClusterConfigManagedClusterView(clusterName string) error {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", clusterName)
+	mcvNameDRCConfig := BuildManagedClusterViewName(clusterName, "", MWTypeDRCConfig)
+
+	return m.DeleteManagedClusterView(clusterName, mcvNameDRCConfig, logger)
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {
