@@ -73,7 +73,7 @@ func ReadConfig(configFile string, options Options) (*types.Config, error) {
 		return nil, err
 	}
 
-	if err := validatePVCSpecs(config); err != nil {
+	if err := ValidatePVCSpecs(config); err != nil {
 		return nil, err
 	}
 
@@ -142,7 +142,7 @@ func validateClusters(config *types.Config) error {
 }
 
 // validatePVCSpecs runs all PVCSpec config validations
-func validatePVCSpecs(config *types.Config) error {
+func ValidatePVCSpecs(config *types.Config) error {
 	if len(config.PVCSpecs) == 0 {
 		return fmt.Errorf("failed to find pvcs in configuration")
 	}
