@@ -101,6 +101,10 @@ func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) er
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
 
+	if err := validateStorageClasses(env, config); err != nil {
+		return fmt.Errorf("failed to validate test config: %w", err)
+	}
+
 	if err := clustersInDRPolicy(env, config, log); err != nil {
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
