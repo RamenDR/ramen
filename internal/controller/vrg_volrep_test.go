@@ -1180,6 +1180,22 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				}
 			}
 		})
+		It("waits for VRG clusterdataprotected", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				v.clusterDataProtectedWait(metav1.ConditionTrue)
+			}
+		})
+		It("waits for VRG dataProtected", func() {
+			for c := 0; c < len(vrgTests); c++ {
+				v := vrgTests[c]
+				if c != 0 {
+					v.dataProtectedWait(metav1.ConditionFalse)
+				} else {
+					v.dataProtectedWait(metav1.ConditionTrue)
+				}
+			}
+		})
 		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgTests) })
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTests); c++ {
@@ -2428,6 +2444,22 @@ func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus,
 		}
 
 		return clusterDataProtectedCondition.Status
+	}, vrgtimeout, vrginterval).Should(Equal(status))
+
+	return
+}
+
+func (v *vrgTest) dataProtectedWait(status metav1.ConditionStatus,
+) (vrg *ramendrv1alpha1.VolumeReplicationGroup) {
+	Eventually(func() metav1.ConditionStatus {
+		vrg = v.getVRG()
+		dataProtectedCondition := meta.FindStatusCondition(
+			vrg.Status.Conditions, vrgController.VRGConditionTypeDataProtected)
+		if dataProtectedCondition == nil {
+			return metav1.ConditionUnknown
+		}
+
+		return dataProtectedCondition.Status
 	}, vrgtimeout, vrginterval).Should(Equal(status))
 
 	return
