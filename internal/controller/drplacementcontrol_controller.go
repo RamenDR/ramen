@@ -13,7 +13,6 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -122,7 +121,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 //
 //nolint:funlen,gocognit,gocyclo,cyclop
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
+	logger := r.Log.WithValues("drpc", req.NamespacedName, "rid", rmnutil.GetRID())
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")

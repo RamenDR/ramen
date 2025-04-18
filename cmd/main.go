@@ -153,6 +153,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 		Scheme:         mgr.GetScheme(),
 		APIReader:      mgr.GetAPIReader(),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
+		Log:            ctrl.Log.WithName("pvrgl"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ProtectedVolumeReplicationGroupList")
 		os.Exit(1)
@@ -167,7 +168,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 	if err := (&controllers.VolumeReplicationGroupReconciler{
 		Client:         mgr.GetClient(),
 		APIReader:      mgr.GetAPIReader(),
-		Log:            ctrl.Log.WithName("controllers").WithName("VolumeReplicationGroup"),
+		Log:            ctrl.Log.WithName("vrg"),
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
 		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr, ramenConfig); err != nil {
@@ -178,7 +179,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 	if err := (&controllers.DRClusterConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("DRClusterConfig"),
+		Log:    ctrl.Log.WithName("drcc"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRClusterConfig")
 		os.Exit(1)
@@ -190,6 +191,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 		if err := (&controllers.ReplicationGroupDestinationReconciler{
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
+			Log:    ctrl.Log.WithName("rgd"),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
 			os.Exit(1)
@@ -199,6 +201,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
+			Log:       ctrl.Log.WithName("rgs"),
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
 			os.Exit(1)
@@ -210,7 +213,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 	if err := (&controllers.DRPolicyReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
-		Log:       ctrl.Log.WithName("controllers").WithName("DRPolicy"),
+		Log:       ctrl.Log.WithName("drp"),
 		Scheme:    mgr.GetScheme(),
 		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{
 			Client:    mgr.GetClient(),
@@ -225,7 +228,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 	if err := (&controllers.DRClusterReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
-		Log:       ctrl.Log.WithName("controllers").WithName("DRCluster"),
+		Log:       ctrl.Log.WithName("drc"),
 		Scheme:    mgr.GetScheme(),
 		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{
 			Client:    mgr.GetClient(),
@@ -240,7 +243,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 	if err := (&controllers.DRPlacementControlReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
-		Log:       ctrl.Log.WithName("controllers").WithName("DRPlacementControl"),
+		Log:       ctrl.Log.WithName("drpc"),
 		MCVGetter: rmnutil.ManagedClusterViewGetterImpl{
 			Client:    mgr.GetClient(),
 			APIReader: mgr.GetAPIReader(),

@@ -9,6 +9,7 @@ import (
 	"hash/crc32"
 	"reflect"
 
+	"github.com/google/uuid"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/core"
 	corev1 "k8s.io/api/core/v1"
@@ -286,4 +287,8 @@ func getShortenedResourceName(namePrefix string, ownerName string, maxLength int
 // https://github.com/backube/volsync/pull/1519
 func GetHashedName(name string) string {
 	return fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(name)))
+}
+
+func GetRID() string {
+	return GetHashedName(uuid.New().String())
 }
