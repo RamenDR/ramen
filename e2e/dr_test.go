@@ -66,10 +66,6 @@ func TestDR(dt *testing.T) {
 func runTestFlow(t *test.T, ctx test.Context) {
 	t.Helper()
 
-	if err := ctx.Validate(); err != nil {
-		t.Skipf("Skip test: %s", err)
-	}
-
 	if !t.Run("Deploy", ctx.Deploy) {
 		t.FailNow()
 	}

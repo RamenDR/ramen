@@ -31,10 +31,9 @@ type RepoConfig struct {
 }
 
 type PVCSpecConfig struct {
-	Name                 string   `json:"name"`
-	StorageClassName     string   `json:"storageClassName"`
-	AccessModes          string   `json:"accessModes"`
-	UnsupportedDeployers []string `json:"unsupportedDeployers,omitempty"`
+	Name             string `json:"name"`
+	StorageClassName string `json:"storageClassName"`
+	AccessModes      string `json:"accessModes"`
 }
 
 type ClusterConfig struct {
@@ -94,9 +93,6 @@ type Workload interface {
 	GetAppName() string
 	GetPath() string
 	GetBranch() string
-
-	// SupportsDeployer returns true if this workload is compatible with deployer.
-	SupportsDeployer(Deployer) bool
 
 	Health(ctx Context, cluster Cluster, namespace string) error
 }
