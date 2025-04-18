@@ -1912,8 +1912,25 @@ func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy) (bool, map[string][
 	}
 
 	metroMap := make(map[string][]string)
+
 	for _, peerClass := range peerClasses {
-		metroMap[peerClass.StorageClassName] = peerClass.ClusterIDs
+		for _, clusterID := range peerClass.ClusterIDs {
+			metroMap[clusterID] = append(metroMap[clusterID], peerClass.StorageID...)
+		}
+	}
+
+	// get the SIDs from one clusterID to compare with other ClusterIDs
+	var commonSID []string
+	for _, sids := range metroMap {
+		commonSID = sids
+
+		break
+	}
+
+	for _, sids := range metroMap {
+		if !equalClusterIDSlices(sids, commonSID) {
+			return false, nil
+		}
 	}
 
 	return true, metroMap

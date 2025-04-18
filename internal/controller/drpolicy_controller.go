@@ -119,7 +119,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.Info("create/update")
 
-	reason, err := validateDRPolicy(ctx, drpolicy, drclusters, r.APIReader)
+	reason, err := validateDRPolicy(drpolicy, drclusters)
 	if err != nil {
 		statusErr := u.validatedSetFalse(reason, err)
 		if !errors.Is(statusErr, err) || reason != ReasonDRClusterNotFound {
@@ -134,14 +134,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if err := u.addLabelsAndFinalizers(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
-	}
-
-	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
-	}
-
-	if err := r.initiateDRPolicyMetrics(drpolicy, drclusters); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
 	return r.reconcile(u, drclusters, secretsUtil, ramenConfig)
@@ -162,6 +154,21 @@ func (r *DRPolicyReconciler) reconcile(
 		return ctrl.Result{}, fmt.Errorf("drpolicy peerClass update: %w", err)
 	}
 
+	// we will be able to validate conflicts only after PeerClass is updated
+	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drclusters)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("DRPolicy conflict found: %w",
+			u.validatedSetFalse("DRPolicyConflictFound", err))
+	}
+
+	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+	}
+
+	if err := r.initiateDRPolicyMetrics(u.object, drclusters); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -178,17 +185,9 @@ func (r *DRPolicyReconciler) initiateDRPolicyMetrics(drpolicy *ramen.DRPolicy, d
 	return nil
 }
 
-func validateDRPolicy(ctx context.Context,
-	drpolicy *ramen.DRPolicy,
+func validateDRPolicy(drpolicy *ramen.DRPolicy,
 	drclusters *ramen.DRClusterList,
-	apiReader client.Reader,
 ) (string, error) {
-	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
-	if len(drpolicy.Status.Sync.PeerClasses) > 0 && len(drpolicy.Status.Async.PeerClasses) > 0 {
-		return ReasonValidationFailed,
-			fmt.Errorf("invalid DRPolicy: DRPolicy cannot contain both Sync and Async Configurations")
-	}
-
 	// TODO: Ensure DRClusters exist and are validated? Also ensure they are not in a deleted state!?
 	// If new DRPolicy and clusters are deleted, then fail reconciliation?
 	if len(drpolicy.Spec.DRClusters) == 0 {
@@ -198,11 +197,6 @@ func validateDRPolicy(ctx context.Context,
 	reason, err := ensureDRClustersAvailable(drpolicy, drclusters)
 	if err != nil {
 		return reason, err
-	}
-
-	err = validatePolicyConflicts(ctx, apiReader, drpolicy, drclusters)
-	if err != nil {
-		return ReasonValidationFailed, err
 	}
 
 	return "", nil
@@ -264,6 +258,11 @@ func validatePolicyConflicts(ctx context.Context,
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
 	}
 
+	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
+	if len(drpolicy.Status.Sync.PeerClasses) > 0 && len(drpolicy.Status.Async.PeerClasses) > 0 {
+		return fmt.Errorf("invalid DRPolicy: DRPolicy cannot contain both Sync and Async Configurations")
+	}
+
 	err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
@@ -296,38 +295,38 @@ func hasConflictingDRPolicy(match *ramen.DRPolicy, drclusters *ramen.DRClusterLi
 
 		// None of the common managed clusters should belong to Metro Regions in either of the drpolicies.
 		if haveOverlappingMetroZones(match, drp, drclusters) {
-			return fmt.Errorf("drpolicy: %v has overlapping metro region with another drpolicy %v", match.Name, drp.Name)
+			return fmt.Errorf("drpolicy: %v has overlapping clusters with another drpolicy %v", match.Name, drp.Name)
 		}
 	}
 
 	return nil
 }
 
-func getClusterIDSFromPolicy(drpolicy *ramen.DRPolicy) []string {
-	cids := []string{}
+func getStorageIDsFromPeerClass(drpolicy *ramen.DRPolicy) []string {
+	sids := []string{}
 
 	if len(drpolicy.Status.Sync.PeerClasses) > 0 {
 		for _, pc := range drpolicy.Status.Sync.PeerClasses {
-			cids = append(cids, pc.ClusterIDs...)
+			sids = append(sids, pc.StorageID...)
 		}
 
-		return cids
+		return sids
 	}
 
 	if len(drpolicy.Status.Async.PeerClasses) > 0 {
 		for _, pc := range drpolicy.Status.Async.PeerClasses {
-			cids = append(cids, pc.ClusterIDs...)
+			sids = append(sids, pc.StorageID...)
 		}
 
-		return cids
+		return sids
 	}
 
-	return cids
+	return sids
 }
 
-func hasOverlapWithMetro(metroMap map[string][]string, commonClusterIDs, commonClusters []string) bool {
+func hasCommonClusters(metroMap map[string][]string, commonSIDs, commonClusters []string) bool {
 	for _, v := range metroMap {
-		if sets.NewString(v...).HasAny(commonClusterIDs...) {
+		if sets.NewString(v...).HasAny(commonSIDs...) {
 			return true
 		}
 
@@ -341,32 +340,32 @@ func hasOverlapWithMetro(metroMap map[string][]string, commonClusterIDs, commonC
 
 func haveOverlappingMetroZones(d1 *ramen.DRPolicy, d2 *ramen.DRPolicy, drclusters *ramen.DRClusterList) bool {
 	d1ClusterNames := sets.NewString(util.DRPolicyClusterNames(d1)...)
-	d1ClusterIDs := sets.NewString(getClusterIDSFromPolicy(d1)...)
+	d1SIDs := sets.NewString(getStorageIDsFromPeerClass(d1)...)
 	d1SupportsMetro, d1MetroMap := dRPolicySupportsMetro(d1, drclusters.Items)
 
 	d2ClusterNames := sets.NewString(util.DRPolicyClusterNames(d2)...)
-	d2ClusterIDs := sets.NewString(getClusterIDSFromPolicy(d2)...)
+	d2SIDs := sets.NewString(getStorageIDsFromPeerClass(d2)...)
 	d2SupportsMetro, d2MetroMap := dRPolicySupportsMetro(d2, drclusters.Items)
 
 	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
-	commonClusterIDs := d1ClusterIDs.Intersection(d2ClusterIDs)
+	commonSIDs := d1SIDs.Intersection(d2SIDs)
 
 	// No common managed clusters, so we are good
-	if commonClusterIDs.Len() == 0 && commonClusters.Len() == 0 {
+	if commonSIDs.Len() == 0 && commonClusters.Len() == 0 {
 		return false
 	}
 
 	// Lets check if the metro clusters in DRPolicy d2 belong to common managed clusters list
 	if d2SupportsMetro {
-		return hasOverlapWithMetro(d2MetroMap,
-			commonClusterIDs.List(),
+		return hasCommonClusters(d2MetroMap,
+			commonSIDs.List(),
 			commonClusters.List())
 	}
 
 	// Lets check if the metro clusters in DRPolicy d1 belong to common managed clusters list
 	if d1SupportsMetro {
-		return hasOverlapWithMetro(d1MetroMap,
-			commonClusterIDs.List(),
+		return hasCommonClusters(d1MetroMap,
+			commonSIDs.List(),
 			commonClusters.List())
 	}
 
