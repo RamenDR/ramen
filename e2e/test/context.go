@@ -5,7 +5,6 @@
 package test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -80,16 +79,6 @@ func (c *Context) Env() *types.Env {
 
 func (c *Context) Config() *types.Config {
 	return c.config
-}
-
-// Validated return an error if the combination of deployer and workload is not supported.
-// TODO: validate that the workload is compatible with the clusters.
-func (c *Context) Validate() error {
-	if !c.workload.SupportsDeployer(c.deployer) {
-		return fmt.Errorf("workload %q does not support deployer %q", c.workload.GetName(), c.deployer.GetName())
-	}
-
-	return nil
 }
 
 func (c *Context) Deploy(dt *testing.T) {

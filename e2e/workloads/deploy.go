@@ -6,8 +6,6 @@ package workloads
 import (
 	"context"
 	"fmt"
-	"slices"
-	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -49,10 +47,6 @@ func (w Deployment) GetPath() string {
 
 func (w Deployment) GetBranch() string {
 	return w.Branch
-}
-
-func (w Deployment) SupportsDeployer(d types.Deployer) bool {
-	return !slices.Contains(w.PVCSpec.UnsupportedDeployers, strings.ToLower(d.GetName()))
 }
 
 func (w Deployment) Kustomize() string {
