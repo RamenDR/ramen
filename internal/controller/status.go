@@ -46,6 +46,10 @@ const (
 	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
+
+	// Indicates no conflict in PVC and Kubernetes resource data
+	// between primary and secondary clusters.
+	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
 )
 
 // VRG condition reasons
@@ -74,6 +78,15 @@ const (
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
 	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
+
+	// Indicates a conflict in cluster data detected on the primary cluster.
+	VRGConditionReasonClusterDataConflictPrimary = "ClusterDataConflictPrimary"
+
+	// Indicates a conflict in cluster data detected on the secondary cluster.
+	VRGConditionReasonClusterDataConflictSecondary = "ClusterDataConflictSecondary"
+
+	// Indicates no conflict in cluster data detected on both the primary and secondary cluster.
+	VRGConditionReasonConflictResolved = "ConflictResolved"
 )
 
 const (
@@ -476,4 +489,17 @@ func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, ob
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
+}
+
+// set condition when a Cluster Data Conflict is detected
+func newVRGAsClusterDataConflictCondition(
+	observedGeneration int64, message string, reason string,
+) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             reason,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	}
 }

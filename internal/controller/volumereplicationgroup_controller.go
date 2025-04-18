@@ -1831,10 +1831,11 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.log.Info(msg, "finalCondition", finalCondition)
 	}
 
-	var volSyncDataReady, volSyncDataProtected, volSyncClusterDataProtected *metav1.Condition
+	var volSyncDataReady, volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
 	if v.instance.Spec.Sync == nil {
 		volSyncDataReady = v.aggregateVolSyncDataReadyCondition()
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
+		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
 	}
 
 	logAndSet(VRGConditionTypeDataReady,
@@ -1851,6 +1852,10 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.aggregateVolRepClusterDataProtectedCondition(),
 		v.vrgObjectProtected,
 		v.kubeObjectsProtected,
+	)
+	logAndSet(VRGConditionTypeNoClusterDataConflict,
+		volSyncClusterDataConflict,
+		v.aggregateVolRepClusterDataConflictCondition(),
 	)
 	v.updateVRGLastGroupSyncTime()
 	v.updateVRGLastGroupSyncDuration()
