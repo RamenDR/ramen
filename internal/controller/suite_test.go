@@ -34,6 +34,7 @@ import (
 	groupsnapv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	virtv1 "kubevirt.io/api/core/v1"
 	ocmclv1 "open-cluster-management.io/api/cluster/v1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
@@ -222,6 +223,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = groupsnapv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = virtv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 

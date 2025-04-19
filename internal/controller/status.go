@@ -40,6 +40,8 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
+	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
+
 	// VolSync related conditions. These conditions are only applicable
 	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
@@ -74,6 +76,9 @@ const (
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
 	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
+	VRGConditionReasonDataConflictPrimary         = "ClusterDataConflictPrimary"
+	VRGConditionReasonDataConflictSecondary       = "ClusterDataConflictSecondary"
+	VRGConditionReasonConflictResolved            = "ConflictResolved"
 )
 
 const (
@@ -120,6 +125,14 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeKubeObjectsReady,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeNoClusterDataConflict,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -476,4 +489,17 @@ func setVRGConditionTypeVolSyncPVRestoreError(conditions *[]metav1.Condition, ob
 		Status:             metav1.ConditionFalse,
 		Message:            message,
 	})
+}
+
+// Set NoClusterDataConflictCondition
+func updateVRGNoClusterDataConflictCondition(observedGeneration int64,
+	status metav1.ConditionStatus, reason, message string,
+) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionTypeNoClusterDataConflict,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	}
 }
