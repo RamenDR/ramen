@@ -200,10 +200,14 @@ func (d *DRPCInstance) resetRDSpec(srcVRG, dstVRG *rmn.VolumeReplicationGroup,
 			continue
 		}
 
+		protectedPVC.LastSyncBytes = nil
+		protectedPVC.LastSyncTime = nil
+		protectedPVC.LastSyncDuration = nil
+		protectedPVC.Conditions = nil
+
 		rdSpec := rmn.VolSyncReplicationDestinationSpec{
 			ProtectedPVC: protectedPVC,
 		}
-
 		dstVRG.Spec.VolSync.RDSpec = append(dstVRG.Spec.VolSync.RDSpec, rdSpec)
 	}
 }
