@@ -87,6 +87,7 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 }
 
 func setupCluster(
+	ctx context.Context,
 	cluster *types.Cluster,
 	key string,
 	clusterConfig types.ClusterConfig,
@@ -107,7 +108,7 @@ func setupCluster(
 		log.Infof("Using %q cluster name: %q", key, cluster.Name)
 	case "c1", "c2":
 		// For c1 and c2 clusters, get the cluster name from ClusterClaim
-		cluster.Name, err = getClusterClaimName(cluster)
+		cluster.Name, err = getClusterClaimName(ctx, cluster)
 		if err != nil {
 			return fmt.Errorf("failed to get ClusterClaim name for the %q managed cluster: %w", key, err)
 		}
@@ -123,11 +124,11 @@ func setupCluster(
 
 // getClusterClaimName gets the cluster name using clusterclaims/name resource.
 // Returns an error if the resource is not found or retrieval fails.
-func getClusterClaimName(cluster *types.Cluster) (string, error) {
+func getClusterClaimName(ctx context.Context, cluster *types.Cluster) (string, error) {
 	clusterClaim := &ocmv1a1.ClusterClaim{}
 	key := client.ObjectKey{Name: "name"}
 
-	err := cluster.Client.Get(context.TODO(), key, clusterClaim)
+	err := cluster.Client.Get(ctx, key, clusterClaim)
 	if err != nil {
 		return "", fmt.Errorf("failed to get ClusterClaim name: %w", err)
 	}
@@ -135,18 +136,18 @@ func getClusterClaimName(cluster *types.Cluster) (string, error) {
 	return clusterClaim.Spec.Value, nil
 }
 
-func New(config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
+func New(ctx context.Context, config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	env := &types.Env{}
 
-	if err := setupCluster(&env.Hub, "hub", config.Clusters["hub"], log); err != nil {
+	if err := setupCluster(ctx, &env.Hub, "hub", config.Clusters["hub"], log); err != nil {
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
-	if err := setupCluster(&env.C1, "c1", config.Clusters["c1"], log); err != nil {
+	if err := setupCluster(ctx, &env.C1, "c1", config.Clusters["c1"], log); err != nil {
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
-	if err := setupCluster(&env.C2, "c2", config.Clusters["c2"], log); err != nil {
+	if err := setupCluster(ctx, &env.C2, "c2", config.Clusters["c2"], log); err != nil {
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
