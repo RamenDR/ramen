@@ -5,7 +5,6 @@ package dractions
 
 import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"go.uber.org/zap"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
@@ -81,7 +80,7 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := createNamespaces(ctx, appNamespace, log); err != nil {
+	if err := createNamespaces(ctx, appNamespace); err != nil {
 		return err
 	}
 
@@ -266,9 +265,9 @@ func waitAndUpdateDRPC(
 // createNamespaces creates namespaces and annotations for managed app protection on
 // both DR clusters for Volsync based replication if the distribution is Kubernetes.
 // Returns an error if namespace creation or annotation fails.
-func createNamespaces(ctx types.TestContext, appNamespace string, log *zap.SugaredLogger) error {
+func createNamespaces(ctx types.TestContext, appNamespace string) error {
 	if ctx.Config().Distro == config.DistroK8s {
-		return util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log)
+		return util.CreateNamespaceAndAddAnnotation(ctx, appNamespace)
 	}
 
 	return nil

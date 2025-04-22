@@ -31,7 +31,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	cluster := ctx.Env().C1
 
 	// Create namespace on the first DR cluster (c1)
-	err := util.CreateNamespace(cluster, appNamespace, log)
+	err := util.CreateNamespace(ctx, cluster, appNamespace)
 	if err != nil {
 		return err
 	}
@@ -89,11 +89,11 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	}
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(ctx.Env().C1, appNamespace, log); err != nil {
+	if err := util.DeleteNamespace(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
 
-	if err := util.DeleteNamespace(ctx.Env().C2, appNamespace, log); err != nil {
+	if err := util.DeleteNamespace(ctx, ctx.Env().C2, appNamespace); err != nil {
 		return err
 	}
 

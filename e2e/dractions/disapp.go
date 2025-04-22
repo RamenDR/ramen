@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"go.uber.org/zap"
 
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -53,7 +52,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := createNamespacesDiscoveredApps(ctx, appNamespace, log); err != nil {
+	if err := createNamespacesDiscoveredApps(ctx, appNamespace); err != nil {
 		return err
 	}
 
@@ -170,12 +169,12 @@ func failoverRelocateDiscoveredApps(
 // For Kubernetes, creates namespaces and adds annotation on both DR clusters for volsync based replication.
 // For OpenShift, creates namespace only on the target DR cluster (c2) before failover.
 // Returns an error if the distribution is unknown, and if namespace creation or annotation fails.
-func createNamespacesDiscoveredApps(ctx types.TestContext, namespace string, log *zap.SugaredLogger) error {
+func createNamespacesDiscoveredApps(ctx types.TestContext, namespace string) error {
 	switch ctx.Config().Distro {
 	case config.DistroK8s:
-		return util.CreateNamespaceAndAddAnnotation(ctx.Env(), namespace, log)
+		return util.CreateNamespaceAndAddAnnotation(ctx, namespace)
 	case config.DistroOcp:
-		return util.CreateNamespace(ctx.Env().C2, namespace, log)
+		return util.CreateNamespace(ctx, ctx.Env().C2, namespace)
 	default:
 		return fmt.Errorf("unknown distro: %s", ctx.Config().Distro)
 	}
