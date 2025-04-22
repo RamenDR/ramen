@@ -61,7 +61,7 @@ func EnableProtection(ctx types.TestContext) error {
 
 		placement.Annotations[OcmSchedulingDisable] = "true"
 
-		if err := updatePlacement(ctx.Env().Hub, placement); err != nil {
+		if err := updatePlacement(ctx, placement); err != nil {
 			return err
 		}
 
@@ -199,7 +199,8 @@ func Relocate(ctx types.TestContext) error {
 	return nil
 }
 
-func failoverRelocate(ctx types.TestContext,
+func failoverRelocate(
+	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
 	currentCluster string,
@@ -231,7 +232,6 @@ func waitAndUpdateDRPC(
 	targetCluster string,
 ) error {
 	log := ctx.Logger()
-	hub := ctx.Env().Hub
 
 	// here we expect drpc should be ready before action
 	if err := waitDRPCReady(ctx, namespace, drpcName); err != nil {
@@ -239,7 +239,7 @@ func waitAndUpdateDRPC(
 	}
 
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		drpc, err := getDRPC(hub, namespace, drpcName)
+		drpc, err := getDRPC(ctx, namespace, drpcName)
 		if err != nil {
 			return err
 		}
@@ -251,7 +251,7 @@ func waitAndUpdateDRPC(
 			drpc.Spec.PreferredCluster = targetCluster
 		}
 
-		if err := updateDRPC(hub, drpc); err != nil {
+		if err := updateDRPC(ctx, drpc); err != nil {
 			return err
 		}
 
