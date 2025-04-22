@@ -35,35 +35,35 @@ func (t *T) Logf(format string, args ...any) {
 // Error writes an error message to the log and mark the test as failed.
 func (t *T) Error(msg string) {
 	t.log.Error(msg)
-	t.T.Fail()
+	t.Fail()
 }
 
 // Errorf writes a formatted error message to the log and markd the test as failed.
 func (t *T) Errorf(format string, args ...any) {
 	t.log.Errorf(format, args...)
-	t.T.Fail()
+	t.Fail()
 }
 
 // Fatal writes an error message to the log and fail the text immediately.
 func (t *T) Fatal(msg string) {
 	t.log.Error(msg)
-	t.T.FailNow()
+	t.FailNow()
 }
 
 // Fatalf writes a formatted error message to the log and fail the text immediately.
 func (t *T) Fatalf(format string, args ...any) {
 	t.log.Errorf(format, args...)
-	t.T.FailNow()
+	t.FailNow()
 }
 
 // Skip is equivalent to Log followed by SkipNow.
 func (t *T) Skip(msg string) {
 	t.log.Info(msg)
-	t.T.SkipNow()
+	t.SkipNow()
 }
 
 // Skipf is equivalent to Logf followed by SkipNow.
 func (t *T) Skipf(format string, args ...any) {
 	t.log.Infof(format, args...)
-	t.T.SkipNow()
+	t.SkipNow()
 }
