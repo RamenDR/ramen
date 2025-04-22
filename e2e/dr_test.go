@@ -22,7 +22,7 @@ func TestDR(dt *testing.T) {
 		t.Fatal("No tests found in the configuration file")
 	}
 
-	if err := validate.TestConfig(Ctx.env, Ctx.config, Ctx.log); err != nil {
+	if err := validate.TestConfig(&Ctx); err != nil {
 		t.Fatal(err.Error())
 	}
 

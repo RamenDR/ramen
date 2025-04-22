@@ -4,12 +4,10 @@
 package validate
 
 import (
-	"context"
 	"fmt"
 	"slices"
 	"strings"
 
-	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,11 +20,14 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func RamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func RamenHubOperator(ctx types.Context, cluster types.Cluster) error {
+	config := ctx.Config()
+	log := ctx.Logger()
+
 	labelSelector := "app=ramen-hub"
 	podIdentifier := "ramen-hub-operator"
 
-	pod, err := FindPod(cluster, config.Namespaces.RamenHubNamespace, labelSelector, podIdentifier)
+	pod, err := FindPod(ctx, cluster, config.Namespaces.RamenHubNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -41,11 +42,14 @@ func RamenHubOperator(cluster types.Cluster, config *types.Config, log *zap.Suga
 	return nil
 }
 
-func RamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func RamenDRClusterOperator(ctx types.Context, cluster types.Cluster) error {
+	config := ctx.Config()
+	log := ctx.Logger()
+
 	labelSelector := "app=ramen-dr-cluster"
 	podIdentifier := "ramen-dr-cluster-operator"
 
-	pod, err := FindPod(cluster, config.Namespaces.RamenDRClusterNamespace, labelSelector, podIdentifier)
+	pod, err := FindPod(ctx, cluster, config.Namespaces.RamenDRClusterNamespace, labelSelector, podIdentifier)
 	if err != nil {
 		return err
 	}
@@ -61,7 +65,7 @@ func RamenDRClusterOperator(cluster types.Cluster, config *types.Config, log *za
 }
 
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
-func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
+func FindPod(ctx types.Context, cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
 ) {
 	ls, err := labels.Parse(labelSelector)
@@ -77,7 +81,7 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 		},
 	}
 
-	err = cluster.Client.List(context.Background(), pods, listOptions...)
+	err = cluster.Client.List(ctx.Context(), pods, listOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pods in namespace %s in cluster %q: %v", namespace, cluster.Name, err)
 	}
@@ -96,20 +100,20 @@ func FindPod(cluster types.Cluster, namespace, labelSelector, podIdentifier stri
 // TestConfig is a wrapper function which performs validation checks on
 // the test environment configurations with the DR resources on the clusters.
 // Returns an error if any validation fails.
-func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
-	if err := detectDistro(env, config, log); err != nil {
+func TestConfig(ctx types.Context) error {
+	if err := detectDistro(ctx); err != nil {
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
 
-	if err := validateStorageClasses(env, config); err != nil {
+	if err := validateStorageClasses(ctx); err != nil {
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
 
-	if err := clustersInDRPolicy(env, config, log); err != nil {
+	if err := clustersInDRPolicy(ctx); err != nil {
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
 
-	if err := clustersInClusterSet(env, config, log); err != nil {
+	if err := clustersInClusterSet(ctx); err != nil {
 		return fmt.Errorf("failed to validate test config: %w", err)
 	}
 
@@ -120,8 +124,12 @@ func TestConfig(env *types.Env, config *types.Config, log *zap.SugaredLogger) er
 // drpolicy. Returns an error if cluster names are not the same as drpolicy
 // drclusters. The reason for a failure may be wrong cluster name or wrong
 // drpolicy.
-func clustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
-	drpolicy, err := util.GetDRPolicy(env.Hub, config.DRPolicy)
+func clustersInDRPolicy(ctx types.Context) error {
+	env := ctx.Env()
+	config := ctx.Config()
+	log := ctx.Logger()
+
+	drpolicy, err := util.GetDRPolicy(ctx, env.Hub, config.DRPolicy)
 	if err != nil {
 		return fmt.Errorf("failed to get DRPolicy %q: %w", config.DRPolicy, err)
 	}
@@ -142,12 +150,16 @@ func clustersInDRPolicy(env *types.Env, config *types.Config, log *zap.SugaredLo
 // clustersInClusterSet checks if configured clusters exists in configured clusterset.
 // Returns an error if provided cluster names are not the same as managedclusters in clusterset.
 // The reason for a failure may be wrong cluster name or wrong clusterset.
-func clustersInClusterSet(env *types.Env, config *types.Config, log *zap.SugaredLogger) error {
-	if _, err := getClusterSet(env.Hub, config.ClusterSet); err != nil {
+func clustersInClusterSet(ctx types.Context) error {
+	env := ctx.Env()
+	config := ctx.Config()
+	log := ctx.Logger()
+
+	if _, err := getClusterSet(ctx, config.ClusterSet); err != nil {
 		return err
 	}
 
-	clusterNames, err := getManagedClustersFromClusterSet(env.Hub, config.ClusterSet)
+	clusterNames, err := getManagedClustersFromClusterSet(ctx, config.ClusterSet)
 	if err != nil {
 		return err
 	}
@@ -168,7 +180,11 @@ func clustersInClusterSet(env *types.Env, config *types.Config, log *zap.Sugared
 // detectDistro detects the cluster distribution. If distro is set in config, it uses the user
 // provided distro. Otherwise, it determines the distro, sets config.Distro and config.Namespaces.
 // Returns an error if distro detection fails or if clusters have inconsistent distributions.
-func detectDistro(env *types.Env, cfg *types.Config, log *zap.SugaredLogger) error {
+func detectDistro(ctx types.Context) error {
+	env := ctx.Env()
+	cfg := ctx.Config()
+	log := ctx.Logger()
+
 	if cfg.Distro != "" {
 		log.Infof("Using user selected kubernetes distribution: %q", cfg.Distro)
 
@@ -179,7 +195,7 @@ func detectDistro(env *types.Env, cfg *types.Config, log *zap.SugaredLogger) err
 
 	clusters := []*types.Cluster{&env.Hub, &env.C1, &env.C2}
 	for _, cluster := range clusters {
-		distro, err := probeDistro(cluster)
+		distro, err := probeDistro(ctx, cluster)
 		if err != nil {
 			return fmt.Errorf("failed to determine distro for cluster %q: %w", cluster.Name, err)
 		}
@@ -211,7 +227,7 @@ func detectDistro(env *types.Env, cfg *types.Config, log *zap.SugaredLogger) err
 
 // probeDistro determines the distribution of the given Kubernetes cluster.
 // Returns the detected distribution name ("ocp" or "k8s") or an error if detection fails.
-func probeDistro(cluster *types.Cluster) (string, error) {
+func probeDistro(ctx types.Context, cluster *types.Cluster) (string, error) {
 	configList := &unstructured.Unstructured{}
 	configList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "config.openshift.io",
@@ -219,7 +235,7 @@ func probeDistro(cluster *types.Cluster) (string, error) {
 		Kind:    "ClusterVersion",
 	})
 
-	err := cluster.Client.List(context.TODO(), configList)
+	err := cluster.Client.List(ctx.Context(), configList)
 	if err == nil {
 		// found OpenShift only resource type, it is OpenShift
 		return config.DistroOcp, nil
