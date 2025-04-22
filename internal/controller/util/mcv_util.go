@@ -42,6 +42,12 @@ type ManagedClusterViewGetter interface {
 
 	ListMModesMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
+	GetDRClusterConfigFromManagedCluster(
+		resourceName string,
+		annotations map[string]string) (*rmn.DRClusterConfig, error)
+
+	DeleteDRClusterConfigManagedClusterView(clusterName string) error
+
 	GetSClassFromManagedCluster(
 		resourceName, managedCluster string,
 		annotations map[string]string) (*storagev1.StorageClass, error)
@@ -192,6 +198,28 @@ func (m ManagedClusterViewGetterImpl) listMCVsWithLabel(cluster string, matchLab
 
 func (m ManagedClusterViewGetterImpl) ListMModesMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return m.listMCVsWithLabel(cluster, map[string]string{MModesLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetDRClusterConfigFromManagedCluster(
+	clusterName string,
+	annotations map[string]string,
+) (*rmn.DRClusterConfig, error) {
+	drcConfig := &rmn.DRClusterConfig{}
+
+	err := m.getResourceFromManagedCluster(
+		clusterName,
+		"",
+		clusterName,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(clusterName, "", MWTypeDRCConfig),
+		"DRClusterConfig",
+		rmn.GroupVersion.Group,
+		rmn.GroupVersion.Version,
+		drcConfig,
+	)
+
+	return drcConfig, err
 }
 
 func (m ManagedClusterViewGetterImpl) GetSClassFromManagedCluster(resourceName, managedCluster string,
@@ -450,6 +478,13 @@ func (m ManagedClusterViewGetterImpl) DeleteNFManagedClusterView(
 	mcvNameNF := BuildManagedClusterViewName(resourceName, resourceNamespace, MWTypeNF)
 
 	return m.DeleteManagedClusterView(clusterName, mcvNameNF, logger)
+}
+
+func (m ManagedClusterViewGetterImpl) DeleteDRClusterConfigManagedClusterView(clusterName string) error {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", clusterName)
+	mcvNameDRCConfig := BuildManagedClusterViewName(clusterName, "", MWTypeDRCConfig)
+
+	return m.DeleteManagedClusterView(clusterName, mcvNameDRCConfig, logger)
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {

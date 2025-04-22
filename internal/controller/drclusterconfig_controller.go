@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"time"
 
@@ -29,7 +30,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -39,6 +39,17 @@ const (
 	drCConfigOwnerName     = "ramen"
 
 	maxReconcileBackoff = 5 * time.Minute
+)
+
+// DRClusterConfig condition reasons
+const (
+	DRClusterConfigConditionReasonInitializing = "Initializing"
+
+	DRClusterConfigConditionConfigurationProcessed = "Succeeded"
+	DRClusterConfigConditionConfigurationFailed    = "Failed"
+
+	DRClusterConfigS3Reachable   = "Reachable"
+	DRClusterConfigS3Unreachable = "Unreachable"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
@@ -78,11 +89,81 @@ func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if util.ResourceIsDeleted(drCConfig) {
-		return r.processDeletion(ctx, log, drCConfig)
+	// save status prior to update and do deepEqual pre returning from processing funcs (in each ones' status.update())
+	savedDRCConfigStatus := &ramen.DRClusterConfigStatus{}
+	drCConfig.Status.DeepCopyInto(savedDRCConfigStatus)
+
+	if savedDRCConfigStatus.Conditions == nil {
+		savedDRCConfigStatus.Conditions = []metav1.Condition{}
 	}
 
-	return r.processCreateOrUpdate(ctx, log, drCConfig)
+	if drCConfig.Status.Conditions == nil {
+		// Set the DRClusterConfig conditions to unknown as nothing is known at this point
+		msg := "Initializing DRClusterConfig"
+		setDRClusterConfigInitialCondition(&drCConfig.Status.Conditions, drCConfig.Generation, msg)
+	}
+
+	var (
+		res ctrl.Result
+		err error
+	)
+
+	if util.ResourceIsDeleted(drCConfig) {
+		res, err = r.processDeletion(ctx, log, drCConfig)
+	} else {
+		res, err = r.processCreateOrUpdate(ctx, log, drCConfig)
+
+		// Update status
+		if err := r.statusUpdate(ctx, drCConfig, savedDRCConfigStatus); err != nil {
+			r.Log.Info("failed to update status", "failure", err)
+		}
+	}
+
+	return res, err
+}
+
+func (r *DRClusterConfigReconciler) statusUpdate(ctx context.Context, obj *ramen.DRClusterConfig,
+	savedStatus *ramen.DRClusterConfigStatus,
+) error {
+	if !reflect.DeepEqual(obj.Status, savedStatus) {
+		if err := r.Client.Status().Update(ctx, obj); err != nil {
+			r.Log.Info("Failed to update drClusterConfig status", "name", obj.Name, "namespace", obj.Namespace,
+				"error", err)
+
+			return fmt.Errorf("failed to update drClusterConfig status (%s/%s)", obj.Name, obj.Namespace)
+		}
+	}
+
+	return nil
+}
+
+func setDRClusterConfigInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigConfigurationProcessed,
+		Reason:             DRClusterConfigConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigS3Reachable,
+		Reason:             DRClusterConfigConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+	})
+}
+
+func setDRClusterConfigConfigurationProcessedCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string, conditionStatus metav1.ConditionStatus, reason string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigConfigurationProcessed,
+		Reason:             reason,
+		ObservedGeneration: observedGeneration,
+		Status:             conditionStatus,
+		Message:            message,
+	})
 }
 
 func (r *DRClusterConfigReconciler) GetDRClusterConfig(ctx context.Context) (*ramen.DRClusterConfig, error) {
@@ -109,12 +190,6 @@ func (r *DRClusterConfigReconciler) processDeletion(
 	log logr.Logger,
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
-	if err := r.pruneClusterClaims(ctx, log, []string{}); err != nil {
-		log.Info("Reconcile error", "error", err)
-
-		return ctrl.Result{Requeue: true}, err
-	}
-
 	if err := util.NewResourceUpdater(drCConfig).
 		RemoveFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
@@ -158,8 +233,9 @@ func (r *DRClusterConfigReconciler) pruneClusterClaims(ctx context.Context, log 
 	return nil
 }
 
-// processCreateOrUpdate protects the resource with a finalizer and creates ClusterClaims for various storage related
-// classes in the cluster. It would finally prune stale ClusterClaims from previous reconciliations.
+// processCreateOrUpdate protects the resource with a finalizer and updates DRClusterConfig for various storage related
+// classes in the cluster. It would finally prune stale ClusterClaims from previous reconciliations, to cleanup upgraded
+// clusters which had OCM based claims created for the same.
 func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	ctx context.Context,
 	log logr.Logger,
@@ -169,59 +245,73 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+			err.Error(), metav1.ConditionFalse, DRClusterConfigConditionConfigurationFailed)
 
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
-	allSurvivors, err := r.CreateClassClaims(ctx, log)
+	err := r.UpdateSupportedClasses(ctx, drCConfig)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+			err.Error(), metav1.ConditionFalse, DRClusterConfigConditionConfigurationFailed)
 
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	if err := r.pruneClusterClaims(ctx, log, allSurvivors); err != nil {
+	// As an earlier version is out with ClusterClaims, ensure we prune all claims going forward to address orphaned
+	// claims due to upgrades.
+	if err := r.pruneClusterClaims(ctx, log, []string{}); err != nil {
 		log.Info("Reconcile error", "error", err)
+		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+			err.Error(), metav1.ConditionFalse, DRClusterConfigConditionConfigurationFailed)
 
 		return ctrl.Result{Requeue: true}, err
 	}
+
+	setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+		"Configuration processed and validated", metav1.ConditionTrue, DRClusterConfigConditionConfigurationProcessed)
 
 	return ctrl.Result{}, nil
 }
 
-// CreateClassClaims creates cluster claims for various storage related classes of interest
-func (r *DRClusterConfigReconciler) CreateClassClaims(ctx context.Context, log logr.Logger) ([]string, error) {
-	allSurvivors := []string{}
-
-	survivors, err := r.createSCClusterClaims(ctx, log)
+// UpdateSupportedClasses updates DRClusterConfig status with a list of storage related classes that are marked for DR
+// support. The list is sorted alphabetically to avoid out of order listing and status updates due to the same
+func (r *DRClusterConfigReconciler) UpdateSupportedClasses(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	sClasses, err := r.listDRSupportedSCs(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	allSurvivors = append(allSurvivors, survivors...)
+	drCConfig.Status.StorageClasses = sClasses
+	slices.Sort(drCConfig.Status.StorageClasses)
 
-	survivors, err = r.createVSCClusterClaims(ctx, log)
+	vsClasses, err := r.listDRSupportedVSCs(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	allSurvivors = append(allSurvivors, survivors...)
+	drCConfig.Status.VolumeSnapshotClasses = vsClasses
+	slices.Sort(drCConfig.Status.VolumeSnapshotClasses)
 
-	survivors, err = r.createVRCClusterClaims(ctx, log)
+	vrClasses, err := r.listDRSupportedVRCs(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	allSurvivors = append(allSurvivors, survivors...)
+	drCConfig.Status.VolumeReplicationClasses = vrClasses
+	slices.Sort(drCConfig.Status.VolumeReplicationClasses)
 
-	return allSurvivors, nil
+	return nil
 }
 
-// createSCClusterClaims lists StorageClasses and creates ClusterClaims for ones marked for ramen
-func (r *DRClusterConfigReconciler) createSCClusterClaims(
-	ctx context.Context, log logr.Logger,
-) ([]string, error) {
-	claims := []string{}
+// listDRSupportedSCs returns a list of StorageClasses that are marked as DR supported
+func (r *DRClusterConfigReconciler) listDRSupportedSCs(ctx context.Context) ([]string, error) {
+	scs := []string{}
 
 	sClasses := &storagev1.StorageClassList{}
 	if err := r.Client.List(ctx, sClasses); err != nil {
@@ -233,21 +323,15 @@ func (r *DRClusterConfigReconciler) createSCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, util.CCSCPrefix, sClasses.Items[i].GetName()); err != nil {
-			return nil, err
-		}
-
-		claims = append(claims, claimName(util.CCSCPrefix, sClasses.Items[i].GetName()))
+		scs = append(scs, sClasses.Items[i].Name)
 	}
 
-	return claims, nil
+	return scs, nil
 }
 
-// createVSCClusterClaims lists VolumeSnapshotClasses and creates ClusterClaims for ones marked for ramen
-func (r *DRClusterConfigReconciler) createVSCClusterClaims(
-	ctx context.Context, log logr.Logger,
-) ([]string, error) {
-	claims := []string{}
+// listDRSupportedVSCs returns a list of VolumeSnapshotClasses that are marked as DR supported
+func (r *DRClusterConfigReconciler) listDRSupportedVSCs(ctx context.Context) ([]string, error) {
+	vscs := []string{}
 
 	vsClasses := &snapv1.VolumeSnapshotClassList{}
 	if err := r.Client.List(ctx, vsClasses); err != nil {
@@ -259,21 +343,15 @@ func (r *DRClusterConfigReconciler) createVSCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, util.CCVSCPrefix, vsClasses.Items[i].GetName()); err != nil {
-			return nil, err
-		}
-
-		claims = append(claims, claimName(util.CCVSCPrefix, vsClasses.Items[i].GetName()))
+		vscs = append(vscs, vsClasses.Items[i].Name)
 	}
 
-	return claims, nil
+	return vscs, nil
 }
 
-// createVRCClusterClaims lists VolumeReplicationClasses and creates ClusterClaims for ones marked for ramen
-func (r *DRClusterConfigReconciler) createVRCClusterClaims(
-	ctx context.Context, log logr.Logger,
-) ([]string, error) {
-	claims := []string{}
+// listDRSupportedVRCs returns a list of VolumeReplicationClasses that are marked as DR supported
+func (r *DRClusterConfigReconciler) listDRSupportedVRCs(ctx context.Context) ([]string, error) {
+	vrcs := []string{}
 
 	vrClasses := &volrep.VolumeReplicationClassList{}
 	if err := r.Client.List(ctx, vrClasses); err != nil {
@@ -285,48 +363,10 @@ func (r *DRClusterConfigReconciler) createVRCClusterClaims(
 			continue
 		}
 
-		if err := r.ensureClusterClaim(ctx, log, util.CCVRCPrefix, vrClasses.Items[i].GetName()); err != nil {
-			return nil, err
-		}
-
-		claims = append(claims, claimName(util.CCVRCPrefix, vrClasses.Items[i].GetName()))
+		vrcs = append(vrcs, vrClasses.Items[i].Name)
 	}
 
-	return claims, nil
-}
-
-// ensureClusterClaim is a generic ClusterClaim creation function, that creates a claim named "prefix.name", with
-// the passed in name as the ClusterClaim spec.Value
-func (r *DRClusterConfigReconciler) ensureClusterClaim(
-	ctx context.Context,
-	log logr.Logger,
-	prefix, name string,
-) error {
-	cc := &clusterv1alpha1.ClusterClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: claimName(prefix, name),
-		},
-	}
-
-	core.ObjectCreatedByRamenSetLabel(cc)
-
-	if _, err := ctrl.CreateOrUpdate(ctx, r.Client, cc, func() error {
-		util.NewResourceUpdater(cc).AddLabel(drCConfigOwnerLabel, drCConfigOwnerName)
-
-		cc.Spec.Value = name
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to create or update ClusterClaim %s, %w", claimName(prefix, name), err)
-	}
-
-	log.Info("Created ClusterClaim", "claimName", cc.GetName())
-
-	return nil
-}
-
-func claimName(prefix, name string) string {
-	return prefix + "." + name
+	return vrcs, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

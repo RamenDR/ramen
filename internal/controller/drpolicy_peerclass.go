@@ -406,16 +406,16 @@ func pruneVRClassViews(
 	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
 }
 
-// getVRClassesFromCluster gets VolumeReplicationClasses that are claimed in the ManagedClusterInstance
+// getVRClassesFromCluster gets VolumeReplicationClasses that are claimed in the DRClusterConfig status
 func getVRClassesFromCluster(
 	u *drpolicyUpdater,
 	m util.ManagedClusterViewGetter,
-	mc *util.ManagedClusterInstance,
+	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
 ) ([]*volrep.VolumeReplicationClass, error) {
 	vrClasses := []*volrep.VolumeReplicationClass{}
 
-	vrClassNames := mc.VolumeReplicationClassClaims()
+	vrClassNames := drcConfig.Status.VolumeReplicationClasses
 	if len(vrClassNames) == 0 {
 		return vrClasses, nil
 	}
@@ -449,16 +449,16 @@ func pruneVSClassViews(
 	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
 }
 
-// getVSClassesFromCluster gets VolumeSnapshotClasses that are claimed in the ManagedClusterInstance
+// getVSClassesFromCluster gets VolumeSnapshotClasses that are claimed in the DRClusterConfig status
 func getVSClassesFromCluster(
 	u *drpolicyUpdater,
 	m util.ManagedClusterViewGetter,
-	mc *util.ManagedClusterInstance,
+	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
 ) ([]*snapv1.VolumeSnapshotClass, error) {
 	vsClasses := []*snapv1.VolumeSnapshotClass{}
 
-	vsClassNames := mc.VolumeSnapshotClassClaims()
+	vsClassNames := drcConfig.Status.VolumeSnapshotClasses
 	if len(vsClassNames) == 0 {
 		return vsClasses, nil
 	}
@@ -492,16 +492,16 @@ func pruneSClassViews(
 	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
 }
 
-// getSClassesFromCluster gets StorageClasses that are claimed in the ManagedClusterInstance
+// getSClassesFromCluster gets StorageClasses that are claimed in the DRClusterConfig status
 func getSClassesFromCluster(
 	u *drpolicyUpdater,
 	m util.ManagedClusterViewGetter,
-	mc *util.ManagedClusterInstance,
+	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
 ) ([]*storagev1.StorageClass, error) {
 	sClasses := []*storagev1.StorageClass{}
 
-	sClassNames := mc.StorageClassClaims()
+	sClassNames := drcConfig.Status.StorageClasses
 	if len(sClassNames) == 0 {
 		return sClasses, nil
 	}
@@ -521,7 +521,7 @@ func getSClassesFromCluster(
 	return sClasses, pruneSClassViews(m, u.log, clusterName, sClassNames)
 }
 
-// getClusterClasses inspects, using ManagedClusterView, the ManagedCluster claims for all storage related classes,
+// getClusterClasses inspects, using ManagedClusterView, the DRClusterConfig claims for all storage related classes,
 // and returns the set of classLists for the passed in clusters
 func getClusterClasses(
 	u *drpolicyUpdater,
@@ -538,17 +538,25 @@ func getClusterClasses(
 		return classLists{}, err
 	}
 
-	sClasses, err := getSClassesFromCluster(u, m, mc, cluster)
-	if err != nil || len(sClasses) == 0 {
-		return classLists{}, err
-	}
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = cluster
 
-	vsClasses, err := getVSClassesFromCluster(u, m, mc, cluster)
+	drcConfig, err := m.GetDRClusterConfigFromManagedCluster(cluster, annotations)
 	if err != nil {
 		return classLists{}, err
 	}
 
-	vrClasses, err := getVRClassesFromCluster(u, m, mc, cluster)
+	sClasses, err := getSClassesFromCluster(u, m, drcConfig, cluster)
+	if err != nil || len(sClasses) == 0 {
+		return classLists{}, err
+	}
+
+	vsClasses, err := getVSClassesFromCluster(u, m, drcConfig, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
+	vrClasses, err := getVRClassesFromCluster(u, m, drcConfig, cluster)
 	if err != nil {
 		return classLists{}, err
 	}
