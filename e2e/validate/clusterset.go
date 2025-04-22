@@ -4,7 +4,6 @@
 package validate
 
 import (
-	"context"
 	"fmt"
 
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
@@ -14,22 +13,26 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func getClusterSet(hub types.Cluster, clusterSetName string) (*ocmv1b2.ManagedClusterSet, error) {
+func getClusterSet(ctx types.Context, clusterSetName string) (*ocmv1b2.ManagedClusterSet, error) {
+	hub := ctx.Env().Hub
+
 	clusterSet := &ocmv1b2.ManagedClusterSet{}
 	key := client.ObjectKey{Name: clusterSetName}
 
-	if err := hub.Client.Get(context.TODO(), key, clusterSet); err != nil {
+	if err := hub.Client.Get(ctx.Context(), key, clusterSet); err != nil {
 		return nil, fmt.Errorf("failed to get ClusterSet %q: %w", clusterSetName, err)
 	}
 
 	return clusterSet, nil
 }
 
-func getManagedClustersFromClusterSet(hub types.Cluster, clusterSetName string) ([]string, error) {
+func getManagedClustersFromClusterSet(ctx types.Context, clusterSetName string) ([]string, error) {
+	hub := ctx.Env().Hub
+
 	clusterList := &ocmv1.ManagedClusterList{}
 	labelSelector := client.MatchingLabels{"cluster.open-cluster-management.io/clusterset": clusterSetName}
 
-	if err := hub.Client.List(context.TODO(), clusterList, labelSelector); err != nil {
+	if err := hub.Client.List(ctx.Context(), clusterList, labelSelector); err != nil {
 		return nil, fmt.Errorf("failed to list ManagedClusters for ClusterSet %q: %w", clusterSetName, err)
 	}
 

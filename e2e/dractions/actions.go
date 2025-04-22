@@ -148,7 +148,7 @@ func Failover(ctx types.TestContext) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx.Env().Hub, config.DRPolicy, currentCluster)
+	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster)
 	if err != nil {
 		return err
 	}
@@ -181,7 +181,7 @@ func Relocate(ctx types.TestContext) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx.Env().Hub, config.DRPolicy, currentCluster)
+	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster)
 	if err != nil {
 		return err
 	}
