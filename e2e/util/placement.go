@@ -66,7 +66,9 @@ func waitPlacementDecision(ctx types.Context, namespace string, placementName st
 			return nil, fmt.Errorf("timeout waiting for placement decisions for %q in cluster %q", placementName, cluster.Name)
 		}
 
-		time.Sleep(RetryInterval)
+		if err := Sleep(ctx.Context(), RetryInterval); err != nil {
+			return nil, err
+		}
 	}
 }
 

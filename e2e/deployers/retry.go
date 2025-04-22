@@ -39,7 +39,9 @@ func waitSubscriptionPhase(
 				name, phase, ctx.Env().Hub.Name)
 		}
 
-		time.Sleep(util.RetryInterval)
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return err
+		}
 	}
 }
 
@@ -61,6 +63,8 @@ func WaitWorkloadHealth(ctx types.TestContext, cluster types.Cluster, namespace 
 				w.GetName(), util.Timeout, cluster.Name)
 		}
 
-		time.Sleep(util.RetryInterval)
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return err
+		}
 	}
 }

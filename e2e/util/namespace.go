@@ -83,7 +83,9 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 			return fmt.Errorf("timeout deleting namespace %q in cluster %q", namespace, cluster.Name)
 		}
 
-		time.Sleep(time.Second)
+		if err := Sleep(ctx.Context(), time.Second); err != nil {
+			return err
+		}
 	}
 }
 
