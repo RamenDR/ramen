@@ -4,7 +4,6 @@
 package workloads
 
 import (
-	"context"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -87,7 +86,7 @@ func (w Deployment) GetResources() error {
 func (w Deployment) Health(ctx types.TestContext, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
-	deploy, err := getDeployment(cluster, namespace, w.GetAppName())
+	deploy, err := getDeployment(ctx, cluster, namespace, w.GetAppName())
 	if err != nil {
 		return err
 	}
@@ -101,11 +100,11 @@ func (w Deployment) Health(ctx types.TestContext, cluster types.Cluster, namespa
 	return nil
 }
 
-func getDeployment(cluster types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
+func getDeployment(ctx types.TestContext, cluster types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
-	err := cluster.Client.Get(context.Background(), key, deploy)
+	err := cluster.Client.Get(ctx.Context(), key, deploy)
 	if err != nil {
 		return nil, err
 	}
