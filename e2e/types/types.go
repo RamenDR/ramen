@@ -96,9 +96,17 @@ type Workload interface {
 	Health(ctx TestContext, cluster Cluster, namespace string) error
 }
 
-// TestContext combines workload, deployer and logger used in the content of one test.
-// The context name is used for logging and resource names.
+// Context keeps the Logger, Env, and Config shared by all code in the e2e package.
+type Context interface {
+	Logger() *zap.SugaredLogger
+	Env() *Env
+	Config() *Config
+}
+
+// TestContext is a more specific Context for a single test; a combination of Deployer, Workload, and namespaces. A test
+// has a unique Name and Logger, and it shares the global Env and Config.
 type TestContext interface {
+	Context
 	Deployer() Deployer
 	Workload() Workload
 	Name() string
@@ -109,8 +117,4 @@ type TestContext interface {
 
 	// Namespace for application resources on the managed clusters.
 	AppNamespace() string
-
-	Logger() *zap.SugaredLogger
-	Env() *Env
-	Config() *Config
 }

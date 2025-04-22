@@ -19,10 +19,23 @@ import (
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
+// Context implements types.Context for sharing the log, env, and config with all code.
 type Context struct {
 	log    *zap.SugaredLogger
 	env    *types.Env
 	config *types.Config
+}
+
+func (c *Context) Logger() *zap.SugaredLogger {
+	return c.log
+}
+
+func (c *Context) Config() *types.Config {
+	return c.config
+}
+
+func (c *Context) Env() *types.Env {
+	return c.env
 }
 
 // The global test context
