@@ -52,7 +52,9 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 				hub.Name, available, peerReady, progressionCompleted, drpc.Status.LastGroupSyncTime)
 		}
 
-		time.Sleep(util.RetryInterval)
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return err
+		}
 	}
 }
 
@@ -86,7 +88,9 @@ func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DR
 			return fmt.Errorf("drpc %q status is not %q yet before timeout in cluster %q, fail", name, phase, hub.Name)
 		}
 
-		time.Sleep(util.RetryInterval)
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return err
+		}
 	}
 }
 
@@ -133,7 +137,9 @@ func waitDRPCDeleted(ctx types.TestContext, namespace string, name string) error
 			return fmt.Errorf("drpc %q is not deleted yet before timeout in cluster %q, fail", name, hub.Name)
 		}
 
-		time.Sleep(util.RetryInterval)
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return err
+		}
 	}
 }
 
@@ -168,6 +174,8 @@ func waitDRPCProgression(
 				name, progression, util.Timeout, hub.Name)
 		}
 
-		time.Sleep(util.RetryInterval)
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return err
+		}
 	}
 }
