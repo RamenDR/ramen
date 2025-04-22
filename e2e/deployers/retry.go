@@ -22,7 +22,7 @@ func waitSubscriptionPhase(
 	startTime := time.Now()
 
 	for {
-		sub, err := getSubscription(ctx.Env().Hub, namespace, name)
+		sub, err := getSubscription(ctx, namespace, name)
 		if err != nil {
 			return err
 		}

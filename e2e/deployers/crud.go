@@ -4,7 +4,6 @@
 package deployers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,7 +46,7 @@ func CreateManagedClusterSetBinding(ctx types.TestContext, name, namespace strin
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Create(context.Background(), mcsb)
+	err := ctx.Env().Hub.Client.Create(ctx.Context(), mcsb)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -70,7 +69,7 @@ func DeleteManagedClusterSetBinding(ctx types.TestContext, name, namespace strin
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Delete(context.Background(), mcsb)
+	err := ctx.Env().Hub.Client.Delete(ctx.Context(), mcsb)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -120,7 +119,7 @@ func CreatePlacement(ctx types.TestContext, name, namespace string, clusterName 
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Create(context.Background(), placement)
+	err := ctx.Env().Hub.Client.Create(ctx.Context(), placement)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -143,7 +142,7 @@ func DeletePlacement(ctx types.TestContext, name, namespace string) error {
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Delete(context.Background(), placement)
+	err := ctx.Env().Hub.Client.Delete(ctx.Context(), placement)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -202,7 +201,7 @@ func CreateSubscription(ctx types.TestContext, s Subscription) error {
 		})
 	}
 
-	err := ctx.Env().Hub.Client.Create(context.Background(), subscription)
+	err := ctx.Env().Hub.Client.Create(ctx.Context(), subscription)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -228,7 +227,7 @@ func DeleteSubscription(ctx types.TestContext, s Subscription) error {
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Delete(context.Background(), subscription)
+	err := ctx.Env().Hub.Client.Delete(ctx.Context(), subscription)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -242,11 +241,13 @@ func DeleteSubscription(ctx types.TestContext, s Subscription) error {
 	return nil
 }
 
-func getSubscription(cluster types.Cluster, namespace, name string) (*subscriptionv1.Subscription, error) {
+func getSubscription(ctx types.TestContext, namespace, name string) (*subscriptionv1.Subscription, error) {
+	hub := ctx.Env().Hub
+
 	subscription := &subscriptionv1.Subscription{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
 
-	err := cluster.Client.Get(context.Background(), key, subscription)
+	err := hub.Client.Get(ctx.Context(), key, subscription)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +268,7 @@ func CreatePlacementDecisionConfigMap(ctx types.TestContext, cmName string, cmNa
 
 	configMap := &corev1.ConfigMap{ObjectMeta: object, Data: data}
 
-	err := ctx.Env().Hub.Client.Create(context.Background(), configMap)
+	err := ctx.Env().Hub.Client.Create(ctx.Context(), configMap)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return fmt.Errorf("could not create configMap %q", cmName)
@@ -289,7 +290,7 @@ func DeleteConfigMap(ctx types.TestContext, cmName string, cmNamespace string) e
 		ObjectMeta: object,
 	}
 
-	err := ctx.Env().Hub.Client.Delete(context.Background(), configMap)
+	err := ctx.Env().Hub.Client.Delete(ctx.Context(), configMap)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return fmt.Errorf("could not delete configMap %q in cluster %q", cmName, ctx.Env().Hub.Name)
@@ -374,7 +375,7 @@ func CreateApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 		appset.Spec.Template.Spec.Source.Kustomize = patches
 	}
 
-	err := ctx.Env().Hub.Client.Create(context.Background(), appset)
+	err := ctx.Env().Hub.Client.Create(ctx.Context(), appset)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -400,7 +401,7 @@ func DeleteApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Delete(context.Background(), appset)
+	err := ctx.Env().Hub.Client.Delete(ctx.Context(), appset)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
