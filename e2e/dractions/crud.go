@@ -4,8 +4,6 @@
 package dractions
 
 import (
-	"context"
-
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,15 +16,19 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func updatePlacement(cluster types.Cluster, placement *clusterv1beta1.Placement) error {
-	return cluster.Client.Update(context.Background(), placement)
+func updatePlacement(ctx types.TestContext, placement *clusterv1beta1.Placement) error {
+	hub := ctx.Env().Hub
+
+	return hub.Client.Update(ctx.Context(), placement)
 }
 
-func getDRPC(cluster types.Cluster, namespace, name string) (*ramen.DRPlacementControl, error) {
+func getDRPC(ctx types.TestContext, namespace, name string) (*ramen.DRPlacementControl, error) {
+	hub := ctx.Env().Hub
+
 	drpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := cluster.Client.Get(context.Background(), key, drpc)
+	err := hub.Client.Get(ctx.Context(), key, drpc)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +40,7 @@ func createDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
 
-	err := hub.Client.Create(context.Background(), drpc)
+	err := hub.Client.Create(ctx.Context(), drpc)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -58,8 +60,10 @@ func createDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
 	return nil
 }
 
-func updateDRPC(cluster types.Cluster, drpc *ramen.DRPlacementControl) error {
-	return cluster.Client.Update(context.Background(), drpc)
+func updateDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
+	hub := ctx.Env().Hub
+
+	return hub.Client.Update(ctx.Context(), drpc)
 }
 
 func deleteDRPC(ctx types.TestContext, namespace, name string) error {
@@ -69,7 +73,7 @@ func deleteDRPC(ctx types.TestContext, namespace, name string) error {
 	objDrpc := &ramen.DRPlacementControl{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := hub.Client.Get(context.Background(), key, objDrpc)
+	err := hub.Client.Get(ctx.Context(), key, objDrpc)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -80,7 +84,7 @@ func deleteDRPC(ctx types.TestContext, namespace, name string) error {
 		return nil
 	}
 
-	if err := hub.Client.Delete(context.Background(), objDrpc); err != nil {
+	if err := hub.Client.Delete(ctx.Context(), objDrpc); err != nil {
 		return err
 	}
 
@@ -141,7 +145,7 @@ func createPlacementManagedByRamen(ctx types.TestContext, name, namespace string
 		},
 	}
 
-	err := ctx.Env().Hub.Client.Create(context.Background(), placement)
+	err := ctx.Env().Hub.Client.Create(ctx.Context(), placement)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err

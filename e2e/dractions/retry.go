@@ -24,7 +24,7 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 	log.Debugf("Waiting until drpc \"%s/%s\" is ready in cluster %q", namespace, drpcName, hub.Name)
 
 	for {
-		drpc, err := getDRPC(hub, namespace, drpcName)
+		drpc, err := getDRPC(ctx, namespace, drpcName)
 		if err != nil {
 			return err
 		}
@@ -70,7 +70,7 @@ func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DR
 	log.Debugf("Waiting until drpc \"%s/%s\" reach phase %q in cluster %q", namespace, name, phase, hub.Name)
 
 	for {
-		drpc, err := getDRPC(hub, namespace, name)
+		drpc, err := getDRPC(ctx, namespace, name)
 		if err != nil {
 			return err
 		}
@@ -118,7 +118,7 @@ func waitDRPCDeleted(ctx types.TestContext, namespace string, name string) error
 	log.Debugf("Waiting until drpc \"%s/%s\" is deleted in cluster %q", namespace, name, hub.Name)
 
 	for {
-		_, err := getDRPC(hub, namespace, name)
+		_, err := getDRPC(ctx, namespace, name)
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				log.Debugf("drpc \"%s/%s\" is deleted in cluster %q", namespace, name, hub.Name)
@@ -151,7 +151,7 @@ func waitDRPCProgression(
 		namespace, name, progression, hub.Name)
 
 	for {
-		drpc, err := getDRPC(hub, namespace, name)
+		drpc, err := getDRPC(ctx, namespace, name)
 		if err != nil {
 			return err
 		}
