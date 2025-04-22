@@ -79,7 +79,7 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err

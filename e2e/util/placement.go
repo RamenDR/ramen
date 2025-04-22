@@ -4,7 +4,6 @@
 package util
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -19,8 +18,8 @@ import (
 // based on the PlacementDecision for the given Placement resource.
 // Assumes the PlacementDecision exists with a Decision.
 // Not applicable for discovered apps before enabling protection, as no Placement exists.
-func GetCurrentCluster(cluster types.Cluster, namespace string, placementName string) (string, error) {
-	placementDecision, err := waitPlacementDecision(cluster, namespace, placementName)
+func GetCurrentCluster(ctx types.Context, namespace string, placementName string) (string, error) {
+	placementDecision, err := waitPlacementDecision(ctx, namespace, placementName)
 	if err != nil {
 		return "", err
 	}
@@ -28,11 +27,13 @@ func GetCurrentCluster(cluster types.Cluster, namespace string, placementName st
 	return placementDecision.Status.Decisions[0].ClusterName, nil
 }
 
-func GetPlacement(cluster types.Cluster, namespace, name string) (*v1beta1.Placement, error) {
+func GetPlacement(ctx types.Context, namespace, name string) (*v1beta1.Placement, error) {
+	hub := ctx.Env().Hub
+
 	placement := &v1beta1.Placement{}
 	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
 
-	err := cluster.Client.Get(context.Background(), key, placement)
+	err := hub.Client.Get(ctx.Context(), key, placement)
 	if err != nil {
 		return nil, err
 	}
@@ -41,17 +42,18 @@ func GetPlacement(cluster types.Cluster, namespace, name string) (*v1beta1.Place
 }
 
 // waitPlacementDecision waits until we have a placement decision and returns the placement decision object.
-func waitPlacementDecision(cluster types.Cluster, namespace string, placementName string,
+func waitPlacementDecision(ctx types.Context, namespace string, placementName string,
 ) (*v1beta1.PlacementDecision, error) {
+	cluster := ctx.Env().Hub
 	startTime := time.Now()
 
 	for {
-		placement, err := GetPlacement(cluster, namespace, placementName)
+		placement, err := GetPlacement(ctx, namespace, placementName)
 		if err != nil {
 			return nil, err
 		}
 
-		placementDecision, err := getPlacementDecisionFromPlacement(cluster, placement)
+		placementDecision, err := getPlacementDecisionFromPlacement(ctx, placement)
 		if err != nil {
 			return nil, err
 		}
@@ -68,8 +70,10 @@ func waitPlacementDecision(cluster types.Cluster, namespace string, placementNam
 	}
 }
 
-func getPlacementDecisionFromPlacement(cluster types.Cluster, placement *v1beta1.Placement,
+func getPlacementDecisionFromPlacement(ctx types.Context, placement *v1beta1.Placement,
 ) (*v1beta1.PlacementDecision, error) {
+	hub := ctx.Env().Hub
+
 	matchLabels := map[string]string{
 		v1beta1.PlacementLabel: placement.GetName(),
 	}
@@ -80,9 +84,9 @@ func getPlacementDecisionFromPlacement(cluster types.Cluster, placement *v1beta1
 	}
 
 	plDecisions := &v1beta1.PlacementDecisionList{}
-	if err := cluster.Client.List(context.Background(), plDecisions, listOptions...); err != nil {
+	if err := hub.Client.List(ctx.Context(), plDecisions, listOptions...); err != nil {
 		return nil, fmt.Errorf("failed to list PlacementDecisions (placement: %s) in cluster %q",
-			placement.GetNamespace()+"/"+placement.GetName(), cluster.Name)
+			placement.GetNamespace()+"/"+placement.GetName(), hub.Name)
 	}
 
 	if len(plDecisions.Items) == 0 {
@@ -91,7 +95,7 @@ func getPlacementDecisionFromPlacement(cluster types.Cluster, placement *v1beta1
 
 	if len(plDecisions.Items) > 1 {
 		return nil, fmt.Errorf("multiple PlacementDecisions found for Placement (count: %d, placement: %s) in cluster %q",
-			len(plDecisions.Items), placement.GetNamespace()+"/"+placement.GetName(), cluster.Name)
+			len(plDecisions.Items), placement.GetNamespace()+"/"+placement.GetName(), hub.Name)
 	}
 
 	plDecision := plDecisions.Items[0]
@@ -102,7 +106,7 @@ func getPlacementDecisionFromPlacement(cluster types.Cluster, placement *v1beta1
 			" (count: %d, Placement: %s, PlacementDecision: %s) in cluster %q",
 			len(plDecision.Status.Decisions),
 			placement.GetNamespace()+"/"+placement.GetName(),
-			plDecision.GetName()+"/"+plDecision.GetNamespace(), cluster.Name)
+			plDecision.GetName()+"/"+plDecision.GetNamespace(), hub.Name)
 	}
 
 	return &plDecision, nil

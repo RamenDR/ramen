@@ -79,7 +79,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
