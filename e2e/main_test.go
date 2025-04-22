@@ -78,7 +78,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to read config: %s", err)
 	}
 
-	Ctx.env, err = env.New(Ctx.config, Ctx.log)
+	Ctx.env, err = env.New(Ctx.Context(), Ctx.config, Ctx.log)
 	if err != nil {
 		log.Fatalf("Failed to create testing context: %s", err)
 	}
