@@ -42,7 +42,7 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 
 	// create subscription namespace
-	err := util.CreateNamespace(ctx.Env().Hub, managementNamespace, log)
+	err := util.CreateNamespace(ctx, ctx.Env().Hub, managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
-	err = util.DeleteNamespace(ctx.Env().Hub, managementNamespace, log)
+	err = util.DeleteNamespace(ctx, ctx.Env().Hub, managementNamespace)
 	if err != nil {
 		return err
 	}
