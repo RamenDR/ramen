@@ -4,6 +4,7 @@
 package e2e_test
 
 import (
+	"context"
 	"flag"
 	"os"
 	"testing"
@@ -38,7 +39,11 @@ func (c *Context) Env() *types.Env {
 	return c.env
 }
 
-// The global test context
+func (c *Context) Context() context.Context {
+	return context.Background()
+}
+
+// The global test context.
 var Ctx Context
 
 func TestMain(m *testing.M) {
