@@ -25,7 +25,7 @@ const (
 // Determine KubeObjectProtection requirements if Imperative (?)
 // Create DRPC, in desired namespace
 // nolint:funlen
-func EnableProtection(ctx types.Context) error {
+func EnableProtection(ctx types.TestContext) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
 		return EnableProtectionDiscoveredApps(ctx)
@@ -97,7 +97,7 @@ func EnableProtection(ctx types.Context) error {
 
 // remove DRPC
 // update placement annotation
-func DisableProtection(ctx types.Context) error {
+func DisableProtection(ctx types.TestContext) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
 		return DisableProtectionDiscoveredApps(ctx)
@@ -138,7 +138,7 @@ func DisableProtection(ctx types.Context) error {
 	return nil
 }
 
-func Failover(ctx types.Context) error {
+func Failover(ctx types.TestContext) error {
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	name := ctx.Name()
@@ -171,7 +171,7 @@ func Failover(ctx types.Context) error {
 // Check Placement
 // Relocate to Primary in DRPolicy as the PrimaryCluster
 // Update DRPC
-func Relocate(ctx types.Context) error {
+func Relocate(ctx types.TestContext) error {
 	managementNamespace := ctx.ManagementNamespace()
 	log := ctx.Logger()
 	config := ctx.Config()
@@ -200,7 +200,7 @@ func Relocate(ctx types.Context) error {
 	return nil
 }
 
-func failoverRelocate(ctx types.Context,
+func failoverRelocate(ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
 	currentCluster string,
@@ -226,7 +226,7 @@ func failoverRelocate(ctx types.Context,
 }
 
 func waitAndUpdateDRPC(
-	ctx types.Context,
+	ctx types.TestContext,
 	namespace, drpcName string,
 	action ramen.DRAction,
 	targetCluster string,
@@ -266,7 +266,7 @@ func waitAndUpdateDRPC(
 // createNamespaces creates namespaces and annotations for managed app protection on
 // both DR clusters for Volsync based replication if the distribution is Kubernetes.
 // Returns an error if namespace creation or annotation fails.
-func createNamespaces(ctx types.Context, appNamespace string, log *zap.SugaredLogger) error {
+func createNamespaces(ctx types.TestContext, appNamespace string, log *zap.SugaredLogger) error {
 	if ctx.Config().Distro == config.DistroK8s {
 		return util.CreateNamespaceAndAddAnnotation(ctx.Env(), appNamespace, log)
 	}

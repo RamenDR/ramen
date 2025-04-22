@@ -12,7 +12,7 @@ import (
 type ApplicationSet struct{}
 
 // Deploy creates an ApplicationSet on the hub cluster, creating the workload on one of the managed clusters.
-func (a ApplicationSet) Deploy(ctx types.Context) error {
+func (a ApplicationSet) Deploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
@@ -44,7 +44,7 @@ func (a ApplicationSet) Deploy(ctx types.Context) error {
 }
 
 // Undeploy deletes an ApplicationSet from the hub cluster, deleting the workload from the managed clusters.
-func (a ApplicationSet) Undeploy(ctx types.Context) error {
+func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
@@ -86,7 +86,7 @@ func (a ApplicationSet) GetName() string {
 	return "appset"
 }
 
-func (a ApplicationSet) GetNamespace(ctx types.Context) string {
+func (a ApplicationSet) GetNamespace(ctx types.TestContext) string {
 	return ctx.Config().Namespaces.ArgocdNamespace
 }
 

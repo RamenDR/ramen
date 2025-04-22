@@ -31,7 +31,7 @@ const (
 	fMode = 0o600
 )
 
-func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) error {
+func CreateManagedClusterSetBinding(ctx types.TestContext, name, namespace string) error {
 	log := ctx.Logger()
 	config := ctx.Config()
 	labels := make(map[string]string)
@@ -61,7 +61,7 @@ func CreateManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 	return nil
 }
 
-func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) error {
+func DeleteManagedClusterSetBinding(ctx types.TestContext, name, namespace string) error {
 	log := ctx.Logger()
 	mcsb := &ocmv1b2.ManagedClusterSetBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -84,7 +84,7 @@ func DeleteManagedClusterSetBinding(ctx types.Context, name, namespace string) e
 	return nil
 }
 
-func CreatePlacement(ctx types.Context, name, namespace string, clusterName string) error {
+func CreatePlacement(ctx types.TestContext, name, namespace string, clusterName string) error {
 	log := ctx.Logger()
 	config := ctx.Config()
 	labels := make(map[string]string)
@@ -134,7 +134,7 @@ func CreatePlacement(ctx types.Context, name, namespace string, clusterName stri
 	return nil
 }
 
-func DeletePlacement(ctx types.Context, name, namespace string) error {
+func DeletePlacement(ctx types.TestContext, name, namespace string) error {
 	log := ctx.Logger()
 	placement := &ocmv1b1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
@@ -157,7 +157,7 @@ func DeletePlacement(ctx types.Context, name, namespace string) error {
 	return nil
 }
 
-func CreateSubscription(ctx types.Context, s Subscription) error {
+func CreateSubscription(ctx types.TestContext, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	config := ctx.Config()
@@ -216,7 +216,7 @@ func CreateSubscription(ctx types.Context, s Subscription) error {
 	return nil
 }
 
-func DeleteSubscription(ctx types.Context, s Subscription) error {
+func DeleteSubscription(ctx types.TestContext, s Subscription) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
@@ -254,7 +254,7 @@ func getSubscription(cluster types.Cluster, namespace, name string) (*subscripti
 	return subscription, nil
 }
 
-func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamespace string) error {
+func CreatePlacementDecisionConfigMap(ctx types.TestContext, cmName string, cmNamespace string) error {
 	log := ctx.Logger()
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
@@ -281,7 +281,7 @@ func CreatePlacementDecisionConfigMap(ctx types.Context, cmName string, cmNamesp
 	return nil
 }
 
-func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error {
+func DeleteConfigMap(ctx types.TestContext, cmName string, cmNamespace string) error {
 	log := ctx.Logger()
 	object := metav1.ObjectMeta{Name: cmName, Namespace: cmNamespace}
 
@@ -304,7 +304,7 @@ func DeleteConfigMap(ctx types.Context, cmName string, cmNamespace string) error
 }
 
 // nolint:funlen
-func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
+func CreateApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 	var requeueSeconds int64 = 180
 
 	name := ctx.Name()
@@ -388,7 +388,7 @@ func CreateApplicationSet(ctx types.Context, a ApplicationSet) error {
 	return nil
 }
 
-func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
+func DeleteApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
@@ -414,7 +414,7 @@ func DeleteApplicationSet(ctx types.Context, a ApplicationSet) error {
 	return nil
 }
 
-func DeleteDiscoveredApps(ctx types.Context, cluster types.Cluster, namespace string) error {
+func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
 	tempDir, err := os.MkdirTemp("", "ramen-")
@@ -448,7 +448,7 @@ func DeleteDiscoveredApps(ctx types.Context, cluster types.Cluster, namespace st
 
 type CombinedData map[string]interface{}
 
-func CreateKustomizationFile(ctx types.Context, dir string) error {
+func CreateKustomizationFile(ctx types.TestContext, dir string) error {
 	w := ctx.Workload()
 	config := ctx.Config()
 	yamlData := `resources:

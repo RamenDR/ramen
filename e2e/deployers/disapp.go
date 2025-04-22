@@ -18,12 +18,12 @@ func (d DiscoveredApp) GetName() string {
 	return "disapp"
 }
 
-func (d DiscoveredApp) GetNamespace(ctx types.Context) string {
+func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {
 	return ctx.Config().Namespaces.RamenOpsNamespace
 }
 
 // Deploy creates a workload on the first managed cluster.
-func (d DiscoveredApp) Deploy(ctx types.Context) error {
+func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
@@ -72,7 +72,7 @@ func (d DiscoveredApp) Deploy(ctx types.Context) error {
 }
 
 // Undeploy deletes the workload from the managed clusters.
-func (d DiscoveredApp) Undeploy(ctx types.Context) error {
+func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 

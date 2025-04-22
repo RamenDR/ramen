@@ -34,7 +34,7 @@ func getDRPC(cluster types.Cluster, namespace, name string) (*ramen.DRPlacementC
 	return drpc, nil
 }
 
-func createDRPC(ctx types.Context, drpc *ramen.DRPlacementControl) error {
+func createDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
 
@@ -62,7 +62,7 @@ func updateDRPC(cluster types.Cluster, drpc *ramen.DRPlacementControl) error {
 	return cluster.Client.Update(context.Background(), drpc)
 }
 
-func deleteDRPC(ctx types.Context, namespace, name string) error {
+func deleteDRPC(ctx types.TestContext, namespace, name string) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
 
@@ -119,7 +119,7 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 	return drpc
 }
 
-func createPlacementManagedByRamen(ctx types.Context, name, namespace string) error {
+func createPlacementManagedByRamen(ctx types.TestContext, name, namespace string) error {
 	log := ctx.Logger()
 	labels := make(map[string]string)
 	labels[deployers.AppLabelKey] = name
