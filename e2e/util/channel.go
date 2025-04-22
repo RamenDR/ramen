@@ -6,7 +6,6 @@ package util
 import (
 	"context"
 
-	"go.uber.org/zap"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
@@ -14,25 +13,29 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func EnsureChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func EnsureChannel(ctx types.Context) error {
 	// create channel namespace
-	err := CreateNamespace(hub, config.Channel.Namespace, log)
+	err := CreateNamespace(ctx.Env().Hub, ctx.Config().Channel.Namespace, ctx.Logger())
 	if err != nil {
 		return err
 	}
 
-	return createChannel(hub, config, log)
+	return createChannel(ctx)
 }
 
-func EnsureChannelDeleted(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
-	if err := deleteChannel(hub, config, log); err != nil {
+func EnsureChannelDeleted(ctx types.Context) error {
+	if err := deleteChannel(ctx); err != nil {
 		return err
 	}
 
-	return DeleteNamespace(hub, config.Channel.Namespace, log)
+	return DeleteNamespace(ctx.Env().Hub, ctx.Config().Channel.Namespace, ctx.Logger())
 }
 
-func createChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func createChannel(ctx types.Context) error {
+	hub := ctx.Env().Hub
+	config := ctx.Config()
+	log := ctx.Logger()
+
 	objChannel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.Channel.Name,
@@ -60,7 +63,11 @@ func createChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogg
 	return nil
 }
 
-func deleteChannel(hub types.Cluster, config *types.Config, log *zap.SugaredLogger) error {
+func deleteChannel(ctx types.Context) error {
+	hub := ctx.Env().Hub
+	config := ctx.Config()
+	log := ctx.Logger()
+
 	channel := &channelv1.Channel{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      config.Channel.Name,

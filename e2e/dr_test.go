@@ -26,12 +26,12 @@ func TestDR(dt *testing.T) {
 		t.Fatal(err.Error())
 	}
 
-	if err := util.EnsureChannel(Ctx.env.Hub, Ctx.config, Ctx.log); err != nil {
+	if err := util.EnsureChannel(&Ctx); err != nil {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
 	t.Cleanup(func() {
-		if err := util.EnsureChannelDeleted(Ctx.env.Hub, Ctx.config, Ctx.log); err != nil {
+		if err := util.EnsureChannelDeleted(&Ctx); err != nil {
 			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
 	})
