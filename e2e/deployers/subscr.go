@@ -17,13 +17,13 @@ func (s Subscription) GetName() string {
 	return "subscr"
 }
 
-func (s Subscription) GetNamespace(_ types.Context) string {
+func (s Subscription) GetNamespace(_ types.TestContext) string {
 	// No special namespaces.
 	return ""
 }
 
 // Deploy creates a Subscription on the hub cluster, creating the workload on one of the managed clusters.
-func (s Subscription) Deploy(ctx types.Context) error {
+func (s Subscription) Deploy(ctx types.TestContext) error {
 	// Generate a Placement for the Workload
 	// Use the global Channel
 	// Generate a Binding for the namespace (does this need clusters?)
@@ -73,7 +73,7 @@ func (s Subscription) Deploy(ctx types.Context) error {
 }
 
 // Undeploy deletes a subscription from the hub cluster, deleting the workload from the managed clusters.
-func (s Subscription) Undeploy(ctx types.Context) error {
+func (s Subscription) Undeploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	config := ctx.Config()

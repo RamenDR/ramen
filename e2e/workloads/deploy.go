@@ -84,7 +84,7 @@ func (w Deployment) GetResources() error {
 }
 
 // Check the workload health deployed in a cluster namespace
-func (w Deployment) Health(ctx types.Context, cluster types.Cluster, namespace string) error {
+func (w Deployment) Health(ctx types.TestContext, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
 	deploy, err := getDeployment(cluster, namespace, w.GetAppName())

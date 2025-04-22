@@ -17,7 +17,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-func EnableProtectionDiscoveredApps(ctx types.Context) error {
+func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	w := ctx.Workload()
 	name := ctx.Name()
 	log := ctx.Logger()
@@ -70,7 +70,7 @@ func EnableProtectionDiscoveredApps(ctx types.Context) error {
 
 // remove DRPC
 // update placement annotation
-func DisableProtectionDiscoveredApps(ctx types.Context) error {
+func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
 	config := ctx.Config()
@@ -118,7 +118,7 @@ func DisableProtectionDiscoveredApps(ctx types.Context) error {
 
 // nolint:funlen,cyclop
 func failoverRelocateDiscoveredApps(
-	ctx types.Context,
+	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
 	currentClusterName string,
@@ -170,7 +170,7 @@ func failoverRelocateDiscoveredApps(
 // For Kubernetes, creates namespaces and adds annotation on both DR clusters for volsync based replication.
 // For OpenShift, creates namespace only on the target DR cluster (c2) before failover.
 // Returns an error if the distribution is unknown, and if namespace creation or annotation fails.
-func createNamespacesDiscoveredApps(ctx types.Context, namespace string, log *zap.SugaredLogger) error {
+func createNamespacesDiscoveredApps(ctx types.TestContext, namespace string, log *zap.SugaredLogger) error {
 	switch ctx.Config().Distro {
 	case config.DistroK8s:
 		return util.CreateNamespaceAndAddAnnotation(ctx.Env(), namespace, log)

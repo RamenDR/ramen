@@ -16,7 +16,7 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func waitDRPCReady(ctx types.Context, namespace string, drpcName string) error {
+func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
 	startTime := time.Now()
@@ -62,7 +62,7 @@ func conditionMet(conditions []metav1.Condition, conditionType string) bool {
 	return condition != nil && condition.Status == "True"
 }
 
-func waitDRPCPhase(ctx types.Context, namespace, name string, phase ramen.DRState) error {
+func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DRState) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
 	startTime := time.Now()
@@ -106,7 +106,7 @@ func getTargetCluster(cluster types.Cluster, drPolicyName, currentCluster string
 	return targetCluster, nil
 }
 
-func waitDRPCDeleted(ctx types.Context, namespace string, name string) error {
+func waitDRPCDeleted(ctx types.TestContext, namespace string, name string) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
 	startTime := time.Now()
@@ -135,7 +135,7 @@ func waitDRPCDeleted(ctx types.Context, namespace string, name string) error {
 
 // nolint:unparam
 func waitDRPCProgression(
-	ctx types.Context,
+	ctx types.TestContext,
 	namespace, name string,
 	progression ramen.ProgressionStatus,
 ) error {
