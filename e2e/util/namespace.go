@@ -4,7 +4,6 @@
 package util
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -30,7 +29,7 @@ func CreateNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 		},
 	}
 
-	err := cluster.Client.Create(context.Background(), ns)
+	err := cluster.Client.Create(ctx.Context(), ns)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -53,7 +52,7 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 		},
 	}
 
-	err := cluster.Client.Delete(context.Background(), ns)
+	err := cluster.Client.Delete(ctx.Context(), ns)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -70,7 +69,7 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 	key := k8stypes.NamespacedName{Name: namespace}
 
 	for {
-		if err := cluster.Client.Get(context.Background(), key, ns); err != nil {
+		if err := cluster.Client.Get(ctx.Context(), key, ns); err != nil {
 			if !k8serrors.IsNotFound(err) {
 				return err
 			}
@@ -117,7 +116,7 @@ func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, 
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		objNs := &corev1.Namespace{}
 
-		if err := cluster.Client.Get(context.Background(), key, objNs); err != nil {
+		if err := cluster.Client.Get(ctx.Context(), key, objNs); err != nil {
 			return err
 		}
 
@@ -129,7 +128,7 @@ func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, 
 		annotations[volsyncPrivilegedMovers] = "true"
 		objNs.SetAnnotations(annotations)
 
-		if err := cluster.Client.Update(context.Background(), objNs); err != nil {
+		if err := cluster.Client.Update(ctx.Context(), objNs); err != nil {
 			return err
 		}
 

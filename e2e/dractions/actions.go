@@ -42,7 +42,7 @@ func EnableProtection(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func EnableProtection(ctx types.TestContext) error {
 	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		placement, err := util.GetPlacement(ctx.Env().Hub, managementNamespace, placementName)
+		placement, err := util.GetPlacement(ctx, managementNamespace, placementName)
 		if err != nil {
 			return err
 		}
@@ -108,7 +108,7 @@ func DisableProtection(ctx types.TestContext) error {
 	placementName := name
 	log := ctx.Logger()
 
-	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, placementName)
+	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -143,7 +143,7 @@ func Failover(ctx types.TestContext) error {
 	name := ctx.Name()
 	config := ctx.Config()
 
-	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
+	currentCluster, err := util.GetCurrentCluster(ctx, managementNamespace, name)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func Relocate(ctx types.TestContext) error {
 	config := ctx.Config()
 	name := ctx.Name()
 
-	currentCluster, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
+	currentCluster, err := util.GetCurrentCluster(ctx, managementNamespace, name)
 	if err != nil {
 		return err
 	}

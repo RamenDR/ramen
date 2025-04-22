@@ -4,8 +4,6 @@
 package util
 
 import (
-	"context"
-
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
@@ -47,7 +45,7 @@ func createChannel(ctx types.Context) error {
 		},
 	}
 
-	err := hub.Client.Create(context.Background(), objChannel)
+	err := hub.Client.Create(ctx.Context(), objChannel)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -75,7 +73,7 @@ func deleteChannel(ctx types.Context) error {
 		},
 	}
 
-	err := hub.Client.Delete(context.Background(), channel)
+	err := hub.Client.Delete(ctx.Context(), channel)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err

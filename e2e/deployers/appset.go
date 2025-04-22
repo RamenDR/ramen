@@ -49,7 +49,7 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(ctx.Env().Hub, managementNamespace, name)
+	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
