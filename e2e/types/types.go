@@ -4,6 +4,8 @@
 package types
 
 import (
+	"context"
+
 	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -96,15 +98,16 @@ type Workload interface {
 	Health(ctx TestContext, cluster Cluster, namespace string) error
 }
 
-// Context keeps the Logger, Env, and Config shared by all code in the e2e package.
+// Context keeps the Logger, Env, Config, and Context shared by all code in the e2e package.
 type Context interface {
 	Logger() *zap.SugaredLogger
 	Env() *Env
 	Config() *Config
+	Context() context.Context
 }
 
 // TestContext is a more specific Context for a single test; a combination of Deployer, Workload, and namespaces. A test
-// has a unique Name and Logger, and it shares the global Env and Config.
+// has a unique Name and Logger, and it shares the global Env, Config and Context.
 type TestContext interface {
 	Context
 	Deployer() Deployer

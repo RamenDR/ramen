@@ -5,6 +5,7 @@
 package test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -76,6 +77,9 @@ func (c *Context) Env() *types.Env {
 func (c *Context) Config() *types.Config {
 	return c.ctx.Config()
 }
+
+func (c *Context) Context() context.Context {
+	return c.ctx.Context()
 }
 
 // Validated return an error if the combination of deployer and workload is not supported.
