@@ -100,6 +100,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		baseNFC, nfc1, nfc2               *csiaddonsv1alpha1.NetworkFenceClass
 		baseCSIAddonsNode, csiAddonsNode1 *csiaddonsv1alpha1.CSIAddonsNode
 		classes                           Classes
+		ramenConfig                       *ramen.RamenConfig
 	)
 
 	BeforeAll(func() {
@@ -133,6 +134,36 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		ensureNamespaceExists(context.TODO(), k8sClient, ramenNamespace)
+		By("Creating namespaces")
+
+		Expect(k8sClient.Create(context.TODO(),
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ramenNamespace}})).To(Succeed())
+
+		By("Defining a ramen configuration")
+
+		ramenConfig = &ramen.RamenConfig{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "RamenConfig",
+				APIVersion: ramen.GroupVersion.String(),
+			},
+			LeaderElection: &config.LeaderElectionConfiguration{
+				LeaderElect:  new(bool),
+				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
+			},
+			Metrics: ramen.ControllerMetrics{
+				BindAddress: "0", // Disable metrics
+			},
+			RamenControllerType: ramen.DRHubType,
+		}
+		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
+		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
+		configMap, err := ramencontrollers.ConfigMapNew(
+			ramenNamespace,
+			ramencontrollers.HubOperatorConfigMapName,
+			ramenConfig,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
 
 		By("starting the DRClusterConfig reconciler")
 
