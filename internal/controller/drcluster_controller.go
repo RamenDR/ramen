@@ -579,27 +579,10 @@ func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
 ) (string, error) {
 	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
-		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
+		if reason, err := S3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
 			return reason, err
 		}
-	}
-
-	return "", nil
-}
-
-func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
-	objectStoreGetter ObjectStoreGetter, s3ProfileName, listKeyPrefix string,
-	log logr.Logger,
-) (string, error) {
-	objectStore, _, err := objectStoreGetter.ObjectStore(
-		ctx, apiReader, s3ProfileName, "drpolicy validation", log)
-	if err != nil {
-		return "s3ConnectionFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
-	}
-
-	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
-		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
 	return "", nil
