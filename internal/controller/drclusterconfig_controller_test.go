@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,6 +78,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		baseVGSC, vgsc1, vgsc2 *groupsnapv1beta1.VolumeGroupSnapshotClass
 		baseNFC, nfc1, nfc2    *csiaddonsv1alpha1.NetworkFenceClass
 		classes                Classes
+		ramenConfig            *ramen.RamenConfig
 	)
 
 	BeforeAll(func() {
@@ -108,6 +110,37 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred())
+
+		By("Creating namespaces")
+
+		Expect(k8sClient.Create(context.TODO(),
+			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ramenNamespace}})).To(Succeed())
+
+		By("Defining a ramen configuration")
+
+		ramenConfig = &ramen.RamenConfig{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "RamenConfig",
+				APIVersion: ramen.GroupVersion.String(),
+			},
+			LeaderElection: &config.LeaderElectionConfiguration{
+				LeaderElect:  new(bool),
+				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
+			},
+			Metrics: ramen.ControllerMetrics{
+				BindAddress: "0", // Disable metrics
+			},
+			RamenControllerType: ramen.DRHubType,
+		}
+		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
+		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
+		configMap, err := ramencontrollers.ConfigMapNew(
+			ramenNamespace,
+			ramencontrollers.HubOperatorConfigMapName,
+			ramenConfig,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
 
 		By("starting the DRClusterConfig reconciler")
 
