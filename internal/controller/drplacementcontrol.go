@@ -368,6 +368,13 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
+		if err := d.ensureVRGManifestWork(failoverCluster); err != nil {
+			d.log.Info("Unable to ensure VRG ManifestWork on failover cluster")
+			d.setProgression(rmn.ProgressionWaitForReadiness)
+
+			return !done, err
+		}
+
 		// Make sure VolRep 'Data' and VolSync 'setup' conditions are ready
 		ready := d.checkReadiness(failoverCluster)
 		if !ready {
@@ -822,7 +829,7 @@ func checkActivationForStorageIdentifier(
 //   - Check if current primary (that is not the preferred cluster), is ready to switch over
 //   - Relocate!
 //
-//nolint:gocognit,cyclop,funlen
+//nolint:gocognit,cyclop,funlen,gocyclo
 func (d *DRPCInstance) RunRelocate() (bool, error) {
 	d.log.Info("Entering RunRelocate", "state", d.getLastDRState(), "progression", d.getProgression())
 
@@ -852,6 +859,13 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	if curHomeCluster != "" && d.vrgExistsAndPrimary(preferredCluster) {
 		d.setDRState(rmn.Relocating)
 		d.updatePreferredDecision()
+
+		if err := d.ensureVRGManifestWork(preferredCluster); err != nil {
+			d.log.Info("Unable to ensure VRG ManifestWork on preferred cluster")
+			d.setProgression(rmn.ProgressionWaitForReadiness)
+
+			return !done, err
+		}
 
 		ready := d.checkReadiness(preferredCluster)
 		if !ready {
