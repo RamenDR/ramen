@@ -350,10 +350,14 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)).To(Succeed())
 
 	Expect((&ramencontrollers.DRPolicyReconciler{
-		Client:            k8sManager.GetClient(),
-		APIReader:         k8sManager.GetAPIReader(),
-		Scheme:            k8sManager.GetScheme(),
-		Log:               ctrl.Log.WithName("controllers").WithName("DRPolicy"),
+		Client:    k8sManager.GetClient(),
+		APIReader: k8sManager.GetAPIReader(),
+		Scheme:    k8sManager.GetScheme(),
+		Log:       ctrl.Log.WithName("controllers").WithName("DRPolicy"),
+		MCVGetter: FakeMCVGetter{
+			Client:    k8sClient,
+			apiReader: k8sManager.GetAPIReader(),
+		},
 		ObjectStoreGetter: fakeObjectStoreGetter{},
 		RateLimiter:       &rateLimiter,
 	}).SetupWithManager(k8sManager)).To(Succeed())
