@@ -132,6 +132,20 @@ spec:
                 items:
                   type: string
                 type: array
+              volumeGroupReplicationClasses:
+                description: |-
+                  VolumeGroupReplicationClasses lists the detected volume group replication classes on the cluster that carry the
+                  ramen replicationid label
+                items:
+                  type: string
+                type: array
+              volumeGroupSnapshotClasses:
+                description: |-
+                  VolumeGroupSnapshotClasses lists the detected volume group snapshot classes on the cluster that carry the ramen
+                  storageid label
+                items:
+                  type: string
+                type: array
               volumeReplicationClasses:
                 description: |-
                   VolumeReplicationClasses lists the detected volume replication classes on the cluster that carry the ramen

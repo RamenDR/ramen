@@ -101,6 +101,12 @@ type PeerClass struct {
 	// ClusterIDs is a list of two clusterIDs that represent this peer relationship for a common StorageClassName
 	// The IDs are based on the value of the metadata.uid of the kube-system namespace
 	ClusterIDs []string `json:"clusterIDs,omitempty"`
+
+	// Grouping reflects if PVCs using the StorageClassName can be grouped for replication, via VolumeGroupSnapshotClass
+	// if ReplicationID is empty, or via VolumeGroupReplicationClass otherwise. This is true only when grouping can be
+	// supported across the clusters in the ClusterIDs list.
+	//+optional
+	Grouping bool `json:"grouping,omitempty"`
 }
 
 const (
