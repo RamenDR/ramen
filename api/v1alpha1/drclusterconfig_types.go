@@ -47,9 +47,17 @@ type DRClusterConfigStatus struct {
 	// storageid label
 	VolumeSnapshotClasses []string `json:"volumeSnapshotClasses,omitempty"`
 
+	// VolumeGroupSnapshotClasses lists the detected volume group snapshot classes on the cluster that carry the ramen
+	// storageid label
+	VolumeGroupSnapshotClasses []string `json:"volumeGroupSnapshotClasses,omitempty"`
+
 	// VolumeReplicationClasses lists the detected volume replication classes on the cluster that carry the ramen
 	// replicationid label
 	VolumeReplicationClasses []string `json:"volumeReplicationClasses,omitempty"`
+
+	// VolumeGroupReplicationClasses lists the detected volume group replication classes on the cluster that carry the
+	// ramen replicationid label
+	VolumeGroupReplicationClasses []string `json:"volumeGroupReplicationClasses,omitempty"`
 }
 
 //+kubebuilder:object:root=true
