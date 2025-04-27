@@ -139,6 +139,8 @@ func (e ExecHook) getExecPodsForSinglePodOnly(log logr.Logger) ([]ExecPodSpec, e
 		eps := e.getAllPossibleExecPods(log)
 		if len(eps) > 0 {
 			execPods = append(execPods, eps[0])
+			log.Info("pods details obtained using label selector for", "hook", e.Hook.Name,
+				"labelSelector", e.Hook.LabelSelector, "selectResource", e.Hook.SelectResource, "podName", eps[0].PodName)
 
 			return execPods, nil
 		}
@@ -180,8 +182,8 @@ func (e ExecHook) getExecPodsFromStatefulSetForSinglePodOnly(log logr.Logger) ([
 
 		ss = append(ss, statefulSetList.Items...)
 
-		log.Info("statefulsets count obtained using label selector for", "hook", e.Hook.Name,
-			"labelSelector", e.Hook.LabelSelector, "statefulSetCount", len(ss))
+		log.Info("statefulsets count obtained using label selector for", "hook", e.Hook.Name, "labelSelector",
+			e.Hook.LabelSelector, "selectResource", e.Hook.SelectResource, "statefulSetCount", len(ss))
 	}
 
 	if e.Hook.NameSelector != "" {
@@ -198,7 +200,7 @@ func (e ExecHook) getExecPodsFromStatefulSetForSinglePodOnly(log logr.Logger) ([
 		}
 
 		log.Info("statefulsets count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "statefulSetCount", len(ss))
+			"nameSelector", e.Hook.NameSelector, "selectResource", e.Hook.SelectResource, "statefulSetCount", len(ss))
 	}
 
 	return e.getPodsFromStatefulsets(ss)
@@ -353,8 +355,8 @@ func (e ExecHook) getDeploymentsForSinglePodOnly(log logr.Logger) ([]appsv1.Depl
 
 		deps = append(deps, deploymentList.Items...)
 
-		log.Info("deployments count obtained using label selector for", "hook", e.Hook.Name,
-			"labelSelector", e.Hook.LabelSelector, "deploymentCount", len(deps))
+		log.Info("deployments count obtained using label selector for", "hook", e.Hook.Name, "labelSelector",
+			e.Hook.LabelSelector, "selectResource", e.Hook.SelectResource, "deploymentCount", len(deps))
 	}
 
 	if e.Hook.NameSelector != "" {
@@ -372,7 +374,7 @@ func (e ExecHook) getDeploymentsForSinglePodOnly(log logr.Logger) ([]appsv1.Depl
 		}
 
 		log.Info("deployments count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "deploymentCount", len(deps))
+			"nameSelector", e.Hook.NameSelector, "selectResource", e.Hook.SelectResource, "deploymentCount", len(deps))
 	}
 
 	return deps, err
@@ -396,7 +398,7 @@ func (e ExecHook) getAllPossibleExecPods(log logr.Logger) []ExecPodSpec {
 		execPods = append(execPods, eps...)
 
 		log.Info("all pods count obtained using label selector for", "hook", e.Hook.Name,
-			"labelSelector", e.Hook.LabelSelector, "podCount", len(execPods))
+			"labelSelector", e.Hook.LabelSelector, "selectResource", e.Hook.SelectResource, "podCount", len(execPods))
 	}
 
 	if e.Hook.NameSelector != "" {
@@ -408,7 +410,7 @@ func (e ExecHook) getAllPossibleExecPods(log logr.Logger) []ExecPodSpec {
 		execPods = append(execPods, eps...)
 
 		log.Info("all pods count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "podCount", len(execPods))
+			"nameSelector", e.Hook.NameSelector, "selectResource", e.Hook.SelectResource, "podCount", len(execPods))
 	}
 
 	return execPods
