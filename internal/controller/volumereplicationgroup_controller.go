@@ -530,6 +530,9 @@ const (
 	// StorageClass label
 	StorageIDLabel = "ramendr.openshift.io/storageid"
 
+	// StorageClass offloaded label
+	StorageOffloadedLabel = "ramendr.openshift.io/offloaded"
+
 	// Consistency group label
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
