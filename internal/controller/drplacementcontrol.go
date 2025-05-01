@@ -1615,13 +1615,20 @@ func equalClusterIDSlices(a, b []string) bool {
 }
 
 // updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
-// a replicationID then the from should also claim a replicationID, else both should not. This ensures that a peerClass
-// is updated with latest storage/replication IDs, but only if the underlying replication scheme remains unchanged.
+// a replicationID then the from should also claim a replicationID, else both should not. Similarly existing peerClass
+// offloaded property should be the same as from. This ensures that a peerClass is updated with latest
+// storage/replication IDs, but only if the underlying replication scheme remains unchanged.
 func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, scName string) {
 	for toIdx := range to {
 		if (to[toIdx].StorageClassName != scName) ||
 			(!equalClusterIDSlices(to[toIdx].ClusterIDs, from.ClusterIDs)) {
 			continue
+		}
+
+		if to[toIdx].Offloaded != from.Offloaded {
+			log.Info("Unable to update peerClass due to mismatching offloaded property", "peerClass", to[toIdx], "from", from)
+
+			break
 		}
 
 		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" {
@@ -1636,7 +1643,7 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 			break
 		}
 
-		log.Info("Unable to update mismatching peerClass", "peerClass", to[toIdx], "from", from)
+		log.Info("Unable to update peerClass due mismatching replicationIDs", "peerClass", to[toIdx], "from", from)
 
 		break
 	}
