@@ -101,7 +101,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	k8sClient client.Client,
 	volumeGroupSnapshotClassSelector metav1.LabelSelector,
 	pvcsConsistencyGroupSelector metav1.LabelSelector,
-	namespace string,
+	namespace []string,
 	logger logr.Logger,
 ) (string, error) {
 	volumeGroupSnapshotClasses, err := GetVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
@@ -109,18 +109,18 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 		return "", err
 	}
 
-	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, []string{namespace}, false)
+	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, namespace, false)
 	if err != nil {
 		return "", err
 	}
 
 	storageClassProviders := []string{}
-
+logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "pvcs", pvcs.Items)
 	for _, pvc := range pvcs.Items {
 		storageClass := &storagev1.StorageClass{}
 
 		if err := k8sClient.Get(ctx,
-			types.NamespacedName{Name: *pvc.Spec.StorageClassName, Namespace: pvc.Namespace},
+			types.NamespacedName{Name: *pvc.Spec.StorageClassName},
 			storageClass,
 		); err != nil {
 			return "", err
@@ -128,7 +128,8 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 
 		storageClassProviders = append(storageClassProviders, storageClass.Provisioner)
 	}
-
+logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "storageClassProviders", storageClassProviders)
+logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "volumeGroupSnapshotClasses", volumeGroupSnapshotClasses)
 	var matchedVolumeGroupSnapshotClassName string
 
 	for _, volumeGroupSnapshotClass := range volumeGroupSnapshotClasses {

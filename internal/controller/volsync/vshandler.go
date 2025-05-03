@@ -140,8 +140,8 @@ func (v *VSHandler) ReconcileRD(
 	}
 
 	if v.vrgInAdminNamespace {
-		// copy th secret to the namespace where the PVC is
-		err = v.copySecretToPVCNamespace(pskSecretName, util.ProtectedPVCNamespacedName(rdSpec.ProtectedPVC))
+		// copy the secret to the namespace where the PVC is
+		err = v.CopySecretToPVCNamespace(pskSecretName, rdSpec.ProtectedPVC.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +323,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 
 	if v.vrgInAdminNamespace {
 		// copy th secret to the namespace where the PVC is
-		err = v.copySecretToPVCNamespace(pskSecretName, util.ProtectedPVCNamespacedName(rsSpec.ProtectedPVC))
+		err = v.CopySecretToPVCNamespace(pskSecretName, rsSpec.ProtectedPVC.Namespace)
 		if err != nil {
 			return false, nil, err
 		}
@@ -1009,13 +1009,13 @@ func (v *VSHandler) ValidateSecretAndAddVRGOwnerRef(secretName string) (bool, er
 	return true, nil
 }
 
-func (v *VSHandler) copySecretToPVCNamespace(secretName string, pvcNamespacedName types.NamespacedName) error {
+func (v *VSHandler) CopySecretToPVCNamespace(secretName, namespace string) error {
 	secret := &corev1.Secret{}
 
 	err := v.client.Get(v.ctx,
 		types.NamespacedName{
 			Name:      secretName,
-			Namespace: pvcNamespacedName.Namespace,
+			Namespace: namespace,
 		}, secret)
 	if err != nil && !errors.IsNotFound(err) {
 		v.log.Error(err, "Failed to get secret", "secretName", secretName)
@@ -1025,13 +1025,13 @@ func (v *VSHandler) copySecretToPVCNamespace(secretName string, pvcNamespacedNam
 
 	if err == nil {
 		v.log.Info("Secret already exists in the PVC namespace", "secretName", secretName, "pvcNamespace",
-			pvcNamespacedName.Namespace)
+			namespace)
 
 		return nil
 	}
 
 	v.log.Info("volsync secret not found in the pvc namespace, will create it", "secretName", secretName,
-		"pvcNamespace", pvcNamespacedName.Namespace)
+		"pvcNamespace", namespace)
 
 	err = v.client.Get(v.ctx,
 		types.NamespacedName{
@@ -1046,7 +1046,7 @@ func (v *VSHandler) copySecretToPVCNamespace(secretName string, pvcNamespacedNam
 
 	secretCopy.ObjectMeta = metav1.ObjectMeta{
 		Name:        secretName,
-		Namespace:   pvcNamespacedName.Namespace,
+		Namespace:   namespace,
 		Labels:      secret.Labels,
 		Annotations: secret.Annotations,
 	}
@@ -2635,6 +2635,10 @@ func (v *VSHandler) volumeModeForProtectedPVC(protectedPVC *ramendrv1alpha1.Prot
 	}
 
 	return &volumeMode
+}
+
+func (v *VSHandler) IsVRGInAdminNamespace() bool {
+	return v.vrgInAdminNamespace
 }
 
 func getTmpPVCNameForFinalSync(pvcName string) string {
