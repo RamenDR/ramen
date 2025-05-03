@@ -126,6 +126,16 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		return mover.InProgress(), err
 	}
 
+	if m.VSHandler.IsVRGInAdminNamespace() {
+		// copy the secret to the namespace where the PVC is
+		err = m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupSource.Namespace)
+		if err != nil {
+			m.Logger.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
+
+			return mover.InProgress(), err
+		}
+	}
+
 	if m.ReplicationGroupSource.Status.LastSyncStartTime == nil {
 		m.Logger.Info("LastSyncStartTime in ReplicationGroupSource is not updated yet.")
 

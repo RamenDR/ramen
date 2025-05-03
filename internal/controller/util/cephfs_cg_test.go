@@ -250,7 +250,7 @@ var _ = Describe("CephfsCg", func() {
 		Describe("GetVolumeGroupSnapshotClassFromPVCsStorageClass", func() {
 			It("Should be failed", func() {
 				volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-					context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, "default", testLogger)
+					context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
 				Expect(volumeGroupSnapshotClassName).To(Equal(""))
 				Expect(err).NotTo(BeNil())
 				Expect(err.Error()).To(ContainSubstring("unable to find matching volumegroupsnapshotclass for storage provisioner"))
@@ -268,26 +268,26 @@ var _ = Describe("CephfsCg", func() {
 					volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "testxxxx"}},
-						metav1.LabelSelector{}, "default", testLogger)
+						metav1.LabelSelector{}, []string{"default"}, testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
 					Expect(err).NotTo(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, "default", testLogger)
+						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, []string{"default"}, testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
 					Expect(err).NotTo(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, "default", testLogger)
+						context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
 					Expect(err).To(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"testpvc": "testpvc"}}, "default", testLogger)
+						metav1.LabelSelector{MatchLabels: map[string]string{"testpvc": "testpvc"}}, []string{"default"}, testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
 					Expect(err).To(BeNil())
 				})
