@@ -112,6 +112,8 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
+
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
 	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
@@ -120,7 +122,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		cephfscg.NewRGSMachine(r.Client, rgs,
 			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
 				&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
-				volSyncDestinationCopyMethodOrDefault(ramenConfig), false,
+				volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
 			),
 			cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger),
 			logger,
