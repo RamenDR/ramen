@@ -13,7 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/go-logr/logr"
-	recipecore "github.com/ramendr/ramen/internal/controller/core"
+	core "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -1096,7 +1096,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
-	recipecore.ObjectCreatedByRamenSetLabel(clonedPlRule)
+	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
 
 	userPlRule.DeepCopyInto(clonedPlRule)
 
@@ -1708,7 +1708,7 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 		rmnutil.ExcludeFromVeleroBackup: "true",
 	}
 
-	recipecore.ObjectCreatedByRamenSetLabel(plDecision)
+	rmnutil.AddLabel(plDecision, rmnutil.CreatedByRamenLabel, "true")
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
@@ -2533,7 +2533,7 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 
 	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
 	// Support for protecting independent VMs
-	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
+	if drpcRecipeName == core.VMRecipeName && otherDrpcRecipeName == core.VMRecipeName {
 		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
@@ -2549,8 +2549,8 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 	otherdrpc *rmn.DRPlacementControl,
 ) bool {
 	// "PROTECTED_VMS"
-	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]...)
-	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]...)
+	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
+	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
 
 	vmListConflict := drpcVMList.Intersection(otherdrpcVMList)
 
@@ -2558,16 +2558,16 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 
 	// "K8S_RESOURCE_LIST"
 	drpcK8SLabelSelector := sets.NewString(
-		drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]...)
+		drpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
 	otherdrpcK8SLabelSelector := sets.NewString(
-		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]...)
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
 
 	k8sLabelSelectorConflict := drpcK8SLabelSelector.Intersection(otherdrpcK8SLabelSelector)
 	// "PVC_RESOURCE_LIST"
 	drpcPVCLabelSelector := sets.NewString(
-		drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.PVCLabelSelector]...)
+		drpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
 	otherdrpcPVCLabelSelector := sets.NewString(
-		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.PVCLabelSelector]...)
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
 
 	pvcLabelSelectorConflict := drpcPVCLabelSelector.Intersection(otherdrpcPVCLabelSelector)
 

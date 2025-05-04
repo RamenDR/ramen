@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +32,8 @@ const (
 
 	JobNameMaxLength     = validation.DNS1123LabelMaxLength
 	ServiceNameMaxLength = validation.DNS1123LabelMaxLength
+
+	CreatedByRamenLabel = "ramendr.openshift.io/created-by-ramen"
 )
 
 type ResourceUpdater struct {
@@ -233,7 +234,7 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			ns.Name = namespace
-			core.ObjectCreatedByRamenSetLabel(ns)
+			AddLabel(ns, CreatedByRamenLabel, "true")
 
 			err = k8sClient.Create(ctx, ns)
 			if err != nil {
