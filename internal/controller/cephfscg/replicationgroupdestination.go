@@ -13,7 +13,6 @@ import (
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	corev1 "k8s.io/api/core/v1"
@@ -264,7 +263,7 @@ func (m *rgdMachine) CreateReplicationDestinations(
 			}
 
 			util.AddLabel(rd, util.RGDOwnerLabel, m.ReplicationGroupDestination.Name)
-			core.ObjectCreatedByRamenSetLabel(rd)
+			util.AddLabel(rd, util.CreatedByRamenLabel, "true")
 			util.AddAnnotation(rd, volsync.OwnerNameAnnotation, m.ReplicationGroupDestination.Name)
 			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
 

@@ -16,8 +16,8 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -469,7 +469,7 @@ func backupRequestCreate(
 		labels,
 	)
 
-	core.ObjectCreatedByRamenSetLabel(backupLocation)
+	util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
 
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err
