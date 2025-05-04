@@ -31,7 +31,6 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -677,7 +676,7 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		},
 	}
 
-	core.ObjectCreatedByRamenSetLabel(&drcConfig)
+	util.AddLabel(&drcConfig, util.CreatedByRamenLabel, "true")
 
 	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
 	if err != nil {
@@ -1464,7 +1463,7 @@ func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence,
 			Cidrs:      targetCluster.Spec.CIDRs,
 		},
 	}
-	core.ObjectCreatedByRamenSetLabel(&nf)
+	util.AddLabel(&nf, util.CreatedByRamenLabel, "true")
 
 	if err := fillStorageDetails(targetCluster, &nf); err != nil {
 		return nf, fmt.Errorf("failed to create network fence resource with storage detai: %w", err)

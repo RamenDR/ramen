@@ -25,7 +25,6 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -595,7 +594,7 @@ func (mwu *MWUtil) newManifestWork(name string, mcNamespace string,
 		},
 	}
 
-	core.ObjectCreatedByRamenSetLabel(mw)
+	AddLabel(mw, CreatedByRamenLabel, "true")
 
 	if annotations != nil {
 		mw.ObjectMeta.Annotations = annotations
