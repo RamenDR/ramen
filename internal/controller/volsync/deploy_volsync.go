@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/core"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,7 +58,7 @@ func reconcileVolSyncManagedClusterAddOn(ctx context.Context, k8sClient client.C
 		Version: ManagedClusterAddOnVersion,
 		Kind:    ManagedClusterAddOnKind,
 	})
-	core.ObjectCreatedByRamenSetLabel(vsMCAO)
+	util.AddLabel(vsMCAO, util.CreatedByRamenLabel, "true")
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, k8sClient, vsMCAO, func() error {
 		// Do not update the ManagedClusterAddOn if it already exists - let users update settings if required
