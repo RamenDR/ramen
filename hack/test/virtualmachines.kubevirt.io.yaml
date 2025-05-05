@@ -1,0 +1,50 @@
+# This is a minimized version of the VirtualMachine CRD from KubeVirt
+# Original source: https://github.com/kubevirt/kubevirt/releases
+# This compact version contains only the essential fields needed for unit testing
+# to avoid including the full 5000+ line CRD in the ramen repository.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: virtualmachines.kubevirt.io
+spec:
+  group: kubevirt.io
+  names:
+    kind: VirtualMachine
+    listKind: VirtualMachineList
+    plural: virtualmachines
+    singular: virtualmachine
+    shortNames:
+      - vm
+      - vms
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              properties:
+                running:
+                  type: boolean
+                template:
+                  type: object
+                  properties:
+                    metadata:
+                      type: object
+                    spec:
+                      type: object
+              required: ["running", "template"]
+            status:
+              type: object
+      subresources:
+        status: {}

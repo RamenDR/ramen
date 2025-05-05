@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/pointer"
+	virtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -1081,6 +1083,513 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	var vrgTestCase *vrgTest
+	Context("Create VRG and validate VM status", func() {
+		BeforeEach(func() {
+			ramenConfig.RamenOpsNamespace = "ramen-ops"
+			configMapUpdate()
+		})
+
+		storageIDLabel := genStorageIDLabel(storageIDs[0])
+		storageID := storageIDLabel[vrgController.StorageIDLabel]
+		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+		vrgEmptySCTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			storageIDLabels:        storageIDLabel,
+			replicationClassLabels: vrcLabels,
+		}
+
+		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
+			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+		})
+
+		// Set s3Profiles for VM tests
+		BeforeEach(func() {
+			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+		})
+
+		// VM conflict validation test scenarios
+		It("Primary VRG: VM with protection label in VRG spec should trigger validation and report no-conflict", func() {
+			createVM("vm-1-test")
+			protectedVMs := []string{"vm-1-test"}
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+			protectVM(vm)
+
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.protectedVMs = protectedVMs
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionTrue &&
+					condition.Reason == "NoConflictDetected"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("Primary VRG: VM missing protection label but listed in VRG spec should report conflict", func() {
+			createVM("vm-1-test")
+			protectedVMs := []string{"vm-1-test"}
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.protectedVMs = protectedVMs
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictPrimary"
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VM conflict validation to complete")
+		})
+
+		It("Secondary VRG: VM with protection label in VRG spec should trigger validation and report conflict", func() {
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.replicationState = "secondary"
+			vrgTestCase.protectedVMs = []string{"vm-1-test"}
+			vrgTestCase.pvcLabels["ramendr.openshift.io/k8s-resource-selector"] = "protected-by-ramendr"
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			pvcName := vrgTestCase.pvcNames[0].Name
+			createVMWithPVC("vm-1-test", pvcName)
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+			protectVM(vm)
+
+			Eventually(func() map[string]string {
+				vm = getVM(vmNamespacedName)
+
+				return vm.GetLabels()
+			}, vrgtimeout, vrginterval).Should(HaveKeyWithValue(
+				"ramendr.openshift.io/k8s-resource-selector", "protected-by-ramendr"))
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+
+			// Wait for VRG to reach Secondary state first
+			Eventually(func() string {
+				vrg = vrgTestCase.getVRG()
+
+				return string(vrg.Status.State)
+			}, vrgtimeout, vrginterval).Should(Equal("Secondary"))
+
+			// Wait for VRG generation to be observed (ensures no DR action in progress)
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+
+				return vrg.Generation == vrg.Status.ObservedGeneration
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			// Force VRG to reconcile after VM protection label is applied and state is stable
+			Eventually(func() error {
+				vrg = vrgTestCase.getVRG()
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+				vrg.Annotations["test.ramendr.openshift.io/reconcile-trigger"] = "vm-labeled"
+
+				return k8sClient.Update(context.TODO(), vrg)
+			}, vrgtimeout, vrginterval).Should(Succeed())
+
+			// Wait for conflict condition to be processed now that VRG is stable
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictSecondary"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("Secondary VRG: conflict if VM does not have protection label but exists in protectedVMs list", func() {
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.replicationState = "secondary"
+			vrgTestCase.protectedVMs = []string{"vm-1-test"}
+			vrgTestCase.pvcLabels["ramendr.openshift.io/k8s-resource-selector"] = "protected-by-ramendr"
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			pvcName := vrgTestCase.pvcNames[0].Name
+			createVMWithPVC("vm-1-test", pvcName)
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+
+			Eventually(func() error {
+				err := k8sClient.Get(context.TODO(), vmNamespacedName, &virtv1.VirtualMachine{})
+
+				return err
+			}, vrgtimeout, vrginterval).Should(BeNil())
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+
+			// Ensure VM is fully established in the cluster before VRG conflict detection
+			Eventually(func() bool {
+				vm := &virtv1.VirtualMachine{}
+				err := k8sClient.Get(context.TODO(), vmNamespacedName, vm)
+
+				return err == nil && vm.Name == "vm-1-test"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			// Force VRG to reconcile after VM creation by updating an annotation
+			Eventually(func() error {
+				vrg = vrgTestCase.getVRG()
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+				vrg.Annotations["test.ramendr.openshift.io/reconcile-trigger"] = "vm-created"
+
+				return k8sClient.Update(context.TODO(), vrg)
+			}, vrgtimeout, vrginterval).Should(Succeed())
+
+			Eventually(func() string {
+				vrg = vrgTestCase.getVRG()
+
+				return string(vrg.Status.State)
+			}, vrgtimeout, vrginterval).Should(Equal("Secondary"))
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+
+				return vrg.Generation == vrg.Status.ObservedGeneration
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictSecondary"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("Secondary VRG: VM in VRG spec does not exist should trigger validation and report No conflict", func() {
+			protectedVMs := []string{"vm-1-test"}
+
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.replicationState = "secondary"
+			vrgTestCase.protectedVMs = protectedVMs
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionTrue &&
+					condition.Reason == "NoConflictDetected"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("Primary VRG: Conflict if protectedVMs don’t match VRG spec names", func() {
+			createVM("vm-1-test")
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			createVM("vm-22-test")
+			vmNamespacedName2 := types.NamespacedName{
+				Name:      "vm-22-test",
+				Namespace: "default",
+			}
+			vm2 := getVM(vmNamespacedName2)
+			DeferCleanup(deleteVM, vm2, vmNamespacedName2)
+
+			protectVM(vm1)
+			protectVM(vm2)
+
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.protectedVMs = []string{"vm-1-test", "vm-2-test"}
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictPrimary"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("Primary VRG: Removal of protection label from VM leads to trasition from no-conflict to conflict", func() {
+			createVM("vm-1-test")
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			createVM("vm-2-test")
+			vmNamespacedName2 := types.NamespacedName{
+				Name:      "vm-2-test",
+				Namespace: "default",
+			}
+			vm2 := getVM(vmNamespacedName2)
+			DeferCleanup(deleteVM, vm2, vmNamespacedName2)
+
+			protectVM(vm1)
+			protectVM(vm2)
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.protectedVMs = protectedVMs
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionTrue &&
+					condition.Reason == "NoConflictDetected"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			unprotectVM(vm1)
+			unprotectVM(vm2)
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+				if vrg == nil {
+					return false
+				}
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictPrimary"
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG FALSE condition %s", vrgTestCase.vrgName)
+		})
+
+		It("Secondary VRG: Deletion of VM leads to trasition from conflict to no-conflict", func() {
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.replicationState = "secondary"
+			vrgTestCase.protectedVMs = []string{"vm-1-test"}
+			vrgTestCase.pvcLabels["ramendr.openshift.io/k8s-resource-selector"] = "protected-by-ramendr"
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			pvcName := vrgTestCase.pvcNames[0].Name
+			createVMWithPVC("vm-1-test", pvcName)
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			protectVM(vm1)
+
+			Eventually(func() bool {
+				vm1 = getVM(vmNamespacedName1)
+				labels1 := vm1.GetLabels()
+
+				return labels1["ramendr.openshift.io/k8s-resource-selector"] == "protected-by-ramendr"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+
+			// Ensure VM is fully established in the cluster before VRG conflict detection
+			Eventually(func() bool {
+				vm := &virtv1.VirtualMachine{}
+				err := k8sClient.Get(context.TODO(), vmNamespacedName1, vm)
+
+				return err == nil && vm.Name == "vm-1-test"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			// Force VRG to reconcile after VM creation by updating an annotation
+			Eventually(func() error {
+				vrg = vrgTestCase.getVRG()
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+				vrg.Annotations["test.ramendr.openshift.io/reconcile-trigger"] = "vm-created"
+
+				return k8sClient.Update(context.TODO(), vrg)
+			}, vrgtimeout, vrginterval).Should(Succeed())
+
+			// Wait for VRG to reach Secondary state
+			Eventually(func() string {
+				vrg = vrgTestCase.getVRG()
+
+				return string(vrg.Status.State)
+			}, vrgtimeout, vrginterval).Should(Equal("Secondary"))
+
+			// Wait for VRG to stabilize
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+
+				return vrg.Generation == vrg.Status.ObservedGeneration
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			// Wait for VM conflict validation to detect the conflict
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictSecondary"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			unprotectVM(vm1)
+
+			// VM still exists, so conflict persists even without protection label
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictSecondary"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			deleteVM(vm1, vmNamespacedName1)
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+				if vrg == nil {
+					return false
+				}
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil && condition.Status == metav1.ConditionTrue
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("Secondary VRG: VM name differs from VRG spec but has protection label, "+
+			"shows no conflict once label is removed", func() {
+			vrgTestCase = newVRGTestCaseCreate(1, vrgEmptySCTemplate, true, false)
+			vrgTestCase.namespace = ramenConfig.RamenOpsNamespace
+			vrgTestCase.replicationState = "secondary"
+			vrgTestCase.protectedVMs = []string{"vm-1-test"}
+			vrgTestCase.pvcLabels["ramendr.openshift.io/k8s-resource-selector"] = "protected-by-ramendr"
+			vrgTestCase.VRGTestCaseStart()
+			DeferCleanup(vrgTestCase.cleanupVRGAndPVCs)
+
+			pvcName := vrgTestCase.pvcNames[0].Name
+			createVMWithPVC("vm-11-test", pvcName)
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-11-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+			protectVM(vm)
+
+			Eventually(func() map[string]string {
+				vm = getVM(vmNamespacedName)
+
+				return vm.GetLabels()
+			}, vrgtimeout, vrginterval).Should(HaveKeyWithValue(
+				"ramendr.openshift.io/k8s-resource-selector", "protected-by-ramendr"))
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+
+			// Ensure VM is fully established in the cluster before VRG conflict detection
+			Eventually(func() bool {
+				vm := &virtv1.VirtualMachine{}
+				err := k8sClient.Get(context.TODO(), vmNamespacedName, vm)
+
+				return err == nil && vm.Name == "vm-11-test"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			// Force VRG to reconcile after VM creation by updating an annotation
+			Eventually(func() error {
+				vrg = vrgTestCase.getVRG()
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+				vrg.Annotations["test.ramendr.openshift.io/reconcile-trigger"] = "vm-created"
+
+				return k8sClient.Update(context.TODO(), vrg)
+			}, vrgtimeout, vrginterval).Should(Succeed())
+
+			// Wait for VRG to reach Secondary state
+			Eventually(func() string {
+				vrg = vrgTestCase.getVRG()
+
+				return string(vrg.Status.State)
+			}, vrgtimeout, vrginterval).Should(Equal("Secondary"))
+
+			// Wait for VRG to stabilize (ensures VM validation runs)
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+
+				return vrg.Generation == vrg.Status.ObservedGeneration
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			// Wait for VM conflict validation to detect the conflict (VM has protection label)
+			Eventually(func() bool {
+				vrg = vrgTestCase.getVRG()
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil &&
+					condition.Status == metav1.ConditionFalse &&
+					condition.Reason == "ClusterDataConflictSecondary"
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			unprotectVM(vm)
+
+			// After removing protection label, no conflict since VM name doesn't match protected list
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+				if vrg == nil {
+					return false
+				}
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+
+				return condition != nil && condition.Status == metav1.ConditionTrue
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+
+		It("cleans up after testing", func() {
+			vrgTestCase.cleanupStatusAbsent()
+		})
+	})
+
 	// Ensure PVCs with no SCName results in errors
 	var vrgEmptySC *vrgTest
 	Context("in primary state with no SCName", func() {
@@ -1703,6 +2212,8 @@ type vrgTest struct {
 	skipCreationPVandPVC bool
 	checkBind            bool
 	vrgFirst             bool
+	replicationState     string
+	protectedVMs         []string
 	asyncPeerClasses     []ramendrv1alpha1.PeerClass
 	template             *template
 }
@@ -1802,9 +2313,159 @@ func (v *vrgTest) VRGTestCaseStart() {
 	}
 }
 
+func createVM(vmName string) {
+	createVMWithPVC(vmName, "root-disk")
+}
+
+func createVMWithPVC(vmName, claimName string) {
+	By("creating VM " + vmName + " with PVC " + claimName)
+
+	namespace := "default"
+	vm := generateVM(vmName, claimName, namespace)
+
+	err := k8sClient.Create(context.TODO(), vm)
+	expectedErr := k8serrors.NewAlreadyExists(
+		schema.GroupResource{Resource: "virtualmachines"}, vmName)
+	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
+		"failed to create VM %s", vmName)
+}
+
+func getVM(vmNamespacedName types.NamespacedName) *virtv1.VirtualMachine {
+	By("getting VM " + vmNamespacedName.Name)
+
+	vm := &virtv1.VirtualMachine{}
+	Eventually(func() error {
+		return k8sClient.Get(context.TODO(), vmNamespacedName, vm)
+	}, vrgtimeout, vrginterval).Should(Succeed(), "VM %s was not created", vm.Name)
+
+	return vm
+}
+
+func deleteVM(vm *virtv1.VirtualMachine, vmNamespacedName types.NamespacedName) {
+	By("deleting VM " + vm.Name)
+
+	err := k8sClient.Delete(context.TODO(), vm)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		Expect(err).To(BeNil(), "failed to delete VM %s", vm.Name)
+	}
+
+	Eventually(func() error {
+		return k8sClient.Get(context.TODO(), vmNamespacedName, vm)
+	}, vrgtimeout, vrginterval).Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
+		Group:    virtv1.SchemeGroupVersion.Group,
+		Resource: "VirtualMachine",
+	}, vm.Name)), "VM %s was not deleted", vm.Name)
+}
+
+//nolint:funlen
+func generateVM(vmName, claimName, namespace string) *virtv1.VirtualMachine {
+	vm := &virtv1.VirtualMachine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kubevirt.io/v1",
+			Kind:       "VirtualMachine",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vmName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": vmName,
+			},
+		},
+		Spec: virtv1.VirtualMachineSpec{
+			Running: pointer.BoolPtr(true),
+			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"kubevirt.io/domain": "vm",
+						"kubevirt.io/size":   "small",
+					},
+				},
+				Spec: virtv1.VirtualMachineInstanceSpec{
+					Domain: virtv1.DomainSpec{
+						Resources: virtv1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("256Mi"),
+							},
+						},
+						Devices: virtv1.Devices{
+							Disks: []virtv1.Disk{
+								{
+									Name: "root-disk",
+									DiskDevice: virtv1.DiskDevice{
+										Disk: &virtv1.DiskTarget{
+											Bus: "virtio",
+										},
+									},
+								},
+								{
+									Name: "cloud-init",
+									DiskDevice: virtv1.DiskDevice{
+										Disk: &virtv1.DiskTarget{
+											Bus: "virtio",
+										},
+									},
+								},
+							},
+							Interfaces: []virtv1.Interface{
+								{
+									Name:  "default",
+									Model: "virtio",
+								},
+							},
+						},
+					},
+					Networks: []virtv1.Network{
+						{
+							Name: "default",
+						},
+					},
+					Volumes: []virtv1.Volume{
+						{
+							Name: "root-disk",
+							VolumeSource: virtv1.VolumeSource{
+								PersistentVolumeClaim: &virtv1.PersistentVolumeClaimVolumeSource{},
+							},
+						},
+						{
+							Name: "cloud-init",
+							VolumeSource: virtv1.VolumeSource{
+								CloudInitConfigDrive: &virtv1.CloudInitConfigDriveSource{
+									UserData: `#!/bin/sh
+										echo "Running user-data script"`,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	vm.Spec.Template.Spec.Volumes[0].VolumeSource.PersistentVolumeClaim.ClaimName = claimName
+
+	return vm
+}
+
+// Add protected-by-ramendr label to VM
+func protectVM(vm *virtv1.VirtualMachine) {
+	labels := vm.GetLabels()
+	labels["ramendr.openshift.io/k8s-resource-selector"] = "protected-by-ramendr"
+	vm.SetLabels(labels)
+	err := k8sClient.Update(context.TODO(), vm)
+	Expect(err).To(BeNil(), "failed to update VM %s", vm.Name)
+}
+
+// Remove protected-by-ramendr label from VM
+func unprotectVM(vm *virtv1.VirtualMachine) {
+	labels := vm.GetLabels()
+	delete(labels, "ramendr.openshift.io/k8s-resource-selector")
+	vm.SetLabels(labels)
+	err := k8sClient.Update(context.TODO(), vm)
+	Expect(err).To(BeNil(), "failed to update VM %s", vm.Name)
+}
+
 // newVRGTestCaseCreateAndStart creates a new namespace, zero or more PVCs (equal
-// to the input pvcCount), a PV for each PVC, and a VRG in primary state,
-// with label selector that points to the PVCs created. Each PVC is created
+// to the input pvcCount), a PV for each PVC, maybe a VM and a VRG resource,
+// with label selector that points to the PVCs/VMs created. Each PVC is created
 // with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
 // is that, until pvc is not bound, VolRep resources should not be created
 // by VRG.
@@ -2088,6 +2749,29 @@ func (v *vrgTest) createVRG() {
 	schedulingInterval := "1h"
 	replicationClassLabels := map[string]string{"protection": "ramen"}
 
+	replicationState := "primary"
+	if v.replicationState != "" {
+		replicationState = v.replicationState
+	}
+
+	vrgSpec := ramendrv1alpha1.VolumeReplicationGroupSpec{
+		PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},
+		ReplicationState: ramendrv1alpha1.ReplicationState(replicationState),
+		Async: &ramendrv1alpha1.VRGAsyncSpec{
+			SchedulingInterval:       schedulingInterval,
+			ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
+			PeerClasses:              v.asyncPeerClasses,
+		},
+		VolSync: ramendrv1alpha1.VolSyncSpec{
+			Disabled: !v.template.volsyncEnabled,
+		},
+		S3Profiles: v.template.s3Profiles,
+	}
+
+	if v.protectedVMs != nil {
+		v.addVMProtectionToVRGSpec(&vrgSpec)
+	}
+
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: ramendrv1alpha1.GroupVersion.String(),
@@ -2097,19 +2781,7 @@ func (v *vrgTest) createVRG() {
 			Name:      v.vrgName,
 			Namespace: v.namespace,
 		},
-		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-			PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},
-			ReplicationState: "primary",
-			Async: &ramendrv1alpha1.VRGAsyncSpec{
-				SchedulingInterval:       schedulingInterval,
-				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
-				PeerClasses:              v.asyncPeerClasses,
-			},
-			VolSync: ramendrv1alpha1.VolSyncSpec{
-				Disabled: !v.template.volsyncEnabled,
-			},
-			S3Profiles: v.template.s3Profiles,
-		},
+		Spec: vrgSpec,
 	}
 
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -2121,6 +2793,23 @@ func (v *vrgTest) createVRG() {
 		v.vrgName)
 	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
 		"failed to create VRG %s in %s", v.vrgName, v.namespace)
+}
+
+func (v *vrgTest) addVMProtectionToVRGSpec(vrgSpec *ramendrv1alpha1.VolumeReplicationGroupSpec) {
+	vrgSpec.KubeObjectProtection = &ramendrv1alpha1.KubeObjectProtectionSpec{
+		CaptureInterval: &metav1.Duration{Duration: 5 * time.Minute},
+		RecipeParameters: map[string][]string{
+			"K8S_RESOURCE_SELECTOR": {"protected-by-ramendr"},
+			"PROTECTED_VMS":         v.protectedVMs,
+			"PVC_RESOURCE_SELECTOR": {"protected-by-ramendr"},
+			"VM_NAMESPACE":          {"default"},
+		},
+		RecipeRef: &ramendrv1alpha1.RecipeRef{
+			Name:      "vm-recipe",
+			Namespace: "ramen-ops",
+		},
+	}
+	vrgSpec.ProtectedNamespaces = &[]string{"default"}
 }
 
 func (v *vrgTest) vrgS3ProfilesSet(names []string) {
@@ -2312,6 +3001,8 @@ func updateVRG(desired *ramendrv1alpha1.VolumeReplicationGroup) {
 		current := vrgGet(client.ObjectKeyFromObject(desired))
 
 		current.Spec = desired.Spec
+		current.Labels = desired.Labels
+		current.Annotations = desired.Annotations
 
 		return k8sClient.Update(context.TODO(), current)
 	})
@@ -2764,6 +3455,12 @@ func (v *vrgTest) cleanupVRG() {
 	Expect(err).To(BeNil(),
 		"failed to delete VRG %s", v.vrgName)
 	v.waitForVRCountToMatch(0)
+}
+
+// cleanup PVCs and VRGs, without cleaning up namespace
+func (v *vrgTest) cleanupVRGAndPVCs() {
+	v.cleanupPVCs(vrgPvcStatusAbsentVerify, vrAndPvcFinalizerOrPvcAndPvAbsentVerify)
+	v.cleanupVRG()
 }
 
 func (v *vrgTest) cleanupSC() {
