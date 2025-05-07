@@ -5,6 +5,8 @@ import copy
 import logging
 import os
 import platform
+from collections import namedtuple
+from functools import cache
 
 from . import yaml
 
@@ -62,11 +64,29 @@ _PLATFORM_DEFAULTS = {
 }
 
 
+HostInfo = namedtuple("HostInfo", "operating_system,machine")
+
+
+@cache
+def host_info():
+    """
+    Return HostInfo tuple with OS name and CPU architecture.
+    """
+    info = HostInfo(
+        operating_system=platform.system().lower(), machine=os.uname().machine
+    )
+
+    logging.debug("[envfile] Detected os: '%s'", info.operating_system)
+    logging.debug("[envfile] Detected machine: '%s'", info.machine)
+
+    return info
+
+
 def platform_defaults():
     # By default, use provider defaults.
-    operating_system = platform.system().lower()
-    logging.debug("[envfile] Detected os: '%s'", operating_system)
-    return _PLATFORM_DEFAULTS.get(operating_system, _PLATFORM_DEFAULTS["__default__"])
+    return _PLATFORM_DEFAULTS.get(
+        host_info().operating_system, _PLATFORM_DEFAULTS["__default__"]
+    )
 
 
 class MissingAddon(Exception):
@@ -166,19 +186,18 @@ def _validate_profile(profile, addons_root):
 
 def _validate_platform_defaults(profile):
     platform = platform_defaults()
-    machine = os.uname().machine
-    logging.debug("[envfile] Detected machine: '%s'", machine)
+    info = host_info()
 
     if profile["provider"] == PROVIDER:
-        profile["provider"] = platform[PROVIDER][machine]
+        profile["provider"] = platform[PROVIDER][info.machine]
 
     if profile["driver"] == VM:
-        profile["driver"] = platform[VM][machine]
+        profile["driver"] = platform[VM][info.machine]
     elif profile["driver"] == CONTAINER:
         profile["driver"] = platform[CONTAINER]
 
     if profile["network"] == SHARED_NETWORK:
-        profile["network"] = platform[SHARED_NETWORK][machine]
+        profile["network"] = platform[SHARED_NETWORK][info.machine]
 
     logging.debug("[envfile] Using provider: '%s'", profile["provider"])
     logging.debug("[envfile] Using driver: '%s'", profile["driver"])
