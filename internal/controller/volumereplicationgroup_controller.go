@@ -530,6 +530,12 @@ const (
 	// StorageClass offloaded label
 	StorageOffloadedLabel = "ramendr.openshift.io/offloaded"
 
+	// Replication offload PVC status label
+	PVCOffloadLabel          = "ramendr.openshift.io/replication-offload-state"
+	PVCOffloadPrimaryState   = "Primary"
+	PVCOffloadSecondaryState = "Secondary"
+	PVCOffloadErrorState     = "Error"
+
 	// Consistency group label
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 

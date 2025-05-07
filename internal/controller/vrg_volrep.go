@@ -289,7 +289,7 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 // updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC
 func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) error {
 	// IF MetroDR, skip PVC update
-	if v.instance.Spec.Sync != nil {
+	if v.instance.Spec.Sync != nil || v.offload {
 		return nil
 	}
 
@@ -472,7 +472,6 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 		log.Info("Skipping handling of VR as PVC is not bound", "pvcPhase", pvc.Status.Phase)
 
 		msg := "PVC not bound yet"
-		// v.updateProtectedPVCCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return true, msg
 	}
@@ -486,7 +485,6 @@ func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Log
 		log.Info("Skipping PVC, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
-		// v.updateProtectedPVCCondition(pvc.Name, VRGConditionReasonProgressing, msg)
 
 		return true, msg
 	}
@@ -938,13 +936,15 @@ func (v *VRGInstance) reconcileVRForDeletion(pvc *corev1.PersistentVolumeClaim, 
 func (v *VRGInstance) undoPVCFinalizersAndPVRetention(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
 	const requeue = true
 
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+	if v.instance.Spec.Async != nil && !v.offload {
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
-	if err := v.deleteVR(pvcNamespacedName, log); err != nil {
-		log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
-			"errorValue", err)
+		if err := v.deleteVR(pvcNamespacedName, log); err != nil {
+			log.Info("Requeuing due to failure in finalizing VolumeReplication resource for PersistentVolumeClaim",
+				"errorValue", err)
 
-		return requeue
+			return requeue
+		}
 	}
 
 	if err := v.preparePVCForVRDeletion(pvc, log); err != nil {
@@ -976,7 +976,7 @@ func (v *VRGInstance) reconcileMissingVR(pvc *corev1.PersistentVolumeClaim, log 
 		vrMissing = true
 	)
 
-	if v.instance.Spec.Async == nil {
+	if v.instance.Spec.Async == nil || v.offload {
 		return !vrMissing, !requeue
 	}
 
@@ -1089,7 +1089,11 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName,
 	pvc *corev1.PersistentVolumeClaim, log logr.Logger,
 ) (bool, bool, error) {
 	if v.instance.Spec.Async != nil {
-		return v.createOrUpdateVR(vrNamespacedName, pvc, volrep.Primary, log)
+		if !v.offload {
+			return v.createOrUpdateVR(vrNamespacedName, pvc, volrep.Primary, log)
+		}
+
+		return v.processOffloadAsPrimary(vrNamespacedName, pvc)
 	}
 
 	// TODO: createOrUpdateVR does two things. It modifies the VR and also
@@ -1111,6 +1115,44 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName,
 	return true, true, nil
 }
 
+// processOffloadAsPrimary checks the PVCOffloadLabel and reports required conditions for the protected PVC, based on
+// its presence and value
+//
+//nolint:dupl
+func (v *VRGInstance) processOffloadAsPrimary(
+	pvcNSName types.NamespacedName,
+	pvc *corev1.PersistentVolumeClaim,
+) (bool, bool, error) {
+	v.updatePVCLastSyncCounters(pvcNSName.Namespace, pvcNSName.Name, nil)
+
+	switch pvc.GetLabels()[PVCOffloadLabel] {
+	case PVCOffloadPrimaryState:
+		msg := "PVC replication is offloaded and is reporting as Primary"
+
+		v.updatePVCDataReadyCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonReady, msg)
+		v.updatePVCDataProtectedCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonReady, msg)
+
+		return false, true, nil
+	case PVCOffloadErrorState:
+		msg := "PVC replication is offloaded and is reporting Error"
+
+		v.updatePVCDataReadyCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonError, msg)
+
+		return true, false, nil
+	default:
+		msg := fmt.Sprintf("PVC replication is offloaded and is missing offloaded status label (%s)", PVCOffloadLabel)
+		if pvc.GetLabels()[PVCOffloadLabel] == PVCOffloadSecondaryState {
+			msg = "PVC replication is offloaded and is reporting as Secondary"
+		}
+
+		v.updatePVCDataReadyCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataProtectedCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonProgressing, msg)
+
+		return true, false, nil
+	}
+}
+
 // processVRAsSecondary processes VR to change its state to secondary, with the assumption that the
 // related PVC is prepared for VR as secondary
 // Return values are:
@@ -1121,7 +1163,11 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	pvc *corev1.PersistentVolumeClaim, log logr.Logger,
 ) (bool, bool, error) {
 	if v.instance.Spec.Async != nil {
-		return v.createOrUpdateVR(vrNamespacedName, pvc, volrep.Secondary, log)
+		if !v.offload {
+			return v.createOrUpdateVR(vrNamespacedName, pvc, volrep.Secondary, log)
+		}
+
+		return v.processOffloadAsSecondary(vrNamespacedName, pvc)
 	}
 
 	// TODO: createOrUpdateVR does two things. It modifies the VR and also
@@ -1142,6 +1188,44 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 	}
 
 	return true, true, nil
+}
+
+// processOffloadAsSecondary checks the PVCOffloadLabel and reports required conditions for the protected PVC, based on
+// its presence and value
+//
+//nolint:dupl
+func (v *VRGInstance) processOffloadAsSecondary(
+	pvcNSName types.NamespacedName,
+	pvc *corev1.PersistentVolumeClaim,
+) (bool, bool, error) {
+	v.updatePVCLastSyncCounters(pvcNSName.Namespace, pvcNSName.Name, nil)
+
+	switch pvc.GetLabels()[PVCOffloadLabel] {
+	case PVCOffloadSecondaryState:
+		msg := "PVC replication is offloaded and is reporting as Secondary"
+
+		v.updatePVCDataReadyCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonReplicated, msg)
+		v.updatePVCDataProtectedCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonDataProtected, msg)
+
+		return false, true, nil
+	case PVCOffloadErrorState:
+		msg := "PVC replication is offloaded and is reporting Error"
+
+		v.updatePVCDataReadyCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonError, msg)
+
+		return true, false, nil
+	default:
+		msg := fmt.Sprintf("PVC replication is offloaded and is missing offloaded status label (%s)", PVCOffloadLabel)
+		if pvc.GetLabels()[PVCOffloadLabel] == PVCOffloadPrimaryState {
+			msg = "PVC replication is offloaded and is reporting as Primary"
+		}
+
+		v.updatePVCDataReadyCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonError, msg)
+		v.updatePVCDataProtectedCondition(pvcNSName.Namespace, pvcNSName.Name, VRGConditionReasonError, msg)
+
+		return true, false, nil
+	}
 }
 
 // createOrUpdateVR updates an existing VR resource if found, or creates it if required
@@ -2558,13 +2642,20 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 //	VRG.conditions.Available.Status = false
 //	VRG.conditions.Available.Reason = Progressing
 //
-//nolint:funlen
+//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
 		return v.vrgReadyStatus(VRGConditionReasonUnused)
 	}
 
 	vrgReady := len(v.instance.Status.ProtectedPVCs) != 0
+
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+		if len(v.instance.Status.ProtectedPVCs) == 0 {
+			return v.vrgReadyStatus(VRGConditionReasonUnused)
+		}
+	}
+
 	vrgProgressing := false
 
 	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
@@ -2630,13 +2721,18 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	return newVRGDataErrorCondition(v.instance.Generation, msg)
 }
 
-//nolint:funlen,gocognit,cyclop
+//nolint:funlen,gocognit,cyclop,nestif
 func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
 		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 			if v.instance.Spec.Sync != nil {
 				return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
 					"PVC protection as secondary is complete, or no PVCs needed protection")
+			}
+
+			if v.offload {
+				return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+					"PVC replication is offloaded and protection as secondary is complete, or no PVCs needed protection")
 			}
 
 			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
@@ -2724,6 +2820,8 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition 
 // set the VRG level condition to error.  If not, if at least one PVC is in a
 // protecting condition, set the VRG level condition to protecting.  If not, set
 // the VRG level condition to true.
+//
+//nolint:cyclop
 func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Condition {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		return newVRGClusterDataProtectedUnusedCondition(v.instance.Generation,
@@ -2734,6 +2832,11 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 		if v.instance.Spec.Sync != nil {
 			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
 				"No PVCs are protected, no PVCs found matching the selector")
+		}
+
+		if v.offload {
+			return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
+				"PVC replication is offloaded and no PVCs are replication protected")
 		}
 
 		return newVRGClusterDataProtectedUnusedCondition(v.instance.Generation,
