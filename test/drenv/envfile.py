@@ -13,50 +13,53 @@ VM = "$vm"
 CONTAINER = "$container"
 SHARED_NETWORK = "$network"
 
+X86_64 = "x86_64"
+ARM64 = "arm64"
+
 _PLATFORM_DEFAULTS = {
     "__default__": {
         PROVIDER: {
-            "x86_64": "",
-            "arm64": "",
+            X86_64: "",
+            ARM64: "",
         },
         VM: {
-            "x86_64": "",
-            "arm64": "",
+            X86_64: "",
+            ARM64: "",
         },
         CONTAINER: "",
         SHARED_NETWORK: {
-            "x86_64": "",
-            "arm64": "",
+            X86_64: "",
+            ARM64: "",
         },
     },
     "linux": {
         PROVIDER: {
-            "x86_64": "minikube",
-            "arm64": "",
+            X86_64: "minikube",
+            ARM64: "",
         },
         VM: {
-            "x86_64": "kvm2",
-            "arm64": "",
+            X86_64: "kvm2",
+            ARM64: "",
         },
         CONTAINER: "docker",
         SHARED_NETWORK: {
-            "x86_64": "default",
-            "arm64": "",
+            X86_64: "default",
+            ARM64: "",
         },
     },
     "darwin": {
         PROVIDER: {
-            "x86_64": "lima",
-            "arm64": "lima",
+            X86_64: "lima",
+            ARM64: "lima",
         },
         VM: {
-            "x86_64": "",
-            "arm64": "",
+            X86_64: "",
+            ARM64: "",
         },
         CONTAINER: "podman",
         SHARED_NETWORK: {
-            "x86_64": "",
-            "arm64": "",
+            X86_64: "",
+            ARM64: "",
         },
     },
 }
