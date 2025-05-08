@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,9 +28,10 @@ import (
 )
 
 type ExecHook struct {
-	Hook   *kubeobjects.HookSpec
-	Reader client.Reader
-	Scheme *runtime.Scheme
+	Hook           *kubeobjects.HookSpec
+	Reader         client.Reader
+	Scheme         *runtime.Scheme
+	RecipeElements util.RecipeElements
 }
 
 type ExecPodSpec struct {
@@ -47,15 +49,126 @@ func (e ExecHook) Execute(log logr.Logger) error {
 	}
 
 	execPods := e.GetPodsToExecuteCommands(log)
+	inverseOp := e.Hook.Op.InverseOp
 
-	for _, execPod := range execPods {
-		err := executeCommand(&execPod, e.Hook, e.Scheme, log)
-		if err != nil && getOpHookOnError(e.Hook) == defaultOnErrorValue {
-			return fmt.Errorf("error executing exec hook: %w", err)
+	execPod, err := e.executeCommands(execPods, log)
+	if shouldInverseOpBeExecuted(inverseOp, err) {
+		return e.executeInverseOp(inverseOp, execPod, log)
+	}
+
+	return nil
+}
+
+func (e ExecHook) executeInverseOp(inverseOp string, execPod ExecPodSpec, log logr.Logger) error {
+	log.Info("executing inverse operation", "inverseOp", inverseOp, "pod", execPod.PodName,
+		"namespace", execPod.Namespace, "command", execPod.Command)
+
+	var err error
+
+	captureSpecForInvHook := e.getCaptureSpecForInverseOp(inverseOp)
+	if captureSpecForInvHook != nil {
+		tempE := ExecHook{
+			Hook:           &captureSpecForInvHook.Hook,
+			Reader:         e.Reader,
+			Scheme:         e.Scheme,
+			RecipeElements: e.RecipeElements,
+		}
+
+		execPods := tempE.GetPodsToExecuteCommands(log)
+		_, err = tempE.executeCommands(execPods, log)
+	}
+
+	recoverSpecForInvHook := e.getRecoverSpecForInverseOp(inverseOp)
+	if recoverSpecForInvHook != nil {
+		tempE := ExecHook{
+			Hook:           &recoverSpecForInvHook.Hook,
+			Reader:         e.Reader,
+			Scheme:         e.Scheme,
+			RecipeElements: e.RecipeElements,
+		}
+
+		execPods := tempE.GetPodsToExecuteCommands(log)
+		_, err = tempE.executeCommands(execPods, log)
+	}
+
+	if recoverSpecForInvHook == nil && captureSpecForInvHook == nil {
+		log.Error(err, "inverse operation not found in capture or recover workflow", "inverseOp", inverseOp,
+			"pod", execPod.PodName, "namespace", execPod.Namespace, "command", execPod.Command)
+
+		return fmt.Errorf("inverse operation not found in capture or recover workflow: %w", err)
+	}
+
+	if err != nil {
+		log.Error(err, "error executing inverse operation", "inverseOp", inverseOp, "pod", execPod.PodName,
+			"namespace", execPod.Namespace, "command", execPod.Command)
+
+		return fmt.Errorf("error executing inverse operation: %w", err)
+	}
+
+	log.Info("executed inverse operation successfully", "inverseOp", inverseOp, "pod", execPod.PodName,
+		"namespace", execPod.Namespace, "command", execPod.Command)
+
+	return nil
+}
+
+func shouldInverseOpBeExecuted(inverseOp string, err error) bool {
+	return err != nil && inverseOp != ""
+}
+
+func (e ExecHook) getRecoverSpecForInverseOp(inverseOp string) *kubeobjects.RecoverSpec {
+	if strings.Contains(inverseOp, "/") {
+		invHookParts := strings.Split(inverseOp, "/")
+		for _, recoverStep := range e.RecipeElements.RecoverWorkflow {
+			if recoverStep.IsHook && strings.HasPrefix(recoverStep.BackupName, invHookParts[0]) &&
+				strings.HasSuffix(recoverStep.BackupName, invHookParts[1]) {
+				return &recoverStep
+			}
+		}
+	} else {
+		for _, recoverStep := range e.RecipeElements.RecoverWorkflow {
+			if recoverStep.IsHook && strings.HasPrefix(recoverStep.BackupName, e.Hook.Name) &&
+				strings.HasSuffix(recoverStep.BackupName, inverseOp) {
+				return &recoverStep
+			}
 		}
 	}
 
 	return nil
+}
+
+func (e ExecHook) getCaptureSpecForInverseOp(inverseOp string) *kubeobjects.CaptureSpec {
+	if strings.Contains(inverseOp, "/") {
+		invHookParts := strings.Split(inverseOp, "/")
+		for _, captureStep := range e.RecipeElements.CaptureWorkflow {
+			if captureStep.IsHook && strings.HasPrefix(captureStep.Name, invHookParts[0]) &&
+				strings.HasSuffix(captureStep.Name, invHookParts[1]) {
+				return &captureStep
+			}
+		}
+	} else {
+		for _, captureStep := range e.RecipeElements.CaptureWorkflow {
+			if captureStep.IsHook && strings.HasPrefix(captureStep.Name, e.Hook.Name) &&
+				strings.HasSuffix(captureStep.Name, inverseOp) {
+				return &captureStep
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e ExecHook) executeCommands(execPods []ExecPodSpec, log logr.Logger) (ExecPodSpec, error) {
+	for _, execPod := range execPods {
+		err := executeCommand(&execPod, e.Hook, e.Scheme, log)
+		if err != nil && getOpHookOnError(e.Hook) == defaultOnErrorValue {
+			log.Error(err, "error executing command on pod", "pod", execPod.PodName,
+				"namespace", execPod.Namespace, "command", execPod.Command)
+
+			return execPod, fmt.Errorf("error executing exec hook: %w", err)
+		}
+	}
+
+	return ExecPodSpec{}, nil
 }
 
 func executeCommand(execPod *ExecPodSpec, hook *kubeobjects.HookSpec, scheme *runtime.Scheme, log logr.Logger) error {
