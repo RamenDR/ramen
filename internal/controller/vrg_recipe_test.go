@@ -13,6 +13,7 @@ import (
 	gomegatypes "github.com/onsi/gomega/types"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -299,7 +300,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	vrgPvcsConsistOfEventually := func(pvcs ...*corev1.PersistentVolumeClaim) {
 		Eventually(vrgPvcsGet, timeout, interval).Should(ConsistOf(vrgPvcNamesMatchPvcs(pvcs...)))
 	}
-	vrgPvcSelectorGet := func() (controllers.PvcSelector, error) {
+	vrgPvcSelectorGet := func() (util.PvcSelector, error) {
 		return controllers.GetPVCSelector(ctx, apiReader, *vrg, *ramenConfig, testLogger)
 	}
 	skipIfAdmissionValidateAndCommitAreAtomicIs := func(condition bool, message string) {
@@ -421,7 +422,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			BeforeEach(OncePerOrdered, func() {
 				vrgRecipeRefDefine(r.Name)
 			})
-			var pvcSelector controllers.PvcSelector
+			var pvcSelector util.PvcSelector
 			var err error
 			JustBeforeEach(func() {
 				pvcSelector, err = vrgPvcSelectorGet()
