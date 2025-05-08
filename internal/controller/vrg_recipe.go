@@ -32,14 +32,6 @@ const (
 	WorkflowFullError      = "full-error"
 )
 
-type RecipeElements struct {
-	PvcSelector     PvcSelector
-	CaptureWorkflow []kubeobjects.CaptureSpec
-	RecoverWorkflow []kubeobjects.RecoverSpec
-	CaptureFailOn   string
-	RestoreFailOn   string
-}
-
 func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.CaptureSpec {
 	namespaces := []string{vrg.Namespace}
 
@@ -88,31 +80,42 @@ func recoverWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.
 func GetPVCSelector(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig,
 	log logr.Logger,
-) (PvcSelector, error) {
+) (util.PvcSelector, error) {
 	recipeElements, err := RecipeElementsGet(ctx, reader, vrg, ramenConfig, log)
 	if err != nil {
-		return PvcSelector{}, err
+		return util.PvcSelector{}, err
 	}
 
 	return recipeElements.PvcSelector, nil
 }
 
+//nolint:funlen
 func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig, log logr.Logger,
-) (RecipeElements, error) {
-	var recipeElements RecipeElements
+) (util.RecipeElements, error) {
+	var recipeElements util.RecipeElements
 
 	if vrg.Spec.KubeObjectProtection == nil {
-		recipeElements = RecipeElements{
-			PvcSelector: getPVCSelector(vrg, ramenConfig, nil, nil),
+		pvcSelector := getPVCSelector(vrg, ramenConfig, nil, nil)
+
+		recipeElements = util.RecipeElements{
+			PvcSelector: util.PvcSelector{
+				LabelSelector:  pvcSelector.LabelSelector,
+				NamespaceNames: pvcSelector.NamespaceNames,
+			},
 		}
 
 		return recipeElements, nil
 	}
 
 	if vrg.Spec.KubeObjectProtection.RecipeRef == nil {
-		recipeElements = RecipeElements{
-			PvcSelector:     getPVCSelector(vrg, ramenConfig, nil, nil),
+		pvcSelector := getPVCSelector(vrg, ramenConfig, nil, nil)
+
+		recipeElements = util.RecipeElements{
+			PvcSelector: util.PvcSelector{
+				LabelSelector:  pvcSelector.LabelSelector,
+				NamespaceNames: pvcSelector.NamespaceNames,
+			},
 			CaptureWorkflow: captureWorkflowDefault(vrg, ramenConfig),
 			RecoverWorkflow: recoverWorkflowDefault(vrg, ramenConfig),
 			CaptureFailOn:   WorkflowAnyError,
@@ -144,8 +147,12 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 			recipe.Spec.Volumes.LabelSelector)
 	}
 
-	recipeElements = RecipeElements{
-		PvcSelector: selector,
+	recipeElements = util.RecipeElements{
+		PvcSelector: util.PvcSelector{
+			LabelSelector:  selector.LabelSelector,
+			NamespaceNames: selector.NamespaceNames,
+		},
+		RecipeWithParams: &recipe,
 	}
 
 	if err := recipeWorkflowsGet(recipe, &recipeElements, vrg, ramenConfig); err != nil {
@@ -226,7 +233,7 @@ func parametersExpand(s string, parameters map[string][]string) string {
 	})
 }
 
-func recipeWorkflowsGet(recipe recipev1.Recipe, recipeElements *RecipeElements, vrg ramen.VolumeReplicationGroup,
+func recipeWorkflowsGet(recipe recipev1.Recipe, recipeElements *util.RecipeElements, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig,
 ) error {
 	var err error
@@ -254,7 +261,7 @@ func recipeWorkflowsGet(recipe recipev1.Recipe, recipeElements *RecipeElements, 
 	return nil
 }
 
-func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeReplicationGroup,
+func recipeNamespacesValidate(recipeElements util.RecipeElements, vrg ramen.VolumeReplicationGroup,
 	ramenConfig ramen.RamenConfig,
 ) error {
 	extraVrgNamespaceNames := sets.List(recipeNamespaceNames(recipeElements).Delete(vrg.Namespace))
@@ -295,7 +302,7 @@ func recipeNamespacesValidate(recipeElements RecipeElements, vrg ramen.VolumeRep
 	return nil
 }
 
-func recipeNamespaceNames(recipeElements RecipeElements) sets.Set[string] {
+func recipeNamespaceNames(recipeElements util.RecipeElements) sets.Set[string] {
 	namespaceNames := make(sets.Set[string], 0)
 
 	namespaceNames.Insert(recipeElements.PvcSelector.NamespaceNames...)
