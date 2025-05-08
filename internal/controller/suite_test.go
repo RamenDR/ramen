@@ -51,6 +51,7 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	clrapiv1beta2 "open-cluster-management.io/api/cluster/v1beta2"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -211,6 +212,9 @@ var _ = BeforeSuite(func() {
 	Expect(velero.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	err = clrapiv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clrapiv1beta2.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = clusterv1alpha1.AddToScheme(scheme.Scheme)
