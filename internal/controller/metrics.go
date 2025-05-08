@@ -22,6 +22,7 @@ const (
 	LastSyncDurationSeconds  = "last_sync_duration_seconds"
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
+	ClusterDataConflict      = "cluster_data_conflict"
 )
 
 type SyncTimeMetrics struct {
@@ -48,6 +49,10 @@ type SyncMetrics struct {
 	SyncTimeMetrics
 	SyncDurationMetrics
 	SyncDataBytesMetrics
+}
+
+type ClusterDataConflictMetrics struct {
+	ClusterDataConflict prometheus.Gauge
 }
 
 const (
@@ -89,6 +94,12 @@ var (
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
+	}
+
+	clusterDataConflictMetricLabels = []string{
+		ObjType,      // Type of the resource [drpc]
+		ObjName,      // Name of the resource [drpc-name]
+		ObjNamespace, // Namespace of the DRPC resource
 	}
 )
 
@@ -136,6 +147,15 @@ var (
 			Help:      "Status regarding workload protection health",
 		},
 		workloadProtectionStatusLabels,
+	)
+
+	clusterDataConflict = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      ClusterDataConflict,
+			Namespace: metricNamespace,
+			Help:      "Indicates resource conflict status (2: detected on primary, 1: detected on secondary, 0: no conflict)",
+		},
+		clusterDataConflictMetricLabels,
 	)
 )
 
@@ -241,4 +261,25 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDuration)
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
+	metrics.Registry.MustRegister(clusterDataConflict)
+}
+
+func ClusterDataConflictMetricLabels(
+	drpc *rmn.DRPlacementControl,
+) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:      "DRPlacementControl",
+		ObjName:      drpc.Name,
+		ObjNamespace: drpc.Namespace,
+	}
+}
+
+func NewClusterDataConflictMetric(labels prometheus.Labels) ClusterDataConflictMetrics {
+	return ClusterDataConflictMetrics{
+		ClusterDataConflict: clusterDataConflict.With(labels),
+	}
+}
+
+func DeleteClusterDataConflictMetric(labels prometheus.Labels) bool {
+	return clusterDataConflict.Delete(labels)
 }
