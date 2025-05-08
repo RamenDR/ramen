@@ -33,14 +33,14 @@ func (c CheckHook) Execute(log logr.Logger) error {
 	hookName := c.Hook.Name + "/" + c.Hook.Chk.Name
 	log.Info("check hook executed successfully", "hook", hookName, "result", hookResult)
 
-	if !hookResult && shouldHookBeFailedOnError(c.Hook) {
+	if !hookResult && shouldChkHookBeFailedOnError(c.Hook) {
 		return fmt.Errorf("stopping workflow as hook %s failed", c.Hook.Name)
 	}
 
 	return nil
 }
 
-func shouldHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
+func shouldChkHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
 	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
 	if hook.Chk.OnError != "" && hook.Chk.OnError == "continue" {
 		return false
