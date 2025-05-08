@@ -6,5 +6,7 @@
 chdir $(dirname $0)
 cp usr/bin/ramen /usr/bin
 cp etc/init.d/ramen /etc/init.d
+cp etc/init.d/resize-file-system /etc/init.d
+ln -sn ../init.d/resize-file-system /etc/rc3.d/S97-resize-file-system
 ln -sn ../init.d/ramen /etc/rc3.d/S00-ramen
 ln -sn ../init.d/ramen /etc/rc3.d/K00-ramen
