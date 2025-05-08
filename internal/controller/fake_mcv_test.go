@@ -36,7 +36,7 @@ func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
 	resourceName string,
 	annotations map[string]string,
 ) (*rmn.DRClusterConfig, error) {
-	return nil, nil
+	return &rmn.DRClusterConfig{}, nil
 }
 
 func (f FakeMCVGetter) DeleteDRClusterConfigManagedClusterView(clusterName string) error {
