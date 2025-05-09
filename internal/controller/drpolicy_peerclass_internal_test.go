@@ -210,8 +210,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID-mismatch",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID-mismatch",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -241,8 +241,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID-mismatch",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID-mismatch",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -336,8 +336,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID-mismatch",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID-mismatch",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -378,8 +378,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID-mismatch",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID-mismatch",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -427,8 +427,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -458,8 +458,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -654,8 +654,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -692,8 +692,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -723,8 +723,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -761,8 +761,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -792,8 +792,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID",
-									VolumeReplicationIDLabel: "cl-1-2-rID-mismatch",
+									StorageIDLabel:     "cl-2-sID",
+									ReplicationIDLabel: "cl-1-2-rID-mismatch",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -850,8 +850,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID2",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID2",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -901,8 +901,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID2",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID2",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -952,8 +952,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-[1|2]-sID1",
-									VolumeReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
+									StorageIDLabel:     "cl-[1|2]-sID1",
+									ReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -983,8 +983,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-[1|2]-sID1",
-									VolumeReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
+									StorageIDLabel:     "cl-[1|2]-sID1",
+									ReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -1014,8 +1014,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-[3|4]-sID1",
-									VolumeReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
+									StorageIDLabel:     "cl-[3|4]-sID1",
+									ReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -1045,8 +1045,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-[3|4]-sID1",
-									VolumeReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
+									StorageIDLabel:     "cl-[3|4]-sID1",
+									ReplicationIDLabel: "cl-[1|2]-[3|4]-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -1141,8 +1141,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-1-sID1",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
@@ -1192,8 +1192,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:           "cl-2-sID1",
-									VolumeReplicationIDLabel: "cl-1-2-rID",
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeReplicationClassSpec{
