@@ -196,7 +196,7 @@ func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule st
 		return ""
 	}
 
-	rID := cl.vrClasses[vrcIdx].GetLabels()[VolumeReplicationIDLabel]
+	rID := cl.vrClasses[vrcIdx].GetLabels()[ReplicationIDLabel]
 
 	return rID
 }
