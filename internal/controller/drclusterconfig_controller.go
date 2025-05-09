@@ -375,7 +375,7 @@ func (r *DRClusterConfigReconciler) listDRSupportedVRCs(ctx context.Context) ([]
 	}
 
 	for i := range vrClasses.Items {
-		if !util.HasLabel(&vrClasses.Items[i], VolumeReplicationIDLabel) {
+		if !util.HasLabel(&vrClasses.Items[i], ReplicationIDLabel) {
 			continue
 		}
 
@@ -395,7 +395,7 @@ func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([
 	}
 
 	for i := range vgrClasses.Items {
-		if !util.HasLabel(&vgrClasses.Items[i], VolumeReplicationIDLabel) {
+		if !util.HasLabel(&vgrClasses.Items[i], ReplicationIDLabel) {
 			continue
 		}
 
