@@ -184,7 +184,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "baseVRC",
 				Labels: map[string]string{
-					ramencontrollers.VolumeReplicationIDLabel: "fake",
+					ramencontrollers.ReplicationIDLabel: "fake",
 				},
 			},
 			Spec: volrep.VolumeReplicationClassSpec{
@@ -196,7 +196,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "baseVGRC",
 				Labels: map[string]string{
-					ramencontrollers.VolumeReplicationIDLabel: "fake",
+					ramencontrollers.ReplicationIDLabel: "fake",
 				},
 			},
 			Spec: volrep.VolumeGroupReplicationClassSpec{
