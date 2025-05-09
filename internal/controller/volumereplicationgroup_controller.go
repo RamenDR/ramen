@@ -489,7 +489,7 @@ type VRGInstance struct {
 	instance             *ramendrv1alpha1.VolumeReplicationGroup
 	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
 	ramenConfig          *ramendrv1alpha1.RamenConfig
-	recipeElements       RecipeElements
+	recipeElements       util.RecipeElements
 	volRepPVCs           []corev1.PersistentVolumeClaim
 	volSyncPVCs          []corev1.PersistentVolumeClaim
 	replClassList        *volrep.VolumeReplicationClassList
