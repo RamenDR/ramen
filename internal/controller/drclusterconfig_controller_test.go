@@ -51,7 +51,7 @@ func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig
 	}, timeout, interval).Should(Succeed())
 }
 
-var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
+var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 	var (
 		ctx                           context.Context
 		cancel                        context.CancelFunc
@@ -251,10 +251,10 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 	})
-	Describe("ClusterClaims", Ordered, func() {
+	Describe("DRClusterConfig", Ordered, func() {
 		Context("Given DRClusterConfig resource", func() {
 			When("there is a StorageClass created with required labels", func() {
-				It("creates a ClusterClaim", func() {
+				It("updates DRClusterConfig Status", func() {
 					By("creating a StorageClass")
 
 					sc1 = baseSC.DeepCopy()
@@ -276,7 +276,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				})
 			})
 			When("a StorageClass with required labels is deleted", func() {
-				It("deletes the associated ClusterClaim", func() {
+				It("removes the associated StorageClass from DRClusterConfig Status", func() {
 					By("deleting a StorageClass")
 
 					Expect(k8sClient.Delete(context.TODO(), sc1)).To(Succeed())
@@ -295,7 +295,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				})
 			})
 			When("there are multiple StorageClass created with required labels", func() {
-				It("creates ClusterClaims", func() {
+				It("updates DRClusterConfig Status", func() {
 					By("creating a StorageClass")
 
 					sc1 = baseSC.DeepCopy()
@@ -322,7 +322,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 				})
 			})
 			When("a StorageClass label is deleted", func() {
-				It("deletes the associated ClusterClaim", func() {
+				It("removes the associated StorageClass from DRClusterConfig Status", func() {
 					By("deleting a StorageClass label")
 
 					sc1.Labels = map[string]string{}
@@ -343,7 +343,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there is a SnapshotCLass created with required labels", func() {
-			It("creates a ClusterClaim", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a SnapshotClass")
 
 				vsc1 = baseVSC.DeepCopy()
@@ -365,7 +365,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a SnapshotClass with required labels is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated SnapshotClass from DRClusterConfig Status", func() {
 				By("deleting a SnapshotClass")
 
 				Expect(k8sClient.Delete(context.TODO(), vsc1)).To(Succeed())
@@ -384,7 +384,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there are multiple SnapshotClass created with required labels", func() {
-			It("creates ClusterClaims", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a SnapshotClass")
 
 				vsc1 = baseVSC.DeepCopy()
@@ -410,7 +410,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a SnapshotClass label is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated SnapshotClass from DRClusterConfig Status", func() {
 				By("deleting a SnapshotClass label")
 
 				vsc2.Labels = map[string]string{}
@@ -430,7 +430,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there is a VolumeReplicationCLass created with required labels", func() {
-			It("creates a ClusterClaim", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a VolumeReplicationClass")
 
 				vrc1 = baseVRC.DeepCopy()
@@ -452,7 +452,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a VolumeReplicationClass with required labels is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated VolumeReplicationClass from DRClusterConfig Status", func() {
 				By("deleting a VolumeReplicationClass")
 
 				Expect(k8sClient.Delete(context.TODO(), vrc1)).To(Succeed())
@@ -471,7 +471,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there are multiple VolumeReplicationClass created with required labels", func() {
-			It("creates ClusterClaims", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a VolumeReplicationClass")
 
 				vrc1 = baseVRC.DeepCopy()
@@ -497,7 +497,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a VolumeReplicationClass label is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated VolumeReplicationClass from DRClusterConfig Status", func() {
 				By("deleting a VolumeReplicationClass label")
 
 				vrc2.Labels = map[string]string{}
@@ -517,7 +517,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there is a VolumeGroupReplicationCLass created with required labels", func() {
-			It("creates a ClusterClaim", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a VolumeGroupReplicationClass")
 
 				vgrc1 = baseVGRC.DeepCopy()
@@ -539,7 +539,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a VolumeGroupReplicationClass with required labels is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated VolumeGroupReplicationClass from DRClusterConfig Status", func() {
 				By("deleting a VolumeGroupReplicationClass")
 
 				Expect(k8sClient.Delete(context.TODO(), vgrc1)).To(Succeed())
@@ -558,7 +558,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there are multiple VolumeGroupReplicationClass created with required labels", func() {
-			It("creates ClusterClaims", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a VolumeGroupReplicationClass")
 
 				vgrc1 = baseVGRC.DeepCopy()
@@ -584,7 +584,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a VolumeGroupReplicationClass label is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated VolumeGroupReplicationClass from DRClusterConfig Status", func() {
 				By("deleting a VolumeGroupReplicationClass label")
 
 				vgrc2.Labels = map[string]string{}
@@ -604,7 +604,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there is a GroupSnapshotCLass created with required labels", func() {
-			It("creates a ClusterClaim", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a GroupSnapshotClass")
 
 				vgsc1 = baseVGSC.DeepCopy()
@@ -626,7 +626,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a GroupSnapshotClass with required labels is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated GroupSnapshotClass from DRClusterConfig Status", func() {
 				By("deleting a GroupSnapshotClass")
 
 				Expect(k8sClient.Delete(context.TODO(), vgsc1)).To(Succeed())
@@ -645,7 +645,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("there are multiple SnapshotClass created with required labels", func() {
-			It("creates ClusterClaims", func() {
+			It("updates DRClusterConfig Status", func() {
 				By("creating a SnapshotClass")
 
 				vgsc1 = baseVGSC.DeepCopy()
@@ -671,7 +671,7 @@ var _ = Describe("DRClusterConfig-ClusterClaimsTests", Ordered, func() {
 			})
 		})
 		When("a GroupSnapshotClass label is deleted", func() {
-			It("deletes the associated ClusterClaim", func() {
+			It("removes the associated GroupSnapshotClass from DRClusterConfig Status", func() {
 				By("deleting a GroupSnapshotClass label")
 
 				vgsc2.Labels = map[string]string{}
