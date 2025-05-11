@@ -66,7 +66,6 @@ _PLATFORM_DEFAULTS = {
     },
 }
 
-
 HostInfo = namedtuple("HostInfo", "operating_system,machine")
 
 
@@ -76,7 +75,8 @@ def host_info():
     Return HostInfo tuple with OS name and CPU architecture.
     """
     info = HostInfo(
-        operating_system=platform.system().lower(), machine=os.uname().machine
+        operating_system=platform.system().lower(),
+        machine=os.uname().machine,
     )
 
     logging.debug("[envfile] Detected os: '%s'", info.operating_system)
@@ -87,9 +87,8 @@ def host_info():
 
 def platform_defaults():
     # By default, use provider defaults.
-    return _PLATFORM_DEFAULTS.get(
-        host_info().operating_system, _PLATFORM_DEFAULTS["__default__"]
-    )
+    os = host_info().operating_system
+    return _PLATFORM_DEFAULTS.get(os, _PLATFORM_DEFAULTS["__default__"])
 
 
 class MissingAddon(Exception):
@@ -189,18 +188,18 @@ def _validate_profile(profile, addons_root):
 
 def _validate_platform_defaults(profile):
     platform = platform_defaults()
-    info = host_info()
+    host = host_info()
 
     if profile["provider"] == PROVIDER:
-        profile["provider"] = platform[PROVIDER][info.machine]
+        profile["provider"] = platform[PROVIDER][host.machine]
 
     if profile["driver"] == VM:
-        profile["driver"] = platform[VM][info.machine]
+        profile["driver"] = platform[VM][host.machine]
     elif profile["driver"] == CONTAINER:
         profile["driver"] = platform[CONTAINER]
 
     if profile["network"] == SHARED_NETWORK:
-        profile["network"] = platform[SHARED_NETWORK][info.machine]
+        profile["network"] = platform[SHARED_NETWORK][host.machine]
 
     logging.debug("[envfile] Using provider: '%s'", profile["provider"])
     logging.debug("[envfile] Using driver: '%s'", profile["driver"])
