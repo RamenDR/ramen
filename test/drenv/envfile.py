@@ -202,9 +202,9 @@ def _validate_platform_defaults(profile):
     if profile["network"] == SHARED_NETWORK:
         profile["network"] = platform[SHARED_NETWORK][info.machine]
 
-    logging.debug("[envfile] Using provider: '%s'", profile["provider"])
-    logging.debug("[envfile] Using driver: '%s'", profile["driver"])
-    logging.debug("[envfile] Using network: '%s'", profile["network"])
+    logging.debug("[%s] Using provider: '%s'", profile["name"], profile["provider"])
+    logging.debug("[%s] Using driver: '%s'", profile["name"], profile["driver"])
+    logging.debug("[%s] Using network: '%s'", profile["name"], profile["network"])
 
 
 def _validate_worker(worker, env, addons_root, index):
