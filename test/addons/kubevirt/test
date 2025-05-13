@@ -69,7 +69,12 @@ def verify_ssh(cluster):
                 "tail -6 /var/log/ramen.log",
                 username="cirros",
                 namespace=NAMESPACE,
-                known_hosts="",  # Skip host key verification.
+                local_ssh=True,
+                local_ssh_opts=(
+                    "-o UserKnownHostsFile=/dev/null",
+                    "-o StrictHostKeyChecking=no",
+                    "-o LogLevel=DEBUG",
+                ),
                 context=cluster,
             )
         except Exception as e:
