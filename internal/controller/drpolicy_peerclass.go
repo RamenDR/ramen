@@ -9,6 +9,7 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	groupsnapv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
@@ -20,10 +21,12 @@ import (
 // classLists contains [storage|snapshot|replication]classes from ManagedClusters with the required ramen storageID or,
 // replicationID labels
 type classLists struct {
-	clusterID string
-	sClasses  []*storagev1.StorageClass
-	vsClasses []*snapv1.VolumeSnapshotClass
-	vrClasses []*volrep.VolumeReplicationClass
+	clusterID  string
+	sClasses   []*storagev1.StorageClass
+	vsClasses  []*snapv1.VolumeSnapshotClass
+	vrClasses  []*volrep.VolumeReplicationClass
+	vgrClasses []*volrep.VolumeGroupReplicationClass
+	vgsClasses []*groupsnapv1beta1.VolumeGroupSnapshotClass
 }
 
 // peerInfo contains a single peer relationship between a PAIR of clusters for a common storageClassName across
@@ -521,6 +524,92 @@ func getSClassesFromCluster(
 	return sClasses, pruneSClassViews(m, u.log, clusterName, sClassNames)
 }
 
+// getVGSClassesFromCluster gets VolumeGroupSnapshotClasses that are claimed in the DRClusterConfig status
+func getVGSClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	drcConfig *ramen.DRClusterConfig,
+	clusterName string,
+) ([]*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
+	vgsClasses := []*groupsnapv1beta1.VolumeGroupSnapshotClass{}
+
+	vgsClassNames := drcConfig.Status.VolumeGroupSnapshotClasses
+	if len(vgsClassNames) == 0 {
+		return vgsClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, vgscName := range vgsClassNames {
+		sClass, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
+		if err != nil {
+			return []*groupsnapv1beta1.VolumeGroupSnapshotClass{}, err
+		}
+
+		vgsClasses = append(vgsClasses, sClass)
+	}
+
+	return vgsClasses, pruneVGSClassViews(m, u.log, clusterName, vgsClassNames)
+}
+
+func pruneVGSClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListVGSClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
+// getVGRClassesFromCluster gets VolumeGroupReplicationClasses that are claimed in the DRClusterConfig status
+func getVGRClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	drcConfig *ramen.DRClusterConfig,
+	clusterName string,
+) ([]*volrep.VolumeGroupReplicationClass, error) {
+	vgrClasses := []*volrep.VolumeGroupReplicationClass{}
+
+	vgrClassNames := drcConfig.Status.VolumeGroupReplicationClasses
+	if len(vgrClassNames) == 0 {
+		return vgrClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, vgrcName := range vgrClassNames {
+		sClass, err := m.GetVGRClassFromManagedCluster(vgrcName, clusterName, annotations)
+		if err != nil {
+			return []*volrep.VolumeGroupReplicationClass{}, err
+		}
+
+		vgrClasses = append(vgrClasses, sClass)
+	}
+
+	return vgrClasses, pruneVGRClassViews(m, u.log, clusterName, vgrClassNames)
+}
+
+func pruneVGRClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListVGRClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
 // getClusterClasses inspects, using ManagedClusterView, the DRClusterConfig claims for all storage related classes,
 // and returns the set of classLists for the passed in clusters
 func getClusterClasses(
@@ -561,11 +650,23 @@ func getClusterClasses(
 		return classLists{}, err
 	}
 
+	vgsClasses, err := getVGSClassesFromCluster(u, m, drcConfig, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
+	vgrClasses, err := getVGRClassesFromCluster(u, m, drcConfig, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
 	return classLists{
-		clusterID: clID,
-		sClasses:  sClasses,
-		vrClasses: vrClasses,
-		vsClasses: vsClasses,
+		clusterID:  clID,
+		sClasses:   sClasses,
+		vrClasses:  vrClasses,
+		vsClasses:  vsClasses,
+		vgrClasses: vgrClasses,
+		vgsClasses: vgsClasses,
 	}, nil
 }
 
