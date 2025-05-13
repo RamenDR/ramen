@@ -13,6 +13,7 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	groupsnapv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -61,6 +62,15 @@ func (f FakeMCVGetter) ListVSClassMCVs(managedCluster string) (*viewv1beta1.Mana
 	return &viewv1beta1.ManagedClusterViewList{}, nil
 }
 
+func (f FakeMCVGetter) GetVGSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+	) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
+		return nil, nil
+	}
+	
+	func (f FakeMCVGetter) ListVGSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+		return &viewv1beta1.ManagedClusterViewList{}, nil
+	}
+
 func (f FakeMCVGetter) GetVRClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
 ) (*volrep.VolumeReplicationClass, error) {
 	return nil, nil
@@ -69,6 +79,15 @@ func (f FakeMCVGetter) GetVRClassFromManagedCluster(resourceName, managedCluster
 func (f FakeMCVGetter) ListVRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return &viewv1beta1.ManagedClusterViewList{}, nil
 }
+
+func (f FakeMCVGetter) GetVGRClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+	) (*volrep.VolumeGroupReplicationClass, error) {
+		return nil, nil
+	}
+	
+	func (f FakeMCVGetter) ListVGRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+		return &viewv1beta1.ManagedClusterViewList{}, nil
+	}
 
 // GetMModeFromManagedCluster: MMode code uses GetMModeFromManagedCluster to create a MCV and not fetch it, that
 // is done using ListMCV. As a result this fake function creates an MCV for record keeping purposes and returns
