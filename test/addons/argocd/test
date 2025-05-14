@@ -10,9 +10,9 @@ from drenv import commands
 from drenv import kubectl
 
 
-def deploy_guestbook(hub, cluster):
+def deploy_busybox(hub, cluster):
     print(
-        f"Deploying application guestbook-{cluster} in namespace argocd-test on cluster {cluster}"
+        f"Deploying application busybox-{cluster} in namespace argocd-test on cluster {cluster}"
     )
     # need use KUBECONFIG env, switch to hub cluster argocd ns first,
     # otherwise will hit argocd command bug
@@ -31,9 +31,9 @@ def deploy_guestbook(hub, cluster):
             "argocd",
             "app",
             "create",
-            f"guestbook-{cluster}",
-            "--repo=https://github.com/argoproj/argocd-example-apps.git",
-            "--path=guestbook",
+            f"busybox-{cluster}",
+            "--repo=https://github.com/RamenDR/ocm-ramen-samples.git",
+            "--path=workloads/deployment/k8s-regional-rbd",
             f"--dest-name={cluster}",
             "--dest-namespace=argocd-test",
             "--sync-option=CreateNamespace=true",
@@ -45,11 +45,11 @@ def deploy_guestbook(hub, cluster):
             print(line)
 
 
-def wait_until_guestbook_is_healthy(hub, cluster):
-    print(f"Waiting application guestbook-{cluster} to be healthy")
+def wait_until_busybox_is_healthy(hub, cluster):
+    print(f"Waiting application busybox-{cluster} to be healthy")
     kubectl.wait(
         "application",
-        f"guestbook-{cluster}",
+        f"busybox-{cluster}",
         "--for=jsonpath={.status.health.status}=Healthy",
         "--namespace=argocd",
         "--timeout=120s",
@@ -57,8 +57,8 @@ def wait_until_guestbook_is_healthy(hub, cluster):
     )
 
 
-def undeploy_guestbook(hub, cluster):
-    print(f"Deleting application guestbook-{cluster}")
+def undeploy_busybox(hub, cluster):
+    print(f"Deleting application busybox-{cluster}")
     # need use KUBECONFIG env, switch to hub cluster argocd ns first,
     # otherwise will hit argocd command bug
     # see https://github.com/argoproj/argo-cd/issues/14167
@@ -76,7 +76,7 @@ def undeploy_guestbook(hub, cluster):
             "argocd",
             "app",
             "delete",
-            f"guestbook-{cluster}",
+            f"busybox-{cluster}",
             "--yes",
             env=env,
         ):
@@ -92,11 +92,11 @@ def undeploy_guestbook(hub, cluster):
     )
 
 
-def wait_until_guestbook_is_deleted(hub, cluster):
-    print(f"Waiting until application guestbook-{cluster} is deleted")
+def wait_until_busybox_is_deleted(hub, cluster):
+    print(f"Waiting until application busybox-{cluster} is deleted")
     kubectl.wait(
         "application",
-        f"guestbook-{cluster}",
+        f"busybox-{cluster}",
         "--for=delete",
         "--namespace=argocd",
         "--timeout=60s",
@@ -119,13 +119,13 @@ if len(sys.argv) != 4:
 hub, *clusters = sys.argv[1:]
 
 for cluster in clusters:
-    deploy_guestbook(hub, cluster)
+    deploy_busybox(hub, cluster)
 
 for cluster in clusters:
-    wait_until_guestbook_is_healthy(hub, cluster)
+    wait_until_busybox_is_healthy(hub, cluster)
 
 for cluster in clusters:
-    undeploy_guestbook(hub, cluster)
+    undeploy_busybox(hub, cluster)
 
 for cluster in clusters:
-    wait_until_guestbook_is_deleted(hub, cluster)
+    wait_until_busybox_is_deleted(hub, cluster)
