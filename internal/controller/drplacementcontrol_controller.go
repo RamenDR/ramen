@@ -2112,12 +2112,17 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 		// Post-HubRecovery, if the retrieved VRG from the surviving cluster is secondary, it wrongly halts
 		// reconciliation for the workload. Only proceed if the retrieved VRG is primary.
 		if vrg.Spec.ReplicationState == rmn.Primary &&
-			drpc.Spec.Action != rmn.DRAction(vrg.Spec.Action) &&
 			dstCluster == clusterName {
-			msg := fmt.Sprintf("Stop - Two different actions for the same cluster - drpcAction:'%s'. vrgAction:'%s'",
-				drpc.Spec.Action, vrg.Spec.Action)
+			if drpc.Spec.Action != rmn.DRAction(vrg.Spec.Action) {
+				msg := fmt.Sprintf("Stop - Two different actions for the same cluster - drpcAction:'%s'. vrgAction:'%s'",
+					drpc.Spec.Action, vrg.Spec.Action)
 
-			return Stop, msg, nil
+				return Stop, msg, nil
+			}
+
+			log.Info("Same action, dstCluster, and ReplicationState is primary. Continuing")
+
+			return Continue, "", nil
 		}
 
 		if dstCluster != clusterName && vrg.Spec.ReplicationState == rmn.Secondary {
@@ -2129,9 +2134,12 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 			return AllowFailover, msg, nil
 		}
 
-		log.Info("Same action, dstCluster, and ReplicationState is primary. Continuing")
+		msg := fmt.Sprintf("Failover is allowed - drpcAction:'%s'. vrgAction:'%s'. "+
+			"DRPCDstClstr:'%s'. vrgDstClstr:'%s'. ReplicationState: '%s'.",
+			drpc.Spec.Action, vrg.Spec.Action, dstCluster, vrg.GetAnnotations()[DestinationClusterAnnotationKey],
+			vrg.Spec.ReplicationState)
 
-		return Continue, "", nil
+		return AllowFailover, msg, nil
 	}
 
 	// Finally, IF 2 clusters queried successfully and 1 or more VRGs found, and if one of the VRGs is on the dstCluster,
