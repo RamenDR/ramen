@@ -13,17 +13,20 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
+// TODO: Carried over from internal/controllers, this is not part of API, may need a better way to reference it!
+const PlacementDecisionReasonFailoverRetained = "RetainedForFailover"
+
 // GetCurrentCluster returns the name of the cluster where the workload is currently placed,
 // based on the PlacementDecision for the given Placement resource.
 // Assumes the PlacementDecision exists with a Decision.
 // Not applicable for discovered apps before enabling protection, as no Placement exists.
 func GetCurrentCluster(ctx types.Context, namespace string, placementName string) (string, error) {
-	placementDecision, err := waitPlacementDecision(ctx, namespace, placementName)
+	clusterDecision, err := getClusterDecisionFromPlacement(ctx, namespace, placementName)
 	if err != nil {
 		return "", err
 	}
 
-	return placementDecision.Status.Decisions[0].ClusterName, nil
+	return clusterDecision.ClusterName, nil
 }
 
 func GetPlacement(ctx types.Context, namespace, name string) (*v1beta1.Placement, error) {
@@ -40,9 +43,11 @@ func GetPlacement(ctx types.Context, namespace, name string) (*v1beta1.Placement
 	return placement, nil
 }
 
-// waitPlacementDecision waits until we have a placement decision and returns the placement decision object.
-func waitPlacementDecision(ctx types.Context, namespace string, placementName string,
-) (*v1beta1.PlacementDecision, error) {
+// getClusterDecisionFromPlacement waits until we have a placement decision and returns the cluster decision
+//
+//nolint:gocognit
+func getClusterDecisionFromPlacement(ctx types.Context, namespace string, placementName string,
+) (*v1beta1.ClusterDecision, error) {
 	cluster := ctx.Env().Hub
 
 	for {
@@ -56,8 +61,14 @@ func waitPlacementDecision(ctx types.Context, namespace string, placementName st
 			return nil, err
 		}
 
-		if placementDecision != nil && len(placementDecision.Status.Decisions) > 0 {
-			return placementDecision, nil
+		if placementDecision != nil {
+			for idx := range placementDecision.Status.Decisions {
+				if placementDecision.Status.Decisions[idx].Reason == PlacementDecisionReasonFailoverRetained {
+					continue
+				}
+
+				return &placementDecision.Status.Decisions[idx], nil
+			}
 		}
 
 		if err := Sleep(ctx.Context(), RetryInterval); err != nil {
@@ -98,10 +109,20 @@ func getPlacementDecisionFromPlacement(ctx types.Context, placement *v1beta1.Pla
 	plDecision := plDecisions.Items[0]
 	// r.Log.Info("Found ClusterDecision", "ClsDedicision", plDecision.Status.Decisions)
 
-	if len(plDecision.Status.Decisions) > 1 {
+	decisionCount := 0
+
+	for idx := range plDecision.Status.Decisions {
+		if plDecision.Status.Decisions[idx].Reason == PlacementDecisionReasonFailoverRetained {
+			continue
+		}
+
+		decisionCount++
+	}
+
+	if decisionCount > 1 {
 		return nil, fmt.Errorf("multiple placements found in PlacementDecision"+
 			" (count: %d, Placement: %s, PlacementDecision: %s) in cluster %q",
-			len(plDecision.Status.Decisions),
+			decisionCount,
 			placement.GetNamespace()+"/"+placement.GetName(),
 			plDecision.GetName()+"/"+plDecision.GetNamespace(), hub.Name)
 	}
