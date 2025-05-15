@@ -84,6 +84,21 @@ func WaitForManagedClusterSetBindingDelete(
 	return waitForResourceDelete(ctx, cluster, obj, deadline)
 }
 
+func WaitForNamespaceDelete(
+	ctx types.Context,
+	cluster types.Cluster,
+	namespace string,
+	deadline time.Time,
+) error {
+	obj := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+
+	return waitForResourceDelete(ctx, cluster, obj, deadline)
+}
+
 // waitForResourceDelete waits until a resource is deleted or deadline is reached
 func waitForResourceDelete(
 	ctx types.Context,

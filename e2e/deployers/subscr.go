@@ -4,6 +4,8 @@
 package deployers
 
 import (
+	"time"
+
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 
@@ -109,6 +111,12 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 
 	err = util.DeleteNamespace(ctx, ctx.Env().Hub, managementNamespace)
 	if err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(util.UndeployTimeout)
+
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, managementNamespace, deadline); err != nil {
 		return err
 	}
 

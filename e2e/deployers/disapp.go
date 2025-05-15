@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -96,6 +97,18 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	}
 
 	if err := util.DeleteNamespace(ctx, ctx.Env().C2, appNamespace); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(util.UndeployTimeout)
+
+	// wait for namespace to be deleted on both clusters
+
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().C1, appNamespace, deadline); err != nil {
+		return err
+	}
+
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().C2, appNamespace, deadline); err != nil {
 		return err
 	}
 
