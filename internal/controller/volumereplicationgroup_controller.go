@@ -1319,7 +1319,11 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	v.reconcileAsPrimary()
 
-	if v.result.Requeue {
+	v.updateVRGDataReadyCondition()
+
+	// Check in memory VRGConditionTypeDataReady is true or not to proceed!
+	dataReady := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+	if dataReady.Status != metav1.ConditionTrue {
 		return v.updateVRGConditionsAndStatus(v.result)
 	}
 
@@ -1697,9 +1701,7 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 		if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
 			v.log.Info(fmt.Sprintf("Failed to update VRG status (%v/%s)",
 				err, v.instance.Name))
-
 			result.Requeue = true
-
 			return result
 		}
 
@@ -1827,6 +1829,29 @@ func (v *VRGInstance) updateProtectedCGs() error {
 	v.instance.Status.PVCGroups = pvcGroups
 
 	return nil
+}
+
+func (v *VRGInstance) updateVRGDataReadyCondition() {
+	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
+		msg := fmt.Sprintf("merging %s condition", conditionName)
+		v.log.Info(msg, "subconditions", subconditions)
+		finalCondition := util.MergeConditions(util.SetStatusCondition,
+			&v.instance.Status.Conditions,
+			[]string{VRGConditionReasonUnused},
+			subconditions...)
+		msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+		v.log.Info(msg, "finalCondition", finalCondition)
+	}
+
+	var volSyncDataReady *metav1.Condition
+	if v.instance.Spec.Sync == nil {
+		volSyncDataReady = v.aggregateVolSyncDataReadyCondition()
+	}
+
+	logAndSet(VRGConditionTypeDataReady,
+		volSyncDataReady,
+		v.aggregateVolRepDataReadyCondition(),
+	)
 }
 
 // updateVRGConditions updates three summary conditions VRGConditionTypeDataReady,
@@ -2282,11 +2307,11 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 func (v *VRGInstance) clusterDataConflict(msg string, status metav1.ConditionStatus) *metav1.Condition {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		return updateVRGNoClusterDataConflictCondition(
-			v.instance.Status.ObservedGeneration, status, VRGConditionReasonDataConflictPrimary,
+			v.instance.Generation, status, VRGConditionReasonDataConflictPrimary,
 			msg)
 	} else if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		return updateVRGNoClusterDataConflictCondition(
-			v.instance.Status.ObservedGeneration, status, VRGConditionReasonDataConflictSecondary,
+			v.instance.Generation, status, VRGConditionReasonDataConflictSecondary,
 			msg)
 	}
 
