@@ -3,11 +3,10 @@
 
 ---
 resources:
-  - https://raw.githubusercontent.com/Nikhil-Ladha/kubernetes-csi-addons/refs/heads/add-vgr-controller-us/deploy/controller/crds.yaml
-  - https://raw.githubusercontent.com/Nikhil-Ladha/kubernetes-csi-addons/refs/heads/add-vgr-controller-us/deploy/controller/rbac.yaml
-  - https://raw.githubusercontent.com/Nikhil-Ladha/kubernetes-csi-addons/refs/heads/add-vgr-controller-us/deploy/controller/setup-controller.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/refs/heads/main/deploy/controller/crds.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/refs/heads/main/deploy/controller/rbac.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/refs/heads/main/deploy/controller/setup-controller.yaml
 
 images:
-  - name: quay.io/csiaddons/k8s-controller:latest
-    newName: quay.io/nladha/csiaddons-controller
-    newTag: vgr
+  - name: quay.io/csiaddons/k8s-controller
+    newTag: latest

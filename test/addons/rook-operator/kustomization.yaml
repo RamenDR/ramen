@@ -43,21 +43,21 @@ patches:
                     value: 'true'
                   - name: ROOK_CSI_CEPH_IMAGE
                     value: quay.io/nladha/cephcsi:vgr
-                  - name: ROOK_CSIADDONS_IMAGE
-                    value: quay.io/nladha/csiaddons-sidecar:vgr
+                  # - name: ROOK_CSIADDONS_IMAGE
+                  #   value: quay.io/nladha/csiaddons-sidecar:vgr
                   - name: CSI_LOG_LEVEL
                     value: "5"
-  - target:
-      kind: Deployment
-      name: rook-ceph-operator
-    patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: not-used
-      spec:
-        template:
-          spec:
-            containers:
-              - name: rook-ceph-operator
-                image: quay.io/madhupr001/rook:fix-osd-prep
+  # - target:
+  #     kind: Deployment
+  #     name: rook-ceph-operator
+  #   patch: |-
+  #     apiVersion: apps/v1
+  #     kind: Deployment
+  #     metadata:
+  #       name: not-used
+  #     spec:
+  #       template:
+  #         spec:
+  #           containers:
+  #             - name: rook-ceph-operator
+  #               image: quay.io/madhupr001/rook:fix-osd-prep
