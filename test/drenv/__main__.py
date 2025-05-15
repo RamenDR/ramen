@@ -23,6 +23,7 @@ from . import providers
 from . import ramen
 from . import shutdown
 from . import yaml
+from . import ssh
 
 ADDONS_DIR = "addons"
 
@@ -194,6 +195,8 @@ def handle_termination_signal(signo, frame):
 
 def do_setup(args):
     env = load_env(args)
+    logging.info("[main] Setting up drenv")
+    ssh.setup()
     for name in set(p["provider"] for p in env["profiles"]):
         logging.info("[main] Setting up '%s' for drenv", name)
         provider = providers.get(name)
@@ -202,10 +205,12 @@ def do_setup(args):
 
 def do_cleanup(args):
     env = load_env(args)
+    logging.info("[main] Cleaning up drenv")
     for name in set(p["provider"] for p in env["profiles"]):
         logging.info("[main] Cleaning up '%s' for drenv", name)
         provider = providers.get(name)
         provider.cleanup()
+    ssh.cleanup()
 
 
 def do_clear(args):
