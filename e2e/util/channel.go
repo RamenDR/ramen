@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	channelv1 "open-cluster-management.io/multicloud-operators-channel/pkg/apis/apps/v1"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -32,7 +33,7 @@ func EnsureChannelDeleted(ctx types.Context) error {
 		return err
 	}
 
-	deadline := time.Now().Add(CleanupTimeout)
+	deadline := time.Now().Add(config.CleanupTimeout)
 
 	return WaitForNamespaceDelete(ctx, ctx.Env().Hub, ctx.Config().Channel.Namespace, deadline)
 }

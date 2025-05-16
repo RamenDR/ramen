@@ -73,7 +73,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	config := ctx.Config()
+	cfg := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 	appNamespace := ctx.AppNamespace()
 
@@ -102,12 +102,12 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	err = deployers.DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
+	err = deployers.DeleteManagedClusterSetBinding(ctx, cfg.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
 	}
 
-	deadline := time.Now().Add(util.UnprotectTimeout)
+	deadline := time.Now().Add(config.UnprotectTimeout)
 
 	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace, deadline); err != nil {
 		return err
@@ -117,7 +117,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, config.ClusterSet,
+	if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, cfg.ClusterSet,
 		managementNamespace, deadline); err != nil {
 		return err
 	}

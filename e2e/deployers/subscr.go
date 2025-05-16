@@ -9,6 +9,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -78,7 +79,7 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 func (s Subscription) Undeploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	config := ctx.Config()
+	cfg := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
 	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, name)
@@ -104,7 +105,7 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
-	err = DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
+	err = DeleteManagedClusterSetBinding(ctx, cfg.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
 	}
@@ -114,7 +115,7 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
-	deadline := time.Now().Add(util.UndeployTimeout)
+	deadline := time.Now().Add(config.UndeployTimeout)
 
 	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, managementNamespace, deadline); err != nil {
 		return err

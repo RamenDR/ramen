@@ -129,7 +129,7 @@ func DisableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	deadline := time.Now().Add(util.UnprotectTimeout)
+	deadline := time.Now().Add(config.UnprotectTimeout)
 
 	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace, deadline); err != nil {
 		return err

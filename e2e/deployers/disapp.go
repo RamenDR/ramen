@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -100,7 +101,7 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
-	deadline := time.Now().Add(util.UndeployTimeout)
+	deadline := time.Now().Add(config.UndeployTimeout)
 
 	// wait for namespace to be deleted on both clusters
 

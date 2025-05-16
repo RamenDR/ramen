@@ -6,6 +6,7 @@ package deployers
 import (
 	"time"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -79,7 +80,7 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
-	deadline := time.Now().Add(util.UndeployTimeout)
+	deadline := time.Now().Add(config.UndeployTimeout)
 
 	if err := util.WaitForApplicationSetDelete(ctx, ctx.Env().Hub, name, managementNamespace, deadline); err != nil {
 		return err
