@@ -30,6 +30,7 @@ type ProtectedVolumeReplicationGroupListReconciler struct {
 	ObjStoreGetter ObjectStoreGetter
 	Scheme         *runtime.Scheme
 	RateLimiter    *workqueue.TypedRateLimiter[reconcile.Request]
+	Log            logr.Logger
 }
 
 type ProtectedVolumeReplicationGroupListInstance struct {
@@ -60,7 +61,7 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 	s := ProtectedVolumeReplicationGroupListInstance{
 		reconciler: r,
 		ctx:        ctx,
-		log:        ctrl.Log.WithName("pvrgl").WithValues("name", req.NamespacedName.Name),
+		log:        r.Log.WithValues("pvrgl", req.NamespacedName.Name, "rid", util.GetRID()),
 		instance:   &ramendrv1alpha1.ProtectedVolumeReplicationGroupList{},
 	}
 

@@ -13,8 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
-	recipecore "github.com/ramendr/ramen/internal/controller/core"
+	core "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -122,7 +121,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 //
 //nolint:funlen,gocognit,gocyclo,cyclop
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
+	logger := r.Log.WithValues("drpc", req.NamespacedName, "rid", rmnutil.GetRID())
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
@@ -1097,7 +1096,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
-	recipecore.ObjectCreatedByRamenSetLabel(clonedPlRule)
+	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
 
 	userPlRule.DeepCopyInto(clonedPlRule)
 
@@ -1709,7 +1708,7 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 		rmnutil.ExcludeFromVeleroBackup: "true",
 	}
 
-	recipecore.ObjectCreatedByRamenSetLabel(plDecision)
+	rmnutil.AddLabel(plDecision, rmnutil.CreatedByRamenLabel, "true")
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
@@ -2473,7 +2472,7 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
-	independentVMProtection := drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
+	independentVMProtection := r.drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
 	if independentVMProtection {
 		return nil
 	}
@@ -2512,7 +2511,8 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
 }
 
-func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl,
+func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementControl,
+	otherdrpc *rmn.DRPlacementControl,
 	ramenConfig *rmn.RamenConfig,
 ) bool {
 	if (drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil) ||
@@ -2525,33 +2525,50 @@ func drpcProtectVMInNS(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementC
 
 	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
 	// Support for protecting independent VMs
-	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
+	if drpcRecipeName == core.VMRecipeName && otherDrpcRecipeName == core.VMRecipeName {
 		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
 			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
-			return !twoVMDRPCsConflict(drpc, otherdrpc)
+			return !r.twoVMDRPCsConflict(drpc, otherdrpc)
 		}
 	}
 
 	return false
 }
 
-func twoVMDRPCsConflict(drpc *rmn.DRPlacementControl, otherdrpc *rmn.DRPlacementControl) bool {
-	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
-	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters["PROTECTED_VMS"]...)
+func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementControl,
+	otherdrpc *rmn.DRPlacementControl,
+) bool {
+	// "PROTECTED_VMS"
+	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
+	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
 
-	conflict := drpcVMList.Intersection(otherdrpcVMList)
-
-	if len(conflict) == 0 {
-		return false
-	}
+	vmListConflict := drpcVMList.Intersection(otherdrpcVMList)
 
 	// Mark the latest drpc as unavailable if conflicting resources found
 
-	if (drpc.Status.ObservedGeneration == 0) ||
-		(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
-		return true
+	// "K8S_RESOURCE_LIST"
+	drpcK8SLabelSelector := sets.NewString(
+		drpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
+	otherdrpcK8SLabelSelector := sets.NewString(
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
+
+	k8sLabelSelectorConflict := drpcK8SLabelSelector.Intersection(otherdrpcK8SLabelSelector)
+	// "PVC_RESOURCE_LIST"
+	drpcPVCLabelSelector := sets.NewString(
+		drpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
+	otherdrpcPVCLabelSelector := sets.NewString(
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
+
+	pvcLabelSelectorConflict := drpcPVCLabelSelector.Intersection(otherdrpcPVCLabelSelector)
+
+	// Mark the latest drpc as unavailable if conflicting resources found
+	if len(vmListConflict) > 0 || len(k8sLabelSelectorConflict) > 0 || len(pvcLabelSelectorConflict) > 0 {
+		if (drpc.Status.ObservedGeneration == 0) ||
+			(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
+			return true
+		}
 	}
 
 	return false

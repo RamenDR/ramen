@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -32,7 +31,6 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -357,7 +355,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
-	log := r.Log.WithValues("name", req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("drc", req.NamespacedName.Name, "rid", util.GetRID())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")
@@ -678,7 +676,7 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		},
 	}
 
-	core.ObjectCreatedByRamenSetLabel(&drcConfig)
+	util.AddLabel(&drcConfig, util.CreatedByRamenLabel, "true")
 
 	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
 	if err != nil {
@@ -1465,7 +1463,7 @@ func generateNF(targetCluster *ramen.DRCluster) (csiaddonsv1alpha1.NetworkFence,
 			Cidrs:      targetCluster.Spec.CIDRs,
 		},
 	}
-	core.ObjectCreatedByRamenSetLabel(&nf)
+	util.AddLabel(&nf, util.CreatedByRamenLabel, "true")
 
 	if err := fillStorageDetails(targetCluster, &nf); err != nil {
 		return nf, fmt.Errorf("failed to create network fence resource with storage detai: %w", err)

@@ -21,7 +21,6 @@ import (
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1881,7 +1880,7 @@ func (d *DRPCInstance) newVRG(
 		},
 	}
 
-	core.ObjectCreatedByRamenSetLabel(&vrg)
+	rmnutil.AddLabel(&vrg, rmnutil.CreatedByRamenLabel, "true")
 
 	d.updateVRGOptionalFields(&vrg, vrgFromView, dstCluster)
 
