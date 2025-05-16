@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,18 @@ const (
 
 	// ClusterSet
 	defaultClusterSetName = "default"
+
+	// UnprotectTimeout defines the maximum time allowed for resource deletion during unprotect.
+	// This includes waiting for DRPCs and related resources to be fully removed.
+	UnprotectTimeout = 10 * time.Minute
+
+	// UndeployTimeout defines the maximum time allowed for all resource deletions during undeploy.
+	// TODO: Undeploy usually takes about 10 seconds, we keep it longer because we call it in
+	// parallel with unprotect in ramenctl during cleanup and it needs more testing.
+	UndeployTimeout = 3 * time.Minute
+
+	// CleanupTimeout defines the maximum time allowed for resource cleanup operations like channels.
+	CleanupTimeout = 1 * time.Minute
 )
 
 // Options that can be used in a configuration file.

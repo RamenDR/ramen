@@ -8,7 +8,6 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -112,35 +111,6 @@ func getTargetCluster(
 	}
 
 	return targetCluster, nil
-}
-
-func waitDRPCDeleted(ctx types.TestContext, namespace string, name string) error {
-	log := ctx.Logger()
-	hub := ctx.Env().Hub
-	startTime := time.Now()
-
-	log.Debugf("Waiting until drpc \"%s/%s\" is deleted in cluster %q", namespace, name, hub.Name)
-
-	for {
-		_, err := getDRPC(ctx, namespace, name)
-		if err != nil {
-			if k8serrors.IsNotFound(err) {
-				log.Debugf("drpc \"%s/%s\" is deleted in cluster %q", namespace, name, hub.Name)
-
-				return nil
-			}
-
-			log.Debugf("Failed to get drpc \"%s/%s\" in cluster %q: %s", namespace, name, hub.Name, err)
-		}
-
-		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q is not deleted yet before timeout in cluster %q, fail", name, hub.Name)
-		}
-
-		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return err
-		}
-	}
 }
 
 // nolint:unparam

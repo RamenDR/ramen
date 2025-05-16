@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	Timeout       = 600 * time.Second
+	Timeout       = 10 * time.Minute
 	RetryInterval = 5 * time.Second
 )
 

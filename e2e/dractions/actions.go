@@ -4,6 +4,8 @@
 package dractions
 
 import (
+	"time"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
@@ -127,8 +129,9 @@ func DisableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	err = waitDRPCDeleted(ctx, managementNamespace, drpcName)
-	if err != nil {
+	deadline := time.Now().Add(config.UnprotectTimeout)
+
+	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace, deadline); err != nil {
 		return err
 	}
 
