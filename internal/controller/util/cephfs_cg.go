@@ -115,7 +115,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	}
 
 	storageClassProviders := []string{}
-logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "pvcs", pvcs.Items)
+
 	for _, pvc := range pvcs.Items {
 		storageClass := &storagev1.StorageClass{}
 
@@ -128,8 +128,7 @@ logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "pvcs", pvcs.Item
 
 		storageClassProviders = append(storageClassProviders, storageClass.Provisioner)
 	}
-logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "storageClassProviders", storageClassProviders)
-logger.Info("GetVolumeGroupSnapshotClassFromPVCsStorageClass", "volumeGroupSnapshotClasses", volumeGroupSnapshotClasses)
+
 	var matchedVolumeGroupSnapshotClassName string
 
 	for _, volumeGroupSnapshotClass := range volumeGroupSnapshotClasses {

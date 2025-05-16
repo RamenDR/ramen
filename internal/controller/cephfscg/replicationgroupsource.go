@@ -101,7 +101,7 @@ func (m *replicationGroupSourceMachine) Conditions() *[]metav1.Condition {
 	return &m.ReplicationGroupSource.Status.Conditions
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Create volume group snapshot")
 

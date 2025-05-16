@@ -25,12 +25,18 @@ var _ = Describe("misc", func() {
 	pvcNamespace4 := "busybox-box-appppppppXppppppppppppppppppppppppppppppppppppppppppppppppT"
 	storageID := "496eec7b8b195d78d2265f7550fba723"
 
-	Expect(util.GenerateCombinedLabel(pvcNamespace1, storageID)).
-		Should(Equal("busybox-box-appT.496eec7b8b195d78d2265f7550fba723"))
-	Expect(util.GenerateCombinedLabel(pvcNamespace2, storageID)).
-		Should(Equal("busybox-box-appppppppXppppT.496eec7b8b195d78d2265f7550fba723"))
-	Expect(util.GenerateCombinedLabel(pvcNamespace3, storageID)).
-		Should(Equal("busybox-box-appppppppX10011fcc.496eec7b8b195d78d2265f7550fba723"))
-	Expect(util.GenerateCombinedLabel(pvcNamespace4, storageID)).
-		Should(Equal("busybox-box-appppppppXce2e9aed.496eec7b8b195d78d2265f7550fba723"))
+	Expect(util.GenerateCombinedName(pvcNamespace1, storageID)).
+		Should(Equal("busybox-box-appT-496eec7b8b195d78d2265f7550fba723"))
+	Expect(util.GenerateCombinedName(pvcNamespace2, storageID)).
+		Should(Equal("busybox-box-appppppppXppppT-496eec7b8b195d78d2265f7550fba723"))
+	Expect(util.GenerateCombinedName(pvcNamespace3, storageID)).
+		Should(Equal("10011fcc-496eec7b8b195d78d2265f7550fba723"))
+	Expect(util.GenerateCombinedName(pvcNamespace4, storageID)).
+		Should(Equal("ce2e9aed-496eec7b8b195d78d2265f7550fba723"))
+
+	pvcNamespace5 := "busybox-box-appppppppXppppppppppppppppppppppppppppppppppppppppppppppppT"
+	storageID2 := "111111111111111111111111111111111111111496eec7b8b195d78d2265f7550fba723"
+
+	Expect(util.GenerateCombinedName(pvcNamespace5, storageID2)).
+		Should(Equal("ce2e9aed-5b7c8892"))
 })
