@@ -824,7 +824,7 @@ func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace stri
 		return "", fmt.Errorf("missing storageID for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
-	return util.GenerateCombinedLabel(pvcNamespace, storageID), nil
+	return util.GenerateCombinedName(pvcNamespace, storageID), nil
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {

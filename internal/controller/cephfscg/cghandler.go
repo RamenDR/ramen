@@ -97,7 +97,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
 	rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
-	replicationGroupDestinationName = util.TrimToK8sResourceNameLength(replicationGroupDestinationName + c.cgName)
+	replicationGroupDestinationName = util.GenerateCombinedName(replicationGroupDestinationName, c.cgName)
 
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupDestination").
 		WithValues("ReplicationGroupDestinationName", replicationGroupDestinationName,
@@ -144,7 +144,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceName, replicationGroupSourceNamespace string,
 	runFinalSync bool,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
-	replicationGroupSourceName = util.TrimToK8sResourceNameLength(replicationGroupSourceName + c.cgName)
+	replicationGroupSourceName = util.GenerateCombinedName(replicationGroupSourceName, c.cgName)
 
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupSource").
 		WithValues("ReplicationGroupSourceName", replicationGroupSourceName,
@@ -441,8 +441,10 @@ func (c *cgHandler) GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestination
 	return rdSpecs, nil
 }
 
-func DeleteRGS(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger) error {
+func DeleteRGS(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger,
+) error {
 	rgsList := &ramendrv1alpha1.ReplicationGroupSourceList{}
+
 	err := ListReplicationGroupByOwner(ctx, k8sClient, rgsList, ownerName, ownerNamespace, logger)
 	if err != nil {
 		return err
@@ -451,8 +453,10 @@ func DeleteRGS(ctx context.Context, k8sClient client.Client, ownerName, ownerNam
 	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgsList.Items), logger)
 }
 
-func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger) error {
+func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger,
+) error {
 	rgdList := &ramendrv1alpha1.ReplicationGroupDestinationList{}
+
 	err := ListReplicationGroupByOwner(ctx, k8sClient, rgdList, ownerName, ownerNamespace, logger)
 	if err != nil {
 		return err
@@ -461,7 +465,9 @@ func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNam
 	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgdList.Items), logger)
 }
 
-func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, objList client.ObjectList, ownerName, ownerNamespace string, logger logr.Logger) error {
+func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, objList client.ObjectList, ownerName,
+	ownerNamespace string, logger logr.Logger,
+) error {
 	matchLabels := map[string]string{
 		volsync.VRGOwnerNameLabel:      ownerName,
 		volsync.VRGOwnerNamespaceLabel: ownerNamespace,
@@ -478,10 +484,12 @@ func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, o
 	return nil
 }
 
-func DeleteTypedObjectList[T client.Object](ctx context.Context, k8sClient client.Client, items []T, logger logr.Logger) error {
+func DeleteTypedObjectList[T client.Object](ctx context.Context, k8sClient client.Client, items []T, logger logr.Logger,
+) error {
 	for _, obj := range items {
 		// Ensure obj is a pointer
 		objCopy := obj
+
 		objPtr, ok := any(&objCopy).(client.Object)
 		if !ok {
 			return fmt.Errorf("obj is not a client.Object")
@@ -500,5 +508,6 @@ func ToPointerSlice[T any](items []T) []*T {
 	for i := range items {
 		out[i] = &items[i]
 	}
+
 	return out
 }

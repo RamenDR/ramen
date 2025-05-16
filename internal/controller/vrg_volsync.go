@@ -360,6 +360,7 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 		if namespace == "" {
 			v.log.Error(fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey),
 				"Failed to create ReplicationGroupDestination")
+
 			requeue = true
 
 			return requeue, fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey)
