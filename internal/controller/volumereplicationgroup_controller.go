@@ -1317,8 +1317,11 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	}
 
 	v.reconcileAsPrimary()
+	v.updateVRGDataReadyCondition()
 
-	if v.result.Requeue {
+	// Check in memory VRGConditionTypeDataReady is true or not to proceed!
+	dataReady := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeDataReady)
+	if dataReady.Status != metav1.ConditionTrue {
 		return v.updateVRGConditionsAndStatus(v.result)
 	}
 
@@ -1826,6 +1829,29 @@ func (v *VRGInstance) updateProtectedCGs() error {
 	v.instance.Status.PVCGroups = pvcGroups
 
 	return nil
+}
+
+func (v *VRGInstance) updateVRGDataReadyCondition() {
+	logAndSet := func(conditionName string, subconditions ...*metav1.Condition) {
+		msg := fmt.Sprintf("merging %s condition", conditionName)
+		v.log.Info(msg, "subconditions", subconditions)
+		finalCondition := util.MergeConditions(util.SetStatusCondition,
+			&v.instance.Status.Conditions,
+			[]string{VRGConditionReasonUnused},
+			subconditions...)
+		msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+		v.log.Info(msg, "finalCondition", finalCondition)
+	}
+
+	var volSyncDataReady *metav1.Condition
+	if v.instance.Spec.Sync == nil {
+		volSyncDataReady = v.aggregateVolSyncDataReadyCondition()
+	}
+
+	logAndSet(VRGConditionTypeDataReady,
+		volSyncDataReady,
+		v.aggregateVolRepDataReadyCondition(),
+	)
 }
 
 // updateVRGConditions updates three summary conditions VRGConditionTypeDataReady,
