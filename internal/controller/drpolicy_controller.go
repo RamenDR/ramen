@@ -117,7 +117,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.Info("create/update")
 
-	reason, err := validateDRPolicy(ctx, drpolicy, drclusters, r.APIReader, drClusterIDsToNames)
+	reason, err := validateDRPolicy(drpolicy, drclusters)
 	if err != nil {
 		statusErr := u.validatedSetFalse(reason, err)
 		if !errors.Is(statusErr, err) || reason != ReasonDRClusterNotFound {
@@ -134,15 +134,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, fmt.Errorf("finalizer add update: %w", u.validatedSetFalse("FinalizerAddFailed", err))
 	}
 
-	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
-	}
-
-	if err := r.initiateDRPolicyMetrics(drpolicy, drclusters); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
-	}
-
-	return r.reconcile(u, drclusters, secretsUtil, ramenConfig)
+	return r.reconcile(u, drclusters, secretsUtil, ramenConfig, drClusterIDsToNames)
 }
 
 //nolint:unparam
@@ -151,6 +143,7 @@ func (r *DRPolicyReconciler) reconcile(
 	drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,
+	drClusterIDsToNames map[string]string,
 ) (ctrl.Result, error) {
 	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
@@ -158,6 +151,21 @@ func (r *DRPolicyReconciler) reconcile(
 
 	if err := updatePeerClasses(u, r.MCVGetter); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy peerClass update: %w", err)
+	}
+
+	// we will be able to validate conflicts only after PeerClasses are updated
+	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drclusters, drClusterIDsToNames)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("drpolicy conflict validate: %w",
+			u.validatedSetFalse("DRPolicyConflictFound", err))
+	}
+
+	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+	}
+
+	if err := r.initiateDRPolicyMetrics(u.object, drclusters); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
 	return ctrl.Result{}, nil
@@ -201,18 +209,9 @@ func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context) (*ramen.DR
 	return drClusters, drClusterIDsToNames, nil
 }
 
-func validateDRPolicy(ctx context.Context,
-	drpolicy *ramen.DRPolicy,
+func validateDRPolicy(drpolicy *ramen.DRPolicy,
 	drclusters *ramen.DRClusterList,
-	apiReader client.Reader,
-	drClusterIDsToNames map[string]string,
 ) (string, error) {
-	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
-	if len(drpolicy.Status.Sync.PeerClasses) > 0 && len(drpolicy.Status.Async.PeerClasses) > 0 {
-		return ReasonValidationFailed,
-			fmt.Errorf("invalid DRPolicy: DRPolicy cannot contain both Sync and Async Configurations")
-	}
-
 	// TODO: Ensure DRClusters exist and are validated? Also ensure they are not in a deleted state!?
 	// If new DRPolicy and clusters are deleted, then fail reconciliation?
 	if len(drpolicy.Spec.DRClusters) == 0 {
@@ -222,11 +221,6 @@ func validateDRPolicy(ctx context.Context,
 	reason, err := ensureDRClustersAvailable(drpolicy, drclusters)
 	if err != nil {
 		return reason, err
-	}
-
-	err = validatePolicyConflicts(ctx, apiReader, drpolicy, drclusters, drClusterIDsToNames)
-	if err != nil {
-		return ReasonValidationFailed, err
 	}
 
 	return "", nil
@@ -284,6 +278,11 @@ func validatePolicyConflicts(ctx context.Context,
 	drclusters *ramen.DRClusterList,
 	drClusterIDsToNames map[string]string,
 ) error {
+	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
+	if len(drpolicy.Status.Sync.PeerClasses) > 0 && len(drpolicy.Status.Async.PeerClasses) > 0 {
+		return fmt.Errorf("invalid DRPolicy: a policy cannot contain both sync and async configurations")
+	}
+
 	drpolicies, err := util.GetAllDRPolicies(ctx, apiReader)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
@@ -326,7 +325,7 @@ func hasConflictingDRPolicy(
 
 		// None of the common managed clusters should belong to Metro clusters in either of the drpolicies.
 		if haveOverlappingMetroZones(match, drp, drclusters, drClusterIDsToNames) {
-			return fmt.Errorf("drpolicy: %v has overlapping metro region with another drpolicy %v", match.Name, drp.Name)
+			return fmt.Errorf("drpolicy: %v has overlapping clusters with another drpolicy %v", match.Name, drp.Name)
 		}
 	}
 
