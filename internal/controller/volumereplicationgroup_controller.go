@@ -529,8 +529,8 @@ const (
 	// Consistency group label
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
-	// VolumeReplicationClass label
-	VolumeReplicationIDLabel = "ramendr.openshift.io/replicationid"
+	// VolumeReplicationClass and VolumeGroupReplicationClass label
+	ReplicationIDLabel = "ramendr.openshift.io/replicationid"
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
@@ -778,7 +778,7 @@ func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolum
 		return err
 	}
 
-	replicationID, ok := volumeReplicationClass.GetLabels()[VolumeReplicationIDLabel]
+	replicationID, ok := volumeReplicationClass.GetLabels()[ReplicationIDLabel]
 	if !ok {
 		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
 			volumeReplicationClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
@@ -1042,7 +1042,7 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 	storageClass *storagev1.StorageClass,
 ) client.Object {
 	findMatchingReplicationClass := func(replicationClass client.Object, provisioner string) client.Object {
-		rIDFromReplicationClass := replicationClass.GetLabels()[VolumeReplicationIDLabel]
+		rIDFromReplicationClass := replicationClass.GetLabels()[ReplicationIDLabel]
 		sIDfromReplicationClass := replicationClass.GetLabels()[StorageIDLabel]
 
 		matched := sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&

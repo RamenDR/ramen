@@ -269,7 +269,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
-			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.VolumeReplicationIDLabel]
+			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID})
 			vtest.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			vtest.skipCreationPVandPVC = true
@@ -313,7 +313,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
-			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.VolumeReplicationIDLabel]
+			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID})
 			vrgTestBoundPV.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
@@ -1553,8 +1553,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgScheduleTest6Template.replicationClassLabels = map[string]string{
-				vrgController.VolumeReplicationIDLabel: replicationIDs[0],
-				vrgController.StorageIDLabel:           storageID,
+				vrgController.ReplicationIDLabel: replicationIDs[0],
+				vrgController.StorageIDLabel:     storageID,
 			}
 			vrgScheduleTest6Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
@@ -1791,7 +1791,7 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 	if len(testTemplate.replicationClassLabels) == 0 {
 		replicationID = replicationIDs[0]
 	} else {
-		replicationID = testTemplate.replicationClassLabels[vrgController.VolumeReplicationIDLabel]
+		replicationID = testTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 	}
 
 	storageID := testTemplate.storageIDLabels[vrgController.StorageIDLabel]
@@ -3368,7 +3368,7 @@ func genVRCLabels(replicationID, storageID, protectionKey string) map[string]str
 	}
 
 	if replicationID != "" {
-		vrcLabel[vrgController.VolumeReplicationIDLabel] = replicationID
+		vrcLabel[vrgController.ReplicationIDLabel] = replicationID
 	}
 
 	return vrcLabel
