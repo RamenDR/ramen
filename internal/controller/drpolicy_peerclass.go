@@ -48,6 +48,10 @@ type peerInfo struct {
 
 	// clusterIDs is a list of 2 IDs that denote the IDs for the clusters in this peer relationship
 	clusterIDs []string
+
+	// offloaded represents replication is offloaded for the storageClassName across both peers, and is applicable
+	// when an asynchronous pairing is detected across the peer clusters
+	offloaded bool
 }
 
 // peerClassMatchesPeer compares the storage class name across the PeerClass and passed in peer for a match, and if
@@ -231,7 +235,7 @@ func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, 
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
 // the desired asynchronous schedule that requires to be matched
 // nolint:gocognit
-func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists, schedule string) []peerInfo {
+func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLists, schedule string) []peerInfo {
 	peers := []peerInfo{}
 
 	for _, cl := range cls[1:] {
@@ -245,10 +249,22 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				break
 			}
 
-			rID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
-			if rID == "" {
-				if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
-					continue
+			offloadedCl := util.HasLabel(cl.sClasses[scIdx], StorageOffloadedLabel)
+
+			// avoid pairing an offloaded SC from one peer to another that is not offloaded
+			if offloaded != offloadedCl {
+				continue
+			}
+
+			offloadedPair := offloaded && offloadedCl
+
+			rID := ""
+			if !offloadedPair {
+				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+				if rID == "" {
+					if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+						continue
+					}
 				}
 			}
 
@@ -257,6 +273,7 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				storageIDs:       []string{sID, sIDcl},
 				clusterIDs:       []string{clusterID, cl.clusterID},
 				replicationID:    rID,
+				offloaded:        offloadedPair,
 			})
 
 			break
@@ -314,9 +331,14 @@ func findPeers(cls []classLists, scName string, startClsIdx int, schedule string
 	// TODO: Check if Sync is non-nil?
 	syncPeers := getSyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx+1:])
 
+	offloaded := false
+	if util.HasLabel(cls[startClsIdx].sClasses[scIdx], StorageOffloadedLabel) {
+		offloaded = true
+	}
+
 	asyncPeers := []peerInfo{}
 	if schedule != "" {
-		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
+		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, offloaded, cls[startClsIdx:], schedule)
 	}
 
 	return syncPeers, asyncPeers
