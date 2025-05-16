@@ -373,6 +373,20 @@ func backupRealCreate(
 }
 
 func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
+	if objectsSpec.LabelSelector == nil {
+		objectsSpec.LabelSelector = &metav1.LabelSelector{}
+	}
+
+	newLabelSelector := objectsSpec.LabelSelector
+	newLabelSelector.MatchExpressions = append(
+		newLabelSelector.MatchExpressions,
+		metav1.LabelSelectorRequirement{
+			Key:      util.CreatedByRamenLabel,
+			Operator: metav1.LabelSelectorOpNotIn,
+			Values:   []string{"true"},
+		},
+	)
+
 	return velero.BackupSpec{
 		IncludedNamespaces: objectsSpec.IncludedNamespaces,
 		IncludedResources:  objectsSpec.IncludedResources,
@@ -380,7 +394,7 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		ExcludedResources: append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io",
 			"replicationsources.volsync.backube", "replicationdestinations.volsync.backube",
 			"PersistentVolumeClaims", "PersistentVolumes"),
-		LabelSelector:           objectsSpec.LabelSelector,
+		LabelSelector:           newLabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
 		IncludeClusterResources: objectsSpec.IncludeClusterResources,
