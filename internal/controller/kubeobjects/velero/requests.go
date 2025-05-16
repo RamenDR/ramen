@@ -16,8 +16,8 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -373,6 +373,20 @@ func backupRealCreate(
 }
 
 func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
+	if objectsSpec.LabelSelector == nil {
+		objectsSpec.LabelSelector = &metav1.LabelSelector{}
+	}
+
+	newLabelSelector := objectsSpec.LabelSelector
+	newLabelSelector.MatchExpressions = append(
+		newLabelSelector.MatchExpressions,
+		metav1.LabelSelectorRequirement{
+			Key:      util.CreatedByRamenLabel,
+			Operator: metav1.LabelSelectorOpNotIn,
+			Values:   []string{"true"},
+		},
+	)
+
 	return velero.BackupSpec{
 		IncludedNamespaces: objectsSpec.IncludedNamespaces,
 		IncludedResources:  objectsSpec.IncludedResources,
@@ -380,7 +394,7 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		ExcludedResources: append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io",
 			"replicationsources.volsync.backube", "replicationdestinations.volsync.backube",
 			"PersistentVolumeClaims", "PersistentVolumes"),
-		LabelSelector:           objectsSpec.LabelSelector,
+		LabelSelector:           newLabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
 		IncludeClusterResources: objectsSpec.IncludeClusterResources,
@@ -469,7 +483,7 @@ func backupRequestCreate(
 		labels,
 	)
 
-	core.ObjectCreatedByRamenSetLabel(backupLocation)
+	util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
 
 	if err := w.objectCreate(backupLocation); err != nil {
 		return backupLocation, nil, err

@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
@@ -70,7 +69,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("name", req.NamespacedName.Name, "rid", uuid.New())
+	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
 	log.Info("reconcile enter")
 
 	defer log.Info("reconcile exit")

@@ -13,8 +13,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
-	recipecore "github.com/ramendr/ramen/internal/controller/core"
+	core "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -122,7 +121,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 //
 //nolint:funlen,gocognit,gocyclo,cyclop
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := r.Log.WithValues("DRPC", req.NamespacedName, "rid", uuid.New())
+	logger := r.Log.WithValues("drpc", req.NamespacedName, "rid", rmnutil.GetRID())
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
@@ -1097,7 +1096,7 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
-	recipecore.ObjectCreatedByRamenSetLabel(clonedPlRule)
+	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
 
 	userPlRule.DeepCopyInto(clonedPlRule)
 
@@ -1709,7 +1708,7 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 		rmnutil.ExcludeFromVeleroBackup: "true",
 	}
 
-	recipecore.ObjectCreatedByRamenSetLabel(plDecision)
+	rmnutil.AddLabel(plDecision, rmnutil.CreatedByRamenLabel, "true")
 
 	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
@@ -2113,12 +2112,17 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 		// Post-HubRecovery, if the retrieved VRG from the surviving cluster is secondary, it wrongly halts
 		// reconciliation for the workload. Only proceed if the retrieved VRG is primary.
 		if vrg.Spec.ReplicationState == rmn.Primary &&
-			drpc.Spec.Action != rmn.DRAction(vrg.Spec.Action) &&
 			dstCluster == clusterName {
-			msg := fmt.Sprintf("Stop - Two different actions for the same cluster - drpcAction:'%s'. vrgAction:'%s'",
-				drpc.Spec.Action, vrg.Spec.Action)
+			if drpc.Spec.Action != rmn.DRAction(vrg.Spec.Action) {
+				msg := fmt.Sprintf("Stop - Two different actions for the same cluster - drpcAction:'%s'. vrgAction:'%s'",
+					drpc.Spec.Action, vrg.Spec.Action)
 
-			return Stop, msg, nil
+				return Stop, msg, nil
+			}
+
+			log.Info("Same action, dstCluster, and ReplicationState is primary. Continuing")
+
+			return Continue, "", nil
 		}
 
 		if dstCluster != clusterName && vrg.Spec.ReplicationState == rmn.Secondary {
@@ -2130,9 +2134,12 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 			return AllowFailover, msg, nil
 		}
 
-		log.Info("Same action, dstCluster, and ReplicationState is primary. Continuing")
+		msg := fmt.Sprintf("Failover is allowed - drpcAction:'%s'. vrgAction:'%s'. "+
+			"DRPCDstClstr:'%s'. vrgDstClstr:'%s'. ReplicationState: '%s'.",
+			drpc.Spec.Action, vrg.Spec.Action, dstCluster, vrg.GetAnnotations()[DestinationClusterAnnotationKey],
+			vrg.Spec.ReplicationState)
 
-		return Continue, "", nil
+		return AllowFailover, msg, nil
 	}
 
 	// Finally, IF 2 clusters queried successfully and 1 or more VRGs found, and if one of the VRGs is on the dstCluster,
@@ -2526,7 +2533,7 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 
 	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
 	// Support for protecting independent VMs
-	if drpcRecipeName == recipecore.VMRecipeName && otherDrpcRecipeName == recipecore.VMRecipeName {
+	if drpcRecipeName == core.VMRecipeName && otherDrpcRecipeName == core.VMRecipeName {
 		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
 
 		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
@@ -2542,8 +2549,8 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 	otherdrpc *rmn.DRPlacementControl,
 ) bool {
 	// "PROTECTED_VMS"
-	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]...)
-	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]...)
+	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
+	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
 
 	vmListConflict := drpcVMList.Intersection(otherdrpcVMList)
 
@@ -2551,16 +2558,16 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 
 	// "K8S_RESOURCE_LIST"
 	drpcK8SLabelSelector := sets.NewString(
-		drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]...)
+		drpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
 	otherdrpcK8SLabelSelector := sets.NewString(
-		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]...)
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
 
 	k8sLabelSelectorConflict := drpcK8SLabelSelector.Intersection(otherdrpcK8SLabelSelector)
 	// "PVC_RESOURCE_LIST"
 	drpcPVCLabelSelector := sets.NewString(
-		drpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.PVCLabelSelector]...)
+		drpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
 	otherdrpcPVCLabelSelector := sets.NewString(
-		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[recipecore.PVCLabelSelector]...)
+		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
 
 	pvcLabelSelectorConflict := drpcPVCLabelSelector.Intersection(otherdrpcPVCLabelSelector)
 

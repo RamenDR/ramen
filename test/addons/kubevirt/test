@@ -8,6 +8,7 @@ import shutil
 import sys
 import time
 
+from drenv import ssh
 from drenv import kubectl
 from drenv import virtctl
 
@@ -23,10 +24,9 @@ def test(cluster):
 
 
 def copy_public_key():
-    src = os.path.expanduser("~/.ssh/id_rsa.pub")
     dst = "vm/id_rsa.pub"
-    print(f"Copying public key from {src} to {dst}")
-    shutil.copyfile(src, dst)
+    print(f"Copying public key from {ssh.PUBLIC_KEY} to {dst}")
+    shutil.copyfile(ssh.PUBLIC_KEY, dst)
 
 
 def create_vm(cluster):
@@ -69,7 +69,13 @@ def verify_ssh(cluster):
                 "tail -6 /var/log/ramen.log",
                 username="cirros",
                 namespace=NAMESPACE,
-                known_hosts="",  # Skip host key verification.
+                identity_file=ssh.PRIVATE_KEY,
+                local_ssh=True,
+                local_ssh_opts=(
+                    "-o UserKnownHostsFile=/dev/null",
+                    "-o StrictHostKeyChecking=no",
+                    "-o LogLevel=DEBUG",
+                ),
                 context=cluster,
             )
         except Exception as e:

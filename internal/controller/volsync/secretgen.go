@@ -10,7 +10,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -86,7 +85,7 @@ func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log
 		},
 	}
 
-	core.ObjectCreatedByRamenSetLabel(secret)
+	rmnutil.AddLabel(secret, rmnutil.CreatedByRamenLabel, "true")
 
 	return secret, nil
 }
