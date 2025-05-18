@@ -19,7 +19,8 @@ import (
 const appNamespacePrefix = "e2e-"
 
 type Context struct {
-	ctx      types.Context
+	parent   types.Context
+	context  context.Context
 	workload types.Workload
 	deployer types.Deployer
 	name     string
@@ -27,18 +28,19 @@ type Context struct {
 }
 
 func NewContext(
-	ctx types.Context,
+	parent types.Context,
 	w types.Workload,
 	d types.Deployer,
 ) Context {
 	name := strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
 
 	return Context{
-		ctx:      ctx,
+		parent:   parent,
+		context:  parent.Context(),
 		workload: w,
 		deployer: d,
 		name:     name,
-		logger:   ctx.Logger().Named(name),
+		logger:   parent.Logger().Named(name),
 	}
 }
 
@@ -71,15 +73,15 @@ func (c *Context) Logger() *zap.SugaredLogger {
 }
 
 func (c *Context) Env() *types.Env {
-	return c.ctx.Env()
+	return c.parent.Env()
 }
 
 func (c *Context) Config() *types.Config {
-	return c.ctx.Config()
+	return c.parent.Config()
 }
 
 func (c *Context) Context() context.Context {
-	return c.ctx.Context()
+	return c.context
 }
 
 // Validated return an error if the combination of deployer and workload is not supported.
