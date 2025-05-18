@@ -8,6 +8,7 @@ import (
 	"flag"
 	"os"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -22,9 +23,10 @@ import (
 
 // Context implements types.Context for sharing the log, env, and config with all code.
 type Context struct {
-	log    *zap.SugaredLogger
-	env    *types.Env
-	config *types.Config
+	log     *zap.SugaredLogger
+	env     *types.Env
+	config  *types.Config
+	context context.Context
 }
 
 func (c *Context) Logger() *zap.SugaredLogger {
@@ -40,11 +42,20 @@ func (c *Context) Env() *types.Env {
 }
 
 func (c *Context) Context() context.Context {
-	return context.Background()
+	return c.context
+}
+
+// WithTimeout returns a derived context with a deadline. Call cancel to release resources associated with the context
+// as soon as the operation running in the context complete.
+func (c Context) WithTimeout(d time.Duration) (*Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(c.context, d)
+	c.context = ctx //nolint:revive
+
+	return &c, cancel
 }
 
 // The global test context.
-var Ctx Context
+var Ctx = Context{context: context.Background()}
 
 func TestMain(m *testing.M) {
 	var (

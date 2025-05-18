@@ -5,6 +5,7 @@ package e2e_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -31,7 +32,10 @@ func TestDR(dt *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		if err := util.EnsureChannelDeleted(&Ctx); err != nil {
+		timedCtx, cancel := Ctx.WithTimeout(1 * time.Minute)
+		defer cancel()
+
+		if err := util.EnsureChannelDeleted(timedCtx); err != nil {
 			t.Fatalf("Failed to ensure channel deleted: %s", err)
 		}
 	})

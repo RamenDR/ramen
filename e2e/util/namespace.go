@@ -65,7 +65,6 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 
 	log.Debugf("Waiting until namespace %q is deleted in cluster %q", namespace, cluster.Name)
 
-	startTime := time.Now()
 	key := k8stypes.NamespacedName{Name: namespace}
 
 	for {
@@ -79,12 +78,8 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 			return nil
 		}
 
-		if time.Since(startTime) > 60*time.Second {
-			return fmt.Errorf("timeout deleting namespace %q in cluster %q", namespace, cluster.Name)
-		}
-
 		if err := Sleep(ctx.Context(), time.Second); err != nil {
-			return err
+			return fmt.Errorf("namespace %q not deleted in cluster %q: %w", namespace, cluster.Name, err)
 		}
 	}
 }
