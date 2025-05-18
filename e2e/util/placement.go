@@ -5,7 +5,6 @@ package util
 
 import (
 	"fmt"
-	"time"
 
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"open-cluster-management.io/api/cluster/v1beta1"
@@ -45,7 +44,6 @@ func GetPlacement(ctx types.Context, namespace, name string) (*v1beta1.Placement
 func waitPlacementDecision(ctx types.Context, namespace string, placementName string,
 ) (*v1beta1.PlacementDecision, error) {
 	cluster := ctx.Env().Hub
-	startTime := time.Now()
 
 	for {
 		placement, err := GetPlacement(ctx, namespace, placementName)
@@ -62,12 +60,9 @@ func waitPlacementDecision(ctx types.Context, namespace string, placementName st
 			return placementDecision, nil
 		}
 
-		if time.Since(startTime) > Timeout {
-			return nil, fmt.Errorf("timeout waiting for placement decisions for %q in cluster %q", placementName, cluster.Name)
-		}
-
 		if err := Sleep(ctx.Context(), RetryInterval); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("no placement decisions for %q in cluster %q: %w",
+				placementName, cluster.Name, err)
 		}
 	}
 }

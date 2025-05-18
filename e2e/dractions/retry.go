@@ -5,7 +5,6 @@ package dractions
 
 import (
 	"fmt"
-	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,7 +18,6 @@ import (
 func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
-	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" is ready in cluster %q", namespace, drpcName, hub.Name)
 
@@ -46,14 +44,10 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 			return nil
 		}
 
-		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("timeout waiting for drpc to become ready in cluster %q"+
-				" (Available: %v, PeerReady: %v, ProgressionCompleted: %v, lastGroupSyncTime: %v)",
-				hub.Name, available, peerReady, progressionCompleted, drpc.Status.LastGroupSyncTime)
-		}
-
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return err
+			return fmt.Errorf("drpc not ready in cluster %q"+
+				" (Available: %v, PeerReady: %v, ProgressionCompleted: %v, lastGroupSyncTime: %v): %w",
+				hub.Name, available, peerReady, progressionCompleted, drpc.Status.LastGroupSyncTime, err)
 		}
 	}
 }
@@ -67,7 +61,6 @@ func conditionMet(conditions []metav1.Condition, conditionType string) bool {
 func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DRState) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
-	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" reach phase %q in cluster %q", namespace, name, phase, hub.Name)
 
@@ -84,12 +77,8 @@ func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DR
 			return nil
 		}
 
-		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q status is not %q yet before timeout in cluster %q, fail", name, phase, hub.Name)
-		}
-
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return err
+			return fmt.Errorf("drpc %q phase is not %q in cluster %q: %w", name, phase, hub.Name, err)
 		}
 	}
 }
@@ -117,7 +106,6 @@ func getTargetCluster(
 func waitDRPCDeleted(ctx types.TestContext, namespace string, name string) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
-	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" is deleted in cluster %q", namespace, name, hub.Name)
 
@@ -133,12 +121,8 @@ func waitDRPCDeleted(ctx types.TestContext, namespace string, name string) error
 			log.Debugf("Failed to get drpc \"%s/%s\" in cluster %q: %s", namespace, name, hub.Name, err)
 		}
 
-		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q is not deleted yet before timeout in cluster %q, fail", name, hub.Name)
-		}
-
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return err
+			return fmt.Errorf("drpc %q is not deleted in cluster %q: %w", name, hub.Name, err)
 		}
 	}
 }
@@ -151,7 +135,6 @@ func waitDRPCProgression(
 ) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
-	startTime := time.Now()
 
 	log.Debugf("Waiting until drpc \"%s/%s\" reach progression %q in cluster %q",
 		namespace, name, progression, hub.Name)
@@ -169,13 +152,9 @@ func waitDRPCProgression(
 			return nil
 		}
 
-		if time.Since(startTime) > util.Timeout {
-			return fmt.Errorf("drpc %q progression is not %q yet before timeout of %v in cluster %q",
-				name, progression, util.Timeout, hub.Name)
-		}
-
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return err
+			return fmt.Errorf("drpc %q progression is not %q in cluster %q: %w",
+				name, progression, hub.Name, err)
 		}
 	}
 }
