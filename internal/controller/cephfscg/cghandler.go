@@ -18,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -98,7 +97,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	replicationGroupDestinationName, replicationGroupDestinationNamespace string,
 	rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
-	replicationGroupDestinationName = util.TrimToK8sResourceNameLength(replicationGroupDestinationName + c.cgName)
+	replicationGroupDestinationName = c.cgName
 
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupDestination").
 		WithValues("ReplicationGroupDestinationName", replicationGroupDestinationName,
@@ -121,10 +120,6 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	util.AddLabel(rgd, util.CreatedByRamenLabel, "true")
 
 	_, err := ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgd, func() error {
-		if err := ctrl.SetControllerReference(c.instance, rgd, c.Client.Scheme()); err != nil {
-			return err
-		}
-
 		util.AddLabel(rgd, volsync.VRGOwnerNameLabel, c.instance.GetName())
 		util.AddLabel(rgd, volsync.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, c.instance.GetName())
@@ -149,7 +144,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceName, replicationGroupSourceNamespace string,
 	runFinalSync bool,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
-	replicationGroupSourceName = util.TrimToK8sResourceNameLength(replicationGroupSourceName + c.cgName)
+	replicationGroupSourceName = c.cgName
 
 	log := c.logger.WithName("CreateOrUpdateReplicationGroupSource").
 		WithValues("ReplicationGroupSourceName", replicationGroupSourceName,
@@ -189,9 +184,14 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		return nil, false, err
 	}
 
+	namespaces := []string{c.instance.Namespace}
+	if c.instance.Spec.ProtectedNamespaces != nil && len(*c.instance.Spec.ProtectedNamespaces) != 0 {
+		namespaces = *c.instance.Spec.ProtectedNamespaces
+	}
+
 	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 		c.ctx, c.Client, c.volumeGroupSnapshotClassSelector,
-		*c.volumeGroupSnapshotSource, c.instance.Namespace, c.logger,
+		*c.volumeGroupSnapshotSource, namespaces, c.logger,
 	)
 	if err != nil {
 		log.Error(err, "Failed to get volume group snapshot class name")
@@ -209,10 +209,6 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	util.AddLabel(rgs, util.CreatedByRamenLabel, "true")
 
 	_, err = ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgs, func() error {
-		if err := ctrl.SetControllerReference(c.instance, rgs, c.Client.Scheme()); err != nil {
-			return err
-		}
-
 		util.AddLabel(rgs, volsync.VRGOwnerNameLabel, c.instance.GetName())
 		util.AddLabel(rgs, volsync.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, c.instance.GetName())
@@ -443,4 +439,75 @@ func (c *cgHandler) GetRDInCG() ([]ramendrv1alpha1.VolSyncReplicationDestination
 	}
 
 	return rdSpecs, nil
+}
+
+func DeleteRGS(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger,
+) error {
+	rgsList := &ramendrv1alpha1.ReplicationGroupSourceList{}
+
+	err := ListReplicationGroupByOwner(ctx, k8sClient, rgsList, ownerName, ownerNamespace, logger)
+	if err != nil {
+		return err
+	}
+
+	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgsList.Items), logger)
+}
+
+func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger,
+) error {
+	rgdList := &ramendrv1alpha1.ReplicationGroupDestinationList{}
+
+	err := ListReplicationGroupByOwner(ctx, k8sClient, rgdList, ownerName, ownerNamespace, logger)
+	if err != nil {
+		return err
+	}
+
+	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgdList.Items), logger)
+}
+
+func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, objList client.ObjectList, ownerName,
+	ownerNamespace string, logger logr.Logger,
+) error {
+	matchLabels := map[string]string{
+		volsync.VRGOwnerNameLabel:      ownerName,
+		volsync.VRGOwnerNamespaceLabel: ownerNamespace,
+	}
+
+	listOptions := []client.ListOption{
+		client.MatchingLabels(matchLabels),
+	}
+
+	if err := k8sClient.List(ctx, objList, listOptions...); err != nil {
+		return fmt.Errorf("error listing Object by label %v - (%w)", matchLabels, err)
+	}
+
+	return nil
+}
+
+func DeleteTypedObjectList[T client.Object](ctx context.Context, k8sClient client.Client, items []T, logger logr.Logger,
+) error {
+	for _, obj := range items {
+		// Ensure obj is a pointer
+		objCopy := obj
+
+		objPtr, ok := any(&objCopy).(client.Object)
+		if !ok {
+			return fmt.Errorf("obj is not a client.Object")
+		}
+
+		if err := k8sClient.Delete(ctx, objPtr); err != nil {
+			logger.Error(err, "Error cleaning up object", "name", objPtr.GetName())
+		}
+	}
+
+	return nil
+}
+
+func ToPointerSlice[T any](items []T) []*T {
+	out := make([]*T, len(items))
+	for i := range items {
+		out[i] = &items[i]
+	}
+
+	return out
 }
