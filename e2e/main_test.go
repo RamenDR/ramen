@@ -58,6 +58,10 @@ func (c Context) WithTimeout(d time.Duration) (*Context, context.CancelFunc) {
 var Ctx = Context{context: context.Background()}
 
 func TestMain(m *testing.M) {
+	os.Exit(testMain(m))
+}
+
+func testMain(m *testing.M) int {
 	var (
 		err        error
 		configFile string
@@ -72,7 +76,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	// TODO: Sync the log on exit
+
+	defer func() {
+		_ = Ctx.log.Sync() //nolint:errcheck
+	}()
 
 	log := Ctx.log
 
@@ -86,16 +93,20 @@ func TestMain(m *testing.M) {
 
 	Ctx.config, err = config.ReadConfig(configFile, options)
 	if err != nil {
-		log.Fatalf("Failed to read config: %s", err)
+		log.Errorf("Failed to read config: %s", err)
+
+		return 1
 	}
 
 	Ctx.env, err = env.New(Ctx.Context(), Ctx.config, Ctx.log)
 	if err != nil {
-		log.Fatalf("Failed to create testing context: %s", err)
+		log.Errorf("Failed to create testing context: %s", err)
+
+		return 1
 	}
 
 	log.Infof("Using Timeout: %v", util.Timeout)
 	log.Infof("Using RetryInterval: %v", util.RetryInterval)
 
-	os.Exit(m.Run())
+	return m.Run()
 }
