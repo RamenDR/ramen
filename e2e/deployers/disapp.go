@@ -51,14 +51,14 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q",
 		appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 
-	cmd := exec.Command("kubectl", "apply", "-k", tempDir, "-n", appNamespace,
-		"--kubeconfig", cluster.Kubeconfig, "--timeout=5m")
-
-	if out, err := cmd.Output(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
-		}
-
+	if err := runCommand(
+		"kubectl",
+		"apply",
+		"--kustomize", tempDir,
+		"--namespace", appNamespace,
+		"--kubeconfig", cluster.Kubeconfig,
+		"--timeout=5m",
+	); err != nil {
 		return err
 	}
 
@@ -133,8 +133,27 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 		return err
 	}
 
-	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
-		"--kubeconfig", cluster.Kubeconfig, "--wait=false", "--ignore-not-found=true")
+	if err := runCommand(
+		"kubectl",
+		"delete",
+		"--kustomize", tempDir,
+		"--namespace", namespace,
+		"--kubeconfig", cluster.Kubeconfig,
+		"--wait=false",
+		"--ignore-not-found",
+	); err != nil {
+		return err
+	}
+
+	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
+		namespace, ctx.Workload().GetAppName(), cluster.Name)
+
+	return nil
+}
+
+// runCommand runs a command and return the error.
+func runCommand(command string, args ...string) error {
+	cmd := exec.Command(command, args...)
 
 	if out, err := cmd.Output(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -143,9 +162,6 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 
 		return err
 	}
-
-	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
-		namespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	return nil
 }
