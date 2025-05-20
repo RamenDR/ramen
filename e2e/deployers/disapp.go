@@ -4,9 +4,11 @@
 package deployers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -52,6 +54,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	if err := runCommand(
+		ctx.Context(),
 		"kubectl",
 		"apply",
 		"--kustomize", tempDir,
@@ -134,6 +137,7 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 	}
 
 	if err := runCommand(
+		ctx.Context(),
 		"kubectl",
 		"delete",
 		"--kustomize", tempDir,
@@ -151,11 +155,20 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 	return nil
 }
 
-// runCommand runs a command and return the error.
-func runCommand(command string, args ...string) error {
-	cmd := exec.Command(command, args...)
+// runCommand runs a command and return the error. The command will be killed when the context is canceled or the
+// deadline is exceeded.
+func runCommand(ctx context.Context, command string, args ...string) error {
+	cmd := exec.CommandContext(ctx, command, args...)
+
+	// Run the command in a new process group so it is not terminated by the shell when the user interrupt go test.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if out, err := cmd.Output(); err != nil {
+		// If the context was canceled or the deadline exceeded, ignore the unhelpful "killed" error from the command.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
 		if ee, ok := err.(*exec.ExitError); ok {
 			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
 		}

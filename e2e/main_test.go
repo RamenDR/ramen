@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"os/signal"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func (c Context) WithTimeout(d time.Duration) (*Context, context.CancelFunc) {
 }
 
 // The global test context.
-var Ctx = Context{context: context.Background()}
+var Ctx Context
 
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
@@ -97,6 +98,11 @@ func testMain(m *testing.M) int {
 
 		return 1
 	}
+
+	// The context will be canceled when receiving a signal.
+	var stop context.CancelFunc
+	Ctx.context, stop = signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	Ctx.env, err = env.New(Ctx.Context(), Ctx.config, Ctx.log)
 	if err != nil {
