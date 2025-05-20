@@ -117,3 +117,35 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 func (d DiscoveredApp) IsDiscovered() bool {
 	return true
 }
+
+func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespace string) error {
+	log := ctx.Logger()
+
+	tempDir, err := os.MkdirTemp("", "ramen-")
+	if err != nil {
+		return err
+	}
+
+	// Clean up by removing the temporary directory when done
+	defer os.RemoveAll(tempDir)
+
+	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
+		"--kubeconfig", cluster.Kubeconfig, "--wait=false", "--ignore-not-found=true")
+
+	if out, err := cmd.Output(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("%w: stdout=%q stderr=%q", err, out, ee.Stderr)
+		}
+
+		return err
+	}
+
+	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
+		namespace, ctx.Workload().GetAppName(), cluster.Name)
+
+	return nil
+}
