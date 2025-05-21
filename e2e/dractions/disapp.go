@@ -96,10 +96,6 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := waitDRPCDeleted(ctx, managementNamespace, drpcName); err != nil {
-		return err
-	}
-
 	// delete placement
 	if err := deployers.DeletePlacement(ctx, placementName, managementNamespace); err != nil {
 		return err
@@ -107,6 +103,19 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 
 	err = deployers.DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 	if err != nil {
+		return err
+	}
+
+	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, placementName, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, config.ClusterSet,
+		managementNamespace); err != nil {
 		return err
 	}
 
