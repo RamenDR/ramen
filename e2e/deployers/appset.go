@@ -77,6 +77,18 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
+	if err := util.WaitForApplicationSetDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForConfigMapDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload undeployed")
 
 	return nil
