@@ -110,6 +110,15 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
+	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, placementName, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, config.ClusterSet,
+		managementNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload unprotected")
 
 	return nil
