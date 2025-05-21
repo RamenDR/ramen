@@ -80,6 +80,7 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 		appNamespace, ctx.Workload().GetAppName(), ctx.Env().C1.Name, ctx.Env().C2.Name)
 
 	// delete app on both clusters
+
 	if err := DeleteDiscoveredApps(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
@@ -89,6 +90,7 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	}
 
 	// delete namespace on both clusters
+
 	if err := util.DeleteNamespace(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
