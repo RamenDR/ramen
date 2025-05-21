@@ -4,9 +4,6 @@
 package util
 
 import (
-	"fmt"
-	"time"
-
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,25 +60,7 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 		return nil
 	}
 
-	log.Debugf("Waiting until namespace %q is deleted in cluster %q", namespace, cluster.Name)
-
-	key := k8stypes.NamespacedName{Name: namespace}
-
-	for {
-		if err := cluster.Client.Get(ctx.Context(), key, ns); err != nil {
-			if !k8serrors.IsNotFound(err) {
-				return err
-			}
-
-			log.Debugf("Namespace %q deleted in cluster %q", namespace, cluster.Name)
-
-			return nil
-		}
-
-		if err := Sleep(ctx.Context(), time.Second); err != nil {
-			return fmt.Errorf("namespace %q not deleted in cluster %q: %w", namespace, cluster.Name, err)
-		}
-	}
+	return nil
 }
 
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.

@@ -112,6 +112,10 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, managementNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload undeployed")
 
 	return nil
