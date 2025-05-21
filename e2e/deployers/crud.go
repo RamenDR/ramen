@@ -431,7 +431,7 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 	}
 
 	cmd := exec.Command("kubectl", "delete", "-k", tempDir, "-n", namespace,
-		"--kubeconfig", cluster.Kubeconfig, "--timeout=5m", "--ignore-not-found=true")
+		"--kubeconfig", cluster.Kubeconfig, "--wait=false", "--ignore-not-found=true")
 
 	if out, err := cmd.Output(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
