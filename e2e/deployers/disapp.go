@@ -97,6 +97,16 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
+	// wait for namespace to be deleted on both clusters
+
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().C1, appNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().C2, appNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload undeployed")
 
 	return nil
