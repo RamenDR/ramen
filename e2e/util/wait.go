@@ -76,10 +76,10 @@ func WaitForDRPCDelete(ctx types.Context, cluster types.Cluster, name, namespace
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
-func WaitForNamespaceDelete(ctx types.Context, cluster types.Cluster, namespace string) error {
+func WaitForNamespaceDelete(ctx types.Context, cluster types.Cluster, name string) error {
 	obj := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
+			Name: name,
 		},
 	}
 
