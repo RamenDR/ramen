@@ -195,7 +195,7 @@ func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule st
 		return ""
 	}
 
-	if cl.vrClasses[vrcIdx].Spec.Parameters[VRClassScheduleKey] != schedule {
+	if cl.vrClasses[vrcIdx].Spec.Parameters[ReplicationClassScheduleKey] != schedule {
 		return ""
 	}
 
@@ -217,7 +217,7 @@ func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule 
 		return ""
 	}
 
-	if cl.vgrClasses[vgrcIdx].Spec.Parameters[VRClassScheduleKey] != schedule {
+	if cl.vgrClasses[vgrcIdx].Spec.Parameters[ReplicationClassScheduleKey] != schedule {
 		return ""
 	}
 
