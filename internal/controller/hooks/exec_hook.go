@@ -96,7 +96,6 @@ func (e ExecHook) executeInverseOp(inverseOp string, log logr.Logger) {
 }
 
 func shouldInverseOpBeExecuted(inverseOp string, hookSpec *kubeobjects.HookSpec, err error) bool {
-	// TODO: shouldOpHookBeFailedOnError to be used?
 	return err != nil && inverseOp != "" && shouldOpHookBeFailedOnError(hookSpec)
 }
 
