@@ -217,7 +217,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -248,7 +248,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -343,7 +343,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -385,7 +385,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -434,7 +434,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -465,7 +465,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -630,7 +630,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -661,7 +661,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -699,7 +699,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "2m",
+									ReplicationClassScheduleKey: "2m",
 								},
 							},
 						},
@@ -730,7 +730,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -768,7 +768,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -799,7 +799,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -857,7 +857,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -908,7 +908,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -959,7 +959,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -990,7 +990,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -1021,7 +1021,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -1052,7 +1052,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -1148,7 +1148,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample2.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
@@ -1199,7 +1199,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Spec: volrep.VolumeReplicationClassSpec{
 								Provisioner: "sample2.csi.com",
 								Parameters: map[string]string{
-									VRClassScheduleKey: "1m",
+									ReplicationClassScheduleKey: "1m",
 								},
 							},
 						},
