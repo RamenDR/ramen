@@ -51,6 +51,9 @@ type peerInfo struct {
 
 	// clusterIDs is a list of 2 IDs that denote the IDs for the clusters in this peer relationship
 	clusterIDs []string
+
+	// gouping is flag that indicates wheather to proceed grouping based with replication
+	grouping bool
 }
 
 // peerClassMatchesPeer compares the storage class name across the PeerClass and passed in peer for a match, and if
@@ -100,6 +103,7 @@ func peerClassFromPeer(peer peerInfo) ramen.PeerClass {
 		StorageClassName: peer.storageClassName,
 		StorageID:        peer.storageIDs,
 		ReplicationID:    peer.replicationID,
+		Grouping:         peer.grouping,
 	}
 }
 
@@ -204,6 +208,28 @@ func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule st
 	return rID
 }
 
+// getVGRID inspects VolumeGroupReplicationClass in the passed in classLists at the specified index, and returns,
+// - an empty string if the VGRClass fails to match the passed in storageID, schedule or provisioner, or
+// - the value of replicationID on the VGRClass
+func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule string) string {
+	sID := cl.vgrClasses[vgrcIdx].GetLabels()[StorageIDLabel]
+	if sID == "" || inSID != sID {
+		return ""
+	}
+
+	if cl.vgrClasses[vgrcIdx].Spec.Parameters[VRClassScheduleKey] != schedule {
+		return ""
+	}
+
+	if !provisionerMatchesSC(scName, cl, cl.vgrClasses[vgrcIdx].Spec.Provisioner) {
+		return ""
+	}
+
+	rID := cl.vgrClasses[vgrcIdx].GetLabels()[ReplicationIDLabel]
+
+	return rID
+}
+
 // getAsyncVRClassPeer inspects if there is a common replicationID among the vrClasses in the passed in classLists,
 // that relate to the corresponding storageIDs and schedule, and returns the replicationID or "" if there was no match
 func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule string) string {
@@ -230,6 +256,57 @@ func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, 
 	return ""
 }
 
+// getAsyncVGRClassPeer inspects if there is a common replicationID among the vgrClasses in the passed in classLists,
+// that relate to the corresponding storageIDs and schedule, and returns the replicationID or "" if there was no match
+func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule string) string {
+	for vgrcAidx := range clA.vgrClasses {
+		ridA := getVGRID(scName, clA, vgrcAidx, sIDA, schedule)
+
+		if ridA == "" {
+			continue
+		}
+
+		for vgrcBidx := range clB.vgrClasses {
+			ridB := getVGRID(scName, clB, vgrcBidx, sIDB, schedule)
+			if ridB == "" {
+				continue
+			}
+
+			if ridA != ridB {
+				continue
+			}
+
+			return ridA
+		}
+	}
+
+	return ""
+}
+
+// isGroupingEnabled determines if grouping is enabled based on the provided vrcID and vgrcID.
+// Grouping is enabled only when both vrcID and vgrcID are non-empty and equal.
+// Returns the vrcID (if applicable) and a boolean indicating whether grouping is enabled.
+func isGroupingEnabled(vrcID, vgrcID string) (string, bool) {
+	// grouping is enabled if both vrcID and vgrcID are non-empty and equal.
+	// we return vrcid (since vrcID and vgrcID are equal) and true
+	if vrcID != "" && vrcID == vgrcID {
+		return vrcID, true
+	}
+
+	// if only vrcID is non-empty, we return vrcID and not enable grouping
+	if vrcID != "" {
+		return vrcID, false
+	}
+
+	// if only vgrcID is non-empty, we return empty string and not enable grouping
+	if vgrcID != "" {
+		return "", false
+	}
+
+	// if vrcID and vgrcID are empty then return empty string and not enable grouping
+	return "", false
+}
+
 // getAsyncPeers determines if scName in the first classList has asynchronous peers in the remaining classLists.
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
 // the desired asynchronous schedule that requires to be matched
@@ -248,7 +325,10 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				break
 			}
 
-			rID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+			vrcID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+			vgrcID := getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+
+			rID, grouping := isGroupingEnabled(vrcID, vgrcID)
 			if rID == "" {
 				if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
 					continue
@@ -260,6 +340,7 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				storageIDs:       []string{sID, sIDcl},
 				clusterIDs:       []string{clusterID, cl.clusterID},
 				replicationID:    rID,
+				grouping:         grouping,
 			})
 
 			break
