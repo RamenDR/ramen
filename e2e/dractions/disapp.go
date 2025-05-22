@@ -96,7 +96,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := waitDRPCDeleted(ctx, managementNamespace, drpcName); err != nil {
+	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace); err != nil {
 		return err
 	}
 
