@@ -135,7 +135,8 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 		return recipeElements, err
 	}
 
-	if err := RecipeParametersExpand(&recipe, getRecipeParameters(vrg, ramenConfig), log); err != nil {
+	parameters := getRecipeParameters(vrg, ramenConfig)
+	if err := RecipeParametersExpand(&recipe, parameters, log); err != nil {
 		return recipeElements, fmt.Errorf("recipe %v parameters expansion error: %w", recipeNamespacedName.String(), err)
 	}
 
@@ -152,7 +153,8 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 			LabelSelector:  selector.LabelSelector,
 			NamespaceNames: selector.NamespaceNames,
 		},
-		RecipeWithParams: &recipe,
+		RecipeWithParams:    &recipe,
+		StopRecipeReconcile: isRecipeReconcileToStop(parameters),
 	}
 
 	if err := recipeWorkflowsGet(recipe, &recipeElements, vrg, ramenConfig); err != nil {
@@ -164,6 +166,26 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 	}
 
 	return recipeElements, nil
+}
+
+func isRecipeReconcileToStop(parameters map[string][]string) bool {
+	if len(parameters) == 0 {
+		return false
+	}
+
+	if vals, ok := parameters["STOP_RECIPE_RECONCILE"]; ok {
+		if len(vals) == 0 {
+			return false
+		}
+
+		if strings.ToLower(vals[0]) == "true" {
+			return true
+		}
+
+		return false
+	}
+
+	return false
 }
 
 func getRecipeParameters(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) map[string][]string {
