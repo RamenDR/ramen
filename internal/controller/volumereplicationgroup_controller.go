@@ -57,6 +57,7 @@ type VolumeReplicationGroupReconciler struct {
 	kubeObjects         kubeobjects.RequestsManager
 	RateLimiter         *workqueue.TypedRateLimiter[reconcile.Request]
 	veleroCRsAreWatched bool
+	recipeStatus        map[string]*util.RecipeStatus
 }
 
 // SetupWithManager sets up the controller with the Manager.
