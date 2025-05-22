@@ -26,7 +26,11 @@ func EnsureChannelDeleted(ctx types.Context) error {
 		return err
 	}
 
-	return DeleteNamespace(ctx, ctx.Env().Hub, ctx.Config().Channel.Namespace)
+	if err := DeleteNamespace(ctx, ctx.Env().Hub, ctx.Config().Channel.Namespace); err != nil {
+		return err
+	}
+
+	return WaitForNamespaceDelete(ctx, ctx.Env().Hub, ctx.Config().Channel.Namespace)
 }
 
 func createChannel(ctx types.Context) error {

@@ -30,9 +30,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	// Deploys the application on the first DR cluster (c1).
 	cluster := ctx.Env().C1
 
-	// Create namespace on the first DR cluster (c1)
-	err := util.CreateNamespace(ctx, cluster, appNamespace)
-	if err != nil {
+	if err := util.CreateAppNamespaces(ctx, ctx.AppNamespace()); err != nil {
 		return err
 	}
 
@@ -80,6 +78,7 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 		appNamespace, ctx.Workload().GetAppName(), ctx.Env().C1.Name, ctx.Env().C2.Name)
 
 	// delete app on both clusters
+
 	if err := DeleteDiscoveredApps(ctx, ctx.Env().C1, appNamespace); err != nil {
 		return err
 	}
@@ -89,11 +88,12 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	}
 
 	// delete namespace on both clusters
-	if err := util.DeleteNamespace(ctx, ctx.Env().C1, appNamespace); err != nil {
+	if err := util.DeleteAppNamespaces(ctx, ctx.AppNamespace()); err != nil {
 		return err
 	}
 
-	if err := util.DeleteNamespace(ctx, ctx.Env().C2, appNamespace); err != nil {
+	// wait for namespace to be deleted on both clusters
+	if err := util.WaitForAppNamespacesDelete(ctx, ctx.AppNamespace()); err != nil {
 		return err
 	}
 

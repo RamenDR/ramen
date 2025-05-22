@@ -23,6 +23,10 @@ func (a ApplicationSet) Deploy(ctx types.TestContext) error {
 	log.Infof("Deploying applicationset app \"%s/%s\" in cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 
+	if err := util.CreateAppNamespaces(ctx, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
 	err := CreatePlacement(ctx, name, managementNamespace, cluster.Name)
 	if err != nil {
 		return err
@@ -44,6 +48,7 @@ func (a ApplicationSet) Deploy(ctx types.TestContext) error {
 }
 
 // Undeploy deletes an ApplicationSet from the hub cluster, deleting the workload from the managed clusters.
+// nolint:cyclop
 func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
@@ -74,6 +79,26 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 
 	err = DeletePlacement(ctx, name, managementNamespace)
 	if err != nil {
+		return err
+	}
+
+	if err := util.DeleteAppNamespaces(ctx, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
+	if err := util.WaitForApplicationSetDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForConfigMapDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForAppNamespacesDelete(ctx, ctx.AppNamespace()); err != nil {
 		return err
 	}
 
