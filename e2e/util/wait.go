@@ -75,6 +75,14 @@ func WaitForNamespaceDelete(ctx types.Context, cluster types.Cluster, namespace 
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
+func WaitForAppNamespacesDelete(ctx types.Context, namespace string) error {
+	if err := WaitForNamespaceDelete(ctx, ctx.Env().C1, namespace); err != nil {
+		return err
+	}
+
+	return WaitForNamespaceDelete(ctx, ctx.Env().C2, namespace)
+}
+
 func WaitForDRPCDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
 	obj := &ramen.DRPlacementControl{
 		ObjectMeta: metav1.ObjectMeta{
