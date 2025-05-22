@@ -17,12 +17,12 @@ import (
 // More info: https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
 const volsyncPrivilegedMovers = "volsync.backube/privileged-movers"
 
-func CreateNamespace(ctx types.Context, cluster types.Cluster, namespace string) error {
+func CreateNamespace(ctx types.Context, cluster types.Cluster, name string) error {
 	log := ctx.Logger()
 
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
+			Name: name,
 		},
 	}
 
@@ -32,20 +32,20 @@ func CreateNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 			return err
 		}
 
-		log.Debugf("Namespace %q already exist in cluster %q", namespace, cluster.Name)
+		log.Debugf("Namespace %q already exist in cluster %q", name, cluster.Name)
 	}
 
-	log.Debugf("Created namespace %q in cluster %q", namespace, cluster.Name)
+	log.Debugf("Created namespace %q in cluster %q", name, cluster.Name)
 
 	return nil
 }
 
-func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string) error {
+func DeleteNamespace(ctx types.Context, cluster types.Cluster, name string) error {
 	log := ctx.Logger()
 
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
+			Name: name,
 		},
 	}
 
@@ -55,7 +55,7 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, namespace string)
 			return err
 		}
 
-		log.Debugf("Namespace %q not found in cluster %q", namespace, cluster.Name)
+		log.Debugf("Namespace %q not found in cluster %q", name, cluster.Name)
 
 		return nil
 	}
