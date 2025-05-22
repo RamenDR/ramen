@@ -1340,7 +1340,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	filterMatchingReplicationClass := func(replicationClass client.Object, parameters map[string]string,
 		provisioner string,
 	) {
-		schedulingInterval, found := parameters[VRClassScheduleKey]
+		schedulingInterval, found := parameters[ReplicationClassScheduleKey]
 
 		if storageClass.Provisioner != provisioner || !found {
 			// skip this replication class if provisioner does not match or if schedule not found
