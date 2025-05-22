@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"time"
 
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -55,6 +56,17 @@ func WaitForPlacementDelete(ctx types.Context, cluster types.Cluster, name, name
 
 func WaitForManagedClusterSetBindingDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
 	obj := &ocmv1b2.ManagedClusterSetBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	return waitForResourceDelete(ctx, cluster, obj)
+}
+
+func WaitForDRPCDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
+	obj := &ramen.DRPlacementControl{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,

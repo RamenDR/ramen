@@ -127,8 +127,7 @@ func DisableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	err = waitDRPCDeleted(ctx, managementNamespace, drpcName)
-	if err != nil {
+	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace); err != nil {
 		return err
 	}
 
