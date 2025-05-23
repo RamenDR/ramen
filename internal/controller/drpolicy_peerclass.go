@@ -179,11 +179,36 @@ func hasVSClassMatchingSID(scName string, cl classLists, sID string) bool {
 	return false
 }
 
+// hasVGSClassMatchingSID returns if classLists has a VolumeGroupSnapshotClass matching the passed in storageID
+func hasVGSClassMatchingSID(scName string, cl classLists, sID string) bool {
+	for idx := range cl.vgsClasses {
+		sid := cl.vgsClasses[idx].GetLabels()[StorageIDLabel]
+		if sid == "" || sid != sID {
+			continue
+		}
+
+		if !provisionerMatchesSC(scName, cl, cl.vgsClasses[idx].Driver) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
 // isAsyncVSClassPeer inspects provided pair of classLists for a matching VolumeSnapshotClass, that is linked to the
 // StorageClass whose storageID is respectively sIDA or sIDB
 func isAsyncVSClassPeer(scName string, clA, clB classLists, sIDA, sIDB string) bool {
 	// No provisioner match as we can do cross provisioner VSC based protection
 	return hasVSClassMatchingSID(scName, clA, sIDA) && hasVSClassMatchingSID(scName, clB, sIDB)
+}
+
+// isAsyncVGSClassPeer inspects provided pair of classLists for a matching VolumeGroupSnapshotClass,
+// that is linked to the StorageClass whose storageID is respectively sIDA or sIDB
+func isAsyncVGSClassPeer(scName string, clA, clB classLists, sIDA, sIDB string) bool {
+	// No provisioner match as we can do cross provisioner VGSC based protection
+	return hasVGSClassMatchingSID(scName, clA, sIDA) && hasVGSClassMatchingSID(scName, clB, sIDB)
 }
 
 // getVRID inspects VolumeReplicationClass in the passed in classLists at the specified index, and returns,
@@ -283,10 +308,10 @@ func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string,
 	return ""
 }
 
-// isGroupingEnabled determines if grouping is enabled based on the provided vrcID and vgrcID.
+// isGroupingEnabledForReplication determines if grouping is enabled based on the provided vrcID and vgrcID.
 // Grouping is enabled only when both vrcID and vgrcID are non-empty and equal.
 // Returns the vrcID (if applicable) and a boolean indicating whether grouping is enabled.
-func isGroupingEnabled(vrcID, vgrcID string) (string, bool) {
+func isGroupingEnabledForReplication(vrcID, vgrcID string) (string, bool) {
 	// grouping is enabled if both vrcID and vgrcID are non-empty and equal.
 	// we return vrcid (since vrcID and vgrcID are equal) and true
 	if vrcID != "" && vrcID == vgrcID {
@@ -328,9 +353,11 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 			vrcID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 			vgrcID := getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 
-			rID, grouping := isGroupingEnabled(vrcID, vgrcID)
+			rID, grouping := isGroupingEnabledForReplication(vrcID, vgrcID)
 			if rID == "" {
-				if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+				if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+					grouping = true
+				} else if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
 					continue
 				}
 			}
