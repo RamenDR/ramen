@@ -40,6 +40,8 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
+	// Indicates no conflict in PVC and Kubernetes resource data
+	// between primary and secondary clusters.
 	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
 
 	// VolSync related conditions. These conditions are only applicable
@@ -76,9 +78,12 @@ const (
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
 	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
-	VRGConditionReasonDataConflictPrimary         = "ClusterDataConflictPrimary"
-	VRGConditionReasonDataConflictSecondary       = "ClusterDataConflictSecondary"
-	VRGConditionReasonConflictResolved            = "ConflictResolved"
+	// Indicates a conflict in cluster data detected on the primary cluster.
+	VRGConditionReasonClusterDataConflictPrimary = "ClusterDataConflictPrimary"
+	// Indicates a conflict in cluster data detected on the secondary cluster.
+	VRGConditionReasonClusterDataConflictSecondary = "ClusterDataConflictSecondary"
+	// Indicates a conflict has resolved on both the primary and secondary clusters.
+	VRGConditionReasonConflictResolved = "ConflictResolved"
 )
 
 const (
