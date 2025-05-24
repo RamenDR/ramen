@@ -918,6 +918,8 @@ func (d *DRPCInstance) ensureRelocateActionCompleted(srcCluster string) (bool, e
 }
 
 func (d *DRPCInstance) ensureFailoverActionCompleted(srcCluster string) (bool, error) {
+	d.setProgression(rmn.ProgressionCleaningUp)
+
 	return d.ensureActionCompleted(srcCluster)
 }
 
@@ -2094,8 +2096,6 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 	// If not discovered apps, then we can set the progression to cleaning up.
 	if isDiscoveredApp(d.instance) {
 		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
-	} else {
-		d.setProgression(rmn.ProgressionCleaningUp)
 	}
 
 	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
