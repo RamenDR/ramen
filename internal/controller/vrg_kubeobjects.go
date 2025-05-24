@@ -26,6 +26,8 @@ import (
 
 var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
 
+const RecipeMaxAttempts = 10
+
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
 	if kubeObjectProtectionSpec.CaptureInterval == nil {
 		return ramen.KubeObjectProtectionCaptureIntervalDefault
@@ -229,9 +231,31 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
 	labels := util.OwnerLabels(v.instance)
 
+	if v.recipeElements.StopRecipeReconcile {
+		v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "user stopped recipe reconcilation using recipe parameters")
+
+		result.Requeue = false
+
+		return
+	}
+
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
 		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
 	if err != nil {
+		recipeStatus := v.reconciler.recipeStatus[v.instance.Name]
+		if recipeStatus == nil {
+			recipeStatus = &util.RecipeStatus{}
+		}
+
+		recipeStatus.Attempts++
+		if recipeStatus.Attempts > RecipeMaxAttempts {
+			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more that max attempts")
+
+			result.Requeue = false
+
+			return
+		}
+
 		result.Requeue = true
 
 		return
@@ -491,6 +515,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 		return
 	}
 
+	// Here you have to reset the number of attempts of recipe reconcile
 	v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)

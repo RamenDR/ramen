@@ -10,12 +10,17 @@ import (
 )
 
 type RecipeElements struct {
-	PvcSelector      PvcSelector
-	CaptureWorkflow  []kubeobjects.CaptureSpec
-	RecoverWorkflow  []kubeobjects.RecoverSpec
-	CaptureFailOn    string
-	RestoreFailOn    string
-	RecipeWithParams *recipev1.Recipe
+	PvcSelector         PvcSelector
+	CaptureWorkflow     []kubeobjects.CaptureSpec
+	RecoverWorkflow     []kubeobjects.RecoverSpec
+	CaptureFailOn       string
+	RestoreFailOn       string
+	RecipeWithParams    *recipev1.Recipe
+	StopRecipeReconcile bool
+}
+
+type RecipeStatus struct {
+	Attempts int
 }
 
 type PvcSelector struct {
