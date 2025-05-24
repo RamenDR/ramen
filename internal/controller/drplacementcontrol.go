@@ -397,9 +397,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
 // may already be Primary
-// NOTE: Currently there is a gap where, right after DR protection when a Secondary VRG is not yet created for VolSync
-// workloads, a failover if initiated will pass these checks. When we fix to retain VRG for VR as well, a more
-// deterministic check for VRG as Secondary can be performed.
 func (d *DRPCInstance) isValidFailoverTarget(cluster string) bool {
 	annotations := make(map[string]string)
 	annotations[DRPCNameAnnotation] = d.instance.GetName()
@@ -418,7 +415,6 @@ func (d *DRPCInstance) isValidFailoverTarget(cluster string) bool {
 		return true
 	}
 
-	// Valid target only if VRG is protecting PVCs with VS and its status is also Secondary
 	if vrg.Status.State != rmn.SecondaryState || vrg.Status.ObservedGeneration != vrg.Generation {
 		d.log.Info(fmt.Sprintf("VRG on %s has not transitioned to secondary yet. Spec-State/Status-State %s/%s",
 			cluster, vrg.Spec.ReplicationState, vrg.Status.State))
@@ -488,7 +484,11 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
-	err := d.switchToCluster(newHomeCluster, "")
+	err := d.reconciler.retainClusterDecisionAsFailover(d.ctx, d.userPlacement)
+	if err == nil {
+		err = d.switchToCluster(newHomeCluster, "")
+	}
+
 	if err != nil {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
@@ -918,17 +918,7 @@ func (d *DRPCInstance) ensureRelocateActionCompleted(srcCluster string) (bool, e
 }
 
 func (d *DRPCInstance) ensureFailoverActionCompleted(srcCluster string) (bool, error) {
-	// This is the time to cleanup the workload from the preferredCluster.
-	// For managed apps, it will be done automatically by ACM, when we update
-	// the placement to the targetCluster. For discovered apps, we have to let
-	// the user know that they need to clean up the apps.
-	// So set the progression to wait on user to clean up.
-	// If not discovered apps, then we can set the progression to cleaning up.
-	if isDiscoveredApp(d.instance) {
-		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
-	} else {
-		d.setProgression(rmn.ProgressionCleaningUp)
-	}
+	d.setProgression(rmn.ProgressionCleaningUp)
 
 	return d.ensureActionCompleted(srcCluster)
 }
@@ -2058,56 +2048,86 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	return d.cleanupSecondaries(clusterToSkip)
 }
 
-//nolint:gocognit
 func (d *DRPCInstance) cleanupSecondaries(clusterToSkip string) error {
 	d.log.Info("Ensure secondary setup on peer")
-
-	peersReady := true
 
 	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 		if clusterToSkip == clusterName {
 			continue
 		}
 
-		// Update PeerReady condition to appropriate reasons in here!
-		justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
+		peersReady, err := d.cleanupSecondary(clusterName, clusterToSkip)
 		if err != nil {
-			d.log.Info(fmt.Sprintf("Failed to update VRG state for cluster %s. Err (%v)", clusterName, err))
-
-			peersReady = false
-
-			// Recreate the VRG ManifestWork for the secondary. This typically happens during Hub Recovery.
-			// Ideally this will never be called due to adoption of VRG in place, in the case of upgrades from older
-			// scheme were VRG was not preserved for VR workloads, this can be hit IFF the upgrade happened when some
-			// workload was not in peerReady state.
-			if k8serrors.IsNotFound(err) {
-				err := d.EnsureSecondaryReplicationSetup(clusterToSkip)
-				if err != nil {
-					return err
-				}
-			}
-
-			break
+			return err
 		}
 
-		// IFF just updated, no need to use MCV to check if the state has been
-		// applied. Wait for the next round of reconcile. Otherwise, check if
-		// the change to secondary has been reflected.
-		if justUpdated || !d.ensureVRGIsSecondaryOnCluster(clusterName) {
-			peersReady = false
-
-			break
+		if !peersReady {
+			return fmt.Errorf("still waiting for peer to be ready")
 		}
-	}
-
-	if !peersReady {
-		return fmt.Errorf("still waiting for peer to be ready")
 	}
 
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
 
 	return nil
+}
+
+//nolint:cyclop
+func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool, error) {
+	peerReady := true
+
+	justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
+	if err != nil {
+		d.log.Info(fmt.Sprintf("Failed to update VRG state for cluster %s. Err (%v)", clusterName, err))
+
+		// Recreate the VRG ManifestWork for the secondary. This typically happens during Hub Recovery.
+		// Ideally this will never be called due to adoption of VRG in place, in the case of upgrades from older
+		// scheme were VRG was not preserved for VR workloads, this can be hit IFF the upgrade happened when some
+		// workload was not in peerReady state.
+		if k8serrors.IsNotFound(err) {
+			err := d.EnsureSecondaryReplicationSetup(clusterToSkip)
+			if err != nil {
+				return !peerReady, err
+			}
+		}
+
+		return !peerReady, nil
+	}
+
+	// IFF just updated or MCV is reporting no VRG, no need to use MCV to check if the state has been
+	// applied. Wait for the next round of reconcile.
+	if justUpdated || d.vrgs[clusterName] == nil {
+		return !peerReady, nil
+	}
+
+	// Ensuring observed generation matches the generation, to remove potential VRG under reconciliation as primary,
+	// and deleting PVCs (i.e removing the decision) in such a race. With this check it is certain that VRG has
+	// processed the current generation as Secondary and will do so in the future and there can be no outstanding
+	// reconciliation of an older generation VRG as Primary
+	if d.vrgs[clusterName].Spec.ReplicationState != rmn.Secondary ||
+		d.vrgs[clusterName].Status.ObservedGeneration != d.vrgs[clusterName].Generation {
+		return !peerReady, nil
+	}
+
+	// This is the time to cleanup the workload from the preferredCluster.
+	// For managed apps, it will be done automatically by ACM, when we update
+	// the placement to the targetCluster. For discovered apps, we have to let
+	// the user know that they need to clean up the apps.
+	// So set the progression to wait on user to clean up.
+	// If not discovered apps, then we can set the progression to cleaning up.
+	if isDiscoveredApp(d.instance) {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+	}
+
+	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
+		return !peerReady, err
+	}
+
+	if !d.ensureVRGIsSecondaryOnCluster(clusterName) {
+		return !peerReady, nil
+	}
+
+	return peerReady, nil
 }
 
 // ensureVRGIsSecondaryEverywhere iterates through all the clusters in the DRCluster set,

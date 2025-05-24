@@ -114,6 +114,10 @@ func (v *VSHandler) GetWorkloadStatus() string {
 	return v.workloadStatus
 }
 
+func (v *VSHandler) SetWorkloadStatus(status string) {
+	v.workloadStatus = status
+}
+
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
 //
@@ -265,7 +269,7 @@ func (v *VSHandler) createOrUpdateRD(
 	return rd, nil
 }
 
-func (v *VSHandler) isPVCInUseByNonRDPod(pvcNamespacedName types.NamespacedName) (bool, error) {
+func (v *VSHandler) IsPVCInUseByNonRDPod(pvcNamespacedName types.NamespacedName) (bool, error) {
 	rd := &volsyncv1alpha1.ReplicationDestination{}
 
 	// IF RD is Found, then no more checks are needed. We'll assume that the RD
@@ -1997,7 +2001,7 @@ func (v *VSHandler) PrecreateDestPVCIfEnabled(rdSpec ramendrv1alpha1.VolSyncRepl
 	}
 
 	// PVC must not be in-use before creating the RD
-	inUse, err := v.isPVCInUseByNonRDPod(util.ProtectedPVCNamespacedName(rdSpec.ProtectedPVC))
+	inUse, err := v.IsPVCInUseByNonRDPod(util.ProtectedPVCNamespacedName(rdSpec.ProtectedPVC))
 	if err != nil {
 		return nil, err
 	}

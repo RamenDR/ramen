@@ -15,6 +15,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 //nolint:gocognit,funlen,cyclop
@@ -122,6 +123,7 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 	for _, pvc := range v.volSyncPVCs {
 		var finalSyncForPVCPrepared bool
 
+		// TODO: Add deleted PVC handling here?
 		requeuePVC := v.reconcilePVCAsVolSyncPrimary(pvc, &finalSyncForPVCPrepared)
 		if requeuePVC {
 			requeue = true
@@ -259,6 +261,8 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 
 		v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
 		v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
+
+		v.updateWorkloadActivityAsSecondary()
 	}
 
 	// Reset status finalsync flags and condition
@@ -266,6 +270,37 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	v.instance.Status.FinalSyncComplete = false
 
 	return v.reconcileRDSpecForDeletionOrReplication()
+}
+
+// updateWorkloadActivityAsSecondary updates workload status of volsync PVCs if still in use by the workload. This is
+// useful to set DataReady on VRG as false if VRG is being reconciled as Secondary.
+func (v *VRGInstance) updateWorkloadActivityAsSecondary() {
+	for idx := range v.volSyncPVCs {
+		pvcNSName := types.NamespacedName{
+			Namespace: v.volSyncPVCs[idx].GetNamespace(),
+			Name:      v.volSyncPVCs[idx].GetName(),
+		}
+
+		inUse, err := v.volSyncHandler.IsPVCInUseByNonRDPod(pvcNSName)
+		if err != nil {
+			// As errors are ignored and do not update DataReady using the same, even if a false positive set workload
+			// as active unconditionally
+			v.volSyncHandler.SetWorkloadStatus("active")
+
+			v.log.Info("Failed to determine if pvc is in use", "error", err, "pvc", pvcNSName)
+
+			return
+		}
+
+		if inUse {
+			v.volSyncHandler.SetWorkloadStatus("active")
+
+			v.log.Info("One or more pvcs are in use as secondary, waiting for workload to be inactive",
+				"pvc", pvcNSName)
+
+			return
+		}
+	}
 }
 
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
@@ -276,6 +311,7 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 		return requeue
 	}
 
+	// TODO: Deleted RDSpec should be handled here! CleanupRDNotInSpecList
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec.ProtectedPVC.Name)
 
@@ -581,7 +617,7 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 		return
 	}
-	// TODO Delete ReplicationSource, ReplicationDestination, etc.
+	// TODO: Delete ReplicationSource, ReplicationDestination, etc.
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
 
