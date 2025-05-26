@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -129,23 +130,17 @@ func DeleteNamespaceOnManagedClusters(ctx types.Context, namespace string) error
 
 // Problem: currently we must manually add an annotation to application’s namespace to make volsync work.
 // See this link https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
-// Workaround: create ns in both drclusters and add annotation
-func CreateNamespaceAndAddAnnotation(ctx types.Context, namespace string) error {
-	env := ctx.Env()
+// Workaround: add volsync annotation on app namespaces on both drclusters
+func AddVolsyncAnnontationOnManagedClusters(ctx types.Context, namespace string) error {
+	if ctx.Config().Distro != config.DistroK8s {
+		return nil
+	}
 
-	if err := CreateNamespace(ctx, env.C1, namespace); err != nil {
+	if err := addNamespaceAnnotationForVolSync(ctx, ctx.Env().C1, namespace); err != nil {
 		return err
 	}
 
-	if err := addNamespaceAnnotationForVolSync(ctx, env.C1, namespace); err != nil {
-		return err
-	}
-
-	if err := CreateNamespace(ctx, env.C2, namespace); err != nil {
-		return err
-	}
-
-	return addNamespaceAnnotationForVolSync(ctx, env.C2, namespace)
+	return addNamespaceAnnotationForVolSync(ctx, ctx.Env().C2, namespace)
 }
 
 func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, namespace string) error {
