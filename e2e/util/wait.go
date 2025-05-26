@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8stypes "k8s.io/apimachinery/pkg/types"
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -118,16 +117,12 @@ func WaitForNamespaceDeleteOnManagedClusters(ctx types.Context, name string) err
 func waitForResourceDelete(ctx types.Context, cluster types.Cluster, obj client.Object) error {
 	log := ctx.Logger()
 	kind := getKind(obj)
-	key := k8stypes.NamespacedName{
-		Name:      obj.GetName(),
-		Namespace: obj.GetNamespace(),
-	}
 	resourceName := logName(obj)
 
 	log.Debugf("Waiting until %s %q is deleted in cluster %q", kind, resourceName, cluster.Name)
 
 	for {
-		if err := cluster.Client.Get(ctx.Context(), key, obj); err != nil {
+		if err := cluster.Client.Get(ctx.Context(), client.ObjectKeyFromObject(obj), obj); err != nil {
 			if !k8serrors.IsNotFound(err) {
 				return err
 			}
