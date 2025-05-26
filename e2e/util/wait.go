@@ -77,13 +77,41 @@ func WaitForDRPCDelete(ctx types.Context, cluster types.Cluster, name, namespace
 }
 
 func WaitForNamespaceDelete(ctx types.Context, cluster types.Cluster, name string) error {
+	log := ctx.Logger()
 	obj := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 	}
 
+	managed, err := isManagedByRamenE2e(ctx, cluster, obj)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+
+		log.Debugf("Namespace %q not found in cluster %q", name, cluster.Name)
+
+		return nil
+	}
+
+	if !managed {
+		log.Warnf("Skipping wait for deletion of namespace %q in cluster %q: "+
+			"not managed by ramen-e2e (missing label %s=%s)", name, cluster.Name, managedByLabel, ramenE2e)
+
+		return nil
+	}
+
 	return waitForResourceDelete(ctx, cluster, obj)
+}
+
+// WaitForNamespaceDeleteOnManagedClusters waits for namespaces on both drclusters with ramen-e2e label.
+func WaitForNamespaceDeleteOnManagedClusters(ctx types.Context, name string) error {
+	if err := WaitForNamespaceDelete(ctx, ctx.Env().C1, name); err != nil {
+		return err
+	}
+
+	return WaitForNamespaceDelete(ctx, ctx.Env().C2, name)
 }
 
 // waitForResourceDelete waits until a resource is deleted or deadline is reached
