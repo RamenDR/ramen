@@ -17,7 +17,7 @@ import (
 const (
 	// Namespace annotation for volsync to grant elevated permissions for mover pods
 	// More info: https://volsync.readthedocs.io/en/stable/usage/permissionmodel.html#controlling-mover-permissions
-	volsyncPrivilegedMovers = "volsync.backube/privileged-movers"
+	volsyncPrivilegedMoversAnnotation = "volsync.backube/privileged-movers"
 
 	// Label to identify namespaces created by ramen e2e
 	managedByLabel = "app.kubernetes.io/managed-by"
@@ -165,7 +165,7 @@ func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, 
 			annotations = make(map[string]string)
 		}
 
-		annotations[volsyncPrivilegedMovers] = "true"
+		annotations[volsyncPrivilegedMoversAnnotation] = "true"
 		objNs.SetAnnotations(annotations)
 
 		if err := cluster.Client.Update(ctx.Context(), objNs); err != nil {
@@ -173,7 +173,7 @@ func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, 
 		}
 
 		log.Debugf("Annotated namespace %q with \"%s: %s\" in cluster %q",
-			namespace, volsyncPrivilegedMovers, annotations[volsyncPrivilegedMovers], cluster.Name)
+			namespace, volsyncPrivilegedMoversAnnotation, annotations[volsyncPrivilegedMoversAnnotation], cluster.Name)
 
 		return nil
 	})
