@@ -47,6 +47,10 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
+	if err := util.CreateNamespaceOnMangedClusters(ctx, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
 	err = CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
 	if err != nil {
 		return err
@@ -112,7 +116,15 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
+	if err := util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
 	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, managementNamespace); err != nil {
+		return err
+	}
+
+	if err := util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace()); err != nil {
 		return err
 	}
 
