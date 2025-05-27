@@ -292,7 +292,8 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		if cg.IsHook {
 			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
 
-			executor, err1 := hooks.GetHookExecutor(cg.Hook, v.reconciler.APIReader, v.reconciler.Scheme)
+			executor, err1 := hooks.GetHookExecutor(cg.Hook, v.reconciler.APIReader, v.reconciler.Scheme,
+				v.recipeElements)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", cg.Hook)
@@ -756,7 +757,8 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		if rg.IsHook {
 			isEssentialStep = rg.Hook.Essential != nil && *rg.Hook.Essential
 
-			executor, err1 := hooks.GetHookExecutor(rg.Hook, v.reconciler.APIReader, v.reconciler.Scheme)
+			executor, err1 := hooks.GetHookExecutor(rg.Hook, v.reconciler.APIReader, v.reconciler.Scheme,
+				v.recipeElements)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", rg.Hook)
