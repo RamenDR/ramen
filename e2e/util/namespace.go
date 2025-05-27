@@ -105,6 +105,8 @@ func DeleteNamespace(ctx types.Context, cluster types.Cluster, name string) erro
 		return nil
 	}
 
+	log.Debugf("Deleted namespace %q in cluster %q", name, cluster.Name)
+
 	return nil
 }
 
