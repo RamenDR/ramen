@@ -26,6 +26,8 @@ import (
 
 var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
 
+const RecipeMaxAttempts = 10
+
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
 	if kubeObjectProtectionSpec.CaptureInterval == nil {
 		return ramen.KubeObjectProtectionCaptureIntervalDefault
@@ -229,9 +231,30 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	annotations := map[string]string{vrgGenerationKey: strconv.FormatInt(generation, vrgGenerationNumberBase)}
 	labels := util.OwnerLabels(v.instance)
 
+	if v.recipeElements.StopRecipeReconcile {
+		v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError",
+			"user stopped recipe reconciliation using recipe parameters")
+
+		return
+	}
+
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
 		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
 	if err != nil {
+		recipeStatus := v.reconciler.recipeStatus[v.namespacedName]
+		if recipeStatus == nil {
+			recipeStatus = &util.RecipeStatus{}
+
+			v.reconciler.recipeStatus[v.namespacedName] = recipeStatus
+		}
+
+		recipeStatus.Attempts++
+		if recipeStatus.Attempts > RecipeMaxAttempts {
+			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more that max attempts")
+
+			return
+		}
+
 		result.Requeue = true
 
 		return
@@ -383,8 +406,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 		} else {
 			err := request.Status(v.log)
 			if err == nil {
-				log1.Info("Kube objects group captured", "start", request.StartTime(), "end", request.EndTime())
-
 				requestsCompletedCount++
 
 				continue
@@ -489,6 +510,11 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 		result.Requeue = true
 
 		return
+	}
+
+	recipeStatus, ok := v.reconciler.recipeStatus[v.namespacedName]
+	if ok {
+		recipeStatus.Attempts = 0
 	}
 
 	v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
