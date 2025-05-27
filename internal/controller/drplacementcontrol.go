@@ -1613,13 +1613,13 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 			continue
 		}
 
-		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" {
+		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" && to[toIdx].Grouping == from.Grouping {
 			to[toIdx] = from
 
 			break
 		}
 
-		if to[toIdx].ReplicationID != "" && from.ReplicationID != "" {
+		if to[toIdx].ReplicationID != "" && from.ReplicationID != "" && to[toIdx].Grouping == from.Grouping {
 			to[toIdx] = from
 
 			break
