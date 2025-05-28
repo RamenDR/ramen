@@ -57,10 +57,12 @@ func createChannel(ctx types.Context) error {
 
 		log.Debugf("Channel \"%s/%s\" already exists in cluster %q",
 			config.Channel.Namespace, config.Channel.Name, hub.Name)
-	} else {
-		log.Infof("Created channel \"%s/%s\" in cluster %q",
-			config.Channel.Namespace, config.Channel.Name, hub.Name)
+
+		return nil
 	}
+
+	log.Infof("Created channel \"%s/%s\" in cluster %q",
+		config.Channel.Namespace, config.Channel.Name, hub.Name)
 
 	return nil
 }
@@ -85,10 +87,12 @@ func deleteChannel(ctx types.Context) error {
 
 		log.Debugf("Channel \"%s/%s\" not found in cluster %q",
 			config.Channel.Namespace, config.Channel.Name, hub.Name)
-	} else {
-		log.Infof("Deleted channel \"%s/%s\" in cluster %q",
-			config.Channel.Namespace, config.Channel.Name, hub.Name)
+
+		return nil
 	}
+
+	log.Infof("Deleted channel \"%s/%s\" in cluster %q",
+		config.Channel.Namespace, config.Channel.Name, hub.Name)
 
 	return nil
 }
