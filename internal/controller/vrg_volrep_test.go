@@ -15,7 +15,9 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/onsi/gomega/format"
+
 	gomegatypes "github.com/onsi/gomega/types"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	vrgController "github.com/ramendr/ramen/internal/controller"
@@ -95,6 +97,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		storageIDLabels:        storageIDLabel,
 		replicationClassLabels: vrcLabels,
 	}
+
 	syncPeerClass := genPeerClass("", testcaseTemplate.storageClassName, []string{storageID})
 	var dataReadyCondition *metav1.Condition
 	syncPeerClasses := []ramendrv1alpha1.PeerClass{syncPeerClass}
@@ -377,7 +380,14 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					Expect(pvc).ToNot(BeNil())
 					pvc.Namespace = ""
 				}
-				Expect(k8sClient.Status().Update(ctx, vrg)).To(Succeed())
+
+				Eventually(func() bool {
+					if err := k8sClient.Status().Update(ctx, vrg); err != nil {
+						return false
+					}
+
+					return true
+				}, timeout, interval).Should(Equal(true))
 			})
 			Context("recovers", func() {
 				BeforeAll(func() {
@@ -449,7 +459,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, timeout, interval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -849,6 +859,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgDeleteCompletedVR.cleanupVRC()
 		})
 	})
+
 	// Test VRG finalizer removal during deletion is deferred till VGR is deleted
 	var vrgVGRDeleteEnsureTestCase *vrgTest
 	Context("in primary state", func() {
@@ -953,6 +964,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("cleans up after testing", func() {
 			vrgCreateVGRTestCase.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(vrgCreateVGRTestCase.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1002,6 +1014,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("cleans up after testing", func() {
 			vrgPVCnotBoundVGRTestCase.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(vrgPVCnotBoundVGRTestCase.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1020,6 +1033,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+
 			for c := 0; c < 5; c++ {
 				storageIDLabel := genStorageIDLabel(storageIDs[c])
 				storageID := storageIDLabel[vrgController.StorageIDLabel]
@@ -1053,6 +1067,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
 				v.cleanupProtected()
+				Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 			}
 		})
 	})
@@ -1083,6 +1098,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("cleans up after testing", func() {
 			vrgEmptySC.cleanupStatusAbsent()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(vrgEmptySC.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1114,6 +1130,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		It("cleans up after testing", func() {
 			vrgMissingSC.cleanupStatusAbsent()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(vrgMissingSC.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1185,6 +1202,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
 				v.cleanupProtected()
+				Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 			}
 		})
 	})
@@ -1231,6 +1249,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatusTests) })
 		It("cleans up after testing", func() {
 			v.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1270,6 +1289,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("cleans up after testing", func() {
 			v := vrgStatus2Tests[0]
 			v.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1318,6 +1338,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus3Tests) })
 		It("cleans up after testing", func() {
 			v.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1519,6 +1540,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("cleans up after testing", func() {
 			v := vrgSchedule5Tests[0]
 			v.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1612,6 +1634,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("cleans up after testing", func() {
 			v := vrgNoPeerClasses[0]
 			v.cleanupProtected()
+
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
 
@@ -1649,9 +1673,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("cleans up after testing", func() {
 			v := vrgNoPeerClassesAndReplicationID[0]
 			v.cleanupProtected()
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
-
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
 })
@@ -2348,6 +2372,37 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool, reason string)
 		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
 }
 
+func (v *vrgTest) ensureVRGIsUploadedToS3(expectedStatus bool, reason string) {
+	Eventually(func() bool {
+		vrg := v.getVRG()
+		clusterDataProtectionCondition := meta.FindStatusCondition(
+			vrg.Status.Conditions, vrgController.VRGConditionTypeClusterDataProtected)
+		if clusterDataProtectionCondition == nil {
+			return false
+		}
+
+		if expectedStatus == true {
+			// reasons for success can be different for Primary and
+			// secondary. Validate that as well.
+			switch vrg.Spec.ReplicationState {
+			case ramendrv1alpha1.Primary:
+				return clusterDataProtectionCondition.Status == metav1.ConditionTrue &&
+					clusterDataProtectionCondition.Reason == reason
+			case ramendrv1alpha1.Secondary:
+				return clusterDataProtectionCondition.Status == metav1.ConditionTrue &&
+					clusterDataProtectionCondition.Reason == reason
+			}
+		}
+
+		if v.isAnyPVCProtectedByVolSync(vrg) {
+			return true
+		}
+
+		return clusterDataProtectionCondition.Status != metav1.ConditionTrue
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
+}
+
 func (v *vrgTest) verifyVRGStatusCondition(conditionName string, expectedStatus bool) {
 	testFunc := func() bool {
 		vrg := v.getVRG()
@@ -2461,6 +2516,10 @@ func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicat
 }
 
 func kubeObjectProtectionValidate(tests []*vrgTest) {
+	for _, v := range tests {
+		v.ensureVRGIsUploadedToS3(true, vrgController.VRGConditionReasonUploaded)
+	}
+
 	protectedVrgList := protectedVrgListCreateAndStatusWait("protectedvrglist-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
 	vrgs := make([]ramendrv1alpha1.VolumeReplicationGroup, len(tests))
 
