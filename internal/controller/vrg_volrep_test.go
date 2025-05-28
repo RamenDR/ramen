@@ -95,9 +95,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		storageIDLabels:        storageIDLabel,
 		replicationClassLabels: vrcLabels,
 	}
-	syncPeerClass := genPeerClass("", testcaseTemplate.storageClassName, []string{storageID})
 	var dataReadyCondition *metav1.Condition
-	syncPeerClasses := []ramendrv1alpha1.PeerClass{syncPeerClass}
 	Context("Sync Basic Test", func() {
 		It("should initialize test with creating StorageClass and VolumeReplicationClass", func() {
 			createStorageClass(testcaseTemplate)
@@ -150,6 +148,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 		When("ReplicationState is primary and sync is enabled, but s3 profiles are absent", func() {
 			It("should set ClusterDataReady status=False reason=Error", func() {
+				syncPeerClass := genPeerClass("", testcaseTemplate, false, storageID)
+				syncPeerClasses := []ramendrv1alpha1.PeerClass{syncPeerClass}
 				vrg.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{
 					PeerClasses: syncPeerClasses,
 				}
@@ -199,6 +199,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				pvc0 = pvc
 			})
 			It("should set ClusterDataReady false", func() {
+				syncPeerClass := genPeerClass("", testcaseTemplate, false, storageID)
+				syncPeerClasses := []ramendrv1alpha1.PeerClass{syncPeerClass}
 				vrg.Spec.Sync.PeerClasses = syncPeerClasses
 				vrg.ResourceVersion = ""
 				vrg.Spec.S3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
@@ -270,7 +272,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.VolumeReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID})
+			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate, true, storageID)
 			vtest.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			vtest.skipCreationPVandPVC = true
 			pvList := vtest.generateFakePVs("pv", numPVs)
@@ -314,7 +316,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.VolumeReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID})
+			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate, true, storageID)
 			vrgTestBoundPV.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
 			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
@@ -1057,6 +1059,92 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	// Test offloaded replication workflow
+	var vrgOffloadCases []*vrgTest
+	Context("Create VRG, PVC, PV and check if offloaded semantics are adhered to", func() {
+		createTestTemplate := &template{
+			ClaimBindInfo:      corev1.ClaimBound,
+			VolumeBindInfo:     corev1.VolumeBound,
+			schedulingInterval: "1h",
+			storageClassName:   "manual",
+			scProvisioner:      "manual.storage.com",
+			offloaded:          true,
+		}
+		It("sets up PVCs, PVs and VRGs", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			for c := 0; c < 5; c++ {
+				storageIDLabel := genStorageIDLabel(storageIDs[c])
+				createTestTemplate.storageIDLabels = storageIDLabel
+				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false, true)
+				vrgOffloadCases = append(vrgOffloadCases, v)
+			}
+		})
+		It("waits for VRG status to match waiting for offloaded Primary indicator", func() {
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				if c != 0 {
+					v.verifyVRGStatusExpectation(false, vrgController.VRGConditionReasonProgressing)
+				} else {
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
+				}
+			}
+		})
+		It("waits for VRG status to match once offloaded Primary indicator is present", func() {
+			By("Updatings PVCs with offload label as Primary")
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				v.promotePVCs()
+			}
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				if c != 0 {
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+				} else {
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
+				}
+			}
+		})
+		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgOffloadCases) })
+		It("waits for VRG status to match waiting for offloaded Secondary indicator", func() {
+			By("Trasitioning VRG to Secondary")
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				// Failover does not wait for PVC deletion!
+				v.vrgTrasition(ramendrv1alpha1.Secondary, ramendrv1alpha1.VRGActionFailover)
+			}
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				if c != 0 {
+					v.verifyVRGStatusExpectation(false, vrgController.VRGConditionReasonError)
+					// Need additional DataProtected condition evaluation as well
+				} else {
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
+				}
+			}
+		})
+		It("waits for VRG status to match once offloaded Secondary indicator is present", func() {
+			By("Updating PVCs with offload label as Secondary")
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				v.demotePVCs()
+			}
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				if c != 0 {
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
+				} else {
+					v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonUnused)
+				}
+			}
+		})
+		It("cleans up after testing", func() {
+			for c := 0; c < len(vrgOffloadCases); c++ {
+				v := vrgOffloadCases[c]
+				v.cleanupStatusAbsent()
+			}
+		})
+	})
+
 	// Ensure PVCs with no SCName results in errors
 	var vrgEmptySC *vrgTest
 	Context("in primary state with no SCName", func() {
@@ -1696,6 +1784,7 @@ type template struct {
 	s3Profiles             []string
 	volsyncEnabled         bool
 	scDisabled             bool
+	offloaded              bool
 }
 
 // we want the math rand version here and not the crypto rand. This way we can debug the tests by repeating the seed.
@@ -1721,7 +1810,9 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 		testTemplate.storageClassName = appendSuffix(testTemplate.storageClassName)
 	}
 
-	testTemplate.replicationClassName = appendSuffix(testTemplate.replicationClassName)
+	if testTemplate.replicationClassName != "" {
+		testTemplate.replicationClassName = appendSuffix(testTemplate.replicationClassName)
+	}
 
 	v := &vrgTest{
 		uniqueID:         objectNameSuffix,
@@ -1789,14 +1880,16 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 	v := newVRGTestCaseCreate(pvcCount, testTemplate, checkBind, vrgFirst)
 
 	if len(testTemplate.replicationClassLabels) == 0 {
-		replicationID = replicationIDs[0]
+		if !testTemplate.offloaded {
+			replicationID = replicationIDs[0]
+		}
 	} else {
 		replicationID = testTemplate.replicationClassLabels[vrgController.VolumeReplicationIDLabel]
 	}
 
 	storageID := testTemplate.storageIDLabels[vrgController.StorageIDLabel]
 	if includePeerClasses {
-		asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID})
+		asyncPeerClass := genPeerClass(replicationID, testTemplate, true, storageID)
 		v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 	}
 
@@ -2055,6 +2148,26 @@ func (v *vrgTest) bindPVAndPVC() {
 	}
 }
 
+func (v *vrgTest) promotePVCs() {
+	for i := 0; i < len(v.pvcNames); i++ {
+		pvc := getPVC(v.pvcNames[i])
+		pvc.Labels[vrgController.PVCOffloadLabel] = vrgController.PVCOffloadPrimaryState
+		err := k8sClient.Status().Update(context.TODO(), pvc)
+		Expect(err).To(BeNil(),
+			"failed to update status of PVC %s", v.pvcNames[i])
+	}
+}
+
+func (v *vrgTest) demotePVCs() {
+	for i := 0; i < len(v.pvcNames); i++ {
+		pvc := getPVC(v.pvcNames[i])
+		pvc.Labels[vrgController.PVCOffloadLabel] = vrgController.PVCOffloadSecondaryState
+		err := k8sClient.Status().Update(context.TODO(), pvc)
+		Expect(err).To(BeNil(),
+			"failed to update status of PVC %s", v.pvcNames[i])
+	}
+}
+
 func (v *vrgTest) createVRG() {
 	By("creating VRG " + v.vrgName)
 
@@ -2112,11 +2225,28 @@ func (v *vrgTest) vrgS3ProfilesSet(names []string) {
 	Expect(vrg.Spec.S3Profiles).To(Equal(names), "%#v", vrg.Spec.S3Profiles)
 }
 
+func (v *vrgTest) vrgTrasition(state ramendrv1alpha1.ReplicationState, action ramendrv1alpha1.VRGAction) {
+	vrg := v.getVRG()
+	if vrg.Spec.ReplicationState == state && vrg.Spec.Action == action {
+		return
+	}
+
+	vrg.Spec.ReplicationState = state
+	vrg.Spec.Action = action
+	updateVRG(vrg)
+	vrg = v.getVRG()
+	Expect(vrg.Spec.ReplicationState == state && vrg.Spec.Action == action).To(BeTrueBecause("VRG Transtion updated"))
+}
+
 func (v *vrgTest) createSC(testTemplate *template) {
 	createStorageClass(testTemplate)
 }
 
 func (v *vrgTest) createVRC(testTemplate *template) {
+	if testTemplate.replicationClassName == "" {
+		return
+	}
+
 	createVolumeReplicationClass(testTemplate)
 }
 
@@ -2234,6 +2364,10 @@ func createStorageClass(testTemplate *template) {
 		Provisioner: testTemplate.scProvisioner,
 	}
 
+	if testTemplate.offloaded {
+		sc.Labels[vrgController.StorageOffloadedLabel] = ""
+	}
+
 	err := k8sClient.Create(context.TODO(), sc)
 	if err != nil {
 		if k8serrors.IsAlreadyExists(err) {
@@ -2329,21 +2463,18 @@ func (v *vrgTest) verifyVRGStatusExpectation(expectedStatus bool, reason string)
 		}
 
 		if expectedStatus == true {
-			// reasons for success can be different for Primary and
-			// secondary. Validate that as well.
-			switch vrg.Spec.ReplicationState {
-			case ramendrv1alpha1.Primary:
-				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason == reason
-			case ramendrv1alpha1.Secondary:
-				return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason == reason
-			}
+			return dataReadyCondition.Status == metav1.ConditionTrue && dataReadyCondition.Reason == reason
 		}
 
 		if v.isAnyPVCProtectedByVolSync(vrg) {
 			return true
 		}
 
-		return dataReadyCondition.Status != metav1.ConditionTrue
+		if reason == "" {
+			return dataReadyCondition.Status == metav1.ConditionFalse
+		}
+
+		return dataReadyCondition.Status == metav1.ConditionFalse && dataReadyCondition.Reason == reason
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
 }
@@ -2710,6 +2841,7 @@ func (v *vrgTest) cleanupVRG() {
 	Expect(err).To(BeNil(),
 		"failed to delete VRG %s", v.vrgName)
 	v.waitForVRCountToMatch(0)
+	// Eventually wait for VRG to be deleted?
 }
 
 func (v *vrgTest) cleanupSC() {
@@ -2828,7 +2960,11 @@ func (v *vrgTest) waitForVGRCountToMatch(vgrCount int) {
 func (v *vrgTest) promoteVolReps() {
 	v.promoteVolRepsAndDo(promoteOptions{}, func(index, count int) {
 		// VRG should not be ready until last VolRep is ready.
-		v.verifyVRGStatusExpectation(index == count-1, vrgController.VRGConditionReasonReady)
+		if index == count-1 {
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		} else {
+			v.verifyVRGStatusExpectation(false, "")
+		}
 	})
 }
 
@@ -3352,12 +3488,28 @@ func genStorageIDLabel(storageID string) map[string]string {
 	}
 }
 
-func genPeerClass(replicationID, storageClassName string, storageIDs []string) ramendrv1alpha1.PeerClass {
-	return ramendrv1alpha1.PeerClass{
-		ReplicationID:    replicationID,
-		StorageID:        storageIDs,
-		StorageClassName: storageClassName,
+func genPeerClass(replicationID string, t *template, async bool, storageID string) ramendrv1alpha1.PeerClass {
+	var peerClass ramendrv1alpha1.PeerClass
+
+	if t.offloaded {
+		peerClass.Offloaded = true
 	}
+
+	if async {
+		peerClass.StorageID = []string{storageID, storageID + "-peer"}
+	} else {
+		peerClass.StorageID = []string{storageID}
+	}
+
+	clID, err := util.GetK8sClusterID(context.TODO(), k8sClient)
+	Expect(err).To(BeNil(),
+		"failed to fetch cluster ID %v", err)
+
+	peerClass.ClusterIDs = []string{clID, clID + "-peer"}
+	peerClass.ReplicationID = replicationID
+	peerClass.StorageClassName = t.storageClassName
+
+	return peerClass
 }
 
 //nolint:unparam

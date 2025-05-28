@@ -85,6 +85,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"identical"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 			},
 			[]peerInfo{},
@@ -145,12 +146,14 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"identical1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "",
 					storageIDs:       []string{"identical2"},
 					storageClassName: "sc2",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 			},
 			[]peerInfo{},
@@ -480,6 +483,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"cl-1-sID", "cl-2-sID"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 			},
 		),
@@ -544,6 +548,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"cl-1-sID", "cl-2-sID"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 			},
 		),
@@ -923,12 +928,14 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "cl-1-2-rID",
 					storageIDs:       []string{"cl-1-sID2", "cl-2-sID2"},
 					storageClassName: "sc2",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 			},
 		),
@@ -1066,12 +1073,14 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"cl-[1|2]-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "",
 					storageIDs:       []string{"cl-[3|4]-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-3", "cl-4"},
+					offloaded:        false,
 				},
 			},
 			[]peerInfo{
@@ -1080,24 +1089,28 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"cl-[1|2]-sID1", "cl-[3|4]-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-3"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "cl-[1|2]-[3|4]-rID",
 					storageIDs:       []string{"cl-[1|2]-sID1", "cl-[3|4]-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-4"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "cl-[1|2]-[3|4]-rID",
 					storageIDs:       []string{"cl-[1|2]-sID1", "cl-[3|4]-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-2", "cl-3"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "cl-[1|2]-[3|4]-rID",
 					storageIDs:       []string{"cl-[1|2]-sID1", "cl-[3|4]-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-2", "cl-4"},
+					offloaded:        false,
 				},
 			},
 		),
@@ -1214,12 +1227,14 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
 					storageClassName: "sc1",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 				{
 					replicationID:    "cl-1-2-rID",
 					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
 					storageClassName: "sc2",
 					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
 				},
 			},
 		),
@@ -1272,6 +1287,283 @@ var _ = Describe("updatePeerClassesInternal", func() {
 								},
 							},
 							Driver: "sample2.csi.com",
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{},
+		),
+		Entry("Offloaded async peer, with a single async offloaded peer, reports a single async offloaded peerClass",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-1-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-2-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+				},
+			},
+		),
+		Entry("Offloaded async peer, with multiple async offloaded peers, reports multiple async peerClasses",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-1-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-1-sID2",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-2-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-2-sID2",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+				},
+				{
+					replicationID:    "",
+					storageIDs:       []string{"cl-1-sID2", "cl-2-sID2"},
+					storageClassName: "sc2",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+				},
+			},
+		),
+		Entry("Offloaded async peer, with a single sync peer, reports no async peers",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "identical",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "identical",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{
+				{
+					replicationID:    "",
+					storageIDs:       []string{"identical"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        false,
+				},
+			},
+			[]peerInfo{},
+		),
+		Entry("Offloaded async peer, single async peer with rID, still reports offloaded peer",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-1-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:           "cl-1-sID1",
+									VolumeReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									VRClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-2-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:           "cl-2-sID1",
+									VolumeReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									VRClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+				},
+			},
+		),
+		Entry("Offloaded async peer, single async peer with mismatched offload reporting, does not report peer",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:        "cl-1-sID1",
+									StorageOffloadedLabel: "",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
 						},
 					},
 				},
