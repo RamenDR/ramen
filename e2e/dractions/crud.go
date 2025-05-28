@@ -47,6 +47,8 @@ func createDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
 		}
 
 		log.Debugf("drpc \"%s/%s\" already exist in cluster %q", drpc.Namespace, drpc.Name, hub.Name)
+
+		return nil
 	}
 
 	spec, err := yaml.Marshal(drpc.Spec)
@@ -152,6 +154,8 @@ func createPlacementManagedByRamen(ctx types.TestContext, name, namespace string
 		}
 
 		log.Debugf("Placement \"%s/%s\" already Exists in cluster %q", namespace, name, ctx.Env().Hub.Name)
+
+		return nil
 	}
 
 	log.Debugf("Created placement \"%s/%s\" in cluster %q", namespace, name, ctx.Env().Hub.Name)
