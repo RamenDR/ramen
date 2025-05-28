@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -57,7 +58,7 @@ type VolumeReplicationGroupReconciler struct {
 	kubeObjects         kubeobjects.RequestsManager
 	RateLimiter         *workqueue.TypedRateLimiter[reconcile.Request]
 	veleroCRsAreWatched bool
-	recipeStatus        map[string]*util.RecipeStatus
+	recipeRetries       sync.Map
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -124,8 +125,6 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
-
-	r.recipeStatus = make(map[string]*util.RecipeStatus)
 
 	return ctrlBuilder.Complete(r)
 }
