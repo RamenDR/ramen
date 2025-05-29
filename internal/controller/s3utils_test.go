@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -34,7 +35,7 @@ const (
 	awsAccessKeyIDFail = "fail"
 )
 
-var fakeObjectStorers = make(map[string]fakeObjectStorer)
+var fakeObjectStorers = make(map[string]*fakeObjectStorer)
 
 func (fakeObjectStoreGetter) ObjectStore(
 	ctx context.Context,
@@ -68,7 +69,7 @@ func (fakeObjectStoreGetter) ObjectStore(
 
 	objectStorer, ok := fakeObjectStorers[s3ProfileName]
 	if !ok {
-		objectStorer = fakeObjectStorer{
+		objectStorer = &fakeObjectStorer{
 			name:       s3ProfileName,
 			bucketName: s3StoreProfile.S3Bucket,
 			objects:    make(map[string]interface{}),
@@ -83,9 +84,13 @@ type fakeObjectStorer struct {
 	name       string
 	bucketName string
 	objects    map[string]interface{}
+	mutex      sync.Mutex
 }
 
-func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
+func (f *fakeObjectStorer) UploadObject(key string, object interface{}) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
 	if f.bucketName == bucketNameUploadAwsErr {
 		return awserr.New(s3.ErrCodeInvalidObjectState, "fake error uploading object", fmt.Errorf("fake error"))
 	}
@@ -95,7 +100,9 @@ func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
 	return nil
 }
 
-func (f fakeObjectStorer) DownloadObject(key string, objectPointer interface{}) error {
+func (f *fakeObjectStorer) DownloadObject(key string, objectPointer interface{}) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
 	object, ok := f.objects[key]
 
 	objectDestination := reflect.ValueOf(objectPointer).Elem()
@@ -112,7 +119,10 @@ func (f fakeObjectStorer) DownloadObject(key string, objectPointer interface{}) 
 	return nil
 }
 
-func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
+func (f *fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
 	if f.bucketName == bucketListFail {
 		return nil, fmt.Errorf("Failing bucket listing")
 	}
@@ -128,13 +138,19 @@ func (f fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 	return keys, nil
 }
 
-func (f fakeObjectStorer) DeleteObject(key string) error {
+func (f *fakeObjectStorer) DeleteObject(key string) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
 	delete(f.objects, key)
 
 	return nil
 }
 
-func (f fakeObjectStorer) DeleteObjects(keys ...string) error {
+func (f *fakeObjectStorer) DeleteObjects(keys ...string) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
 	for _, key := range keys {
 		delete(f.objects, key)
 	}
@@ -142,7 +158,10 @@ func (f fakeObjectStorer) DeleteObjects(keys ...string) error {
 	return nil
 }
 
-func (f fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
+func (f *fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
 	for key := range f.objects {
 		if strings.HasPrefix(key, keyPrefix) {
 			delete(f.objects, key)
