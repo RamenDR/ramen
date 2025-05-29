@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 
+	"sync"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
@@ -35,6 +37,7 @@ const (
 )
 
 var fakeObjectStorers = make(map[string]fakeObjectStorer)
+var mu sync.Mutex
 
 func (fakeObjectStoreGetter) ObjectStore(
 	ctx context.Context,
@@ -90,8 +93,9 @@ func (f fakeObjectStorer) UploadObject(key string, object interface{}) error {
 		return awserr.New(s3.ErrCodeInvalidObjectState, "fake error uploading object", fmt.Errorf("fake error"))
 	}
 
+	mu.Lock()
 	f.objects[key] = object
-
+	mu.Unlock()
 	return nil
 }
 
