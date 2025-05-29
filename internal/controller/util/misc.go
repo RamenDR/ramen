@@ -35,6 +35,8 @@ const (
 	ServiceNameMaxLength = validation.DNS1123LabelMaxLength
 
 	CreatedByRamenLabel = "ramendr.openshift.io/created-by-ramen"
+
+	VGSCRDName = "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
 )
 
 type ResourceUpdater struct {
@@ -270,9 +272,7 @@ func IsCRDInstalled(ctx context.Context, client client.Client, crdName string) b
 // 2. Whether the VolumeGroupSnapshot CRD is installed.
 // Both conditions must be true for CephFS CG protection to be considered enabled.
 func IsCGEnabledForVolSync(ctx context.Context, client client.Client, annotations map[string]string) bool {
-	crdName := "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
-
-	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, client, crdName)
+	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, client, VGSCRDName)
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
