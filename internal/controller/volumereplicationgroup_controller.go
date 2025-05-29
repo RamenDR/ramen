@@ -125,6 +125,8 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
 
+	r.recipeStatus = make(map[string]*util.RecipeStatus)
+
 	return ctrlBuilder.Complete(r)
 }
 
