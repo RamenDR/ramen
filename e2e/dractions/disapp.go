@@ -125,8 +125,7 @@ func failoverRelocateDiscoveredApps(
 	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentClusterName string,
-	targetClusterName string,
+	currentCluster, targetCluster types.Cluster,
 ) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
@@ -134,17 +133,12 @@ func failoverRelocateDiscoveredApps(
 
 	drpcName := name
 
-	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetClusterName); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster.Name); err != nil {
 		return err
 	}
 
 	if err := waitDRPCProgression(ctx, managementNamespace, name,
 		ramen.ProgressionWaitOnUserToCleanUp); err != nil {
-		return err
-	}
-
-	currentCluster, err := ctx.Env().GetCluster(currentClusterName)
-	if err != nil {
 		return err
 	}
 
@@ -158,11 +152,6 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	if err := waitDRPCReady(ctx, managementNamespace, name); err != nil {
-		return err
-	}
-
-	targetCluster, err := ctx.Env().GetCluster(targetClusterName)
-	if err != nil {
 		return err
 	}
 
