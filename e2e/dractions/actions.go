@@ -41,12 +41,12 @@ func EnableProtection(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		placement, err := util.GetPlacement(ctx, managementNamespace, placementName)
@@ -74,7 +74,7 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
+	drpc := generateDRPC(name, managementNamespace, cluster.Name, drPolicyName, placementName, appname)
 	if err = createDRPC(ctx, drpc); err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func DisableProtection(ctx types.TestContext) error {
 	placementName := name
 	log := ctx.Logger()
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -117,7 +117,7 @@ func DisableProtection(ctx types.TestContext) error {
 		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
 	} else {
 		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-			appNamespace, ctx.Workload().GetAppName(), clusterName)
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	drpcName := name
@@ -146,15 +146,15 @@ func Failover(ctx types.TestContext) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster)
+	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster.Name)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster)
 
-	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
+	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster.Name, targetCluster)
 	if err != nil {
 		return err
 	}
@@ -179,15 +179,15 @@ func Relocate(ctx types.TestContext) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster)
+	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster.Name)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster)
 
-	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
+	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster.Name, targetCluster)
 	if err != nil {
 		return err
 	}

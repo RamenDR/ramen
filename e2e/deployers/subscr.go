@@ -83,7 +83,7 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, name)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -93,7 +93,7 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		log.Infof("Undeploying subscription app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
 	} else {
 		log.Infof("Undeploying subscription app \"%s/%s\" in cluster %q",
-			ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	err = DeleteSubscription(ctx, s)

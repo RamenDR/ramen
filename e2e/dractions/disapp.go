@@ -75,7 +75,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -85,7 +85,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
 	} else {
 		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-			appNamespace, ctx.Workload().GetAppName(), clusterName)
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	if err := deleteDRPC(ctx, managementNamespace, drpcName); err != nil {
