@@ -819,7 +819,7 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 		}
 	}
 
-	if prepFinalSync && !util.IsCGEnabled(v.owner.GetAnnotations()) {
+	if prepFinalSync && !util.IsCGEnabledForVolSync(v.ctx, v.client, v.owner.GetAnnotations()) {
 		err := v.prepareForFinalSync(pvcNamespacedName)
 		if err != nil {
 			return err

@@ -141,7 +141,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if util.IsCRDInstalled(context.TODO(), r.Client, util.VGSCRDName) {
+	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDName) {
 		r.volumeGroupSnapshotCRsAreWatched = true
 	}
 
