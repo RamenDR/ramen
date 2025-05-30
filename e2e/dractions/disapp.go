@@ -7,7 +7,6 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 
 	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -59,6 +58,10 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload protected")
 
 	return nil
@@ -76,7 +79,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -86,7 +89,7 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
 	} else {
 		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-			appNamespace, ctx.Workload().GetAppName(), clusterName)
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	if err := deleteDRPC(ctx, managementNamespace, drpcName); err != nil {
@@ -116,6 +119,10 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload unprotected")
 
 	return nil
@@ -126,8 +133,7 @@ func failoverRelocateDiscoveredApps(
 	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentClusterName string,
-	targetClusterName string,
+	currentCluster, targetCluster types.Cluster,
 ) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
@@ -135,17 +141,12 @@ func failoverRelocateDiscoveredApps(
 
 	drpcName := name
 
-	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetClusterName); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
 	}
 
 	if err := waitDRPCProgression(ctx, managementNamespace, name,
 		ramen.ProgressionWaitOnUserToCleanUp); err != nil {
-		return err
-	}
-
-	currentCluster, err := env.GetCluster(ctx.Env(), currentClusterName)
-	if err != nil {
 		return err
 	}
 
@@ -159,11 +160,6 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	if err := waitDRPCReady(ctx, managementNamespace, name); err != nil {
-		return err
-	}
-
-	targetCluster, err := env.GetCluster(ctx.Env(), targetClusterName)
-	if err != nil {
 		return err
 	}
 

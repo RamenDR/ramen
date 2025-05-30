@@ -8,6 +8,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
+	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -22,7 +23,7 @@ const (
 // Determine PVC label selector
 // Determine KubeObjectProtection requirements if Imperative (?)
 // Create DRPC, in desired namespace
-// nolint:funlen
+// nolint:funlen,cyclop
 func EnableProtection(ctx types.TestContext) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
@@ -41,12 +42,12 @@ func EnableProtection(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, clusterName)
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		placement, err := util.GetPlacement(ctx, managementNamespace, placementName)
@@ -74,7 +75,7 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	drpc := generateDRPC(name, managementNamespace, clusterName, drPolicyName, placementName, appname)
+	drpc := generateDRPC(name, managementNamespace, cluster.Name, drPolicyName, placementName, appname)
 	if err = createDRPC(ctx, drpc); err != nil {
 		return err
 	}
@@ -85,6 +86,10 @@ func EnableProtection(ctx types.TestContext) error {
 
 	err = waitDRPCReady(ctx, managementNamespace, drpcName)
 	if err != nil {
+		return err
+	}
+
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
 		return err
 	}
 
@@ -107,7 +112,7 @@ func DisableProtection(ctx types.TestContext) error {
 	placementName := name
 	log := ctx.Logger()
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -117,7 +122,7 @@ func DisableProtection(ctx types.TestContext) error {
 		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
 	} else {
 		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-			appNamespace, ctx.Workload().GetAppName(), clusterName)
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	drpcName := name
@@ -127,6 +132,10 @@ func DisableProtection(ctx types.TestContext) error {
 	}
 
 	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace); err != nil {
+		return err
+	}
+
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
 		return err
 	}
 
@@ -146,13 +155,13 @@ func Failover(ctx types.TestContext) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster)
+	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster.Name)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
 
 	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
 	if err != nil {
@@ -179,13 +188,13 @@ func Relocate(ctx types.TestContext) error {
 		return err
 	}
 
-	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster)
+	targetCluster, err := getTargetCluster(ctx, ctx.Env().Hub, config.DRPolicy, currentCluster.Name)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster, targetCluster)
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
 
 	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
 	if err != nil {
@@ -201,8 +210,7 @@ func failoverRelocate(
 	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentCluster string,
-	targetCluster string,
+	currentCluster, targetCluster types.Cluster,
 ) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
@@ -220,14 +228,18 @@ func failoverRelocate(
 		return err
 	}
 
-	return waitDRPCReady(ctx, managementNamespace, drpcName)
+	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	return deployers.WaitWorkloadHealth(ctx, targetCluster, ctx.AppNamespace())
 }
 
 func waitAndUpdateDRPC(
 	ctx types.TestContext,
 	namespace, drpcName string,
 	action ramen.DRAction,
-	targetCluster string,
+	targetCluster types.Cluster,
 ) error {
 	log := ctx.Logger()
 
@@ -244,9 +256,9 @@ func waitAndUpdateDRPC(
 
 		drpc.Spec.Action = action
 		if action == ramen.ActionFailover {
-			drpc.Spec.FailoverCluster = targetCluster
+			drpc.Spec.FailoverCluster = targetCluster.Name
 		} else {
-			drpc.Spec.PreferredCluster = targetCluster
+			drpc.Spec.PreferredCluster = targetCluster.Name
 		}
 
 		if err := updateDRPC(ctx, drpc); err != nil {
@@ -254,7 +266,7 @@ func waitAndUpdateDRPC(
 		}
 
 		log.Debugf("Updated drpc \"%s/%s\" with action %q to target cluster %q",
-			namespace, drpcName, action, targetCluster)
+			namespace, drpcName, action, targetCluster.Name)
 
 		return nil
 	})
