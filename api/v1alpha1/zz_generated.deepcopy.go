@@ -214,8 +214,18 @@ func (in *DRClusterConfigStatus) DeepCopyInto(out *DRClusterConfigStatus) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.VolumeGroupSnapshotClasses != nil {
+		in, out := &in.VolumeGroupSnapshotClasses, &out.VolumeGroupSnapshotClasses
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.VolumeReplicationClasses != nil {
 		in, out := &in.VolumeReplicationClasses, &out.VolumeReplicationClasses
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.VolumeGroupReplicationClasses != nil {
+		in, out := &in.VolumeGroupReplicationClasses, &out.VolumeGroupReplicationClasses
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
