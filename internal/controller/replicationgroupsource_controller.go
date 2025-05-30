@@ -10,7 +10,6 @@ import (
 	"github.com/go-logr/logr"
 	vgsv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -142,10 +141,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	vgsCRD := &apiextensionsv1.CustomResourceDefinition{}
-	if err := r.APIReader.Get(context.TODO(),
-		types.NamespacedName{Name: "volumegroupsnapshots.groupsnapshot.storage.k8s.io"}, vgsCRD,
-	); err == nil {
+	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDName) {
 		r.volumeGroupSnapshotCRsAreWatched = true
 	}
 
