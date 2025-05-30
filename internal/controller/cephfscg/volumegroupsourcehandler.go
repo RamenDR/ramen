@@ -26,10 +26,9 @@ import (
 )
 
 var (
-	VolumeGroupSnapshotNameFormat = "vs-cg-%s"
-	RestorePVCinCGNameFormat      = "vs-cg-%s"
-	SnapshotGroup                 = "snapshot.storage.k8s.io"
-	SnapshotGroupKind             = "VolumeSnapshot"
+	RestorePVCinCGNameFormat = "vs-%s"
+	SnapshotGroup            = "snapshot.storage.k8s.io"
+	SnapshotGroupKind        = "VolumeSnapshot"
 )
 
 type VolumeGroupSourceHandler interface {
@@ -87,7 +86,7 @@ func NewVolumeGroupSourceHandler(
 ) VolumeGroupSourceHandler {
 	vrgName := rgs.GetLabels()[volsync.VRGOwnerNameLabel]
 
-	vgsName := util.TrimToK8sResourceNameLength(fmt.Sprintf(VolumeGroupSnapshotNameFormat, rgs.Name))
+	vgsName := rgs.Name
 
 	return &volumeGroupSourceHandler{
 		Client:                       client,

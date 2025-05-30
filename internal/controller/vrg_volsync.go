@@ -199,7 +199,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		)
 
 		rgs, finalSyncComplete, err := cephfsCGHandler.CreateOrUpdateReplicationGroupSource(
-			v.instance.Name, v.instance.Namespace, v.instance.Spec.RunFinalSync,
+			v.instance.Name, pvc.Namespace, v.instance.Spec.RunFinalSync,
 		)
 		if err != nil {
 			setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
@@ -383,7 +383,7 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 ) (bool, error) {
 	requeue := false
 
-	for groupKey := range groups {
+	for groupKey, groupVal := range groups {
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
 			&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: groupKey}},
@@ -392,8 +392,18 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 
 		v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", v.getRDSpecGroupName(groups[groupKey]))
 
+		namespace := v.commonProtectedPVCNamespace(groupVal)
+		if namespace == "" {
+			v.log.Error(fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey),
+				"Failed to create ReplicationGroupDestination")
+
+			requeue = true
+
+			return requeue, fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey)
+		}
+
 		replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
-			v.instance.Name, v.instance.Namespace, groups[groupKey],
+			v.instance.Name, namespace, groups[groupKey],
 		)
 		if err != nil {
 			v.log.Error(err, "Failed to create ReplicationGroupDestination")
@@ -421,6 +431,25 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 	}
 
 	return requeue, nil
+}
+
+// commonProtectedPVCNamespace returns the shared namespace of a group of VolSyncReplicationDestinationSpec.
+// If all items in the group have the same ProtectedPVC namespace, it returns that namespace; otherwise,
+// it returns an empty string.
+func (v *VRGInstance) commonProtectedPVCNamespace(destinationSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) string {
+	if len(destinationSpecs) == 0 {
+		return ""
+	}
+
+	namespace := destinationSpecs[0].ProtectedPVC.Namespace
+	for _, spec := range destinationSpecs {
+		if spec.ProtectedPVC.Namespace != namespace {
+			return ""
+		}
+	}
+
+	return namespace
 }
 
 func (v *VRGInstance) getRDSpecGroupName(rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec) string {
@@ -639,7 +668,7 @@ func (v *VRGInstance) disownPVCs() error {
 	return nil
 }
 
-// cleanupResources this function deleted all RS, RD and VolumeSnapshots from its owner (VRG)
+// cleanupResources this function deleted all RS, RD, RGS, RGD and VolumeSnapshots from its owner
 func (v *VRGInstance) cleanupResources() error {
 	for idx := range v.volSyncPVCs {
 		pvc := &v.volSyncPVCs[idx]
@@ -670,6 +699,14 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 	}
 
 	if err := v.volSyncHandler.DeleteSnapshots(namespace); err != nil {
+		return err
+	}
+
+	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, name, namespace, v.log); err != nil {
+		return err
+	}
+
+	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, name, namespace, v.log); err != nil {
 		return err
 	}
 
