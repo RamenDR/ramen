@@ -71,6 +71,10 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
+	if err = WaitWorkloadHealth(ctx, cluster, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
 	log.Info("Workload deployed")
 
 	return nil
