@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 const (
@@ -251,19 +251,12 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 	return nil
 }
 
+// IsCGEnabled checks whether the workload has requested Consistency Group (CG) protection
+// by looking for the 'drplacementcontrol.ramendr.openshift.io/is-cg-enabled' in the passed in annotations.
+// It returns true if the annotation value is "true", indicating CG protection is requested.
+// Note: this is a temporary solution until we move to using CG everywhere,
 func IsCGEnabled(annotations map[string]string) bool {
 	return annotations[IsCGEnabledAnnotation] == "true"
-}
-
-// IsCRDInstalled checks whether a specific CustomResourceDefinition (CRD) is installed on the cluster.
-// This is used to verify if the VolumeGroupSnapshot CRD, which enables CG protection for CephFS, is present.
-func IsCRDInstalled(ctx context.Context, client client.Client, crdName string) bool {
-	installedCRD := &apiextensionsv1.CustomResourceDefinition{}
-	if err := client.Get(ctx, types.NamespacedName{Name: crdName}, installedCRD); err != nil {
-		return false
-	}
-	
-	return true
 }
 
 // IsCGEnabledForVolSync determines whether consistency group (CG) protection is enabled for CephFS volumes.
@@ -271,8 +264,18 @@ func IsCRDInstalled(ctx context.Context, client client.Client, crdName string) b
 // 1. Whether the workload is annotated to request CG protection.
 // 2. Whether the VolumeGroupSnapshot CRD is installed.
 // Both conditions must be true for CephFS CG protection to be considered enabled.
-func IsCGEnabledForVolSync(ctx context.Context, client client.Client, annotations map[string]string) bool {
-	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, client, VGSCRDName)
+func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader, annotations map[string]string) bool {
+	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, apiReader, VGSCRDName)
+}
+
+// IsCRDInstalled checks whether a specific CustomResourceDefinition (CRD) is installed on the cluster.
+func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string) bool {
+	installedCRD := &apiextensionsv1.CustomResourceDefinition{}
+	if err := apiReader.Get(ctx, types.NamespacedName{Name: crdName}, installedCRD); err != nil {
+		return false
+	}
+
+	return true
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
