@@ -7,7 +7,6 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 
 	"github.com/ramendr/ramen/e2e/deployers"
-	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -144,7 +143,7 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	currentCluster, err := env.GetCluster(ctx.Env(), currentClusterName)
+	currentCluster, err := ctx.Env().GetCluster(currentClusterName)
 	if err != nil {
 		return err
 	}
@@ -162,7 +161,7 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	targetCluster, err := env.GetCluster(ctx.Env(), targetClusterName)
+	targetCluster, err := ctx.Env().GetCluster(targetClusterName)
 	if err != nil {
 		return err
 	}
