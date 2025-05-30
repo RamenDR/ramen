@@ -58,6 +58,10 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload protected")
 
 	return nil

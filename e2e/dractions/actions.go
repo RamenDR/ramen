@@ -8,6 +8,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 
+	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
@@ -22,7 +23,7 @@ const (
 // Determine PVC label selector
 // Determine KubeObjectProtection requirements if Imperative (?)
 // Create DRPC, in desired namespace
-// nolint:funlen
+// nolint:funlen,cyclop
 func EnableProtection(ctx types.TestContext) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
@@ -85,6 +86,10 @@ func EnableProtection(ctx types.TestContext) error {
 
 	err = waitDRPCReady(ctx, managementNamespace, drpcName)
 	if err != nil {
+		return err
+	}
+
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
 		return err
 	}
 
@@ -219,7 +224,11 @@ func failoverRelocate(
 		return err
 	}
 
-	return waitDRPCReady(ctx, managementNamespace, drpcName)
+	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	return deployers.WaitWorkloadHealth(ctx, targetCluster, ctx.AppNamespace())
 }
 
 func waitAndUpdateDRPC(
