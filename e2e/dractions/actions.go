@@ -154,7 +154,7 @@ func Failover(ctx types.TestContext) error {
 	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
 
-	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster.Name, targetCluster.Name)
+	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func Relocate(ctx types.TestContext) error {
 	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
 		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
 
-	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster.Name, targetCluster.Name)
+	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
 	if err != nil {
 		return err
 	}
@@ -201,8 +201,7 @@ func failoverRelocate(
 	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentCluster string,
-	targetCluster string,
+	currentCluster, targetCluster types.Cluster,
 ) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
@@ -212,7 +211,7 @@ func failoverRelocate(
 	drpcName := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
 
-	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster.Name); err != nil {
 		return err
 	}
 
