@@ -211,7 +211,7 @@ func failoverRelocate(
 	drpcName := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
 
-	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster.Name); err != nil {
+	if err := waitAndUpdateDRPC(ctx, managementNamespace, drpcName, action, targetCluster); err != nil {
 		return err
 	}
 
@@ -226,7 +226,7 @@ func waitAndUpdateDRPC(
 	ctx types.TestContext,
 	namespace, drpcName string,
 	action ramen.DRAction,
-	targetCluster string,
+	targetCluster types.Cluster,
 ) error {
 	log := ctx.Logger()
 
@@ -243,9 +243,9 @@ func waitAndUpdateDRPC(
 
 		drpc.Spec.Action = action
 		if action == ramen.ActionFailover {
-			drpc.Spec.FailoverCluster = targetCluster
+			drpc.Spec.FailoverCluster = targetCluster.Name
 		} else {
-			drpc.Spec.PreferredCluster = targetCluster
+			drpc.Spec.PreferredCluster = targetCluster.Name
 		}
 
 		if err := updateDRPC(ctx, drpc); err != nil {
@@ -253,7 +253,7 @@ func waitAndUpdateDRPC(
 		}
 
 		log.Debugf("Updated drpc \"%s/%s\" with action %q to target cluster %q",
-			namespace, drpcName, action, targetCluster)
+			namespace, drpcName, action, targetCluster.Name)
 
 		return nil
 	})
