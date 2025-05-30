@@ -16,17 +16,17 @@ import (
 // TODO: Carried over from internal/controllers, this is not part of API, may need a better way to reference it!
 const PlacementDecisionReasonFailoverRetained = "RetainedForFailover"
 
-// GetCurrentCluster returns the name of the cluster where the workload is currently placed,
-// based on the PlacementDecision for the given Placement resource.
-// Assumes the PlacementDecision exists with a Decision.
+// GetCurrentCluster retrieves the cluster object where the workload is currently placed
+// by looking up the cluster name from the PlacementDecision and returning the corresponding
+// cluster from the environment. Requires an existing PlacementDecision with a valid decision.
 // Not applicable for discovered apps before enabling protection, as no Placement exists.
-func GetCurrentCluster(ctx types.Context, namespace string, placementName string) (string, error) {
+func GetCurrentCluster(ctx types.Context, namespace string, placementName string) (types.Cluster, error) {
 	clusterDecision, err := getClusterDecisionFromPlacement(ctx, namespace, placementName)
 	if err != nil {
-		return "", err
+		return types.Cluster{}, err
 	}
 
-	return clusterDecision.ClusterName, nil
+	return ctx.Env().GetCluster(clusterDecision.ClusterName)
 }
 
 func GetPlacement(ctx types.Context, namespace, name string) (*v1beta1.Placement, error) {

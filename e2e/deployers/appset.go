@@ -54,7 +54,7 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 	log := ctx.Logger()
 	managementNamespace := ctx.ManagementNamespace()
 
-	clusterName, err := util.GetCurrentCluster(ctx, managementNamespace, name)
+	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return err
@@ -64,7 +64,7 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 		log.Infof("Undeploying applicationset app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
 	} else {
 		log.Infof("Undeploying applicationset app \"%s/%s\" in cluster %q",
-			ctx.AppNamespace(), ctx.Workload().GetAppName(), clusterName)
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	err = DeleteApplicationSet(ctx, a)
