@@ -19,10 +19,6 @@ type RecipeElements struct {
 	StopRecipeReconcile bool
 }
 
-type RecipeStatus struct {
-	Attempts int
-}
-
 type PvcSelector struct {
 	LabelSelector  metav1.LabelSelector
 	NamespaceNames []string
