@@ -86,17 +86,22 @@ func getTargetCluster(
 	ctx types.TestContext,
 	cluster types.Cluster,
 	drPolicyName, currentCluster string,
-) (string, error) {
+) (types.Cluster, error) {
 	drpolicy, err := util.GetDRPolicy(ctx, cluster, drPolicyName)
 	if err != nil {
-		return "", err
+		return types.Cluster{}, err
 	}
 
-	var targetCluster string
+	var targetClusterName string
 	if currentCluster == drpolicy.Spec.DRClusters[0] {
-		targetCluster = drpolicy.Spec.DRClusters[1]
+		targetClusterName = drpolicy.Spec.DRClusters[1]
 	} else {
-		targetCluster = drpolicy.Spec.DRClusters[0]
+		targetClusterName = drpolicy.Spec.DRClusters[0]
+	}
+
+	targetCluster, err := ctx.Env().GetCluster(targetClusterName)
+	if err != nil {
+		return types.Cluster{}, err
 	}
 
 	return targetCluster, nil

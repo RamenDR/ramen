@@ -152,9 +152,9 @@ func Failover(ctx types.TestContext) error {
 	}
 
 	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster)
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
 
-	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster.Name, targetCluster)
+	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster.Name, targetCluster.Name)
 	if err != nil {
 		return err
 	}
@@ -185,9 +185,9 @@ func Relocate(ctx types.TestContext) error {
 	}
 
 	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster)
+		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
 
-	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster.Name, targetCluster)
+	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster.Name, targetCluster.Name)
 	if err != nil {
 		return err
 	}
