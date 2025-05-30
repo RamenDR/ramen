@@ -4,20 +4,22 @@
 package controllers
 
 import (
+	"sync"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-var vrgLastUploadVersion = map[string]string{}
+var vrgLastUploadVersion sync.Map
 
 func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result) {
 	vrg := v.instance
 	log := v.log
 
-	if lastUploadVersion, ok := vrgLastUploadVersion[v.namespacedName]; ok {
-		if vrg.ResourceVersion == lastUploadVersion {
+	if lastUploadVersion, ok := vrgLastUploadVersion.Load(v.namespacedName); ok {
+		if lastUploadVersion == vrg.ResourceVersion {
 			log.Info("VRG resource version unchanged, skip S3 upload", "version", vrg.ResourceVersion)
 
 			return
@@ -57,7 +59,7 @@ func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result,
 
 		log1.Info("VRG Kube object protected")
 
-		vrgLastUploadVersion[v.namespacedName] = vrg.ResourceVersion
+		vrgLastUploadVersion.Store(v.namespacedName, vrg.ResourceVersion)
 		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, vrgClusterDataProtectedTrueMessage)
 	}
 
