@@ -2284,11 +2284,11 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 func (v *VRGInstance) clusterDataConflict(msg string, status metav1.ConditionStatus) *metav1.Condition {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		return updateVRGNoClusterDataConflictCondition(
-			v.instance.Status.ObservedGeneration, status, VRGConditionReasonDataConflictPrimary,
+			v.instance.Status.ObservedGeneration, status, VRGConditionReasonClusterDataConflictPrimary,
 			msg)
 	} else if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		return updateVRGNoClusterDataConflictCondition(
-			v.instance.Status.ObservedGeneration, status, VRGConditionReasonDataConflictSecondary,
+			v.instance.Status.ObservedGeneration, status, VRGConditionReasonClusterDataConflictSecondary,
 			msg)
 	}
 

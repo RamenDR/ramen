@@ -222,12 +222,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if requeue {
-		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger, nil)
 	}
 
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
 	if err != nil && !errors.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
-		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger)
+		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger, nil)
 
 		return ctrl.Result{}, fmt.Errorf("failed to create DRPC instance (%w) and (%v)", err, err2)
 	}
@@ -266,7 +266,7 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 	needsUpdate := addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionAvailable,
 		drpc.Generation, metav1.ConditionFalse, reason, msg)
 	if needsUpdate {
-		err := r.updateDRPCStatus(ctx, drpc, placementObj, log)
+		err := r.updateDRPCStatus(ctx, drpc, placementObj, log, nil)
 		if err != nil {
 			log.Info(fmt.Sprintf("Failed to update DRPC status (%v)", err))
 		}
@@ -705,6 +705,8 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
 	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
+
+	r.clearClusterDataConflictMetrics(drpc, log)
 
 	return nil
 }
@@ -1276,11 +1278,12 @@ func (r *DRPlacementControlReconciler) getStatusCheckDelay(
 //
 //nolint:cyclop
 func (r *DRPlacementControlReconciler) updateDRPCStatus(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
+	ctx context.Context, drpc *rmn.DRPlacementControl,
+	userPlacement client.Object, log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
 	log.Info("Updating DRPC status")
 
-	r.updateResourceCondition(ctx, drpc, userPlacement, log)
+	r.updateResourceCondition(ctx, drpc, userPlacement, log, vrgs)
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
@@ -1322,7 +1325,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 //
 //nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) updateResourceCondition(
-	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object, log logr.Logger,
+	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
+	log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) {
 	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, userPlacement)
 	if err != nil {
@@ -1339,49 +1343,26 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		return
 	}
 
-	annotations := make(map[string]string)
-	annotations[DRPCNameAnnotation] = drpc.Name
-	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+	// Retrieve VRG either from argument or fetch from managed cluster/S3 store
+	vrg := r.getVRG(ctx, drpc, vrgNamespace, clusterName, vrgs, log)
+	if vrg == nil {
+		log.Info("No valid VRG found, skipping update")
 
-	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace,
-		clusterName, annotations)
-	if err != nil {
-		log.Info("Failed to get VRG from managed cluster. Trying s3 store...", "errMsg", err.Error())
-
-		// The VRG from the s3 store might be stale, however, the worst case should be at most around 1 minute.
-		vrg = GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
-			GetAvailableS3Profiles(ctx, r.Client, drpc, log),
-			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, log)
-		if vrg == nil {
-			log.Info("Failed to get VRG from s3 store")
-
-			drpc.Status.ResourceConditions = rmn.VRGConditions{}
-
-			updateProtectedConditionUnknown(drpc, clusterName)
-
-			return
-		}
-
-		if vrg.ResourceVersion < drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion {
-			log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
-			// if the VRG resourceVersion is less, then leave the DRPC ResourceConditions.ResourceMeta.ResourceVersion as is.
-			return
-		}
+		return
 	}
 
-	drpc.Status.ResourceConditions.ResourceMeta.Kind = vrg.Kind
-	drpc.Status.ResourceConditions.ResourceMeta.Name = vrg.Name
-	drpc.Status.ResourceConditions.ResourceMeta.Namespace = vrg.Namespace
-	drpc.Status.ResourceConditions.ResourceMeta.Generation = vrg.Generation
-	drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion = vrg.ResourceVersion
-	drpc.Status.ResourceConditions.Conditions = vrg.Status.Conditions
-
-	protectedPVCs := []string{}
-	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
-		protectedPVCs = append(protectedPVCs, protectedPVC.Name)
+	// Update DRPC with VRG details
+	drpc.Status.ResourceConditions.ResourceMeta = rmn.VRGResourceMeta{
+		Kind:            vrg.Kind,
+		Name:            vrg.Name,
+		Namespace:       vrg.Namespace,
+		Generation:      vrg.Generation,
+		ResourceVersion: vrg.ResourceVersion,
+		ProtectedPVCs:   extractProtectedPVCNames(vrg),
 	}
 
-	drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
+	drpc.Status.ResourceConditions.Conditions = assignConditionsWithConflictCheck(
+		vrgs, vrg, VRGConditionTypeNoClusterDataConflict)
 
 	if rmnutil.IsCGEnabled(vrg.GetAnnotations()) {
 		drpc.Status.ResourceConditions.ResourceMeta.PVCGroups = vrg.Status.PVCGroups
@@ -1398,6 +1379,111 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	}
 
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
+}
+
+// getVRG retrieves a VRG either from the provided map or fetches it from the managed cluster/S3 store.
+func (r *DRPlacementControlReconciler) getVRG(
+	ctx context.Context, drpc *rmn.DRPlacementControl, vrgNamespace, clusterName string,
+	vrgs map[string]*rmn.VolumeReplicationGroup, log logr.Logger,
+) *rmn.VolumeReplicationGroup {
+	// Use provided VRG map if available
+	if vrgs != nil {
+		if vrg, exists := vrgs[clusterName]; exists {
+			return vrg
+		}
+
+		log.Info("VRG not found in provided VRG map, trying to fetch from cluster", "drpcName", drpc.Name)
+	}
+
+	// Fetch VRG from managed cluster
+	annotations := map[string]string{
+		DRPCNameAnnotation:      drpc.Name,
+		DRPCNamespaceAnnotation: drpc.Namespace,
+	}
+
+	vrg, err := r.MCVGetter.GetVRGFromManagedCluster(drpc.Name, vrgNamespace, clusterName, annotations)
+	if err != nil {
+		log.Info("Failed to get VRG from managed cluster. Trying S3 store...", "errMsg", err.Error())
+
+		vrg = GetLastKnownVRGPrimaryFromS3(ctx, r.APIReader,
+			GetAvailableS3Profiles(ctx, r.Client, drpc, log),
+			drpc.GetName(), vrgNamespace, r.ObjStoreGetter, log)
+
+		if vrg == nil {
+			log.Info("Failed to get VRG from S3 store")
+
+			drpc.Status.ResourceConditions = rmn.VRGConditions{}
+
+			updateProtectedConditionUnknown(drpc, clusterName)
+
+			return nil
+		}
+
+		if vrg.ResourceVersion < drpc.Status.ResourceConditions.ResourceMeta.ResourceVersion {
+			log.Info("VRG resourceVersion is lower than the previously recorded VRG's resourceVersion in DRPC")
+
+			return nil
+		}
+	}
+
+	return vrg
+}
+
+// extractProtectedPVCNames extracts protected PVC names from a VRG
+func extractProtectedPVCNames(vrg *rmn.VolumeReplicationGroup) []string {
+	protectedPVCs := []string{}
+	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+		protectedPVCs = append(protectedPVCs, protectedPVC.Name)
+	}
+
+	return protectedPVCs
+}
+
+// findConflictCondition selects the appropriate condition from VRGs based on the conflict type.
+func findConflictCondition(vrgs map[string]*rmn.VolumeReplicationGroup, conflictType string) *metav1.Condition {
+	var selectedCondition *metav1.Condition
+
+	for _, vrg := range vrgs {
+		for i, condition := range vrg.Status.Conditions {
+			if condition.Type == conflictType && condition.Status == metav1.ConditionFalse {
+				// Prioritize primary VRG's condition if available
+				if isVRGPrimary(vrg) {
+					return &vrg.Status.Conditions[i] // Exit early if primary VRG condition is found
+				}
+
+				// Assign the first non-primary VRG's condition if no primary found yet
+				if selectedCondition == nil {
+					selectedCondition = &vrg.Status.Conditions[i]
+				}
+			}
+		}
+	}
+
+	return selectedCondition
+}
+
+// assignConditionsWithConflictCheck assigns conditions from a given VRG while prioritizing conflict conditions.
+func assignConditionsWithConflictCheck(vrgs map[string]*rmn.VolumeReplicationGroup,
+	vrg *rmn.VolumeReplicationGroup, conflictType string,
+) []metav1.Condition {
+	conditions := vrg.Status.Conditions
+	conflictCondition := findConflictCondition(vrgs, conflictType)
+
+	// Ensure the conflict condition is present in the conditions list
+	if conflictCondition != nil {
+		for i, condition := range conditions {
+			if condition.Type == conflictType {
+				conditions[i] = *conflictCondition
+
+				return conditions
+			}
+		}
+
+		// If not found, append it
+		conditions = append(conditions, *conflictCondition)
+	}
+
+	return conditions
 }
 
 // clusterForVRGStatus determines which cluster's VRG should be inspected for status updates to DRPC
@@ -1457,6 +1543,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
 	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+
+	// set conflict metrics
+	r.handleClusterDataConflictMetrics(drpc, log)
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
@@ -2739,4 +2828,71 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 	}
 
 	return false
+}
+
+func (r *DRPlacementControlReconciler) handleClusterDataConflictMetrics(
+	drpc *rmn.DRPlacementControl,
+	log logr.Logger,
+) {
+	log.Info("Setting ClusterDataConflictMetrics")
+
+	// Skip if DRPC is being deleted
+	if rmnutil.ResourceIsDeleted(drpc) {
+		log.Info("Skipping conflict metric update: DRPC is being deleted")
+
+		return
+	}
+
+	metricsInstance := r.createClusterDataConflictMetricsInstance(drpc)
+	condition := meta.FindStatusCondition(
+		drpc.Status.ResourceConditions.Conditions, VRGConditionTypeNoClusterDataConflict,
+	)
+
+	// Determine conflict status: 0 = No conflict, 1 = Secondary conflict, 2 = Primary conflict,
+	conflictStatus := 0
+
+	if condition != nil && condition.Status == metav1.ConditionFalse {
+		conflictStatus = 2
+		if condition.Reason == VRGConditionReasonClusterDataConflictSecondary {
+			conflictStatus = 1
+		}
+	}
+
+	log.Info("Setting ClusterDataConflictMetric", "conflictStatus", conflictStatus)
+	r.setClusterDataConflictMetric(metricsInstance, conflictStatus, log)
+}
+
+// setClusterDataConflictMetric sets the cluster data conflict metric,
+func (r *DRPlacementControlReconciler) setClusterDataConflictMetric(
+	metrics *ClusterDataConflictMetrics,
+	severity int,
+	log logr.Logger,
+) {
+	if metrics == nil {
+		log.Info("Skipping metric update: ClusterDataConflictMetrics is nil")
+
+		return
+	}
+
+	log.Info("Updating cluster data conflict metric", "metric", ClusterDataConflict, "severity", severity)
+
+	metrics.ClusterDataConflict.Set(float64(severity))
+}
+
+func (r *DRPlacementControlReconciler) createClusterDataConflictMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *ClusterDataConflictMetrics {
+	labels := ClusterDataConflictMetricLabels(drpc)
+	metrics := NewClusterDataConflictMetric(labels)
+
+	return &ClusterDataConflictMetrics{
+		ClusterDataConflict: metrics.ClusterDataConflict,
+	}
+}
+
+func (r *DRPlacementControlReconciler) clearClusterDataConflictMetrics(
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) {
+	log.Info("Clearing ClusterDataConflict metrics", "DRPC", drpc.Name, "Namespace", drpc.Namespace)
+	DeleteClusterDataConflictMetric(ClusterDataConflictMetricLabels(drpc))
 }
