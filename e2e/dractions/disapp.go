@@ -58,6 +58,10 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+		return err
+	}
+
 	log.Info("Workload protected")
 
 	return nil
@@ -112,6 +116,10 @@ func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
 
 	if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, config.ClusterSet,
 		managementNamespace); err != nil {
+		return err
+	}
+
+	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
 		return err
 	}
 
