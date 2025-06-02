@@ -97,7 +97,8 @@ func (w Deployment) Health(ctx types.TestContext, cluster types.Cluster, namespa
 		return nil
 	}
 
-	return nil
+	return fmt.Errorf("deployment \"%s/%s\" not ready in cluster %q: %d/%d replicas ready",
+		namespace, w.GetAppName(), cluster.Name, deploy.Status.ReadyReplicas, deploy.Status.Replicas)
 }
 
 func getDeployment(ctx types.TestContext, cluster types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
