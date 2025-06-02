@@ -301,6 +301,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
 	labels := util.OwnerLabels(v.instance)
+	labels[util.VeleroKubevirtMetadataOnlyBackupLabel] = "true"
 
 	for groupNumber, captureGroup := range captureSteps {
 		var err error
