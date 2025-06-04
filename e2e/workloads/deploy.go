@@ -84,16 +84,12 @@ func (w Deployment) GetResources() error {
 
 // Check the workload health deployed in a cluster namespace
 func (w Deployment) Health(ctx types.TestContext, cluster types.Cluster, namespace string) error {
-	log := ctx.Logger()
-
 	deploy, err := getDeployment(ctx, cluster, namespace, w.GetAppName())
 	if err != nil {
 		return err
 	}
 
 	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		log.Debugf("Deployment \"%s/%s\" is ready in cluster %q", namespace, w.GetAppName(), cluster.Name)
-
 		return nil
 	}
 
