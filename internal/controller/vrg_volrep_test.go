@@ -2115,6 +2115,7 @@ func (v *vrgTest) createVRG() {
 		}
 
 		vrg.ObjectMeta.Annotations[util.IsCGEnabledAnnotation] = "true"
+		vrg.ObjectMeta.Annotations[vrgController.SubmarinerEnabledAnnotation] = vrgController.SubmarinerEnabledAnnotationVal
 	}
 
 	err := k8sClient.Create(context.TODO(), vrg)
