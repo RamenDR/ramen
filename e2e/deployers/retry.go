@@ -19,6 +19,9 @@ func waitSubscriptionPhase(
 ) error {
 	log := ctx.Logger()
 
+	log.Debugf("Waiting until subscription \"%s/%s\" reach phase %q in cluster %q",
+		namespace, name, phase, ctx.Env().Hub.Name)
+
 	for {
 		sub, err := getSubscription(ctx, namespace, name)
 		if err != nil {
