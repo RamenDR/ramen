@@ -7,7 +7,6 @@ import (
 	"context"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	groupsnapv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,6 +15,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
