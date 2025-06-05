@@ -246,6 +246,12 @@ spec:
                           items:
                             type: string
                           type: array
+                        grouping:
+                          description: |-
+                            Grouping reflects if PVCs using the StorageClassName can be grouped for replication, via VolumeGroupSnapshotClass
+                            if ReplicationID is empty, or via VolumeGroupReplicationClass otherwise. This is true only when grouping can be
+                            supported across the clusters in the ClusterIDs list.
+                          type: boolean
                         replicationID:
                           description: |-
                             ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
@@ -340,6 +346,12 @@ spec:
                           items:
                             type: string
                           type: array
+                        grouping:
+                          description: |-
+                            Grouping reflects if PVCs using the StorageClassName can be grouped for replication, via VolumeGroupSnapshotClass
+                            if ReplicationID is empty, or via VolumeGroupReplicationClass otherwise. This is true only when grouping can be
+                            supported across the clusters in the ClusterIDs list.
+                          type: boolean
                         replicationID:
                           description: |-
                             ReplicationID is the common value for the label "ramendr.openshift.io/replicationID" on the corresponding
