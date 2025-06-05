@@ -12,11 +12,12 @@ const (
 	labelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
 	labelOwnerName          = "ramendr.openshift.io/owner-name"
 
-	MModesLabel             = "ramendr.openshift.io/maintenancemodes"
-	SClassLabel             = "ramendr.openshift.io/storageclass"
-	VSClassLabel            = "ramendr.openshift.io/volumesnapshotclass"
-	VRClassLabel            = "ramendr.openshift.io/volumereplicationclass"
-	ExcludeFromVeleroBackup = "velero.io/exclude-from-backup"
+	MModesLabel                           = "ramendr.openshift.io/maintenancemodes"
+	SClassLabel                           = "ramendr.openshift.io/storageclass"
+	VSClassLabel                          = "ramendr.openshift.io/volumesnapshotclass"
+	VRClassLabel                          = "ramendr.openshift.io/volumereplicationclass"
+	ExcludeFromVeleroBackup               = "velero.io/exclude-from-backup"
+	VeleroKubevirtMetadataOnlyBackupLabel = "velero.kubevirt.io/metadataBackup"
 )
 
 type Labels map[string]string

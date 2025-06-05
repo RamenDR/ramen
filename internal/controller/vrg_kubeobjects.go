@@ -241,15 +241,19 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
 		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
 	if err != nil {
-		recipeStatus := v.reconciler.recipeStatus[v.namespacedName]
-		if recipeStatus == nil {
-			recipeStatus = &util.RecipeStatus{}
-
-			v.reconciler.recipeStatus[v.namespacedName] = recipeStatus
+		rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
+		if !ok {
+			v.reconciler.recipeRetries.Store(v.namespacedName, 0)
 		}
 
-		recipeStatus.Attempts++
-		if recipeStatus.Attempts > RecipeMaxAttempts {
+		val, ok := rStatus.(int)
+		if ok {
+			val++
+		}
+
+		v.reconciler.recipeRetries.Store(v.namespacedName, val)
+
+		if val > RecipeMaxAttempts {
 			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more that max attempts")
 
 			return
@@ -301,6 +305,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
 	labels := util.OwnerLabels(v.instance)
+	labels[util.VeleroKubevirtMetadataOnlyBackupLabel] = "true"
 
 	for groupNumber, captureGroup := range captureSteps {
 		var err error
@@ -512,11 +517,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 		return
 	}
 
-	recipeStatus, ok := v.reconciler.recipeStatus[v.namespacedName]
-	if ok {
-		recipeStatus.Attempts = 0
-	}
-
+	v.reconciler.recipeRetries.Store(v.namespacedName, 0)
 	v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
