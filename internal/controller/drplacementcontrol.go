@@ -1800,6 +1800,7 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DRPCUIDAnnotation:               string(d.instance.UID),
 		rmnutil.IsCGEnabledAnnotation:   d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
 		rmnutil.UseVolSyncAnnotation:    d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		SubmarinerEnabledAnnotation:     d.instance.GetAnnotations()[SubmarinerEnabledAnnotation],
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
