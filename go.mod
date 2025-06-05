@@ -22,6 +22,7 @@ require (
 	github.com/prometheus/client_golang v1.20.5
 	github.com/ramendr/ramen/api v0.0.0-20240924121439-b7cba82de417
 	github.com/ramendr/recipe v0.0.0-20240918115450-667b9d79599f
+	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0
 	github.com/stretchr/testify v1.10.0
 	github.com/vmware-tanzu/velero v1.15.0

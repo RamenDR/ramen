@@ -213,6 +213,8 @@ github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0leargg
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
 github.com/ramendr/recipe v0.0.0-20240918115450-667b9d79599f h1:LuuCBtH5e9dYFQZIOQAZzcXQwtedrWgNWflmCaZZrlo=
 github.com/ramendr/recipe v0.0.0-20240918115450-667b9d79599f/go.mod h1:QHVQXKgNId8EfvNd+Y6JcTrsXwTImtSFkV4IsiOkwCw=
+github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096 h1:UKvDY0QbdEXn5JMP568aj5zj+ibkSrA3RqanvPT3Qyw=
+github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096/go.mod h1:5cstVYzNXZ6Fo8TKv7XpnlxXfTre5PQhK6EkP5lr3tE=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
 github.com/robfig/cron/v3 v3.0.1/go.mod h1:eQICP3HwyT7UooqI/z+Ov+PtYAWygg1TEWWzGIFLtro=
 github.com/rogpeppe/go-internal v1.12.0 h1:exVL4IDcn6na9z1rAb56Vxr+CgyK3nn3O+epU5NdKM8=
