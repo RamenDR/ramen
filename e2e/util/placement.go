@@ -48,7 +48,10 @@ func GetPlacement(ctx types.Context, namespace, name string) (*v1beta1.Placement
 //nolint:gocognit
 func getClusterDecisionFromPlacement(ctx types.Context, namespace string, placementName string,
 ) (*v1beta1.ClusterDecision, error) {
+	log := ctx.Logger()
 	cluster := ctx.Env().Hub
+
+	log.Debugf("Waiting for placement decisions for \"%s/%s\" in cluster %q", namespace, placementName, cluster.Name)
 
 	for {
 		placement, err := GetPlacement(ctx, namespace, placementName)
