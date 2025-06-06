@@ -826,14 +826,7 @@ func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace stri
 		return "", fmt.Errorf("missing storageID for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
-	// FIXME: a temporary workaround for issue DFBUGS-1209
-	// Remove this block once DFBUGS-1209 is fixed
-	cgLabelVal := "cephfs-" + storageID
-	if storageClass.Provisioner != DefaultCephFSCSIDriverName {
-		cgLabelVal = "rbd-" + storageID
-	}
-
-	return cgLabelVal, nil
+	return util.GenerateCombinedName(pvcNamespace, storageID), nil
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {

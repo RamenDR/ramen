@@ -63,7 +63,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 				err := k8sClient.Get(
 					context.TODO(), types.NamespacedName{
-						Name:      fmt.Sprintf(cephfscg.VolumeGroupSnapshotNameFormat, rgs.Name),
+						Name:      rgs.Name,
 						Namespace: rgs.Namespace,
 					}, volumeGroupSnapshot)
 				if err != nil {
@@ -131,7 +131,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 			Context("VolumeGroupSnapshot is ready", func() {
 				BeforeEach(func() {
 					CreateStorageClass()
-					CreateVS(anotherVSName, fmt.Sprintf(cephfscg.VolumeGroupSnapshotNameFormat, rgs.Name), rgs.GetNamespace())
+					CreateVS(anotherVSName, rgs.Name, rgs.GetNamespace())
 					UpdateVGS(rgs, anotherVSName, anotherAppPVCName)
 				})
 				It("Should not fail", func() {
@@ -256,7 +256,7 @@ func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 		volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
 
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
-			Name:      fmt.Sprintf(cephfscg.VolumeGroupSnapshotNameFormat, rgs.Name),
+			Name:      rgs.Name,
 			Namespace: rgs.Namespace,
 		}, volumeGroupSnapshot)
 		if err != nil {
