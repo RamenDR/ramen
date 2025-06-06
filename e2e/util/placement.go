@@ -5,6 +5,7 @@ package util
 
 import (
 	"fmt"
+	"time"
 
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"open-cluster-management.io/api/cluster/v1beta1"
@@ -50,6 +51,7 @@ func getClusterDecisionFromPlacement(ctx types.Context, namespace string, placem
 ) (*v1beta1.ClusterDecision, error) {
 	log := ctx.Logger()
 	cluster := ctx.Env().Hub
+	start := time.Now()
 
 	log.Debugf("Waiting for placement decisions for \"%s/%s\" in cluster %q", namespace, placementName, cluster.Name)
 
@@ -69,6 +71,10 @@ func getClusterDecisionFromPlacement(ctx types.Context, namespace string, placem
 				if placementDecision.Status.Decisions[idx].Reason == PlacementDecisionReasonFailoverRetained {
 					continue
 				}
+
+				elapsed := time.Since(start)
+				log.Debugf("Placement decisions for \"%s/%s\" available in cluster %q in %.3f seconds",
+					namespace, placementName, cluster.Name, elapsed.Seconds())
 
 				return &placementDecision.Status.Decisions[idx], nil
 			}
