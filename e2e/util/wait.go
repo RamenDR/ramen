@@ -118,6 +118,7 @@ func waitForResourceDelete(ctx types.Context, cluster types.Cluster, obj client.
 	log := ctx.Logger()
 	kind := getKind(obj)
 	resourceName := logName(obj)
+	start := time.Now()
 
 	log.Debugf("Waiting until %s %q is deleted in cluster %q", kind, resourceName, cluster.Name)
 
@@ -127,7 +128,8 @@ func waitForResourceDelete(ctx types.Context, cluster types.Cluster, obj client.
 				return err
 			}
 
-			log.Debugf("%s %q deleted in cluster %q", kind, resourceName, cluster.Name)
+			elapsed := time.Since(start)
+			log.Debugf("%s %q deleted in cluster %q in %.3f seconds", kind, resourceName, cluster.Name, elapsed.Seconds())
 
 			return nil
 		}

@@ -5,6 +5,7 @@ package deployers
 
 import (
 	"fmt"
+	"time"
 
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 
@@ -18,6 +19,7 @@ func waitSubscriptionPhase(
 	phase subscriptionv1.SubscriptionPhase,
 ) error {
 	log := ctx.Logger()
+	start := time.Now()
 
 	log.Debugf("Waiting until subscription \"%s/%s\" reach phase %q in cluster %q",
 		namespace, name, phase, ctx.Env().Hub.Name)
@@ -30,7 +32,9 @@ func waitSubscriptionPhase(
 
 		currentPhase := sub.Status.Phase
 		if currentPhase == phase {
-			log.Debugf("Subscription \"%s/%s\" phase is %s in cluster %q", namespace, name, phase, ctx.Env().Hub.Name)
+			elapsed := time.Since(start)
+			log.Debugf("Subscription \"%s/%s\" phase is %s in cluster %q in %.3f seconds",
+				namespace, name, phase, ctx.Env().Hub.Name, elapsed.Seconds())
 
 			return nil
 		}
@@ -45,13 +49,16 @@ func waitSubscriptionPhase(
 func WaitWorkloadHealth(ctx types.TestContext, cluster types.Cluster, namespace string) error {
 	log := ctx.Logger()
 	w := ctx.Workload()
+	start := time.Now()
 
 	log.Debugf("Waiting until workload \"%s/%s\" is healthy in cluster %q", namespace, w.GetAppName(), cluster.Name)
 
 	for {
 		err := w.Health(ctx, cluster, namespace)
 		if err == nil {
-			log.Debugf("Workload \"%s/%s\" is healthy in cluster %q", namespace, w.GetAppName(), cluster.Name)
+			elapsed := time.Since(start)
+			log.Debugf("Workload \"%s/%s\" is healthy in cluster %q in %.3f seconds",
+				namespace, w.GetAppName(), cluster.Name, elapsed.Seconds())
 
 			return nil
 		}
