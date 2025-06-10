@@ -68,20 +68,16 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 		return
 	}
 
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
-		func() {},
-	)
+	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary)
 }
 
 type (
-	captureStartConditionally     func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
-	captureInProgressStatusUpdate func()
+	captureStartConditionally func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
 )
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
 	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
 		return
@@ -109,7 +105,6 @@ func (v *VRGInstance) kubeObjectsProtect(
 
 	v.kubeObjectsCaptureStartOrResumeOrDelay(result,
 		captureStartConditionally,
-		captureInProgressStatusUpdate,
 		captureToRecoverFrom,
 	)
 }
@@ -117,7 +112,6 @@ func (v *VRGInstance) kubeObjectsProtect(
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result,
 	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
 ) {
 	veleroNamespaceName := v.veleroNamespaceName()
@@ -144,7 +138,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		log.Info("Kube objects capture "+startOrResume, "generation", generation)
 		v.kubeObjectsCaptureStartOrResume(result,
 			captureStartConditionally,
-			captureInProgressStatusUpdate,
 			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval,
 			generation,
 			kubeobjects.RequestsMapKeyedByName(requests),
@@ -218,7 +211,6 @@ const (
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
 	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureNumber int64,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	interval time.Duration,
@@ -239,7 +231,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	}
 
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
-		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
+		veleroNamespaceName, annotations, requests, log)
 	if err != nil {
 		rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
 		if !ok {
@@ -295,7 +287,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
-	veleroNamespaceName string, captureInProgressStatusUpdate captureInProgressStatusUpdate,
+	veleroNamespaceName string,
 	annotations map[string]string, requests map[string]kubeobjects.Request, log logr.Logger,
 ) (bool, error) {
 	captureSteps := v.recipeElements.CaptureWorkflow
@@ -336,7 +328,6 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			isEssentialStep = cg.GroupEssential != nil && *cg.GroupEssential
 			loopCount, err = v.kubeObjectsGroupCapture(
 				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
-				captureInProgressStatusUpdate,
 				labels, annotations, requests, log,
 			)
 			requestsCompletedCount += loopCount
@@ -381,7 +372,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 	result *ctrl.Result,
 	captureGroup kubeobjects.CaptureSpec,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	labels, annotations map[string]string, requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) (requestsCompletedCount int, reqErr error) {
@@ -406,7 +396,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				continue
 			}
 
-			captureInProgressStatusUpdate()
 			log1.Info("Kube objects group capture request submitted")
 		} else {
 			err := request.Status(v.log)
