@@ -807,6 +807,20 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 		return
 	}
 
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary ||
+		v.instance.Spec.PrepareForFinalSync ||
+		v.instance.Spec.RunFinalSync {
+		log.Info(
+			"PVC deletion handling skipped",
+			"replicationstate",
+			v.instance.Spec.ReplicationState,
+			"finalsync",
+			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
+		)
+
+		return
+	}
+
 	log.Info("PVC unprotect VR", "deletion time", pvc.GetDeletionTimestamp())
 	v.pvcUnprotectVolRep(pvc, log)
 
@@ -833,9 +847,11 @@ func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log l
 	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
 		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
 		v.requeue()
-	} else {
-		v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
+
+		return
 	}
+
+	v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
 
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
