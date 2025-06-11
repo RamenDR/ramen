@@ -8,60 +8,9 @@ import (
 
 	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/e2e/config"
 )
-
-// ChannelConfig defines the name and namespace for the channel CR.
-// This is not user-configurable and always uses default values.
-type ChannelConfig struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-}
-
-// NamespacesConfig are determined by distro and are not user-configurable.
-type NamespacesConfig struct {
-	RamenHubNamespace       string `json:"ramenHubNamespace"`
-	RamenDRClusterNamespace string `json:"ramenDRClusterNamespace"`
-	RamenOpsNamespace       string `json:"ramenOpsNamespace"`
-	ArgocdNamespace         string `json:"argocdNamespace"`
-}
-
-// RepoConfig represents the user-configurable git repository settings.
-// It includes the repository url and branch to be used for deploying workload.
-type RepoConfig struct {
-	URL    string `json:"url"`
-	Branch string `json:"branch"`
-}
-
-type PVCSpecConfig struct {
-	Name             string `json:"name"`
-	StorageClassName string `json:"storageClassName"`
-	AccessModes      string `json:"accessModes"`
-}
-
-type ClusterConfig struct {
-	Kubeconfig string `json:"kubeconfig"`
-}
-
-type TestConfig struct {
-	Workload string `json:"workload"`
-	Deployer string `json:"deployer"`
-	PVCSpec  string `json:"pvcSpec"`
-}
-
-type Config struct {
-	// User configurable values.
-	Distro     string                   `json:"distro"`
-	Repo       RepoConfig               `json:"repo"`
-	DRPolicy   string                   `json:"drPolicy"`
-	ClusterSet string                   `json:"clusterSet"`
-	Clusters   map[string]ClusterConfig `json:"clusters"`
-	PVCSpecs   []PVCSpecConfig          `json:"pvcSpecs"`
-	Tests      []TestConfig             `json:"tests"`
-
-	// Generated values
-	Channel    ChannelConfig    `json:"channel"`
-	Namespaces NamespacesConfig `json:"namespaces"`
-}
 
 // Clsuter can be a hub cluster or a managed cluster.
 type Cluster struct {
@@ -102,7 +51,7 @@ type Workload interface {
 type Context interface {
 	Logger() *zap.SugaredLogger
 	Env() *Env
-	Config() *Config
+	Config() *config.Config
 	Context() context.Context
 }
 
