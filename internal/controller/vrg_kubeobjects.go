@@ -68,16 +68,11 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 		return
 	}
 
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary)
+	v.kubeObjectsProtect(result)
 }
-
-type (
-	captureStartConditionally func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
-)
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
 		return
@@ -104,14 +99,12 @@ func (v *VRGInstance) kubeObjectsProtect(
 	}
 
 	v.kubeObjectsCaptureStartOrResumeOrDelay(result,
-		captureStartConditionally,
 		captureToRecoverFrom,
 	)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
 ) {
 	veleroNamespaceName := v.veleroNamespaceName()
@@ -137,7 +130,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	captureStartOrResume := func(generation int64, startOrResume string) {
 		log.Info("Kube objects capture "+startOrResume, "generation", generation)
 		v.kubeObjectsCaptureStartOrResume(result,
-			captureStartConditionally,
 			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval,
 			generation,
 			kubeobjects.RequestsMapKeyedByName(requests),
@@ -151,7 +143,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	captureStartConditionally(
+	kubeObjectsCaptureStartConditionallyPrimary(
 		v, result, captureToRecoverFrom.StartGeneration, time.Since(captureToRecoverFrom.StartTime.Time), interval,
 		func() {
 			if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
@@ -210,7 +202,6 @@ const (
 // nolint: funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureNumber int64,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	interval time.Duration,
@@ -275,7 +266,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 	v.kubeObjectsCaptureComplete(
 		result,
-		captureStartConditionally,
 		captureNumber,
 		veleroNamespaceName,
 		interval,
@@ -446,7 +436,6 @@ func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureNumber int64, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, startTime metav1.Time, annotations map[string]string,
 ) {
@@ -473,7 +462,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		func() {
 			v.kubeObjectsCaptureIdentifierUpdateComplete(
 				result,
-				captureStartConditionally,
 				*captureToRecoverFromIdentifier,
 				veleroNamespaceName,
 				interval,
@@ -488,7 +476,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	veleroNamespaceName string,
 	interval time.Duration,
@@ -512,7 +499,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
 		"duration", captureStartTimeSince)
-	captureStartConditionally(
+	kubeObjectsCaptureStartConditionallyPrimary(
 		v, result, captureToRecoverFromIdentifier.StartGeneration, captureStartTimeSince, interval,
 		func() {
 			v.log.Info("Kube objects capture schedule to run immediately")
