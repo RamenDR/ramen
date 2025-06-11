@@ -4,4 +4,4 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://raw.githubusercontent.com/rook/rook/release-1.16/deploy/examples/toolbox.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.17/deploy/examples/toolbox.yaml

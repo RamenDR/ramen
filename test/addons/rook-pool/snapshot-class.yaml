@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # yamllint disable rule:line-length
-# Drived from https://raw.githubusercontent.com/rook/rook/release-1.16/deploy/examples/csi/rbd/snapshotclass.yaml
+# Drived from https://raw.githubusercontent.com/rook/rook/release-1.17/deploy/examples/csi/rbd/snapshotclass.yaml
 ---
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotClass
