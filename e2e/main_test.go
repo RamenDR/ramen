@@ -26,7 +26,7 @@ import (
 type Context struct {
 	log     *zap.SugaredLogger
 	env     *types.Env
-	config  *types.Config
+	config  *config.Config
 	context context.Context
 }
 
@@ -34,7 +34,7 @@ func (c *Context) Logger() *zap.SugaredLogger {
 	return c.log
 }
 
-func (c *Context) Config() *types.Config {
+func (c *Context) Config() *config.Config {
 	return c.config
 }
 
