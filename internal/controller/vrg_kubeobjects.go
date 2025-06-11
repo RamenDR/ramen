@@ -128,18 +128,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	captureStartOrResume := func(generation int64, startOrResume string) {
-		log.Info("Kube objects capture "+startOrResume, "generation", generation)
-		v.kubeObjectsCaptureStartOrResume(result,
-			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval,
-			generation,
-			kubeobjects.RequestsMapKeyedByName(requests),
-			log,
-		)
-	}
-
 	if count := requests.Count(); count > 0 {
-		captureStartOrResume(requests.Get(0).Object().GetGeneration(), "resume")
+		generation := requests.Get(0).Object().GetGeneration()
+
+		log.Info("Kube objects capture resume", "generation", generation)
+
+		v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName, namePrefix, veleroNamespaceName,
+			interval, generation, kubeobjects.RequestsMapKeyedByName(requests), log)
 
 		return
 	}
@@ -160,7 +155,13 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	}
 
 	// start the capture
-	captureStartOrResume(vrg.GetGeneration(), "start")
+	generation := vrg.GetGeneration()
+
+	log.Info("Kube objects capture start", "generation", generation)
+
+	v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName,
+		namePrefix, veleroNamespaceName, interval, generation,
+		kubeobjects.RequestsMapKeyedByName(requests), log)
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
