@@ -499,13 +499,16 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
 		"duration", captureStartTimeSince)
-	kubeObjectsCaptureStartConditionallyPrimary(
-		v, result, captureToRecoverFromIdentifier.StartGeneration, captureStartTimeSince, interval,
-		func() {
-			v.log.Info("Kube objects capture schedule to run immediately")
-			delaySetMinimum(result)
-		},
-	)
+
+	// schedule next kube objects capture
+	delay := interval - captureStartTimeSince
+
+	if delay > 0 {
+		delaySetIfLess(result, delay, v.log)
+	} else {
+		delaySetMinimum(result)
+		v.log.Info("Kube objects capture schedule to run immediately")
+	}
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
