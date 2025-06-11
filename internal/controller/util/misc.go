@@ -31,8 +31,8 @@ const (
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
 
-	JobNameMaxLength     = validation.DNS1123LabelMaxLength
-	ServiceNameMaxLength = validation.DNS1123LabelMaxLength
+	MaxK8sLabelLength = validation.DNS1123LabelMaxLength
+	MaxK8sNameLength  = validation.DNS1123LabelMaxLength
 
 	CreatedByRamenLabel = "ramendr.openshift.io/created-by-ramen"
 
@@ -292,11 +292,11 @@ func TrimToK8sResourceNameLength(name string) string {
 }
 
 func GetJobName(namePrefix string, ownerName string) string {
-	return getShortenedResourceName(namePrefix, ownerName, JobNameMaxLength)
+	return getShortenedResourceName(namePrefix, ownerName, MaxK8sNameLength)
 }
 
 func GetServiceName(namePrefix string, ownerName string) string {
-	return getShortenedResourceName(namePrefix, ownerName, ServiceNameMaxLength)
+	return getShortenedResourceName(namePrefix, ownerName, MaxK8sNameLength)
 }
 
 func getShortenedResourceName(namePrefix string, ownerName string, maxLength int) string {
@@ -310,12 +310,38 @@ func getShortenedResourceName(namePrefix string, ownerName string, maxLength int
 	return name
 }
 
+func GetRID() string {
+	return GetHashedName(uuid.New().String())
+}
+
 // Implements the string shortening algorithm, required to match volsync resources names.
 // https://github.com/backube/volsync/pull/1519
 func GetHashedName(name string) string {
 	return fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(name)))
 }
 
-func GetRID() string {
-	return GetHashedName(uuid.New().String())
+// GenerateCombinedName returns a string in the form "name-storageID", ensuring the total
+// length does not exceed MaxK8sLabelLength. If the combined length is too long, it first
+// replaces the name with its hash. If that's still too long, it hashes both the name and
+// the storageID, returning "nameHash-storageIDHash".
+func GenerateCombinedName(name, storageID string) string {
+	const labelSeparator = "-"
+
+	combined := name + labelSeparator + storageID
+	if len(combined) <= MaxK8sLabelLength {
+		return combined
+	}
+
+	maxNameLength := MaxK8sLabelLength - len(storageID) - len(labelSeparator)
+
+	nameHash := GetHashedName(name)
+	// If the new nameHash value is empty, return nameHash-storageIDHash
+	if maxNameLength <= 0 {
+		// Hashed name and hashed storage ID
+		// e.g. "nameHash-storageIDHash"
+		return nameHash + labelSeparator + GetHashedName(storageID)
+	}
+	// Otherwise, return Hashed 8 character name and append storageID
+	// e.g. "nameHash.storageID"
+	return nameHash + labelSeparator + storageID
 }

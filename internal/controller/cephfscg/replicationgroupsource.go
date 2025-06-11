@@ -101,7 +101,7 @@ func (m *replicationGroupSourceMachine) Conditions() *[]metav1.Condition {
 	return &m.ReplicationGroupSource.Status.Conditions
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Create volume group snapshot")
 
@@ -124,6 +124,16 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		m.Logger.Error(err, "Failed to validate secret and add VRGOwnerRef")
 
 		return mover.InProgress(), err
+	}
+
+	if m.VSHandler.IsVRGInAdminNamespace() {
+		// copy the secret to the namespace where the PVC is
+		err = m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupSource.Namespace)
+		if err != nil {
+			m.Logger.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
+
+			return mover.InProgress(), err
+		}
 	}
 
 	if m.ReplicationGroupSource.Status.LastSyncStartTime == nil {

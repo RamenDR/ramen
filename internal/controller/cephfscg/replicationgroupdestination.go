@@ -203,6 +203,16 @@ func (m *rgdMachine) ReconcileRD(
 		return nil, fmt.Errorf("psk secret: %s is not found", pskSecretName)
 	}
 
+	if m.VSHandler.IsVRGInAdminNamespace() {
+		// copy the secret to the namespace where the PVC is
+		err = m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupDestination.Namespace)
+		if err != nil {
+			log.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
+
+			return nil, err
+		}
+	}
+
 	dstPVC, err := m.VSHandler.PrecreateDestPVCIfEnabled(rdSpec)
 	if err != nil {
 		log.Error(err, "Failed to PrecreateDestPVCIfEnabled", "PSKSecretName", pskSecretName)
