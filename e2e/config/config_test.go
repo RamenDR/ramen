@@ -7,6 +7,47 @@ import (
 	"testing"
 )
 
+func TestReadConfig(t *testing.T) {
+	options := Options{
+		Deployers: []string{"appset", "subscr", "disapp"},
+		Workloads: []string{"deploy"},
+	}
+
+	c, err := ReadConfig("testdata/test.yaml", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := &Config{
+		Clusters: map[string]Cluster{
+			"hub": {Kubeconfig: "hub/config"},
+			"c1":  {Kubeconfig: "dr1/config"},
+			"c2":  {Kubeconfig: "dr2/config"},
+		},
+		ClusterSet: "default",
+		Repo: Repo{
+			URL:    "https://github.com/RamenDR/ocm-ramen-samples.git",
+			Branch: "main",
+		},
+		DRPolicy: "dr-policy",
+		PVCSpecs: []PVCSpec{
+			{Name: "rbd", StorageClassName: "rook-ceph-block", AccessModes: "ReadWriteOnce"},
+			{Name: "cephfs", StorageClassName: "rook-cephfs-fs1", AccessModes: "ReadWriteMany"},
+		},
+		Tests: []Test{
+			{Workload: "deploy", Deployer: "appset", PVCSpec: "rbd"},
+			{Workload: "deploy", Deployer: "appset", PVCSpec: "cephfs"},
+		},
+		Channel: Channel{
+			Name:      "https-github-com-ramendr-ocm-ramen-samples-git",
+			Namespace: "e2e-gitops",
+		},
+	}
+	if !c.Equal(expected) {
+		t.Fatalf("expected %+v, got %+v", expected, c)
+	}
+}
+
 func TestValidatePVCSpecs(t *testing.T) {
 	tests := []struct {
 		name   string
