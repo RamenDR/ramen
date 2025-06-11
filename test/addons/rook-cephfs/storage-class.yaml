@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # yamllint disable-line rule:line-length
-# Source: https://raw.githubusercontent.com/rook/rook/release-1.16/deploy/examples/csi/cephfs/storageclass.yaml
+# Source: https://raw.githubusercontent.com/rook/rook/release-1.17/deploy/examples/csi/cephfs/storageclass.yaml
 # Modifications:
 #  - Added storageID
 ---
