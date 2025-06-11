@@ -828,16 +828,8 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 }
 
 func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
-	vrg := v.instance
-
 	if !v.ramenConfig.VolumeUnprotectionEnabled {
 		log.Info("Volume unprotection disabled")
-
-		return
-	}
-
-	if vrg.Spec.Async != nil && !VolumeUnprotectionEnabledForAsyncVolRep {
-		log.Info("Volume unprotection disabled for async mode")
 
 		return
 	}
@@ -852,6 +844,10 @@ func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log l
 	}
 
 	v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
+
+	if v.result.Requeue {
+		return
+	}
 
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
