@@ -12,6 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/dractions"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -78,7 +79,7 @@ func (c *Context) Env() *types.Env {
 	return c.parent.Env()
 }
 
-func (c *Context) Config() *types.Config {
+func (c *Context) Config() *config.Config {
 	return c.parent.Config()
 }
 

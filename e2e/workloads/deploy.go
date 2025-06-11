@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -21,10 +22,10 @@ const (
 type Deployment struct {
 	Name    string
 	Branch  string
-	PVCSpec types.PVCSpecConfig
+	PVCSpec config.PVCSpec
 }
 
-func NewDeployment(branch string, pvcSpec types.PVCSpecConfig) types.Workload {
+func NewDeployment(branch string, pvcSpec config.PVCSpec) types.Workload {
 	return &Deployment{
 		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
 		Branch:  branch,
