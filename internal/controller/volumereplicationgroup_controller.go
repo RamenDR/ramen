@@ -1478,6 +1478,20 @@ func (v *VRGInstance) reconcileAsPrimary() {
 func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 	log := v.log.WithName("PvcsDeselectedUnprotect")
 
+	if !(v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
+		!v.instance.Spec.PrepareForFinalSync &&
+		!v.instance.Spec.RunFinalSync) {
+		log.Info(
+			"PVC deselection skipped",
+			"replicationstate",
+			v.instance.Spec.ReplicationState,
+			"finalsync",
+			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
+		)
+
+		return nil
+	}
+
 	pvcsOwned, err := v.listPVCsOwnedByVrg()
 	if err != nil {
 		log.Error(err, "PVCs owned by VRG list")
