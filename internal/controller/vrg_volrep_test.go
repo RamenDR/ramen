@@ -365,19 +365,26 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				}
 
 				By("storing VRG status without PVC namespace name")
-				vrg = t.getVRG()
-				Expect(vrg.GetGeneration()).To(Equal(vrgGenerationExpected))
-				for i := range vrg.Status.ProtectedPVCs {
-					pvc := &vrg.Status.ProtectedPVCs[i]
-					pvcNamespacedNamesActual[i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
-				}
-				Expect(pvcNamespacedNamesActual).To(ConsistOf(t.pvcNames))
-				for _, pvcNamespacedName := range pvcNamespacedNamesUnqualified {
-					pvc := vrgController.FindProtectedPVC(vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)
-					Expect(pvc).ToNot(BeNil())
-					pvc.Namespace = ""
-				}
-				Expect(k8sClient.Status().Update(ctx, vrg)).To(Succeed())
+				Eventually(func() bool {
+					vrg = t.getVRG()
+					Expect(vrg.GetGeneration()).To(Equal(vrgGenerationExpected))
+					for i := range vrg.Status.ProtectedPVCs {
+						pvc := &vrg.Status.ProtectedPVCs[i]
+						pvcNamespacedNamesActual[i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+					}
+					Expect(pvcNamespacedNamesActual).To(ConsistOf(t.pvcNames))
+					for _, pvcNamespacedName := range pvcNamespacedNamesUnqualified {
+						pvc := vrgController.FindProtectedPVC(vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)
+						Expect(pvc).ToNot(BeNil())
+						pvc.Namespace = ""
+					}
+
+					if err := k8sClient.Status().Update(ctx, vrg); err != nil {
+						return false
+					}
+
+					return true
+				}, timeout, interval).Should(Equal(true))
 			})
 			Context("recovers", func() {
 				BeforeAll(func() {
