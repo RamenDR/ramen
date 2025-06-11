@@ -419,12 +419,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		Context("PVC selection", func() {
 			var t *vrgTest
 			BeforeAll(func() {
-				vrgController.VolumeUnprotectionEnabledForAsyncVolRep = true
-				DeferCleanup(func() {
-					vrgController.VolumeUnprotectionEnabledForAsyncVolRep = false
-				})
 				t = vrgTestBoundPV
 				vrgNamespacedName = t.vrgNamespacedName()
+			})
+			AfterAll(func() {
+				ramenConfig.VolumeUnprotectionEnabled = false
+				configMapUpdate()
 			})
 			var pvcNamesSelected, pvcNamesDeselected []types.NamespacedName
 			pvcsVerify := func(pvcNames []types.NamespacedName,
@@ -2568,7 +2568,7 @@ func (v *vrgTest) cleanupPVCs(
 	vrg := v.getVRG()
 
 	pvcPostDeleteVerify1 := pvcPostDeleteVerify
-	if !vrgController.VolumeUnprotectionEnabledForAsyncVolRep {
+	if !ramenConfig.VolumeUnprotectionEnabled {
 		pvcPostDeleteVerify1 = func(pvcNamespacedName types.NamespacedName, pvName string) {
 			pvcDeletionTimestampRecentVerify(pvcNamespacedName)
 		}
