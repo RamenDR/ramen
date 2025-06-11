@@ -144,33 +144,23 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	kubeObjectsCaptureStartConditionallyPrimary(
-		v, result, captureToRecoverFrom.StartGeneration, time.Since(captureToRecoverFrom.StartTime.Time), interval,
-		func() {
-			if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
-				return
-			}
-
-			captureStartOrResume(vrg.GetGeneration(), "start")
-		},
-	)
-}
-
-func kubeObjectsCaptureStartConditionallyPrimary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
-	captureStart func(),
-) {
-	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
+	// requeue with a delay if the time for the next capture has not yet arrived
+	if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
 		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
-			"interval", captureStartInterval)
+			"interval", interval)
 		delaySetIfLess(result, delay, v.log)
 		v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 		return
 	}
 
-	captureStart()
+	// before starting a new capture, delete the previous one with the same number
+	if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
+		return
+	}
+
+	// start the capture
+	captureStartOrResume(vrg.GetGeneration(), "start")
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
