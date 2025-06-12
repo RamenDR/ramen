@@ -646,7 +646,13 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 		return
 	}
-	// TODO: Delete ReplicationSource, ReplicationDestination, etc.
+	// This call is only from Primary cluster. delete ReplicationSource/CG resources.
+	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
+		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
+
+		return
+	}
+	// Remove the PVC from VRG status
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
 
