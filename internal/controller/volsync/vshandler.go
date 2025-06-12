@@ -2641,6 +2641,24 @@ func (v *VSHandler) IsVRGInAdminNamespace() bool {
 	return v.vrgInAdminNamespace
 }
 
+func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error {
+	// Remove the VolSync labels and annotations from the PVC
+	err := util.NewResourceUpdater(pvc).
+		DeleteLabel(util.CreatedByRamenLabel).
+		DeleteLabel(VRGOwnerNameLabel).
+		DeleteLabel(VRGOwnerNamespaceLabel).
+		DeleteLabel(VolSyncDoNotDeleteLabel).
+		DeleteAnnotation(ACMAppSubDoNotDeleteAnnotation).
+		Update(v.ctx, v.client)
+	if err != nil {
+		v.log.Info("Failed to update PVC", "pvcName", pvc.GetName(), "error", err)
+
+		return err
+	}
+
+	return v.DeleteRS(pvc.GetName(), pvc.GetNamespace())
+}
+
 func getTmpPVCNameForFinalSync(pvcName string) string {
 	return fmt.Sprintf("%s-for-finalsync", pvcName)
 }

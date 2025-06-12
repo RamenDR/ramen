@@ -61,10 +61,32 @@ func (u *ResourceUpdater) AddLabel(key, value string) *ResourceUpdater {
 	return u
 }
 
-func (u *ResourceUpdater) RemoveLabel(key string, value *string) *ResourceUpdater {
-	removed := RemoveLabel(u.obj, key, value)
+func (u *ResourceUpdater) DeleteLabel(key string) *ResourceUpdater {
+	labels := u.obj.GetLabels()
 
-	u.objModified = u.objModified || removed
+	deleted := DeleteKey(labels, key)
+	if !deleted {
+		return u
+	}
+
+	u.obj.SetLabels(labels)
+
+	u.objModified = u.objModified || deleted
+
+	return u
+}
+
+func (u *ResourceUpdater) DeleteAnnotation(key string) *ResourceUpdater {
+	annotations := u.obj.GetAnnotations()
+
+	deleted := DeleteKey(annotations, key)
+	if !deleted {
+		return u
+	}
+
+	u.obj.SetLabels(annotations)
+
+	u.objModified = u.objModified || deleted
 
 	return u
 }
@@ -233,6 +255,18 @@ func AddFinalizer(obj client.Object, finalizer string) bool {
 	}
 
 	return !finalizerAdded
+}
+
+func DeleteKey(keys map[string]string, key string) bool {
+	if keys == nil {
+		return false // No keys to delete from
+	}
+
+	startLen := len(keys)
+
+	delete(keys, key)
+
+	return startLen != len(keys)
 }
 
 // UpdateStringMap copies all key/value pairs in src adding them to map
