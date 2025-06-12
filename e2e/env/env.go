@@ -26,6 +26,7 @@ import (
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -90,7 +91,7 @@ func setupCluster(
 	ctx context.Context,
 	cluster *types.Cluster,
 	key string,
-	clusterConfig types.ClusterConfig,
+	clusterConfig config.Cluster,
 	log *zap.SugaredLogger,
 ) error {
 	client, err := setupClient(clusterConfig.Kubeconfig)
@@ -136,7 +137,7 @@ func getClusterClaimName(ctx context.Context, cluster *types.Cluster) (string, e
 	return clusterClaim.Spec.Value, nil
 }
 
-func New(ctx context.Context, config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
+func New(ctx context.Context, config *config.Config, log *zap.SugaredLogger) (*types.Env, error) {
 	env := &types.Env{}
 
 	if err := setupCluster(ctx, &env.Hub, "hub", config.Clusters["hub"], log); err != nil {
