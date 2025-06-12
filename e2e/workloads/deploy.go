@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/ramendr/ramen/e2e/types"
@@ -16,6 +18,7 @@ const (
 	deploymentName    = "deploy"
 	deploymentAppName = "busybox"
 	deploymentPath    = "workloads/deployment/base"
+	pvcName           = "busybox-pvc"
 )
 
 type Deployment struct {
@@ -97,6 +100,59 @@ func (w Deployment) Health(ctx types.TestContext, cluster types.Cluster, namespa
 		namespace, w.GetAppName(), cluster.Name, deploy.Status.ReadyReplicas, deploy.Status.Replicas)
 }
 
+func (w Deployment) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) {
+	var workloadStatus []types.WorkloadStatus
+
+	clusters := []types.Cluster{ctx.Env().C1, ctx.Env().C2}
+
+	for _, cluster := range clusters {
+		exists, err := applicationExists(ctx, cluster, ctx.AppNamespace(), w.GetAppName())
+		if err != nil {
+			return nil, fmt.Errorf("error checking application on cluster %q: %w", cluster.Name, err)
+		}
+
+		if exists.Status != types.AppStatusNotExists {
+			workloadStatus = append(workloadStatus, exists)
+		}
+	}
+
+	return workloadStatus, nil
+}
+
+func applicationExists(
+	ctx types.TestContext,
+	cluster types.Cluster,
+	namespace, name string,
+) (types.WorkloadStatus, error) {
+	log := ctx.Logger()
+
+	deploymentExists, err := deploymentExists(ctx, cluster, namespace, name)
+	if err != nil {
+		return types.WorkloadStatus{}, err
+	}
+
+	pvcExists, err := pvcExists(ctx, cluster, namespace, pvcName)
+	if err != nil {
+		return types.WorkloadStatus{}, err
+	}
+
+	var status types.ApplicationStatus
+
+	switch {
+	case deploymentExists && pvcExists:
+		status = types.AppStatusExists
+	case deploymentExists || pvcExists:
+		status = types.AppStatusPartialExists
+
+		log.Warnf("Partial application \"%s/%s\" resources found in cluster %q: deployment=%v, pvc=%v",
+			namespace, name, cluster.Name, deploymentExists, pvcExists)
+	default:
+		status = types.AppStatusNotExists
+	}
+
+	return types.WorkloadStatus{Cluster: cluster, Status: status}, nil
+}
+
 func getDeployment(ctx types.TestContext, cluster types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
 	deploy := &appsv1.Deployment{}
 	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
@@ -107,4 +163,46 @@ func getDeployment(ctx types.TestContext, cluster types.Cluster, namespace, name
 	}
 
 	return deploy, nil
+}
+
+func deploymentExists(ctx types.TestContext, cluster types.Cluster, namespace, name string) (bool, error) {
+	_, err := getDeployment(ctx, cluster, namespace, name)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func getPVC(
+	ctx types.TestContext,
+	cluster types.Cluster,
+	namespace, name string,
+) (*corev1.PersistentVolumeClaim, error) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
+
+	err := cluster.Client.Get(ctx.Context(), key, pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	return pvc, nil
+}
+
+func pvcExists(ctx types.TestContext, cluster types.Cluster, namespace, name string) (bool, error) {
+	_, err := getPVC(ctx, cluster, namespace, name)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		return false, nil
+	}
+
+	return true, nil
 }
