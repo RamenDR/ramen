@@ -84,10 +84,14 @@ jobs:
       - name: Run tests
         run: make test
         working-directory: test
+        # Don't fail when testing python next.
+        continue-on-error: ${{ matrix.python-version == '3.14-dev' }}
 
       - name: Report test coverage
         run: make coverage
         working-directory: test
+        # Don't fail when testing python next.
+        continue-on-error: ${{ matrix.python-version == '3.14-dev' }}
 
       - name: Clean up
         run: make clean
