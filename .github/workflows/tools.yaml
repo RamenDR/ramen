@@ -46,13 +46,14 @@ jobs:
 
       - name: Install minikube
         run: |
-          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          curl --location --fail --show-error --remote-name "https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64"
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
           minikube version
 
       - name: Install kubectl
         run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          version=$(curl --location --silent --fail --show-error "https://dl.k8s.io/release/stable.txt")
+          curl --location --fail --show-error --remote-name "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
           sudo install ./kubectl /usr/local/bin/
           kubectl version --client --output=yaml
 
