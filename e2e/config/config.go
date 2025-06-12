@@ -20,6 +20,9 @@ const (
 	DistroK8s = "k8s"
 	DistroOcp = "ocp"
 
+	// ClusterSet
+	DefaultClusterSetName = "default"
+
 	// Channel
 	defaultChannelNamespace = "e2e-gitops"
 
@@ -29,9 +32,6 @@ const (
 
 	// DRPolicy
 	defaultDRPolicyName = "dr-policy"
-
-	// ClusterSet
-	defaultClusterSetName = "default"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -145,7 +145,7 @@ func readConfig(configFile string, config *Config) error {
 	viper.SetDefault("Repo.URL", defaultGitURL)
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
 	viper.SetDefault("DRPolicy", defaultDRPolicyName)
-	viper.SetDefault("ClusterSet", defaultClusterSetName)
+	viper.SetDefault("ClusterSet", DefaultClusterSetName)
 
 	viper.SetConfigFile(configFile)
 
