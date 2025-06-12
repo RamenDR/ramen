@@ -185,7 +185,7 @@ import sys
 for i in range(10):
     sys.stderr.write(f"line {i}\n")
 """
-    cmd = ["python3", "-c", script]
+    cmd = ["python3", "-Wignore", "-c", script]
     output = list(commands.watch(*cmd, stderr=subprocess.STDOUT))
     assert output == [f"line {i}" for i in range(10)]
 
@@ -197,7 +197,7 @@ import sys
 sys.stderr.write("before error\n")
 sys.exit("error")
 """
-    cmd = ["python3", "-c", script]
+    cmd = ["python3", "-Wignore", "-c", script]
     output = []
     with pytest.raises(commands.Error) as e:
         for line in commands.watch(*cmd, stderr=subprocess.STDOUT):
