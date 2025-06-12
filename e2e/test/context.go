@@ -105,7 +105,7 @@ func (c *Context) Deploy(dt *testing.T) {
 	t := WithLog(dt, c.logger)
 	t.Helper()
 
-	timedCtx, cancel := c.WithTimeout(util.Timeout)
+	timedCtx, cancel := c.WithTimeout(util.DeployTimeout)
 	defer cancel()
 
 	if err := timedCtx.deployer.Deploy(timedCtx); err != nil {
@@ -117,7 +117,7 @@ func (c *Context) Undeploy(dt *testing.T) {
 	t := WithLog(dt, c.logger)
 	t.Helper()
 
-	timedCtx, cancel := c.WithTimeout(util.Timeout)
+	timedCtx, cancel := c.WithTimeout(util.UndeployTimeout)
 	defer cancel()
 
 	if err := timedCtx.deployer.Undeploy(timedCtx); err != nil {
@@ -129,7 +129,7 @@ func (c *Context) Enable(dt *testing.T) {
 	t := WithLog(dt, c.logger)
 	t.Helper()
 
-	timedCtx, cancel := c.WithTimeout(util.Timeout)
+	timedCtx, cancel := c.WithTimeout(util.EnableTimeout)
 	defer cancel()
 
 	if err := dractions.EnableProtection(timedCtx); err != nil {
@@ -141,7 +141,7 @@ func (c *Context) Disable(dt *testing.T) {
 	t := WithLog(dt, c.logger)
 	t.Helper()
 
-	timedCtx, cancel := c.WithTimeout(util.Timeout)
+	timedCtx, cancel := c.WithTimeout(util.DisableTimeout)
 	defer cancel()
 
 	if err := dractions.DisableProtection(timedCtx); err != nil {
@@ -153,7 +153,7 @@ func (c *Context) Failover(dt *testing.T) {
 	t := WithLog(dt, c.logger)
 	t.Helper()
 
-	timedCtx, cancel := c.WithTimeout(util.Timeout)
+	timedCtx, cancel := c.WithTimeout(util.FailoverTimeout)
 	defer cancel()
 
 	if err := dractions.Failover(timedCtx); err != nil {
@@ -165,7 +165,7 @@ func (c *Context) Relocate(dt *testing.T) {
 	t := WithLog(dt, c.logger)
 	t.Helper()
 
-	timedCtx, cancel := c.WithTimeout(util.Timeout)
+	timedCtx, cancel := c.WithTimeout(util.RelocateTimeout)
 	defer cancel()
 
 	if err := dractions.Relocate(timedCtx); err != nil {

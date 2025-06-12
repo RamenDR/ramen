@@ -111,7 +111,12 @@ func testMain(m *testing.M) int {
 		return 1
 	}
 
-	log.Infof("Using Timeout: %v", util.Timeout)
+	log.Infof("Using DeployTimeout: %v", util.DeployTimeout)
+	log.Infof("Using UneployTimeout: %v", util.UndeployTimeout)
+	log.Infof("Using EnableTimeout: %v", util.EnableTimeout)
+	log.Infof("Using DisableTimeout: %v", util.DisableTimeout)
+	log.Infof("Using FailoverTimeout: %v", util.FailoverTimeout)
+	log.Infof("Using RelocateTimeout: %v", util.RelocateTimeout)
 	log.Infof("Using RetryInterval: %v", util.RetryInterval)
 
 	return m.Run()
