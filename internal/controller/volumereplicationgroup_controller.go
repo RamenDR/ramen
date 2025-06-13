@@ -1494,6 +1494,10 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		return err
 	}
 
+	log.Info("Selected PVCS owned by VRG",
+		"count", len(pvcsOwned.Items),
+		"namespaces", v.instance.Namespace)
+
 	pvcsVr := util.ObjectsMap(v.volRepPVCs...)
 	pvcsVs := util.ObjectsMap(v.volSyncPVCs...)
 
