@@ -61,6 +61,14 @@ func (u *ResourceUpdater) AddLabel(key, value string) *ResourceUpdater {
 	return u
 }
 
+func (u *ResourceUpdater) RemoveLabel(key string, value *string) *ResourceUpdater {
+	removed := RemoveLabel(u.obj, key, value)
+
+	u.objModified = u.objModified || removed
+
+	return u
+}
+
 func (u *ResourceUpdater) AddFinalizer(finalizerName string) *ResourceUpdater {
 	added := AddFinalizer(u.obj, finalizerName)
 
@@ -116,6 +124,30 @@ func AddLabel(obj client.Object, key, value string) bool {
 	}
 
 	return !labelAdded
+}
+
+func RemoveLabel(obj client.Object, key string, value *string) bool {
+	const labelRemoved = true
+
+	labels := obj.GetLabels()
+	if labels == nil {
+		return !labelRemoved
+	}
+
+	if value == nil {
+		if !HasLabel(obj, key) {
+			return !labelRemoved
+		}
+	} else {
+		if !HasLabelWithValue(obj, key, *value) {
+			return !labelRemoved
+		}
+	}
+
+	delete(labels, key)
+	obj.SetLabels(labels)
+
+	return labelRemoved
 }
 
 func UpdateLabel(obj client.Object, key, newValue string) bool {
