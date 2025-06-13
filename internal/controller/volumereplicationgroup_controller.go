@@ -773,6 +773,10 @@ func (v *VRGInstance) labelPVCsForCG() error {
 // Returns:
 // - error: An error if the VolumeGroupReplicationClass is missing or if the label update fails.
 func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim) error {
+	if _, ok := v.isCGEnabled(pvc); ok {
+		return nil
+	}
+
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, true)
