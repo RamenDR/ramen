@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/ramendr/ramen/e2e/types"
@@ -21,12 +22,34 @@ func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {
 }
 
 // Deploy creates a workload on the first managed cluster.
+// nolint:funlen
 func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
-	// Deploys the application on the first DR cluster (c1).
-	cluster := ctx.Env().C1
+	var cluster types.Cluster
+
+	workloadStatus, err := ctx.Workload().Status(ctx)
+	if err != nil {
+		return err
+	}
+
+	switch len(workloadStatus) {
+	case 0:
+		cluster = ctx.Env().C1
+		log.Debugf("Application \"%s/%s\" not found on any dr clusters, defaulting to deploy on %q",
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
+
+	case 1:
+		cluster = workloadStatus[0].Cluster
+		log.Debugf("Application \"%s/%s\" found in dr cluster %q with status %q",
+			appNamespace, ctx.Workload().GetAppName(), workloadStatus[0].Cluster.Name, workloadStatus[0].Status)
+
+	default:
+		return fmt.Errorf("application \"%s/%s\" found on multiple dr clusters [%q, %q] with status [%q, %q], "+
+			"aborting deploy", appNamespace, ctx.Workload().GetAppName(), workloadStatus[0].Cluster.Name,
+			workloadStatus[1].Cluster.Name, workloadStatus[0].Status, workloadStatus[1].Status)
+	}
 
 	if err := util.CreateNamespaceOnMangedClusters(ctx, appNamespace); err != nil {
 		return err
