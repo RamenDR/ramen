@@ -91,8 +91,10 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			pvcNamespacedName.Name = rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
-			groupPVCs[pvcNamespacedName] = append(groupPVCs[pvcNamespacedName], pvc)
+			vgrName := rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
+			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
+
+			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
 
 			continue
 		}
