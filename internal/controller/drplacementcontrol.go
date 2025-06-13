@@ -1605,22 +1605,33 @@ func equalClusterIDSlices(a, b []string) bool {
 
 // updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
 // a replicationID then the from should also claim a replicationID, else both should not. This ensures that a peerClass
-// is updated with latest storage/replication IDs, but only if the underlying replication scheme remains unchanged.
-func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, scName string) {
+// is updated with latest storage/replication IDs but only if the underlying replication scheme remains unchanged.
+// If DRPC is annotated with CG values, then grouping is also udpated to true. 
+
+//nolint:gocognit,cyclop
+func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, scName string, cgAnnotationExists bool) {
 	for toIdx := range to {
 		if (to[toIdx].StorageClassName != scName) ||
 			(!equalClusterIDSlices(to[toIdx].ClusterIDs, from.ClusterIDs)) {
 			continue
 		}
 
-		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" {
+		if to[toIdx].ReplicationID == "" && from.ReplicationID == "" && to[toIdx].Grouping == from.Grouping {
 			to[toIdx] = from
+
+			if cgAnnotationExists {
+				to[toIdx].Grouping = true
+			}
 
 			break
 		}
 
-		if to[toIdx].ReplicationID != "" && from.ReplicationID != "" {
+		if to[toIdx].ReplicationID != "" && from.ReplicationID != "" && to[toIdx].Grouping == from.Grouping {
 			to[toIdx] = from
+
+			if cgAnnotationExists {
+				to[toIdx].Grouping = true
+			}
 
 			break
 		}
@@ -1650,6 +1661,7 @@ func updatePeers(
 	log logr.Logger,
 	vrgFromView *rmn.VolumeReplicationGroup,
 	vrgPeerClasses, policyPeerClasses []rmn.PeerClass,
+	cgAnnotationExists bool,
 ) []rmn.PeerClass {
 	peerClasses := vrgPeerClasses
 
@@ -1675,6 +1687,7 @@ func updatePeers(
 					peerClasses,
 					policyPeerClasses[policyPeerClassIdx],
 					*vrgFromView.Status.ProtectedPVCs[pvcIdx].StorageClassName,
+					cgAnnotationExists,
 				)
 
 				break
@@ -1726,6 +1739,7 @@ func (d *DRPCInstance) updateVRGAsyncSpec(vrgFromView, vrg *rmn.VolumeReplicatio
 		vrgFromView,
 		vrg.Spec.Async.PeerClasses,
 		d.drPolicy.Status.Async.PeerClasses,
+		rmnutil.IsCGEnabled(d.instance.GetAnnotations()),
 	)
 
 	// TODO: prune peerClasses not in policy and not in use by VRG
@@ -1756,7 +1770,9 @@ func (d *DRPCInstance) updateVRGSyncSpec(vrgFromView, vrg *rmn.VolumeReplication
 		return
 	}
 
-	syncSpec.PeerClasses = updatePeers(d.log, vrgFromView, vrg.Spec.Sync.PeerClasses, d.drPolicy.Status.Sync.PeerClasses)
+	syncSpec.PeerClasses = updatePeers(d.log, vrgFromView, vrg.Spec.Sync.PeerClasses,
+		d.drPolicy.Status.Sync.PeerClasses,
+		false)
 
 	// TODO: prune peerClasses not in policy and not in use by VRG
 
