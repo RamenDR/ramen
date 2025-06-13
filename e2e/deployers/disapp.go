@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/ramendr/ramen/e2e/types"
@@ -25,8 +26,10 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	log := ctx.Logger()
 	appNamespace := ctx.AppNamespace()
 
-	// Deploys the application on the first DR cluster (c1).
-	cluster := ctx.Env().C1
+	cluster, err := chooseDeployCluster(ctx)
+	if err != nil {
+		return err
+	}
 
 	if err := util.CreateNamespaceOnMangedClusters(ctx, appNamespace); err != nil {
 		return err
@@ -137,4 +140,32 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 		namespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	return nil
+}
+
+// chooseDeployCluster determines which cluster to deploy the discovered
+// application on based on the status of the workload across clusters.
+func chooseDeployCluster(ctx types.TestContext) (types.Cluster, error) {
+	log := ctx.Logger()
+
+	statuses, err := ctx.Workload().Status(ctx)
+	if err != nil {
+		return types.Cluster{}, err
+	}
+
+	switch len(statuses) {
+	case 0:
+		cluster := ctx.Env().C1
+		log.Debugf("Application \"%s/%s\" not found, deploying on cluster %q",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+
+		return cluster, nil
+	case 1:
+		log.Debugf("Application \"%s/%s\" found in cluster %q with status %q",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses[0].ClusterName, statuses[0].Status)
+
+		return ctx.Env().GetCluster(statuses[0].ClusterName)
+	default:
+		return types.Cluster{}, fmt.Errorf("application \"%s/%s\" found on multiple clusters: %+v",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses)
+	}
 }
