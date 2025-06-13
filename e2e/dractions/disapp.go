@@ -4,6 +4,8 @@
 package dractions
 
 import (
+	"fmt"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -12,6 +14,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
+// nolint:funlen,cyclop
 func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	w := ctx.Workload()
 	name := ctx.Name()
@@ -25,10 +28,28 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	// We assume that the application is on the first cluster (c1).
-	// This is correct only for the current test flow.
-	// TODO: must discover where the application is located instead.
-	cluster := ctx.Env().C1
+	var cluster types.Cluster
+
+	workloadStatus, err := w.Status(ctx)
+	if err != nil {
+		return err
+	}
+
+	switch len(workloadStatus) {
+	case 0:
+		return fmt.Errorf("application \"%s/%s\" not found on any dr clusters, aborting protect",
+			appNamespace, ctx.Workload().GetAppName())
+
+	case 1:
+		cluster = workloadStatus[0].Cluster
+		log.Debugf("Application \"%s/%s\" found in dr cluster %q with status %q",
+			appNamespace, ctx.Workload().GetAppName(), workloadStatus[0].Cluster.Name, workloadStatus[0].Status)
+
+	default:
+		return fmt.Errorf("application \"%s/%s\" found on multiple dr clusters [%q, %q] with status [%q, %q], "+
+			"aborting protect", appNamespace, ctx.Workload().GetAppName(), workloadStatus[0].Cluster.Name,
+			workloadStatus[1].Cluster.Name, workloadStatus[0].Status, workloadStatus[1].Status)
+	}
 
 	// create mcsb default in ramen-ops ns
 	if err := deployers.CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace); err != nil {
@@ -53,8 +74,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	}
 
 	// wait for drpc ready
-	err := waitDRPCReady(ctx, managementNamespace, drpcName)
-	if err != nil {
+	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
