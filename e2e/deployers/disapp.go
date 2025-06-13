@@ -31,6 +31,8 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
+	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q", appNamespace, ctx.Workload().GetAppName(), cluster.Name)
+
 	if err := util.CreateNamespaceOnMangedClusters(ctx, appNamespace); err != nil {
 		return err
 	}
@@ -46,9 +48,6 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
 		return err
 	}
-
-	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q",
-		appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 
 	if err := util.RunCommand(
 		ctx.Context(),
