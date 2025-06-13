@@ -51,6 +51,8 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 			workloadStatus[1].Cluster.Name, workloadStatus[0].Status, workloadStatus[1].Status)
 	}
 
+	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
+
 	// create mcsb default in ramen-ops ns
 	if err := deployers.CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace); err != nil {
 		return err
@@ -60,8 +62,6 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	if err := createPlacementManagedByRamen(ctx, placementName, managementNamespace); err != nil {
 		return err
 	}
-
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
 
 	drpc := generateDRPCDiscoveredApps(
 		name, managementNamespace, cluster.Name, drPolicyName, placementName, appname, appNamespace)
