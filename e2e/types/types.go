@@ -10,6 +10,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	AppStatusExists        ApplicationStatus = "exists"
+	AppStatusPartialExists ApplicationStatus = "partial"
+	AppStatusNotExists     ApplicationStatus = "notexists"
+)
+
 // ChannelConfig defines the name and namespace for the channel CR.
 // This is not user-configurable and always uses default values.
 type ChannelConfig struct {
@@ -76,6 +82,14 @@ type Env struct {
 	C2  Cluster `json:"c2"`
 }
 
+type ApplicationStatus string
+
+// WorkloadStatus holds the status of an application on a specific cluster
+type WorkloadStatus struct {
+	Cluster Cluster
+	Status  ApplicationStatus
+}
+
 // Deployer interface has methods to deploy a workload to a cluster
 type Deployer interface {
 	Deploy(TestContext) error
@@ -96,6 +110,7 @@ type Workload interface {
 	GetPath() string
 	GetBranch() string
 	Health(ctx TestContext, cluster Cluster, namespace string) error
+	Status(ctx TestContext) ([]WorkloadStatus, error)
 }
 
 // Context keeps the Logger, Env, Config, and Context shared by all code in the e2e package.
