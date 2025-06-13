@@ -1432,7 +1432,8 @@ var _ = Describe("VolSync_Handler", func() {
 		Context("When rdSpec List is empty", func() {
 			It("Should clean up all rd instances for the VRG", func() {
 				// Empty RDSpec list
-				Expect(vsHandler.CleanupRDNotInSpecList([]ramendrv1alpha1.VolSyncReplicationDestinationSpec{})).To(Succeed())
+				Expect(vsHandler.CleanupRDNotInSpecList([]ramendrv1alpha1.VolSyncReplicationDestinationSpec{},
+					ramendrv1alpha1.Primary)).To(Succeed())
 
 				rdList := &volsyncv1alpha1.ReplicationDestinationList{}
 				Eventually(func() int {
@@ -1456,7 +1457,7 @@ var _ = Describe("VolSync_Handler", func() {
 					rdSpecList[5],
 					rdSpecList[6],
 				}
-				Expect(vsHandler.CleanupRDNotInSpecList(sList)).To(Succeed())
+				Expect(vsHandler.CleanupRDNotInSpecList(sList, ramendrv1alpha1.Secondary)).To(Succeed())
 
 				rdList := &volsyncv1alpha1.ReplicationDestinationList{}
 				Eventually(func() int {
