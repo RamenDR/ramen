@@ -4,6 +4,8 @@
 package dractions
 
 import (
+	"fmt"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 
 	"github.com/ramendr/ramen/e2e/deployers"
@@ -25,10 +27,10 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
-	// We assume that the application is on the first cluster (c1).
-	// This is correct only for the current test flow.
-	// TODO: must discover where the application is located instead.
-	cluster := ctx.Env().C1
+	cluster, err := findProtectCluster(ctx)
+	if err != nil {
+		return err
+	}
 
 	// create mcsb default in ramen-ops ns
 	if err := deployers.CreateManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace); err != nil {
@@ -53,8 +55,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	}
 
 	// wait for drpc ready
-	err := waitDRPCReady(ctx, managementNamespace, drpcName)
-	if err != nil {
+	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
 		return err
 	}
 
@@ -160,4 +161,28 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	return deployers.WaitWorkloadHealth(ctx, targetCluster, appNamespace)
+}
+
+// findProtectCluster determines which cluster contains the discovered application
+// to be protected based on the status of the workload across clusters.
+func findProtectCluster(ctx types.TestContext) (types.Cluster, error) {
+	log := ctx.Logger()
+
+	statuses, err := ctx.Workload().Status(ctx)
+	if err != nil {
+		return types.Cluster{}, err
+	}
+
+	switch len(statuses) {
+	case 0:
+		return types.Cluster{}, fmt.Errorf("application \"%s/%s\" not found", ctx.AppNamespace(), ctx.Workload().GetAppName())
+	case 1:
+		log.Debugf("Application \"%s/%s\" found in cluster %q with status %q",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses[0].ClusterName, statuses[0].Status)
+
+		return ctx.Env().GetCluster(statuses[0].ClusterName)
+	default:
+		return types.Cluster{}, fmt.Errorf("application \"%s/%s\" found on multiple clusters: %+v",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses)
+	}
 }
