@@ -84,7 +84,7 @@ func (u *ResourceUpdater) DeleteAnnotation(key string) *ResourceUpdater {
 		return u
 	}
 
-	u.obj.SetLabels(annotations)
+	u.obj.SetAnnotations(annotations)
 
 	u.objModified = u.objModified || deleted
 
