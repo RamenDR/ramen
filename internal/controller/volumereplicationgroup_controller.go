@@ -1478,6 +1478,20 @@ func (v *VRGInstance) reconcileAsPrimary() {
 func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 	log := v.log.WithName("PvcsDeselectedUnprotect")
 
+	if !(v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
+		!v.instance.Spec.PrepareForFinalSync &&
+		!v.instance.Spec.RunFinalSync) {
+		log.Info(
+			"PVC deselection skipped",
+			"replicationstate",
+			v.instance.Spec.ReplicationState,
+			"finalsync",
+			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
+		)
+
+		return nil
+	}
+
 	pvcsOwned, err := v.listPVCsOwnedByVrg()
 	if err != nil {
 		log.Error(err, "PVCs owned by VRG list")
@@ -1502,45 +1516,7 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
-	v.cleanupProtectedPVCs(pvcsVr, pvcsVs, log)
-
 	return nil
-}
-
-func (v *VRGInstance) cleanupProtectedPVCs(
-	pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim, log logr.Logger,
-) {
-	if !v.ramenConfig.VolumeUnprotectionEnabled {
-		log.Info("Volume unprotection disabled")
-
-		return
-	}
-
-	if v.instance.Spec.Async != nil && !VolumeUnprotectionEnabledForAsyncVolRep {
-		log.Info("Volume unprotection disabled for async mode")
-
-		return
-	}
-	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
-	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
-
-	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-		pvcNamespacedName := client.ObjectKey{Namespace: protectedPVC.Namespace, Name: protectedPVC.Name}
-
-		if _, ok := pvcsVr[pvcNamespacedName]; ok {
-			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
-
-			continue
-		}
-
-		if _, ok := pvcsVs[pvcNamespacedName]; ok {
-			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
-
-			continue
-		}
-	}
-
-	v.instance.Status.ProtectedPVCs = protectedPVCsFiltered
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary

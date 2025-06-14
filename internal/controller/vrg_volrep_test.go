@@ -368,20 +368,20 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				}
 
 				By("storing VRG status without PVC namespace name")
-				vrg = t.getVRG()
-				Expect(vrg.GetGeneration()).To(Equal(vrgGenerationExpected))
-				for i := range vrg.Status.ProtectedPVCs {
-					pvc := &vrg.Status.ProtectedPVCs[i]
-					pvcNamespacedNamesActual[i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
-				}
-				Expect(pvcNamespacedNamesActual).To(ConsistOf(t.pvcNames))
-				for _, pvcNamespacedName := range pvcNamespacedNamesUnqualified {
-					pvc := vrgController.FindProtectedPVC(vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)
-					Expect(pvc).ToNot(BeNil())
-					pvc.Namespace = ""
-				}
-
 				Eventually(func() bool {
+					vrg = t.getVRG()
+					Expect(vrg.GetGeneration()).To(Equal(vrgGenerationExpected))
+					for i := range vrg.Status.ProtectedPVCs {
+						pvc := &vrg.Status.ProtectedPVCs[i]
+						pvcNamespacedNamesActual[i] = types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+					}
+					Expect(pvcNamespacedNamesActual).To(ConsistOf(t.pvcNames))
+					for _, pvcNamespacedName := range pvcNamespacedNamesUnqualified {
+						pvc := vrgController.FindProtectedPVC(vrg, pvcNamespacedName.Namespace, pvcNamespacedName.Name)
+						Expect(pvc).ToNot(BeNil())
+						pvc.Namespace = ""
+					}
+
 					if err := k8sClient.Status().Update(ctx, vrg); err != nil {
 						return false
 					}
@@ -419,12 +419,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		Context("PVC selection", func() {
 			var t *vrgTest
 			BeforeAll(func() {
-				vrgController.VolumeUnprotectionEnabledForAsyncVolRep = true
-				DeferCleanup(func() {
-					vrgController.VolumeUnprotectionEnabledForAsyncVolRep = false
-				})
 				t = vrgTestBoundPV
 				vrgNamespacedName = t.vrgNamespacedName()
+			})
+			AfterAll(func() {
+				ramenConfig.VolumeUnprotectionEnabled = false
+				configMapUpdate()
 			})
 			var pvcNamesSelected, pvcNamesDeselected []types.NamespacedName
 			pvcsVerify := func(pvcNames []types.NamespacedName,
@@ -2568,7 +2568,7 @@ func (v *vrgTest) cleanupPVCs(
 	vrg := v.getVRG()
 
 	pvcPostDeleteVerify1 := pvcPostDeleteVerify
-	if !vrgController.VolumeUnprotectionEnabledForAsyncVolRep {
+	if !ramenConfig.VolumeUnprotectionEnabled {
 		pvcPostDeleteVerify1 = func(pvcNamespacedName types.NamespacedName, pvName string) {
 			pvcDeletionTimestampRecentVerify(pvcNamespacedName)
 		}
