@@ -181,6 +181,8 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 
 		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
 		if vrMissing || requeueResult {
+			// TODO: set requeue only if required, remove PVC from status?
+			// - Will it hamper determination of secondary completion?
 			requeue = true
 
 			continue
@@ -889,9 +891,13 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 		}
 
 		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
-		if vrMissing || requeueResult {
+		if requeueResult {
 			v.requeue()
 
+			continue
+		}
+
+		if vrMissing {
 			continue
 		}
 
