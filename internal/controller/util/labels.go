@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	labelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
-	labelOwnerName          = "ramendr.openshift.io/owner-name"
+	LabelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
+	LabelOwnerName          = "ramendr.openshift.io/owner-name"
 
 	MModesLabel                           = "ramendr.openshift.io/maintenancemodes"
 	SClassLabel                           = "ramendr.openshift.io/storageclass"
@@ -54,14 +54,14 @@ func ObjectOwnerUnsetIfSet(object, owner metav1.Object) bool {
 
 func OwnerLabels(owner metav1.Object) Labels {
 	return Labels{
-		labelOwnerNamespaceName: owner.GetNamespace(),
-		labelOwnerName:          owner.GetName(),
+		LabelOwnerNamespaceName: owner.GetNamespace(),
+		LabelOwnerName:          owner.GetName(),
 	}
 }
 
 func OwnerNamespaceNameAndName(labels Labels) (string, string, bool) {
-	ownerNamespaceName, ok1 := labels[labelOwnerNamespaceName]
-	ownerName, ok2 := labels[labelOwnerName]
+	ownerNamespaceName, ok1 := labels[LabelOwnerNamespaceName]
+	ownerName, ok2 := labels[LabelOwnerName]
 
 	return ownerNamespaceName, ownerName, ok1 && ok2
 }
