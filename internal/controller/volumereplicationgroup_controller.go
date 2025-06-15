@@ -777,20 +777,9 @@ func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolum
 		return nil
 	}
 
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, true)
+	replicationID, err := v.getVGRClassReplicationID(pvc)
 	if err != nil {
 		return err
-	}
-
-	replicationID, ok := volumeReplicationClass.GetLabels()[VolumeReplicationIDLabel]
-	if !ok {
-		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			volumeReplicationClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
-
-		return fmt.Errorf("volumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			volumeReplicationClass.GetName(), pvc.GetNamespace(), pvc.GetName())
 	}
 
 	// Add label for PVC, showing that this PVC is part of consistency group
