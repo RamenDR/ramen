@@ -26,6 +26,7 @@ import (
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -90,7 +91,7 @@ func setupCluster(
 	ctx context.Context,
 	cluster *types.Cluster,
 	key string,
-	clusterConfig types.ClusterConfig,
+	clusterConfig config.Cluster,
 	log *zap.SugaredLogger,
 ) error {
 	client, err := setupClient(clusterConfig.Kubeconfig)
@@ -136,18 +137,18 @@ func getClusterClaimName(ctx context.Context, cluster *types.Cluster) (string, e
 	return clusterClaim.Spec.Value, nil
 }
 
-func New(ctx context.Context, config *types.Config, log *zap.SugaredLogger) (*types.Env, error) {
+func New(ctx context.Context, clusters map[string]config.Cluster, log *zap.SugaredLogger) (*types.Env, error) {
 	env := &types.Env{}
 
-	if err := setupCluster(ctx, &env.Hub, "hub", config.Clusters["hub"], log); err != nil {
+	if err := setupCluster(ctx, &env.Hub, "hub", clusters["hub"], log); err != nil {
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
-	if err := setupCluster(ctx, &env.C1, "c1", config.Clusters["c1"], log); err != nil {
+	if err := setupCluster(ctx, &env.C1, "c1", clusters["c1"], log); err != nil {
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
-	if err := setupCluster(ctx, &env.C2, "c2", config.Clusters["c2"], log); err != nil {
+	if err := setupCluster(ctx, &env.C2, "c2", clusters["c2"], log); err != nil {
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 

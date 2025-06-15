@@ -6,16 +6,17 @@ package workloads
 import (
 	"fmt"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-type factory func(revision string, pvcSpec types.PVCSpecConfig) types.Workload
+type factory func(revision string, pvcSpec config.PVCSpec) types.Workload
 
 var registry = map[string]factory{
 	deploymentName: NewDeployment,
 }
 
-func New(name, branch string, pvcSpec types.PVCSpecConfig) (types.Workload, error) {
+func New(name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
 	fac := registry[name]
 	if fac == nil {
 		return nil, fmt.Errorf("unknown deployment: %q (choose from %q)", name, AvailableNames())

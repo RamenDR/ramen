@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+clusters:
+  hub:
+    kubeconfig: hub/config
+  c1:
+    kubeconfig: dr1/config
+  c2:
+    kubeconfig: dr2/config
+clusterSet: default
+repo:
+  url: "https://github.com/RamenDR/ocm-ramen-samples.git"
+  branch: main
+drPolicy: dr-policy
+pvcspecs:
+  - name: rbd
+    storageclassname: rook-ceph-block
+    accessmodes: ReadWriteOnce
+  - name: cephfs
+    storageclassname: rook-cephfs-fs1
+    accessmodes: ReadWriteMany
+tests:
+  - deployer: appset
+    workload: deploy
+    pvcspec: rbd
+  - deployer: appset
+    workload: deploy
+    pvcspec: cephfs

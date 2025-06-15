@@ -26,7 +26,7 @@ import (
 type Context struct {
 	log     *zap.SugaredLogger
 	env     *types.Env
-	config  *types.Config
+	config  *config.Config
 	context context.Context
 }
 
@@ -34,7 +34,7 @@ func (c *Context) Logger() *zap.SugaredLogger {
 	return c.log
 }
 
-func (c *Context) Config() *types.Config {
+func (c *Context) Config() *config.Config {
 	return c.config
 }
 
@@ -104,14 +104,19 @@ func testMain(m *testing.M) int {
 	Ctx.context, stop = signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	Ctx.env, err = env.New(Ctx.Context(), Ctx.config, Ctx.log)
+	Ctx.env, err = env.New(Ctx.Context(), Ctx.config.Clusters, Ctx.log)
 	if err != nil {
 		log.Errorf("Failed to create testing context: %s", err)
 
 		return 1
 	}
 
-	log.Infof("Using Timeout: %v", util.Timeout)
+	log.Infof("Using DeployTimeout: %v", util.DeployTimeout)
+	log.Infof("Using UneployTimeout: %v", util.UndeployTimeout)
+	log.Infof("Using EnableTimeout: %v", util.EnableTimeout)
+	log.Infof("Using DisableTimeout: %v", util.DisableTimeout)
+	log.Infof("Using FailoverTimeout: %v", util.FailoverTimeout)
+	log.Infof("Using RelocateTimeout: %v", util.RelocateTimeout)
 	log.Infof("Using RetryInterval: %v", util.RetryInterval)
 
 	return m.Run()
