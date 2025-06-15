@@ -104,7 +104,7 @@ func testMain(m *testing.M) int {
 	Ctx.context, stop = signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	Ctx.env, err = env.New(Ctx.Context(), Ctx.config, Ctx.log)
+	Ctx.env, err = env.New(Ctx.Context(), Ctx.config.Clusters, Ctx.log)
 	if err != nil {
 		log.Errorf("Failed to create testing context: %s", err)
 
