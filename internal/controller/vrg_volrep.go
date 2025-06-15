@@ -91,8 +91,10 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			pvcNamespacedName.Name = rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
-			groupPVCs[pvcNamespacedName] = append(groupPVCs[pvcNamespacedName], pvc)
+			vgrName := rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
+			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
+
+			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
 
 			continue
 		}
@@ -181,6 +183,8 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 
 		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
 		if vrMissing || requeueResult {
+			// TODO: set requeue only if required, remove PVC from status?
+			// - Will it hamper determination of secondary completion?
 			requeue = true
 
 			continue
@@ -807,6 +811,20 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 		return
 	}
 
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary ||
+		v.instance.Spec.PrepareForFinalSync ||
+		v.instance.Spec.RunFinalSync {
+		log.Info(
+			"PVC deletion handling skipped",
+			"replicationstate",
+			v.instance.Spec.ReplicationState,
+			"finalsync",
+			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
+		)
+
+		return
+	}
+
 	log.Info("PVC unprotect VR", "deletion time", pvc.GetDeletionTimestamp())
 	v.pvcUnprotectVolRep(pvc, log)
 
@@ -814,27 +832,27 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 }
 
 func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
-	vrg := v.instance
-
 	if !v.ramenConfig.VolumeUnprotectionEnabled {
 		log.Info("Volume unprotection disabled")
 
 		return
 	}
 
-	if vrg.Spec.Async != nil && !VolumeUnprotectionEnabledForAsyncVolRep {
-		log.Info("Volume unprotection disabled for async mode")
+	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
+		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
+		v.requeue()
 
 		return
 	}
 
-	delete(pvc.Labels, ConsistencyGroupLabel)
-
-	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
-		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
-		v.requeue()
+	if _, ok := v.isCGEnabled(&pvc); ok {
+		v.pvcUnprotectVolGroupRep(&pvc)
 	} else {
 		v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
+	}
+
+	if v.result.Requeue {
+		return
 	}
 
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
@@ -877,9 +895,13 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 		}
 
 		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
-		if vrMissing || requeueResult {
+		if requeueResult {
 			v.requeue()
 
+			continue
+		}
+
+		if vrMissing {
 			continue
 		}
 
