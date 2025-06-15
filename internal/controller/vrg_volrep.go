@@ -838,8 +838,6 @@ func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log l
 		return
 	}
 
-	delete(pvc.Labels, ConsistencyGroupLabel)
-
 	if err := v.pvAndPvcObjectReplicasDelete(pvc, log); err != nil {
 		log.Error(err, "PersistentVolume and PersistentVolumeClaim replicas deletion failed")
 		v.requeue()
@@ -847,7 +845,11 @@ func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log l
 		return
 	}
 
-	v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
+	if _, ok := v.isCGEnabled(&pvc); ok {
+		v.pvcUnprotectVolGroupRep(&pvc)
+	} else {
+		v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
+	}
 
 	if v.result.Requeue {
 		return
