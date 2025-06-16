@@ -162,6 +162,10 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		VolumeMode:         pvc.Spec.VolumeMode,
 	}
 
+	if v.pvcUnprotectVolSyncIfDeleted(pvc, v.log) {
+		return false
+	}
+
 	err := util.NewResourceUpdater(&pvc).
 		AddFinalizer(volsync.PVCFinalizerProtected).
 		AddLabel(util.LabelOwnerNamespaceName, v.instance.Namespace).
@@ -656,6 +660,20 @@ func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string
 	}
 
 	return res
+}
+
+func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
+	pvc corev1.PersistentVolumeClaim, log logr.Logger,
+) (pvcDeleted bool) {
+	pvcDeleted = util.ResourceIsDeleted(&pvc)
+	if !pvcDeleted {
+		return
+	}
+
+	log.Info("PVC unprotect VolSync", "deletion time", pvc.GetDeletionTimestamp())
+	v.pvcUnprotectVolSync(pvc, log)
+
+	return
 }
 
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
