@@ -2661,7 +2661,6 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		return err
 	}
 
-	v.log.Info("UNPROTECT DELETING LABELS+ANNO+FINALIZERS", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace())
 	// Remove the VolSync labels and annotations from the PVC
 	return util.NewResourceUpdater(pvc).
 		DeleteLabel(util.CreatedByRamenLabel).
