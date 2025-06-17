@@ -773,7 +773,9 @@ func (v *VRGInstance) labelPVCsForCG() error {
 // Returns:
 // - error: An error if the VolumeGroupReplicationClass is missing or if the label update fails.
 func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim) error {
-	if _, ok := v.isCGEnabled(pvc); ok {
+	// Skip refreshing CG label value if PVC is being deleted, as it maybe under delete orchestration with empty
+	// string as the value (see resetCGLabelValue)
+	if _, ok := v.isCGEnabled(pvc); ok && util.ResourceIsDeleted(pvc) {
 		return nil
 	}
 
