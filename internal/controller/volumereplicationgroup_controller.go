@@ -579,10 +579,6 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
 	}
 
-	if err := v.labelPVCsForCG(); err != nil {
-		return v.invalid(err, "Failed to label PVCs for consistency groups", true)
-	}
-
 	v.log = v.log.WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
 
@@ -733,36 +729,6 @@ func (v *VRGInstance) updatePVCList() error {
 	return v.separateAsyncPVCs(pvcList)
 }
 
-func (v *VRGInstance) labelPVCsForCG() error {
-	if v.instance.Spec.Async == nil {
-		return nil
-	}
-
-	if !util.IsCGEnabled(v.instance.GetAnnotations()) {
-		return nil
-	}
-
-	for idx := range v.volRepPVCs {
-		pvc := &v.volRepPVCs[idx]
-
-		if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
-			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
-				pvc.GetNamespace(), pvc.GetName(), err)
-		}
-	}
-
-	for idx := range v.volSyncPVCs {
-		pvc := &v.volSyncPVCs[idx]
-
-		if err := v.addConsistencyGroupLabel(pvc); err != nil {
-			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
-				pvc.GetNamespace(), pvc.GetName(), err)
-		}
-	}
-
-	return nil
-}
-
 // addVolRepConsistencyGroupLabel ensures that the given PVC is labeled as part of a consistency group.
 // It does this by retrieving the associated VolumeGroupReplicationClass and extracting its replication ID,
 // which is then added as a label to the PVC.
@@ -772,14 +738,9 @@ func (v *VRGInstance) labelPVCsForCG() error {
 //
 // Returns:
 // - error: An error if the VolumeGroupReplicationClass is missing or if the label update fails.
-func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim) error {
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, true)
-	if err != nil {
-		return err
-	}
-
+func (v *VRGInstance) addVolRepConsistencyGroupLabel(volumeReplicationClass client.Object,
+	pvc *corev1.PersistentVolumeClaim,
+) error {
 	replicationID, ok := volumeReplicationClass.GetLabels()[ReplicationIDLabel]
 	if !ok {
 		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
@@ -850,7 +811,7 @@ func (v *VRGInstance) updateReplicationClassList() error {
 
 	v.log.Info("Number of Replication Classes", "count", len(v.replClassList.Items))
 
-	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+	if util.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 		if err := v.reconciler.List(v.ctx, v.grpReplClassList, listOptions...); err != nil {
 			v.log.Error(err, "Failed to list Group Replication Classes",
 				"labeled", labels.Set(labelSelector.MatchLabels))
@@ -924,7 +885,7 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 			}
 		}
 
-		if util.IsCGEnabled(v.instance.GetAnnotations()) {
+		if util.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 			for _, replicationClass := range v.grpReplClassList.Items {
 				separatePVCs(replicationClass.Spec.Provisioner)
 
@@ -948,6 +909,7 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 	}
 }
 
+//nolint:cyclop,funlen,nestif,gocognit
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
@@ -971,6 +933,14 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		if peerClass.ReplicationID != "" {
 			replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
 			if replicationClass != nil {
+				// label VolRep PVCs if peerClass.grouping is enabled
+				if peerClass.Grouping {
+					if err := v.addVolRepConsistencyGroupLabel(replicationClass, pvc); err != nil {
+						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+							pvc.GetNamespace(), pvc.GetName(), err)
+					}
+				}
+
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 
 				return nil
@@ -992,6 +962,14 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 
 	if snapClass == nil {
 		return fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
+	}
+
+	// label VolSync PVCs if peerClass.grouping is enabled
+	if peerClass.Grouping {
+		if err := v.addConsistencyGroupLabel(pvc); err != nil {
+			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+				pvc.GetNamespace(), pvc.GetName(), err)
+		}
 	}
 
 	v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
@@ -1051,7 +1029,7 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 		return nil
 	}
 
-	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+	if peerClass.Grouping {
 		for index := range v.grpReplClassList.Items {
 			replicationClass := &v.grpReplClassList.Items[index]
 
@@ -1674,7 +1652,7 @@ func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Resu
 func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	v.log.Info("Updating VRG status")
 
-	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+	if util.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 		if err := v.updateProtectedCGs(); err != nil {
 			v.log.Info(fmt.Sprintf("Failed to update protected PVC groups (%v/%s)",
 				err, v.instance.Name))

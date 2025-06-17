@@ -448,7 +448,7 @@ func (v *VRGInstance) reconcileMissingVGR(vrNamespacedName types.NamespacedName,
 func (v *VRGInstance) isCGEnabled(pvc *corev1.PersistentVolumeClaim) (string, bool) {
 	cg, ok := pvc.GetLabels()[ConsistencyGroupLabel]
 
-	return cg, ok && rmnutil.IsCGEnabled(v.instance.GetAnnotations())
+	return cg, ok && rmnutil.IsCGEnabled(v.ctx, v.reconciler.APIReader)
 }
 
 func (v *VRGInstance) processVGRAsPrimary(vrNamespacedName types.NamespacedName,
@@ -688,7 +688,7 @@ func (v *VRGInstance) addArchivedAnnotationForVGRandVGRC(vgr *volrep.VolumeGroup
 }
 
 func (v *VRGInstance) restoreVGRsAndVGRCsForVolRep(result *ctrl.Result) error {
-	if !rmnutil.IsCGEnabled(v.instance.GetAnnotations()) {
+	if !rmnutil.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 		return nil
 	}
 
