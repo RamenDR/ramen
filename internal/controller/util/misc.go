@@ -37,6 +37,7 @@ const (
 	CreatedByRamenLabel = "ramendr.openshift.io/created-by-ramen"
 
 	VGSCRDName = "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
+	VGRCRDName = "volumegroupreplications.replication.storage.openshift.io"
 )
 
 type ResourceUpdater struct {
@@ -284,20 +285,17 @@ func CreateNamespaceIfNotExists(ctx context.Context, k8sClient client.Client, na
 }
 
 // IsCGEnabled checks whether the workload has requested Consistency Group (CG) protection
-// by looking for the 'drplacementcontrol.ramendr.openshift.io/is-cg-enabled' in the passed in annotations.
-// It returns true if the annotation value is "true", indicating CG protection is requested.
-// Note: this is a temporary solution until we move to using CG everywhere,
-func IsCGEnabled(annotations map[string]string) bool {
-	return annotations[IsCGEnabledAnnotation] == "true"
+// It checks whether the VolumeGroupReplication CRD is installed.
+// This condition must be true for VolRep CG protection to be considered enabled.
+func IsCGEnabled(ctx context.Context, apiReader client.Reader) bool {
+	return IsCRDInstalled(ctx, apiReader, VGRCRDName)
 }
 
 // IsCGEnabledForVolSync determines whether consistency group (CG) protection is enabled for CephFS volumes.
-// It checks:
-// 1. Whether the workload is annotated to request CG protection.
-// 2. Whether the VolumeGroupSnapshot CRD is installed.
-// Both conditions must be true for CephFS CG protection to be considered enabled.
-func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader, annotations map[string]string) bool {
-	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, apiReader, VGSCRDName)
+// It checks whether the VolumeGroupSnapshot CRD is installed.
+// This condition must be true for CephFS CG protection to be considered enabled.
+func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader) bool {
+	return IsCRDInstalled(ctx, apiReader, VGSCRDName)
 }
 
 // IsCRDInstalled checks whether a specific CustomResourceDefinition (CRD) is installed on the cluster.
