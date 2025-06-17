@@ -421,11 +421,9 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 	return vgr, err
 }
 
-// getVGRClassReplicationID is a utilti function that fetches the replicationID for the PVC looking at the class labels
+// getVGRClassReplicationID is a utility function that fetches the replicationID for the PVC looking at the class labels
 func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim) (string, error) {
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-
-	vgrClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, true)
+	vgrClass, err := v.selectVolumeReplicationClass(pvc, true)
 	if err != nil {
 		return "", err
 	}
@@ -751,15 +749,13 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState,
 ) error {
-	pvcNamespacedName := types.NamespacedName{Name: pvcs[0].Name, Namespace: pvcs[0].Namespace}
-
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, false)
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], false)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
 	}
 
-	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, true)
+	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], true)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeGroupReplicationClass (%s) %w",
 			v.instance.Name, err)

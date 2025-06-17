@@ -296,20 +296,18 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 		return nil
 	}
 
-	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-
-	storageClass, err := v.getStorageClass(pvcNamespacedName)
+	storageClass, err := v.getStorageClass(pvc)
 	if err != nil {
 		v.log.Info(fmt.Sprintf("Failed to get the storageclass for pvc %s",
-			pvcNamespacedName))
+			pvc.GetName()))
 
 		return fmt.Errorf("failed to get the storageclass for pvc %s (%w)",
-			pvcNamespacedName, err)
+			pvc.GetName(), err)
 	}
 
 	selectVolumeGroup := rmnutil.IsCGEnabled(v.instance.GetAnnotations())
 
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, selectVolumeGroup)
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -1282,7 +1280,12 @@ func (v *VRGInstance) updateVR(pvc *corev1.PersistentVolumeClaim, volRep *volrep
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
 func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(vrNamespacedName, false)
+	pvc, err := v.getPVCForVRNSName(vrNamespacedName)
+	if err != nil {
+		return err
+	}
+
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -1328,6 +1331,30 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 	return nil
 }
 
+func (v *VRGInstance) getPVCForVRNSName(vrNamespacedName types.NamespacedName) (*corev1.PersistentVolumeClaim, error) {
+	var pvc *corev1.PersistentVolumeClaim
+
+	for idx := range v.volRepPVCs {
+		pvcItem := &v.volRepPVCs[idx]
+
+		pvcNamespacedName := types.NamespacedName{Name: pvcItem.Name, Namespace: pvcItem.Namespace}
+		if pvcNamespacedName == vrNamespacedName {
+			pvc = pvcItem
+
+			break
+		}
+	}
+
+	if pvc == nil {
+		v.log.Info(fmt.Sprintf("failed to get the pvc with namespaced name (%s)", vrNamespacedName))
+
+		// Need the storage driver of pvc. If pvc is not found return error.
+		return nil, fmt.Errorf("failed to get the pvc with namespaced name %s", vrNamespacedName)
+	}
+
+	return pvc, nil
+}
+
 // namespacedName applies to both VolumeReplication resource and pvc as of now.
 // This is because, VolumeReplication resource for a pvc that is created by the
 // VolumeReplicationGroup has the same name as pvc. But in future if it changes
@@ -1336,7 +1363,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 
 //nolint:funlen,cyclop,gocognit,nestif,gocyclo
 func (v *VRGInstance) selectVolumeReplicationClass(
-	namespacedName types.NamespacedName, selectVolumeGroup bool,
+	pvc *corev1.PersistentVolumeClaim, selectVolumeGroup bool,
 ) (client.Object, error) {
 	if err := v.updateReplicationClassList(); err != nil {
 		return nil, err
@@ -1348,13 +1375,13 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 		return nil, fmt.Errorf("no VolumeReplicationClass and VolumeGroupReplicationClass available")
 	}
 
-	storageClass, err := v.getStorageClass(namespacedName)
+	storageClass, err := v.getStorageClass(pvc)
 	if err != nil {
 		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
-			namespacedName))
+			pvc.GetName()))
 
 		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
-			namespacedName, err)
+			pvc.GetName(), err)
 	}
 
 	matchingReplicationClassList := []client.Object{}
@@ -1483,32 +1510,12 @@ func (v *VRGInstance) getStorageClassFromSCName(scName *string) (*storagev1.Stor
 // getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
 // returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
 // server and stores it in an instance cache before returning the StorageClass
-func (v *VRGInstance) getStorageClass(namespacedName types.NamespacedName) (*storagev1.StorageClass, error) {
-	var pvc *corev1.PersistentVolumeClaim
-
-	for idx := range v.volRepPVCs {
-		pvcItem := &v.volRepPVCs[idx]
-
-		pvcNamespacedName := types.NamespacedName{Name: pvcItem.Name, Namespace: pvcItem.Namespace}
-		if pvcNamespacedName == namespacedName {
-			pvc = pvcItem
-
-			break
-		}
-	}
-
-	if pvc == nil {
-		v.log.Info(fmt.Sprintf("failed to get the pvc with namespaced name (%s)", namespacedName))
-
-		// Need the storage driver of pvc. If pvc is not found return error.
-		return nil, fmt.Errorf("failed to get the pvc with namespaced name %s", namespacedName)
-	}
-
+func (v *VRGInstance) getStorageClass(pvc *corev1.PersistentVolumeClaim) (*storagev1.StorageClass, error) {
 	scName := pvc.Spec.StorageClassName
 	if scName == nil {
-		v.log.Info(fmt.Sprintf("missing StorageClass name for pvc (%s)", namespacedName))
+		v.log.Info(fmt.Sprintf("missing StorageClass name for pvc (%s)", pvc.GetName()))
 
-		return nil, fmt.Errorf("missing StorageClass name for pvc (%s)", namespacedName)
+		return nil, fmt.Errorf("missing StorageClass name for pvc (%s)", pvc.GetName())
 	}
 
 	return v.getStorageClassFromSCName(scName)
