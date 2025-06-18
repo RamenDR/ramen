@@ -545,7 +545,7 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedConditions() (*metav1.Conditi
 	return dataProtectedCondition, clusterDataProtectedCondition
 }
 
-//nolint:gocognit,funlen,cyclop
+//nolint:gocognit,funlen,cyclop,gocyclo
 func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
 		return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
@@ -599,11 +599,22 @@ func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 		}
 	}
 
-	if ready && len(v.volSyncPVCs) > protectedByVolSyncCount {
+	actualVolSyncPVCs := 0
+
+	for _, pvc := range v.volSyncPVCs {
+		if util.ResourceIsDeleted(&pvc) {
+			// If the PVC is deleted, we need to skip counting it.
+			continue
+		}
+
+		actualVolSyncPVCs++
+	}
+
+	if ready && actualVolSyncPVCs > protectedByVolSyncCount {
 		ready = false
 
 		v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
-			len(v.volSyncPVCs), protectedByVolSyncCount))
+			actualVolSyncPVCs, protectedByVolSyncCount))
 	}
 
 	dataProtectedCondition := &metav1.Condition{
@@ -676,9 +687,21 @@ func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 	return
 }
 
+func (v *VRGInstance) protectedByVolsync(pvc *corev1.PersistentVolumeClaim) bool {
+	for _, vsPVC := range v.volSyncPVCs {
+		if vsPVC.GetName() == pvc.GetName() &&
+			vsPVC.GetNamespace() == pvc.GetNamespace() {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
-	log.Info("pvcUnprotectVolSync",
-		"count", pvc.Name, "namespace", pvc.Namespace)
+	if !v.protectedByVolsync(&pvc) {
+		return
+	}
 
 	if !VolumeUnprotectionEnabledForAsyncVolSync {
 		log.Info("Volume unprotection disabled for VolSync")
@@ -756,11 +779,11 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 		return err
 	}
 
-	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, name, namespace, v.log); err != nil {
+	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
 		return err
 	}
 
-	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, name, namespace, v.log); err != nil {
+	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
 		return err
 	}
 
