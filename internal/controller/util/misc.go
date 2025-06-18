@@ -110,6 +110,17 @@ func (u *ResourceUpdater) AddOwner(owner metav1.Object, scheme *runtime.Scheme) 
 	return u
 }
 
+func (u *ResourceUpdater) RemoveOwner(owner metav1.Object, scheme *runtime.Scheme) *ResourceUpdater {
+	removed, err := RemoveOwnerReference(u.obj, owner, scheme)
+	if err != nil {
+		u.err = err
+	}
+
+	u.objModified = u.objModified || removed
+
+	return u
+}
+
 func (u *ResourceUpdater) RemoveFinalizer(finalizerName string) *ResourceUpdater {
 	finalizersUpdated := controllerutil.RemoveFinalizer(u.obj, finalizerName)
 
@@ -243,6 +254,19 @@ func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, 
 	ownerAdded := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
 
 	return ownerAdded, nil
+}
+
+func RemoveOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {
+	currentOwnerRefs := obj.GetOwnerReferences()
+
+	err := controllerutil.RemoveOwnerReference(owner, obj, scheme)
+	if err != nil {
+		return false, err
+	}
+
+	ownerRemoved := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
+
+	return ownerRemoved, nil
 }
 
 func AddFinalizer(obj client.Object, finalizer string) bool {
