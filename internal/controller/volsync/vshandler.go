@@ -1234,7 +1234,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	return fmt.Errorf("waiting for local final sync to complete")
 }
 
-//nolint:gocognit
+//nolint:gocognit,nestif,cyclop
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	repState ramendrv1alpha1.ReplicationState,
 ) error {
@@ -1418,6 +1418,9 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	}
 
 	if pvc != nil {
+		// This PVC is used by the RD. We don't need have the finalizer.
+		ctrlutil.RemoveFinalizer(pvc, PVCFinalizerProtected)
+
 		return v.removeOCMAnnotationsAndUpdate(pvc)
 	}
 
@@ -2654,6 +2657,7 @@ func (v *VSHandler) IsVRGInAdminNamespace() bool {
 
 func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error {
 	v.log.Info("Unprotecting VolSync PVC", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace())
+
 	err := v.DeleteRS(pvc.GetName(), pvc.GetNamespace())
 	if err != nil {
 		v.log.Info("Failed to delete RS", "rs name", pvc.GetName(), "error", err)
@@ -2666,9 +2670,11 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		DeleteLabel(util.CreatedByRamenLabel).
 		DeleteLabel(VRGOwnerNameLabel).
 		DeleteLabel(VRGOwnerNamespaceLabel).
+		DeleteLabel(util.LabelOwnerName).
+		DeleteLabel(util.LabelOwnerNamespaceName).
 		DeleteLabel(VolSyncDoNotDeleteLabel).
-		DeleteAnnotation(ACMAppSubDoNotDeleteAnnotation).
 		RemoveFinalizer(PVCFinalizerProtected).
+		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 
