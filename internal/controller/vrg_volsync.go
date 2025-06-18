@@ -703,11 +703,6 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		return
 	}
 
-	if !VolumeUnprotectionEnabledForAsyncVolSync {
-		log.Info("Volume unprotection disabled for VolSync")
-
-		return
-	}
 	// This call is only from Primary cluster. delete ReplicationSource/CG resources.
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)

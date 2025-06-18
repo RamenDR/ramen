@@ -42,10 +42,6 @@ const (
 	DefaultVolSyncCopyMethod                          = "Snapshot"
 )
 
-var (
-	VolumeUnprotectionEnabledForAsyncVolSync = true
-)
-
 // FIXME
 const NoS3StoreAvailable = "NoS3"
 
