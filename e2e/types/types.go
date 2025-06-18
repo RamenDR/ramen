@@ -12,6 +12,14 @@ import (
 	"github.com/ramendr/ramen/e2e/config"
 )
 
+type ApplicationStatus string
+
+const (
+	ApplicationFound    = ApplicationStatus("found")
+	ApplicationPartial  = ApplicationStatus("partial")
+	ApplicationNotFound = ApplicationStatus("not-found")
+)
+
 // Clsuter can be a hub cluster or a managed cluster.
 type Cluster struct {
 	Name       string        `json:"name"`
@@ -23,6 +31,12 @@ type Env struct {
 	Hub Cluster `json:"hub"`
 	C1  Cluster `json:"c1"`
 	C2  Cluster `json:"c2"`
+}
+
+// WorkloadStatus holds the status of an application on a specific cluster
+type WorkloadStatus struct {
+	ClusterName string
+	Status      ApplicationStatus
 }
 
 // Deployer interface has methods to deploy a workload to a cluster
@@ -45,6 +59,7 @@ type Workload interface {
 	GetPath() string
 	GetBranch() string
 	Health(ctx TestContext, cluster Cluster, namespace string) error
+	Status(ctx TestContext) ([]WorkloadStatus, error)
 }
 
 // Context keeps the Logger, Env, Config, and Context shared by all code in the e2e package.
