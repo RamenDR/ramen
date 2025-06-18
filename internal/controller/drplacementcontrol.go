@@ -1816,7 +1816,6 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DestinationClusterAnnotationKey: homeCluster,
 		DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
 		DRPCUIDAnnotation:               string(d.instance.UID),
-		rmnutil.IsCGEnabledAnnotation:   d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
 		rmnutil.UseVolSyncAnnotation:    d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 	}
 
