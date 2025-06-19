@@ -7,5 +7,5 @@ import os
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-cache.refresh("operator", "addons/cdi-operator-1.60.2.yaml")
-cache.refresh("cr", "addons/cdi-cr-1.60.2.yaml")
+cache.refresh("operator", "addons/cdi-operator-1.62.0.yaml")
+cache.refresh("cr", "addons/cdi-cr-1.62.0.yaml")
