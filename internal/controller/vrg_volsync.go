@@ -712,6 +712,12 @@ func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 }
 
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("Volume unprotection disabled")
+
+		return
+	}
+
 	if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader, v.instance.Annotations) {
 		// At this moment, we don't support unprotecting CG PVCs.
 		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
