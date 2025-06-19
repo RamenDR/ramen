@@ -901,11 +901,10 @@ func (v *VSHandler) ReleasePVCOwnership(pvcNamespacedName types.NamespacedName) 
 		return nil, err
 	}
 
-	delete(pvc.Annotations, ACMAppSubDoNotDeleteAnnotation)
-	pvc.ObjectMeta.OwnerReferences = nil
-
 	return pvc, util.NewResourceUpdater(pvc).
 		AddFinalizer(PVCFinalizerProtected).
+		DeleteAnnotation(ACMAppSubDoNotDeleteAnnotation). // Allows ACM to delete the PVC when the appsub is removed
+		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 
@@ -2667,12 +2666,12 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 
 	// Remove the VolSync labels and annotations from the PVC
 	return util.NewResourceUpdater(pvc).
-		DeleteLabel(util.CreatedByRamenLabel).
 		DeleteLabel(VRGOwnerNameLabel).
 		DeleteLabel(VRGOwnerNamespaceLabel).
+		DeleteLabel(VolSyncDoNotDeleteLabel).
 		DeleteLabel(util.LabelOwnerName).
 		DeleteLabel(util.LabelOwnerNamespaceName).
-		DeleteLabel(VolSyncDoNotDeleteLabel).
+		DeleteLabel(util.CreatedByRamenLabel).
 		RemoveFinalizer(PVCFinalizerProtected).
 		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
