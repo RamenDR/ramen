@@ -581,10 +581,6 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
 	}
 
-	if err := v.labelPVCsForCG(); err != nil {
-		return v.invalid(err, "Failed to label PVCs for consistency groups", true)
-	}
-
 	v.log = v.log.WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
 
@@ -735,36 +731,6 @@ func (v *VRGInstance) updatePVCList() error {
 	return v.separateAsyncPVCs(pvcList)
 }
 
-func (v *VRGInstance) labelPVCsForCG() error {
-	if v.instance.Spec.Async == nil {
-		return nil
-	}
-
-	if util.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader) {
-		for idx := range v.volRepPVCs {
-			pvc := &v.volRepPVCs[idx]
-
-			if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
-				return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
-					pvc.GetNamespace(), pvc.GetName(), err)
-			}
-		}
-	}
-
-	if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
-		for idx := range v.volSyncPVCs {
-			pvc := &v.volSyncPVCs[idx]
-
-			if err := v.addConsistencyGroupLabel(pvc); err != nil {
-				return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
-					pvc.GetNamespace(), pvc.GetName(), err)
-			}
-		}
-	}
-
-	return nil
-}
-
 // addVolRepConsistencyGroupLabel ensures that the given PVC is labeled as part of a consistency group.
 // It does this by retrieving the associated VolumeGroupReplicationClass and extracting its replication ID,
 // which is then added as a label to the PVC.
@@ -904,7 +870,6 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 	return nil
 }
 
-// nolint:gocognit
 func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim) {
 	v.log.Info("separating PVC using only sc provisioner")
 
@@ -914,28 +879,12 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 
 	//nolint:nestif
 	if !pvcEnabledForVolSync {
-		separatePVCs := func(provisioner string) {
-			if storageClass.Provisioner == provisioner {
+		for _, replicationClass := range v.replClassList.Items {
+			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 				replicationClassMatchFound = true
-			}
-		}
 
-		if util.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader) {
-			for _, replicationClass := range v.grpReplClassList.Items {
-				separatePVCs(replicationClass.Spec.Provisioner)
-
-				if replicationClassMatchFound {
-					break
-				}
-			}
-		} else {
-			for _, replicationClass := range v.replClassList.Items {
-				separatePVCs(replicationClass.Spec.Provisioner)
-
-				if replicationClassMatchFound {
-					break
-				}
+				break
 			}
 		}
 	}
@@ -945,6 +894,7 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 	}
 }
 
+//nolint:cyclop,funlen,nestif,gocognit
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
@@ -968,6 +918,14 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		if peerClass.ReplicationID != "" {
 			replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
 			if replicationClass != nil {
+				// label VolRep PVCs if peerClass.grouping is enabled
+				if peerClass.Grouping {
+					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
+						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+							pvc.GetNamespace(), pvc.GetName(), err)
+					}
+				}
+
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 
 				return nil
@@ -989,6 +947,14 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 
 	if snapClass == nil {
 		return fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
+	}
+
+	// label VolSync PVCs if peerClass.grouping is enabled
+	if peerClass.Grouping {
+		if err := v.addConsistencyGroupLabel(pvc); err != nil {
+			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+				pvc.GetNamespace(), pvc.GetName(), err)
+		}
 	}
 
 	v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
