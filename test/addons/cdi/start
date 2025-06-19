@@ -14,7 +14,7 @@ NAMESPACE = "cdi"
 
 def deploy(cluster):
     print("Deploying cdi operator")
-    path = cache.get("operator", "addons/cdi-operator-1.60.2.yaml")
+    path = cache.get("operator", "addons/cdi-operator-1.62.0.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
     print("Waiting until cdi-operator is rolled out")
@@ -27,7 +27,7 @@ def deploy(cluster):
     )
 
     print("Deploying cdi cr")
-    path = cache.get("cr", "addons/cdi-cr-1.60.2.yaml")
+    path = cache.get("cr", "addons/cdi-cr-1.62.0.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
 
