@@ -4,7 +4,7 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.60.2/cdi-cr.yaml
+  - https://github.com/kubevirt/containerized-data-importer/releases/download/v1.62.0/cdi-cr.yaml
 patches:
   # Allow pulling from local insecure registry.
   - target:

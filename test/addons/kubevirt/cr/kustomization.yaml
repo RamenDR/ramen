@@ -4,7 +4,7 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://github.com/kubevirt/kubevirt/releases/download/v1.3.1/kubevirt-cr.yaml
+  - https://github.com/kubevirt/kubevirt/releases/download/v1.5.2/kubevirt-cr.yaml
 patches:
   # Incrase certificate duration to avoid certificates renewals while a cluster
   # is suspended and resumed.
