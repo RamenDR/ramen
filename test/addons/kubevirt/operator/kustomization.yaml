@@ -4,4 +4,4 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://github.com/kubevirt/kubevirt/releases/download/v1.3.1/kubevirt-operator.yaml
+  - https://github.com/kubevirt/kubevirt/releases/download/v1.5.2/kubevirt-operator.yaml
