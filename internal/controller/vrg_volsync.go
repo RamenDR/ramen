@@ -712,7 +712,15 @@ func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 }
 
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
-	// This call is only from Primary cluster. delete ReplicationSource/CG resources.
+	if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader, v.instance.Annotations) {
+		// At this moment, we don't support unprotecting CG PVCs.
+		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
+
+		return
+	}
+
+	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
+	// This call is only from Primary cluster. delete ReplicationSource and related resources.
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
 
