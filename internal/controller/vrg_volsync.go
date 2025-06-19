@@ -673,36 +673,45 @@ func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string
 	return res
 }
 
+func (v *VRGInstance) isPVCDeletedForUnprotection(pvc *corev1.PersistentVolumeClaim) bool {
+	pvcDeleted := util.ResourceIsDeleted(pvc)
+	if !pvcDeleted {
+		return false
+	}
+
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary ||
+		v.instance.Spec.PrepareForFinalSync ||
+		v.instance.Spec.RunFinalSync {
+		v.log.Info(
+			"PVC deletion handling skipped",
+			"replicationstate",
+			v.instance.Spec.ReplicationState,
+			"finalsync",
+			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
+		)
+
+		return false
+	}
+
+	return true
+}
+
 func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 	pvc corev1.PersistentVolumeClaim, log logr.Logger,
 ) (pvcDeleted bool) {
-	pvcDeleted = util.ResourceIsDeleted(&pvc)
-	if !pvcDeleted {
-		return
+	if !v.isPVCDeletedForUnprotection(&pvc) {
+		log.Info("PVC is not valid for unprotection", "PVC", pvc.Name)
+
+		return false
 	}
 
 	log.Info("PVC unprotect VolSync", "deletion time", pvc.GetDeletionTimestamp())
 	v.pvcUnprotectVolSync(pvc, log)
 
-	return
-}
-
-func (v *VRGInstance) protectedByVolsync(pvc *corev1.PersistentVolumeClaim) bool {
-	for _, vsPVC := range v.volSyncPVCs {
-		if vsPVC.GetName() == pvc.GetName() &&
-			vsPVC.GetNamespace() == pvc.GetNamespace() {
-			return true
-		}
-	}
-
-	return false
+	return true
 }
 
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
-	if !v.protectedByVolsync(&pvc) {
-		return
-	}
-
 	// This call is only from Primary cluster. delete ReplicationSource/CG resources.
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
