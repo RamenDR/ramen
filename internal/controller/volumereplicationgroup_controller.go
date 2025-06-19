@@ -935,7 +935,11 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 			if replicationClass != nil {
 				// label VolRep PVCs if peerClass.grouping is enabled
 				if peerClass.Grouping {
+<<<<<<< HEAD
 					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
+=======
+					if err := v.addVolRepConsistencyGroupLabel(replicationClass, pvc); err != nil {
+>>>>>>> 1b3e5f9c92b0e9cdb5af44b8d67affe089f4a7ed
 						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 							pvc.GetNamespace(), pvc.GetName(), err)
 					}
