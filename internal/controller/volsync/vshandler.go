@@ -901,11 +901,10 @@ func (v *VSHandler) ReleasePVCOwnership(pvcNamespacedName types.NamespacedName) 
 		return nil, err
 	}
 
-	delete(pvc.Annotations, ACMAppSubDoNotDeleteAnnotation)
-	pvc.ObjectMeta.OwnerReferences = nil
-
 	return pvc, util.NewResourceUpdater(pvc).
 		AddFinalizer(PVCFinalizerProtected).
+		DeleteAnnotation(ACMAppSubDoNotDeleteAnnotation). // Allows ACM to delete the PVC when the appsub is removed
+		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 
@@ -1234,8 +1233,10 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	return fmt.Errorf("waiting for local final sync to complete")
 }
 
-//nolint:gocognit
-func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec) error {
+//nolint:gocognit,nestif,cyclop
+func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	repState ramendrv1alpha1.ReplicationState,
+) error {
 	// Remove any ReplicationDestination owned (by parent vrg owner) that is not in the provided rdSpecList
 	currentRDListByOwner, err := v.listRDByOwner("")
 	if err != nil {
@@ -1267,6 +1268,15 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
 			} else {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+			}
+
+			// Now delete the associated PVC if it exists and we are still secondary
+			if repState == ramendrv1alpha1.Secondary {
+				// delete the PVC created for Direct Copy. RD name/namespace is the same as PVC name/namespace
+				err = util.DeletePVC(v.ctx, v.client, rd.GetName(), rd.GetNamespace(), v.log)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1407,6 +1417,9 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	}
 
 	if pvc != nil {
+		// This PVC is used by the RD. We don't need have the finalizer.
+		ctrlutil.RemoveFinalizer(pvc, PVCFinalizerProtected)
+
 		return v.removeOCMAnnotationsAndUpdate(pvc)
 	}
 
@@ -2639,6 +2652,29 @@ func (v *VSHandler) volumeModeForProtectedPVC(protectedPVC *ramendrv1alpha1.Prot
 
 func (v *VSHandler) IsVRGInAdminNamespace() bool {
 	return v.vrgInAdminNamespace
+}
+
+func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error {
+	v.log.Info("Unprotecting VolSync PVC", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace())
+
+	err := v.DeleteRS(pvc.GetName(), pvc.GetNamespace())
+	if err != nil {
+		v.log.Info("Failed to delete RS", "rs name", pvc.GetName(), "error", err)
+
+		return err
+	}
+
+	// Remove the VolSync labels and annotations from the PVC
+	return util.NewResourceUpdater(pvc).
+		DeleteLabel(VRGOwnerNameLabel).
+		DeleteLabel(VRGOwnerNamespaceLabel).
+		DeleteLabel(VolSyncDoNotDeleteLabel).
+		DeleteLabel(util.LabelOwnerName).
+		DeleteLabel(util.LabelOwnerNamespaceName).
+		DeleteLabel(util.CreatedByRamenLabel).
+		RemoveFinalizer(PVCFinalizerProtected).
+		RemoveOwner(v.owner, v.client.Scheme()).
+		Update(v.ctx, v.client)
 }
 
 func getTmpPVCNameForFinalSync(pvcName string) string {

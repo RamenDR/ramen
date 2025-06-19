@@ -110,7 +110,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 	// Cleanup - this VRG is primary, cleanup if necessary
 	// remove any ReplicationDestinations (that would have been created when this VRG was secondary) if they
 	// are not in the RDSpec list
-	if err := v.volSyncHandler.CleanupRDNotInSpecList(v.instance.Spec.VolSync.RDSpec); err != nil {
+	err := v.volSyncHandler.CleanupRDNotInSpecList(v.instance.Spec.VolSync.RDSpec, v.instance.Spec.ReplicationState)
+	if err != nil {
 		v.log.Error(err, "Failed to cleanup the RDSpecs when this VRG instance was secondary")
 
 		requeue = true
@@ -161,6 +162,21 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		VolumeMode:         pvc.Spec.VolumeMode,
 	}
 
+	if v.pvcUnprotectVolSyncIfDeleted(pvc, v.log) {
+		return false
+	}
+
+	err := util.NewResourceUpdater(&pvc).
+		AddFinalizer(volsync.PVCFinalizerProtected).
+		AddLabel(util.LabelOwnerNamespaceName, v.instance.Namespace).
+		AddLabel(util.LabelOwnerName, v.instance.Name).
+		Update(v.ctx, v.reconciler.Client)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Unable to add finalizer for PVC. We'll retry later. %v", err))
+
+		return true // requeue
+	}
+
 	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
 		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *newProtectedPVC)
@@ -176,7 +192,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		ProtectedPVC: *protectedPVC,
 	}
 
-	err := v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
+	err = v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
 		v.volSyncHandler.IsCopyMethodDirect(),
 		v.instance.Spec.PrepareForFinalSync,
 		v.instance.Spec.RunFinalSync,
@@ -304,6 +320,13 @@ func (v *VRGInstance) updateWorkloadActivityAsSecondary() {
 }
 
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
+	err := v.volSyncHandler.CleanupRDNotInSpecList(v.instance.Spec.VolSync.RDSpec, v.instance.Spec.ReplicationState)
+	if err != nil {
+		v.log.Error(err, "Failed to cleanup the RDSpecs when this VRG instance was secondary")
+
+		return true // requeue
+	}
+
 	rdSpecsUsingCG, requeue, err := v.reconcileCGMembership()
 	if err != nil {
 		v.log.Error(err, "Failed to reconcile CG for deletion or replication")
@@ -311,7 +334,6 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 		return requeue
 	}
 
-	// TODO: Deleted RDSpec should be handled here! CleanupRDNotInSpecList
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
 		v.log.Info("Reconcile RD as Secondary", "RDSpec", rdSpec.ProtectedPVC.Name)
 
@@ -523,7 +545,7 @@ func (v *VRGInstance) aggregateVolSyncDataProtectedConditions() (*metav1.Conditi
 	return dataProtectedCondition, clusterDataProtectedCondition
 }
 
-//nolint:gocognit,funlen,cyclop
+//nolint:gocognit,funlen,cyclop,gocyclo
 func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 	if len(v.volSyncPVCs) == 0 && len(v.instance.Spec.VolSync.RDSpec) == 0 {
 		return newVRGAsDataProtectedUnusedCondition(v.instance.Generation,
@@ -577,11 +599,22 @@ func (v *VRGInstance) buildDataProtectedCondition() *metav1.Condition {
 		}
 	}
 
-	if ready && len(v.volSyncPVCs) > protectedByVolSyncCount {
+	actualVolSyncPVCs := 0
+
+	for _, pvc := range v.volSyncPVCs {
+		if util.ResourceIsDeleted(&pvc) {
+			// If the PVC is deleted, we need to skip counting it.
+			continue
+		}
+
+		actualVolSyncPVCs++
+	}
+
+	if ready && actualVolSyncPVCs > protectedByVolSyncCount {
 		ready = false
 
 		v.log.Info(fmt.Sprintf("VolSync PVCs count does not match with the ready PVCs %d/%d",
-			len(v.volSyncPVCs), protectedByVolSyncCount))
+			actualVolSyncPVCs, protectedByVolSyncCount))
 	}
 
 	dataProtectedCondition := &metav1.Condition{
@@ -640,13 +673,66 @@ func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string
 	return res
 }
 
+func (v *VRGInstance) isPVCDeletedForUnprotection(pvc *corev1.PersistentVolumeClaim) bool {
+	pvcDeleted := util.ResourceIsDeleted(pvc)
+	if !pvcDeleted {
+		return false
+	}
+
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary ||
+		v.instance.Spec.PrepareForFinalSync ||
+		v.instance.Spec.RunFinalSync {
+		v.log.Info(
+			"PVC deletion handling skipped",
+			"replicationstate",
+			v.instance.Spec.ReplicationState,
+			"finalsync",
+			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
+		)
+
+		return false
+	}
+
+	return true
+}
+
+func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
+	pvc corev1.PersistentVolumeClaim, log logr.Logger,
+) (pvcDeleted bool) {
+	if !v.isPVCDeletedForUnprotection(&pvc) {
+		log.Info("PVC is not valid for unprotection", "PVC", pvc.Name)
+
+		return false
+	}
+
+	log.Info("PVC unprotect VolSync", "deletion time", pvc.GetDeletionTimestamp())
+	v.pvcUnprotectVolSync(pvc, log)
+
+	return true
+}
+
 func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log logr.Logger) {
-	if !VolumeUnprotectionEnabledForAsyncVolSync {
-		log.Info("Volume unprotection disabled for VolSync")
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("Volume unprotection disabled")
 
 		return
 	}
-	// TODO: Delete ReplicationSource, ReplicationDestination, etc.
+
+	if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader, v.instance.Annotations) {
+		// At this moment, we don't support unprotecting CG PVCs.
+		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
+
+		return
+	}
+
+	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
+	// This call is only from Primary cluster. delete ReplicationSource and related resources.
+	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
+		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
+
+		return
+	}
+	// Remove the PVC from VRG status
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
 
@@ -676,6 +762,15 @@ func (v *VRGInstance) cleanupResources() error {
 		if err := v.doCleanupResources(pvc.Name, pvc.Namespace); err != nil {
 			return err
 		}
+
+		err := util.NewResourceUpdater(pvc).
+			RemoveFinalizer(volsync.PVCFinalizerProtected).
+			Update(v.ctx, v.reconciler.Client)
+		if err != nil {
+			v.log.Info("Failed to update PVC", "pvcName", pvc.GetName(), "error", err)
+
+			return err
+		}
 	}
 
 	for idx := range v.instance.Spec.VolSync.RDSpec {
@@ -702,11 +797,11 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 		return err
 	}
 
-	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, name, namespace, v.log); err != nil {
+	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
 		return err
 	}
 
-	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, name, namespace, v.log); err != nil {
+	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
 		return err
 	}
 
