@@ -292,12 +292,10 @@ func IsCGEnabled(ctx context.Context, apiReader client.Reader) bool {
 }
 
 // IsCGEnabledForVolSync determines whether consistency group (CG) protection is enabled for CephFS volumes.
-// It checks:
-// 1. Whether the workload is annotated to request CG protection.
-// 2. Whether the VolumeGroupSnapshot CRD is installed.
-// Both conditions must be true for CephFS CG protection to be considered enabled.
-func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader, annotations map[string]string) bool {
-	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, apiReader, VGSCRDName)
+// It checks whether the VolumeGroupSnapshot CRD is installed.
+// This condition must be true for CephFS CG protection to be considered enabled.
+func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader) bool {
+	return IsCRDInstalled(ctx, apiReader, VGSCRDName)
 }
 
 // IsCRDInstalled checks whether a specific CustomResourceDefinition (CRD) is installed on the cluster.
