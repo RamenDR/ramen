@@ -311,14 +311,182 @@ func (v *VRGInstance) getVGRCFromVGR(vgr *volrep.VolumeGroupReplication) (volrep
 	return vgrc, nil
 }
 
+// pvcUnprotectVolGroupRep removes protection for a PVC when VRG is Primary and is protected by VGR in a CG.
+// The unprotection works as follows:
+// - Sets the CG label value to an empty string, ensuring the PVC is deselected from the CG that it belongs to
+// - Ensures the PVC is no longer reported as part of the VGR status as protected
+// - Deletes the VGR if it was protecting only this PVC
+// - Removes PV/PVC protection metadata
+// As the order ensures that the last action for the PVC is to remove its CG label, the entire workflow is idempotent
+// across multiple reconcile loops.
+// Further, all errors/progress is reported into the PVC DataReady condition.
+func (v *VRGInstance) pvcUnprotectVolGroupRep(pvc *corev1.PersistentVolumeClaim) {
+	if reset, err := v.resetCGLabelValue(pvc); err != nil || !reset {
+		if err != nil {
+			v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError,
+				fmt.Sprintf("Retrying, on error (%s) processing PVC for deletion or deselection from protection", err))
+		} else {
+			v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError,
+				"PVC is deleted or deselected from protection, and is not protected as part of a consistency group")
+		}
+
+		v.requeue()
+
+		return
+	}
+
+	vgr, err := v.getVGRUsingSCLabel(pvc)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError,
+			fmt.Sprintf("Retrying, on error (%s) processing PVC for deletion or deselection from protection", err))
+
+		v.requeue()
+
+		return
+	}
+
+	if err == nil {
+		if !v.ensurePVCUnprotected(pvc, vgr) {
+			v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing,
+				"PVC is being processed for deletion or deselection from protection")
+
+			v.requeue()
+
+			return
+		}
+
+		if err := v.deleteVGRIfUnused(vgr); err != nil {
+			v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError,
+				fmt.Sprintf("Retrying, on error (%s) processing PVC for deletion or deselection from protection", err),
+			)
+
+			v.requeue()
+
+			return
+		}
+	}
+
+	// VGR not found or ensured that PVC is not part of VRG status
+	if err := v.preparePVCForVRDeletion(pvc, v.log); err != nil {
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonError,
+			fmt.Sprintf("Retrying due to error (%s) processing PVC for deletion or deselection from protection", err),
+		)
+
+		v.requeue()
+
+		return
+	}
+}
+
+// resetCGLabelValue resets the CG label value to an empty string, and returns if reset was detected as a success
+func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool, error) {
+	const reset = true
+
+	cg, ok := v.isCGEnabled(pvc)
+	if !ok {
+		v.log.Info("PVC is not protected by a CG", "VR instance", v.instance.Name)
+
+		return !reset, fmt.Errorf("PVC is not protected as part of a consistency group")
+	}
+
+	if cg == "" {
+		return reset, nil
+	}
+
+	err := rmnutil.NewResourceUpdater(pvc).AddLabel(ConsistencyGroupLabel, "").Update(v.ctx, v.reconciler.Client)
+	if err != nil {
+		return !reset, fmt.Errorf("error (%s) updating PVC labels", err)
+	}
+
+	return !reset, nil
+}
+
+// getVGRUsingSCLabel fetches the VGR that is protecting the PVC using the SC and VGRC labels, it is useful when the CG
+// label is present without a correlating value to construuct the VGR name
+func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*volrep.VolumeGroupReplication, error) {
+	rID, err := v.getVGRClassReplicationID(pvc)
+	if err != nil {
+		// Error is masked here, as caller expects k8serrors regarding vgr resource
+		return nil, fmt.Errorf("error determining replicationID")
+	}
+
+	vgrNamespacedName := types.NamespacedName{
+		Name:      rmnutil.TrimToK8sResourceNameLength(rID + v.instance.Name),
+		Namespace: pvc.Namespace,
+	}
+
+	vgr := &volrep.VolumeGroupReplication{}
+	err = v.reconciler.Get(v.ctx, vgrNamespacedName, vgr)
+
+	return vgr, err
+}
+
+// getVGRClassReplicationID is a utility function that fetches the replicationID for the PVC looking at the class labels
+func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim) (string, error) {
+	vgrClass, err := v.selectVolumeReplicationClass(pvc, true)
+	if err != nil {
+		return "", err
+	}
+
+	replicationID, ok := vgrClass.GetLabels()[VolumeReplicationIDLabel]
+	if !ok {
+		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
+			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
+
+		return "", fmt.Errorf("volumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
+			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName())
+	}
+
+	return replicationID, nil
+}
+
+// ensurePVCUnprotected returns true if the passed in PVC is not protected by the vgr
+func (v *VRGInstance) ensurePVCUnprotected(
+	pvc *corev1.PersistentVolumeClaim,
+	vgr *volrep.VolumeGroupReplication,
+) bool {
+	const unprotected = true
+
+	if rmnutil.ResourceIsDeleted(vgr) {
+		return !unprotected
+	}
+
+	for i := range vgr.Status.PersistentVolumeClaimsRefList {
+		if vgr.Status.PersistentVolumeClaimsRefList[i].Name == pvc.GetName() {
+			return !unprotected
+		}
+	}
+
+	return unprotected
+}
+
+// deleteVGRIfUnused garbage collects a VGR that is not protecting any PVCs
+func (v *VRGInstance) deleteVGRIfUnused(vgr *volrep.VolumeGroupReplication) error {
+	if len(vgr.Status.PersistentVolumeClaimsRefList) != 0 {
+		return nil
+	}
+
+	err := v.reconciler.Delete(v.ctx, vgr)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return err
+	}
+	// TODO: Delete VGR from S3 store
+
+	return nil
+}
+
 //nolint:gocognit
 func (v *VRGInstance) pvcsUnprotectVolGroupRep(groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim) {
+	// Single PVC that is deselected/deleted will not come here, in a circutious way!
+	// VRG deletion will invoke this routine
 	for vgrNamespacedName, pvcs := range groupPVCs {
 		log := v.log.WithValues("vgr", vgrNamespacedName.String())
 
 		vgrMissing, requeueResult := v.reconcileMissingVGR(vgrNamespacedName, pvcs, log)
 		if vgrMissing || requeueResult {
-			v.requeue()
+			if requeueResult {
+				v.requeue()
+			}
 
 			continue
 		}
@@ -581,15 +749,13 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState,
 ) error {
-	pvcNamespacedName := types.NamespacedName{Name: pvcs[0].Name, Namespace: pvcs[0].Namespace}
-
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, false)
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], false)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
 	}
 
-	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcNamespacedName, true)
+	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], true)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeGroupReplicationClass (%s) %w",
 			v.instance.Name, err)
