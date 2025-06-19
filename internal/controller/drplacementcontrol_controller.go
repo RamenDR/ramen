@@ -1387,7 +1387,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 
 	drpc.Status.ResourceConditions.ResourceMeta.ProtectedPVCs = protectedPVCs
 
-	if rmnutil.IsCGEnabled(vrg.GetAnnotations()) {
+	if vrg.Status.PVCGroups != nil {
 		drpc.Status.ResourceConditions.ResourceMeta.PVCGroups = vrg.Status.PVCGroups
 	}
 
