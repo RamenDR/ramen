@@ -579,10 +579,6 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
 	}
 
-	if err := v.labelPVCsForCG(); err != nil {
-		return v.invalid(err, "Failed to label PVCs for consistency groups", true)
-	}
-
 	v.log = v.log.WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
 
@@ -731,36 +727,6 @@ func (v *VRGInstance) updatePVCList() error {
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
 	return v.separateAsyncPVCs(pvcList)
-}
-
-func (v *VRGInstance) labelPVCsForCG() error {
-	if v.instance.Spec.Async == nil {
-		return nil
-	}
-
-	if !util.IsCGEnabled(v.instance.GetAnnotations()) {
-		return nil
-	}
-
-	for idx := range v.volRepPVCs {
-		pvc := &v.volRepPVCs[idx]
-
-		if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
-			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
-				pvc.GetNamespace(), pvc.GetName(), err)
-		}
-	}
-
-	for idx := range v.volSyncPVCs {
-		pvc := &v.volSyncPVCs[idx]
-
-		if err := v.addConsistencyGroupLabel(pvc); err != nil {
-			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
-				pvc.GetNamespace(), pvc.GetName(), err)
-		}
-	}
-
-	return nil
 }
 
 // addVolRepConsistencyGroupLabel ensures that the given PVC is labeled as part of a consistency group.
@@ -943,6 +909,7 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 	}
 }
 
+//nolint:cyclop,funlen,nestif,gocognit
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
@@ -966,6 +933,14 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		if peerClass.ReplicationID != "" {
 			replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
 			if replicationClass != nil {
+				// label VolRep PVCs if peerClass.grouping is enabled
+				if peerClass.Grouping {
+					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
+						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+							pvc.GetNamespace(), pvc.GetName(), err)
+					}
+				}
+
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 
 				return nil
@@ -987,6 +962,14 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 
 	if snapClass == nil {
 		return fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
+	}
+
+	// label VolSync PVCs if peerClass.grouping is enabled
+	if peerClass.Grouping {
+		if err := v.addConsistencyGroupLabel(pvc); err != nil {
+			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+				pvc.GetNamespace(), pvc.GetName(), err)
+		}
 	}
 
 	v.volSyncPVCs = append(v.volSyncPVCs, *pvc)

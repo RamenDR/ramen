@@ -305,7 +305,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 			pvc.GetName(), err)
 	}
 
-	selectVolumeGroup := rmnutil.IsCGEnabled(v.ctx, v.reconciler.APIReader)
+	_, selectVolumeGroup := v.isCGEnabled(pvc)
 
 	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
 	if err != nil {
