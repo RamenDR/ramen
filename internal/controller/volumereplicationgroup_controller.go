@@ -845,7 +845,7 @@ func (v *VRGInstance) updateReplicationClassList() error {
 
 	v.log.Info("Number of Replication Classes", "count", len(v.replClassList.Items))
 
-	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+	if util.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 		if err := v.reconciler.List(v.ctx, v.grpReplClassList, listOptions...); err != nil {
 			v.log.Error(err, "Failed to list Group Replication Classes",
 				"labeled", labels.Set(labelSelector.MatchLabels))
@@ -919,7 +919,7 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 			}
 		}
 
-		if util.IsCGEnabled(v.instance.GetAnnotations()) {
+		if util.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 			for _, replicationClass := range v.grpReplClassList.Items {
 				separatePVCs(replicationClass.Spec.Provisioner)
 
@@ -1046,7 +1046,7 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 		return nil
 	}
 
-	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+	if peerClass.Grouping {
 		for index := range v.grpReplClassList.Items {
 			replicationClass := &v.grpReplClassList.Items[index]
 
@@ -1645,7 +1645,7 @@ func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Resu
 func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	v.log.Info("Updating VRG status")
 
-	if util.IsCGEnabled(v.instance.GetAnnotations()) {
+	if util.IsCGEnabled(v.ctx, v.reconciler.APIReader) {
 		if err := v.updateProtectedCGs(); err != nil {
 			v.log.Info(fmt.Sprintf("Failed to update protected PVC groups (%v/%s)",
 				err, v.instance.Name))
