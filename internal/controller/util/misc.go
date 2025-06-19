@@ -259,14 +259,15 @@ func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, 
 func RemoveOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {
 	currentOwnerRefs := obj.GetOwnerReferences()
 
-	err := controllerutil.RemoveOwnerReference(owner, obj, scheme)
-	if err != nil {
-		return false, err
+	length := len(currentOwnerRefs)
+	if length < 1 {
+		return false, nil // No owner references to remove
 	}
 
-	ownerRemoved := !reflect.DeepEqual(obj.GetOwnerReferences(), currentOwnerRefs)
+	// TODO: Remove just the owner's Reference instead of blindly removing all ownerreferences.
+	obj.SetOwnerReferences(nil)
 
-	return ownerRemoved, nil
+	return true, nil
 }
 
 func AddFinalizer(obj client.Object, finalizer string) bool {
