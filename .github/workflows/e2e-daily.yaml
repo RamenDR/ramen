@@ -34,3 +34,10 @@ jobs:
           command: |
             cd test
             drenv cache -v envs/regional-dr.yaml
+
+  prune-images:
+    runs-on: [self-hosted, e2e-rdr]
+    if: github.repository == 'RamenDR/ramen'
+    steps:
+      - name: Prune images
+        run: podman image prune -f
