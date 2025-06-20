@@ -58,7 +58,7 @@ func New(ctx context.Context, clusters map[string]config.Cluster, log *zap.Sugar
 	return env, nil
 }
 
-func setupClient(kubeconfigPath string) (client.Client, error) {
+func newClient(kubeconfigPath string) (client.Client, error) {
 	var err error
 
 	if kubeconfigPath == "" {
@@ -90,7 +90,7 @@ func setupCluster(
 	clusterConfig config.Cluster,
 	log *zap.SugaredLogger,
 ) error {
-	client, err := setupClient(clusterConfig.Kubeconfig)
+	client, err := newClient(clusterConfig.Kubeconfig)
 	if err != nil {
 		return fmt.Errorf("failed to setup cluster %q: %w", key, err)
 	}
