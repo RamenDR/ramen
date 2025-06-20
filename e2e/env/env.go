@@ -40,6 +40,24 @@ func init() {
 	utilruntime.Must(ramen.AddToScheme(scheme.Scheme))
 }
 
+func New(ctx context.Context, clusters map[string]config.Cluster, log *zap.SugaredLogger) (*types.Env, error) {
+	env := &types.Env{}
+
+	if err := setupCluster(ctx, &env.Hub, "hub", clusters["hub"], log); err != nil {
+		return nil, fmt.Errorf("failed to create env: %w", err)
+	}
+
+	if err := setupCluster(ctx, &env.C1, "c1", clusters["c1"], log); err != nil {
+		return nil, fmt.Errorf("failed to create env: %w", err)
+	}
+
+	if err := setupCluster(ctx, &env.C2, "c2", clusters["c2"], log); err != nil {
+		return nil, fmt.Errorf("failed to create env: %w", err)
+	}
+
+	return env, nil
+}
+
 func setupClient(kubeconfigPath string) (client.Client, error) {
 	var err error
 
@@ -113,22 +131,4 @@ func getClusterClaimName(ctx context.Context, cluster *types.Cluster) (string, e
 	}
 
 	return clusterClaim.Spec.Value, nil
-}
-
-func New(ctx context.Context, clusters map[string]config.Cluster, log *zap.SugaredLogger) (*types.Env, error) {
-	env := &types.Env{}
-
-	if err := setupCluster(ctx, &env.Hub, "hub", clusters["hub"], log); err != nil {
-		return nil, fmt.Errorf("failed to create env: %w", err)
-	}
-
-	if err := setupCluster(ctx, &env.C1, "c1", clusters["c1"], log); err != nil {
-		return nil, fmt.Errorf("failed to create env: %w", err)
-	}
-
-	if err := setupCluster(ctx, &env.C2, "c2", clusters["c2"], log); err != nil {
-		return nil, fmt.Errorf("failed to create env: %w", err)
-	}
-
-	return env, nil
 }
