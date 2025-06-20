@@ -186,8 +186,9 @@ func compare(a, b reflect.Value, operator string) (bool, error) {
 	b = convertString(b)
 
 	// Ensure operands are of the same type before comparison
-	if a.Kind() != b.Kind() {
-		return false, fmt.Errorf("operands of different kinds can't be compared: %v, %v", a.Kind(), b.Kind())
+	if a.Kind() != b.Kind() && (a.Kind() == reflect.Invalid || b.Kind() == reflect.Invalid) {
+		return false, fmt.Errorf("check expression to evaluate, one of the jsonpath is either incorrect" +
+			" or value is not updated")
 	}
 
 	// Validate the operator for the given types
