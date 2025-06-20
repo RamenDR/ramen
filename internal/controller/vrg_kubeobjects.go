@@ -254,7 +254,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 		v.reconciler.recipeRetries.Store(v.namespacedName, val)
 
 		if val > RecipeMaxAttempts {
-			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more that max attempts")
+			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more than max attempts")
 
 			return
 		}
