@@ -47,7 +47,9 @@ const (
 	MWTypeMMode     string = "mmode"
 	MWTypeSClass    string = "sc"
 	MWTypeVSClass   string = "vsc"
+	MWTypeVGSClass  string = "vgsc"
 	MWTypeVRClass   string = "vrc"
+	MWTypeVGRClass  string = "vgrc"
 	MWTypeDRCConfig string = "drcconfig"
 )
 
