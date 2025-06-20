@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,6 +22,7 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
 
@@ -30,32 +30,14 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func addToScheme(scheme *runtime.Scheme) error {
-	if err := ocmv1b1.AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	if err := ocmv1b2.AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	if err := ocmv1a1.AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	if err := placementrule.AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	if err := subscription.AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	if err := argocdv1alpha1hack.AddToScheme(scheme); err != nil {
-		return err
-	}
-
-	return ramen.AddToScheme(scheme)
+func init() {
+	utilruntime.Must(ocmv1b1.AddToScheme(scheme.Scheme))
+	utilruntime.Must(ocmv1b2.AddToScheme(scheme.Scheme))
+	utilruntime.Must(ocmv1a1.AddToScheme(scheme.Scheme))
+	utilruntime.Must(placementrule.AddToScheme(scheme.Scheme))
+	utilruntime.Must(subscription.AddToScheme(scheme.Scheme))
+	utilruntime.Must(argocdv1alpha1hack.AddToScheme(scheme.Scheme))
+	utilruntime.Must(ramen.AddToScheme(scheme.Scheme))
 }
 
 func setupClient(kubeconfigPath string) (client.Client, error) {
@@ -73,10 +55,6 @@ func setupClient(kubeconfigPath string) (client.Client, error) {
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build config from kubeconfig (%s): %w", kubeconfigPath, err)
-	}
-
-	if err := addToScheme(scheme.Scheme); err != nil {
-		return nil, err
 	}
 
 	client, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
