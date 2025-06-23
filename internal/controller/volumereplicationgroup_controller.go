@@ -335,7 +335,9 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	for _, vrg := range vrgs.Items {
 		log1 := log.WithValues("vrg", vrg.Name)
 
-		pvcSelector, err := GetPVCSelector(context.TODO(), reader, vrg, *ramenConfig, log)
+		ctx := context.WithValue(context.Background(), util.RecipeElementsGetForPVC, "true")
+
+		pvcSelector, err := GetPVCSelector(ctx, reader, vrg, *ramenConfig, log)
 		if err != nil {
 			continue
 		}
