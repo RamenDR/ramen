@@ -92,7 +92,9 @@ jobs:
       working-directory: test
       # Gathering typically takes less than 15 seconds.
       timeout-minutes: 3
-      run: drenv gather --directory gather.rdr envs/regional-dr.yaml
+      run: |
+        source ../venv
+        drenv gather --directory gather.rdr envs/regional-dr.yaml
 
     # Tar manually to work around github limitations with special characters (:)
     # in file names, and getting much smaller archives compared with zip (6m vs
