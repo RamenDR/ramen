@@ -4,6 +4,7 @@
 package controllers_test
 
 import (
+	"context"
 	"strings"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -466,8 +467,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 						recipeHooksDefine(hook(ns0ParameterRef))
 					})
 					JustBeforeEach(func() {
-						recipeExpanded = &*r
-						Expect(controllers.RecipeParametersExpand(recipeExpanded, vrgRecipeParameters(), testLogger)).To(Succeed())
+						recipeExpanded = r
+						Expect(controllers.RecipeParametersExpand(context.TODO(),
+							recipeExpanded, vrgRecipeParameters(), testLogger)).To(Succeed())
 					})
 					It("expands a parameter list enclosed in double quotes to a single string with quotes preserved", func() {
 						Skip("feature not supported")
