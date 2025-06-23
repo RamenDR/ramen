@@ -36,7 +36,7 @@ environment.
    sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
    ```
 
-   Tested with version v1.34.0.
+   Tested with version v1.36.0.
 
 1. Install the `kubectl` tool
 
@@ -48,12 +48,12 @@ environment.
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.31.3.
+   Tested with version v1.33.2.
 
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.0
+   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
    ```
 
    For more info see
@@ -71,6 +71,7 @@ environment.
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
+   Tested with version v0.20.1.
    Version v0.18.0 or later is required.
 
 1. Install the `velero` tool
@@ -92,7 +93,7 @@ environment.
    ```
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
-   Tested with version v3.11.
+   Tested with version v3.18.1.
 
 1. Install the `virtctl` tool
 
@@ -146,7 +147,8 @@ environment.
    rm kubectl-gather
    ```
 
-   kubectl-gather version 0.6.0 or later is required.
+   kubectl-gather version 0.6.0 or later is required. Tested with
+   version 0.7.0.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ## Setup on macOS
@@ -175,7 +177,7 @@ environment.
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.0
+   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
    ```
 
    For more info see
@@ -193,7 +195,7 @@ environment.
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Version v0.18.0 or later is required.
+   Version v0.18.0 or later is required. Tested with version v0.20.1.
 
 1. Install the `kubectl-gather` plugin
 
@@ -204,7 +206,8 @@ environment.
    rm kubectl-gather
    ```
 
-   kubectl-gather version 0.6.0 or later is required.
+   kubectl-gather version 0.6.0 or later is required. Tested with
+   version 0.7.0.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 1. Install `socket_vmnet`
