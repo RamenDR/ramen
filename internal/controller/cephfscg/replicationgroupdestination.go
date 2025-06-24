@@ -227,11 +227,13 @@ func (m *rgdMachine) ReconcileRD(
 		return nil, err
 	}
 
-	err = m.VSHandler.ReconcileServiceExportForRD(rd)
-	if err != nil {
-		log.Error(err, "Failed to ReconcileServiceExportForRD", "RD", rd)
+	if m.VSHandler.IsSubmarinerEnabled() {
+		err = m.VSHandler.ReconcileServiceExportForRD(rd)
+		if err != nil {
+			log.Error(err, "Failed to ReconcileServiceExportForRD", "RD", rd)
 
-		return nil, err
+			return nil, err
+		}
 	}
 
 	if !volsync.RDStatusReady(rd, m.Logger) {
@@ -281,7 +283,7 @@ func (m *rgdMachine) CreateReplicationDestinations(
 				Manual: manual,
 			}
 			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-				ServiceType: &volsync.DefaultRsyncServiceType,
+				ServiceType: m.VSHandler.GetRsyncServiceType(),
 				KeySecret:   &pskSecretName,
 				ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
 					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,

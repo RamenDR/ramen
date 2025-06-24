@@ -45,6 +45,8 @@ type VolumeGroupSourceHandler interface {
 		manual string,
 		restoredPVCs []RestoredPVC,
 		owner metav1.Object,
+		vrg *ramendrv1alpha1.VolumeReplicationGroup,
+		isSubmarinerEnabled bool,
 	) ([]*corev1.ObjectReference, error)
 
 	CheckReplicationSourceForRestoredPVCsCompleted(
@@ -423,6 +425,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 	manual string,
 	restoredPVCs []RestoredPVC,
 	owner metav1.Object,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	isSubmarinerEnabled bool,
 ) ([]*corev1.ObjectReference, error) {
 	logger := h.Logger.WithName("CreateReplicationSourceForRestoredPVCs").
 		WithValues("NumberOfRestoredPVCs", len(restoredPVCs))
@@ -442,7 +446,25 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			},
 		}
 
-		rdService := getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
+		rdService := ""
+
+		if isSubmarinerEnabled {
+			rdService = getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
+		} else {
+			logger.Info("Non submariner", "rsspec", vrg.Spec.VolSync.RSSpec)
+			for _, rs := range vrg.Spec.VolSync.RSSpec {
+				logger.Info("Comparing PVC names",
+					"from VRG", rs.ProtectedPVC.Name,
+					"from restoredPVC", restoredPVC.RestoredPVCName)
+				logger.Info("Ip address", "rsspec", rs.RsyncTLS.Address)
+				if fmt.Sprintf(RestorePVCinCGNameFormat, rs.ProtectedPVC.Name) == restoredPVC.RestoredPVCName {
+					rdService = rs.RsyncTLS.Address
+					break
+				}
+			}
+		}
+
+		logger.Info("Before CreateOrUpdate", "rdService", rdService)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
 			if err := ctrl.SetControllerReference(owner, replicationSource, h.Client.Scheme()); err != nil {

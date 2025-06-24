@@ -4,12 +4,15 @@
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -30,7 +33,167 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 		return fmt.Errorf("failed to find source VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
 	}
 
-	return d.EnsureVolSyncReplicationSetup(srcCluster)
+	err = d.EnsureVolSyncReplicationSetup(srcCluster)
+	if err != nil {
+		return err
+	}
+
+	if !d.ramenConfig.VolSync.SubmarinerEnabled {
+		err = d.ensureVolSyncReplicationSource(srcCluster)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
+func (d *DRPCInstance) ensureVolSyncReplicationSource(srcCluster string) error {
+	d.log.Info("Ensuring VolSync replication source")
+
+	const maxNumberOfVSRG = 2
+	if len(d.vrgs) != maxNumberOfVSRG {
+		return fmt.Errorf("wrong number of VRGS %v", d.vrgs)
+	}
+
+	srcVSRG, found := d.vrgs[srcCluster]
+	if !found {
+		return fmt.Errorf("failed to find the source VSRG in cluster %s", srcCluster)
+	}
+
+	for dstCluster, dstVSRG := range d.vrgs {
+		if dstCluster == srcCluster {
+			continue
+		}
+
+		if dstVSRG == nil {
+			return fmt.Errorf("invalid VolSyncReplicationGroup")
+		}
+
+		rdInfoLen := len(dstVSRG.Status.RDInfo)
+		if rdInfoLen == 0 {
+			return fmt.Errorf("Waiting for VolSync RDInfo")
+		}
+
+		// if len(dstVSRG.Status.VolSyncRepStatus.RDInfo) != len(srcVSRG.Spec.VolSync.RSSpec) {
+		err := d.updateSourceVSRG(srcCluster, srcVSRG, dstVSRG)
+		if err != nil {
+			return fmt.Errorf("failed to update dst VSRG on cluster %s - %w", srcCluster, err)
+		}
+		// }
+
+		d.log.Info("Replication Destination", "info", dstVSRG.Status.RDInfo)
+		break
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) updateSourceVSRG(clusterName string, srcVSRG *rmn.VolumeReplicationGroup,
+	dstVSRG *rmn.VolumeReplicationGroup) error {
+	// Clear any existing RDSpec in the source VRG
+	srcVSRG.Spec.VolSync.RDSpec = nil
+
+	for _, rdInfo := range dstVSRG.Status.RDInfo {
+		pskSecretNameCluster := volsync.GetVolSyncPSKSecretNameFromVRGName(d.instance.GetName())
+
+		rsSpec := rmn.VolSyncReplicationSourceSpec{
+			ProtectedPVC: rdInfo.ProtectedPVC,
+			RsyncTLS: &rmn.RsyncTLSConfig{
+				Address: rdInfo.RsyncTLS.Address,
+				TLSSecretRef: &corev1.LocalObjectReference{
+					Name: pskSecretNameCluster,
+				},
+			},
+		}
+
+		srcVSRG.Spec.VolSync.RSSpec = d.AppendOrUpdate(srcVSRG.Spec.VolSync.RSSpec, rsSpec)
+	}
+
+	return d.updateVSRGSpec(clusterName, srcVSRG)
+}
+
+// AppendOrUpdate adds rsSpec to the rsSpecList if not present,
+// or updates the existing entry with the same PVCName.
+func (d *DRPCInstance) AppendOrUpdate(rsSpecList []rmn.VolSyncReplicationSourceSpec,
+	rsSpec rmn.VolSyncReplicationSourceSpec) []rmn.VolSyncReplicationSourceSpec {
+	for i, info := range rsSpecList {
+		if info.ProtectedPVC.Name == rsSpec.ProtectedPVC.Name &&
+			info.ProtectedPVC.Namespace == rsSpec.ProtectedPVC.Namespace {
+			rsSpecList[i] = rsSpec
+			return rsSpecList
+		}
+	}
+	return append(rsSpecList, rsSpec)
+}
+
+func (d *DRPCInstance) updateVSRGSpec(clusterName string, tgtVSRG *rmn.VolumeReplicationGroup) error {
+	vsrgMWName := d.mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+	d.log.Info(fmt.Sprintf("Updating VSRG ownedby MW %s for cluster %s", vsrgMWName, clusterName))
+
+	mw, err := d.mwu.FindManifestWork(vsrgMWName, clusterName)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		d.log.Error(err, "failed to update VSRG")
+
+		return fmt.Errorf("failed to update VRG %s, in namespace %s (%w)",
+			vsrgMWName, clusterName, err)
+	}
+
+	vsrg, err := d.extractVSRGFromManifestWork(mw)
+	if err != nil {
+		d.log.Error(err, "failed to update VSRG state")
+
+		return err
+	}
+
+	if vsrg.Spec.ReplicationState == rmn.Primary {
+		vsrg.Spec.VolSync.RSSpec = tgtVSRG.Spec.VolSync.RSSpec
+	} else if vsrg.Spec.ReplicationState == rmn.Secondary {
+		vsrg.Spec.VolSync.RDSpec = tgtVSRG.Spec.VolSync.RDSpec
+	} else {
+		d.log.Info(fmt.Sprintf("VSRG %s is neither primary nor secondary on this cluster %s", vsrg.Name, mw.Namespace))
+
+		return fmt.Errorf("failed to update MW due to wrong state")
+	}
+
+	vsrgClientManifest, err := d.mwu.GenerateManifest(vsrg)
+	if err != nil {
+		d.log.Error(err, "failed to generate manifest")
+
+		return fmt.Errorf("failed to generate VSRG manifest (%w)", err)
+	}
+
+	mw.Spec.Workload.Manifests[0] = *vsrgClientManifest
+
+	err = d.reconciler.Update(d.ctx, mw)
+	if err != nil {
+		return fmt.Errorf("failed to update MW (%w)", err)
+	}
+
+	d.log.Info(fmt.Sprintf("Updated VSRG running in cluster %s. VSRG (%+v)", clusterName, vsrg))
+
+	return nil
+}
+
+func (d *DRPCInstance) extractVSRGFromManifestWork(mw *ocmworkv1.ManifestWork) (*rmn.VolumeReplicationGroup, error) {
+	if len(mw.Spec.Workload.Manifests) == 0 {
+		return nil, fmt.Errorf("invalid VSRG ManifestWork for type: %s", mw.Name)
+	}
+
+	vsrgClientManifest := &mw.Spec.Workload.Manifests[0]
+	vsrg := &rmn.VolumeReplicationGroup{}
+
+	err := json.Unmarshal(vsrgClientManifest.RawExtension.Raw, &vsrg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal VSRG object (%w)", err)
+	}
+
+	return vsrg, nil
 }
 
 func (d *DRPCInstance) EnsureVolSyncReplicationSetup(srcCluster string) error {

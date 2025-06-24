@@ -123,12 +123,13 @@ func (v *VSHandler) SetWorkloadStatus(status string) {
 //
 //nolint:cyclop,funlen
 func (v *VSHandler) ReconcileRD(
-	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination, error,
+	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) (*volsyncv1alpha1.ReplicationDestination,
+	*ramendrv1alpha1.VolSyncReplicationDestinationInfo, error,
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
 	if !rdSpec.ProtectedPVC.ProtectedByVolSync {
-		return nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rdSpec.ProtectedPVC.Name)
+		return nil, nil, fmt.Errorf("protectedPVC %s is not VolSync Enabled", rdSpec.ProtectedPVC.Name)
 	}
 
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
@@ -136,14 +137,14 @@ func (v *VSHandler) ReconcileRD(
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
 	secretExists, err := v.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
 	if err != nil || !secretExists {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if v.vrgInAdminNamespace {
 		// copy the secret to the namespace where the PVC is
 		err = v.CopySecretToPVCNamespace(pskSecretName, rdSpec.ProtectedPVC.Namespace)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -152,39 +153,62 @@ func (v *VSHandler) ReconcileRD(
 	// This avoids a scenario where we create an RD that immediately syncs with an RS that still exists locally
 	err = v.DeleteRS(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	dstPVC, err := v.PrecreateDestPVCIfEnabled(rdSpec)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var rd *volsyncv1alpha1.ReplicationDestination
 
 	rd, err = v.createOrUpdateRD(rdSpec, pskSecretName, dstPVC)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	err = v.ReconcileServiceExportForRD(rd)
-	if err != nil {
-		return nil, err
+	isSubmarinerEnabled := util.IsSubmarinerEnabled(v.owner.GetAnnotations())
+
+	if isSubmarinerEnabled {
+		err = v.ReconcileServiceExportForRD(rd)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	if !RDStatusReady(rd, l) {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	err = v.pruneOldSnapshots(rd.Namespace)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s, Copy method: %s",
-		rd.Name, v.destinationCopyMethod))
+	if isSubmarinerEnabled {
+		l.V(1).Info(fmt.Sprintf("ReplicationDestination Reconcile Complete rd=%s, Copy method: %s",
+			rd.Name, v.destinationCopyMethod))
 
-	return rd, nil
+		return rd, nil, nil
+	}
+
+	if rd.Status.RsyncTLS == nil || rd.Status.RsyncTLS.Address == nil {
+		return nil, nil, fmt.Errorf("RD status missing rsyncTLS address for PVC %s", rdSpec.ProtectedPVC.Name)
+	}
+
+	rdInfo := &ramendrv1alpha1.VolSyncReplicationDestinationInfo{
+		ProtectedPVC: rdSpec.ProtectedPVC,
+		RsyncTLS: &ramendrv1alpha1.RsyncTLSConfig{
+			Address: *rd.Status.RsyncTLS.Address,
+		},
+	}
+
+	l.V(1).Info("ReplicationDestination Reconcile Complete (no Submariner)",
+		"rd", rd.Name, "copyMethod", v.destinationCopyMethod, "address", *rd.Status.RsyncTLS.Address)
+
+	return rd, rdInfo, nil
+
 }
 
 // For ReplicationDestination - considered ready when a sync has completed
@@ -245,7 +269,7 @@ func (v *VSHandler) createOrUpdateRD(
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
 		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.getRsyncServiceType(),
+			ServiceType: v.GetRsyncServiceType(),
 			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
@@ -443,9 +467,23 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 		return nil, err
 	}
 
-	// Remote service address created for the ReplicationDestination on the secondary
-	// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
-	remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	var remoteAddress string
+
+	if util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		// Remote service address created for the ReplicationDestination on the secondary
+		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
+		remoteAddress = getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		l.Info("Using Submariner remote address", "remoteAddress", remoteAddress)
+	} else {
+		if rsSpec.RsyncTLS == nil {
+			err := fmt.Errorf("rsSpec.RsyncTLS is nil for PVC %s", rsSpec.ProtectedPVC.Name)
+			l.Error(err, "Missing TLS address; cannot continue")
+			return nil, err
+		}
+
+		remoteAddress = rsSpec.RsyncTLS.Address
+		l.Info("Using direct TLS remote address", "remoteAddress", remoteAddress)
+	}
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1764,9 +1802,13 @@ func (v *VSHandler) addOwnerReferenceAndUpdate(obj client.Object, owner metav1.O
 	return nil
 }
 
-func (v *VSHandler) getRsyncServiceType() *corev1.ServiceType {
+func (v *VSHandler) GetRsyncServiceType() *corev1.ServiceType {
 	// Use default right now - in future we may use a volsyncProfile
-	return &DefaultRsyncServiceType
+	if util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		return &DefaultRsyncServiceType
+	} else {
+		return &LoadBalancerRsyncServiceType
+	}
 }
 
 // Workaround for cephfs issue: FIXME:
@@ -2172,7 +2214,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 		}
 
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.getRsyncServiceType(),
+			ServiceType: v.GetRsyncServiceType(),
 			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
@@ -2689,4 +2731,32 @@ func updateClaimRef(pv *corev1.PersistentVolume, name, namespace string) {
 		pv.Spec.ClaimRef.Name = name
 		pv.Spec.ClaimRef.Namespace = namespace
 	}
+}
+
+func (v *VSHandler) AppendOrUpdate(rdInfoList []ramendrv1alpha1.VolSyncReplicationDestinationInfo,
+	newInfo ramendrv1alpha1.VolSyncReplicationDestinationInfo) []ramendrv1alpha1.VolSyncReplicationDestinationInfo {
+	l := v.log.WithValues("ProtectedPVC", newInfo.ProtectedPVC)
+
+	if newInfo.ProtectedPVC.Name == "" {
+		l.V(1).Info("Skipping append/update: ProtectedPVC name is empty, RD address likely not available yet")
+		return rdInfoList
+	}
+
+	if rdInfoList == nil {
+		rdInfoList = []ramendrv1alpha1.VolSyncReplicationDestinationInfo{}
+	}
+
+	for i, info := range rdInfoList {
+		if info.ProtectedPVC.Name == newInfo.ProtectedPVC.Name &&
+			info.ProtectedPVC.Namespace == newInfo.ProtectedPVC.Namespace {
+			rdInfoList[i] = newInfo
+			return rdInfoList
+		}
+	}
+
+	return append(rdInfoList, newInfo)
+}
+
+func (v *VSHandler) IsSubmarinerEnabled() bool {
+	return util.IsSubmarinerEnabled(v.owner.GetAnnotations())
 }

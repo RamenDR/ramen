@@ -28,6 +28,8 @@ const (
 
 	IsCGEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-cg-enabled"
 
+	IsSubmarinerEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
+
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
 
@@ -367,6 +369,10 @@ func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string
 	}
 
 	return true
+}
+
+func IsSubmarinerEnabled(annotations map[string]string) bool {
+	return annotations[IsSubmarinerEnabledAnnotation] == "true"
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
