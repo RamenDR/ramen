@@ -56,7 +56,7 @@ import (
 */
 
 const (
-	DeployTimeout   = 3 * time.Minute
+	DeployTimeout   = 5 * time.Minute
 	UndeployTimeout = 5 * time.Minute
 	EnableTimeout   = 5 * time.Minute
 	DisableTimeout  = 5 * time.Minute
