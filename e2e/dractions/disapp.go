@@ -130,7 +130,7 @@ func failoverRelocateDiscoveredApps(
 	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentCluster, targetCluster types.Cluster,
+	currentCluster, targetCluster *types.Cluster,
 ) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
@@ -165,24 +165,24 @@ func failoverRelocateDiscoveredApps(
 
 // findProtectCluster determines which cluster contains the discovered application
 // to be protected based on the status of the workload across clusters.
-func findProtectCluster(ctx types.TestContext) (types.Cluster, error) {
+func findProtectCluster(ctx types.TestContext) (*types.Cluster, error) {
 	log := ctx.Logger()
 
 	statuses, err := ctx.Workload().Status(ctx)
 	if err != nil {
-		return types.Cluster{}, err
+		return nil, err
 	}
 
 	switch len(statuses) {
 	case 0:
-		return types.Cluster{}, fmt.Errorf("application \"%s/%s\" not found", ctx.AppNamespace(), ctx.Workload().GetAppName())
+		return nil, fmt.Errorf("application \"%s/%s\" not found", ctx.AppNamespace(), ctx.Workload().GetAppName())
 	case 1:
 		log.Debugf("Application \"%s/%s\" found in cluster %q with status %q",
 			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses[0].ClusterName, statuses[0].Status)
 
 		return ctx.Env().GetCluster(statuses[0].ClusterName)
 	default:
-		return types.Cluster{}, fmt.Errorf("application \"%s/%s\" found on multiple clusters: %+v",
+		return nil, fmt.Errorf("application \"%s/%s\" found on multiple clusters: %+v",
 			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses)
 	}
 }

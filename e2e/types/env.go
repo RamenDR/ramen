@@ -7,7 +7,7 @@ import "fmt"
 
 // GetCluster returns the cluster from the env that matches clusterName.
 // If not found, it returns an empty Cluster and an error.
-func (e *Env) GetCluster(clusterName string) (Cluster, error) {
+func (e *Env) GetCluster(clusterName string) (*Cluster, error) {
 	switch clusterName {
 	case e.C1.Name:
 		return e.C1, nil
@@ -16,6 +16,6 @@ func (e *Env) GetCluster(clusterName string) (Cluster, error) {
 	case e.Hub.Name:
 		return e.Hub, nil
 	default:
-		return Cluster{}, fmt.Errorf("cluster %q not found in environment", clusterName)
+		return nil, fmt.Errorf("cluster %q not found in environment", clusterName)
 	}
 }

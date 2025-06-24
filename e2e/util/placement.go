@@ -21,10 +21,10 @@ const PlacementDecisionReasonFailoverRetained = "RetainedForFailover"
 // by looking up the cluster name from the PlacementDecision and returning the corresponding
 // cluster from the environment. Requires an existing PlacementDecision with a valid decision.
 // Not applicable for discovered apps before enabling protection, as no Placement exists.
-func GetCurrentCluster(ctx types.Context, namespace string, placementName string) (types.Cluster, error) {
+func GetCurrentCluster(ctx types.Context, namespace string, placementName string) (*types.Cluster, error) {
 	clusterDecision, err := getClusterDecisionFromPlacement(ctx, namespace, placementName)
 	if err != nil {
-		return types.Cluster{}, err
+		return nil, err
 	}
 
 	return ctx.Env().GetCluster(clusterDecision.ClusterName)

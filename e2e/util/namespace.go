@@ -27,7 +27,7 @@ const (
 
 // CreateNamespace creates a namespace in the specified cluster with the ramen-e2e managed label.
 // If the namespace already exists, it checks whether it's managed by ramen-e2e and logs a warning if not.
-func CreateNamespace(ctx types.Context, cluster types.Cluster, name string) error {
+func CreateNamespace(ctx types.Context, cluster *types.Cluster, name string) error {
 	log := ctx.Logger()
 
 	ns := &corev1.Namespace{
@@ -67,7 +67,7 @@ func CreateNamespace(ctx types.Context, cluster types.Cluster, name string) erro
 
 // DeleteNamespace safely deletes a namespace from the specified cluster.
 // Only deletes namespaces that are managed by ramen-e2e.
-func DeleteNamespace(ctx types.Context, cluster types.Cluster, name string) error {
+func DeleteNamespace(ctx types.Context, cluster *types.Cluster, name string) error {
 	log := ctx.Logger()
 
 	ns := &corev1.Namespace{
@@ -145,7 +145,7 @@ func AddVolsyncAnnontationOnManagedClusters(ctx types.Context, namespace string)
 	return addNamespaceAnnotationForVolSync(ctx, ctx.Env().C2, namespace)
 }
 
-func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, namespace string) error {
+func addNamespaceAnnotationForVolSync(ctx types.Context, cluster *types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
 	key := k8stypes.NamespacedName{Name: namespace}
@@ -179,7 +179,7 @@ func addNamespaceAnnotationForVolSync(ctx types.Context, cluster types.Cluster, 
 // isManagedByRamenE2e checks if a Kubernetes object is managed by the ramen-e2e.
 // Returns true if the object exists and has the required label, false if it exists but lacks the label.
 // Returns an error if the object cannot be retrieved (e.g., not found).
-func isManagedByRamenE2e(ctx types.Context, cluster types.Cluster, obj client.Object) (bool, error) {
+func isManagedByRamenE2e(ctx types.Context, cluster *types.Cluster, obj client.Object) (bool, error) {
 	err := cluster.Client.Get(ctx.Context(), client.ObjectKeyFromObject(obj), obj)
 	if err != nil {
 		return false, err
