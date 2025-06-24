@@ -20,7 +20,7 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func RamenHubOperator(ctx types.Context, cluster types.Cluster) error {
+func RamenHubOperator(ctx types.Context, cluster *types.Cluster) error {
 	config := ctx.Config()
 	log := ctx.Logger()
 
@@ -42,7 +42,7 @@ func RamenHubOperator(ctx types.Context, cluster types.Cluster) error {
 	return nil
 }
 
-func RamenDRClusterOperator(ctx types.Context, cluster types.Cluster) error {
+func RamenDRClusterOperator(ctx types.Context, cluster *types.Cluster) error {
 	config := ctx.Config()
 	log := ctx.Logger()
 
@@ -65,7 +65,7 @@ func RamenDRClusterOperator(ctx types.Context, cluster types.Cluster) error {
 }
 
 // FindPod returns the first pod matching the label selector including the pod identifier in the namespace.
-func FindPod(ctx types.Context, cluster types.Cluster, namespace, labelSelector, podIdentifier string) (
+func FindPod(ctx types.Context, cluster *types.Cluster, namespace, labelSelector, podIdentifier string) (
 	*v1.Pod, error,
 ) {
 	ls, err := labels.Parse(labelSelector)
@@ -134,7 +134,7 @@ func clustersInDRPolicy(ctx types.Context) error {
 		return fmt.Errorf("failed to get DRPolicy %q: %w", config.DRPolicy, err)
 	}
 
-	clusters := []types.Cluster{env.C1, env.C2}
+	clusters := []*types.Cluster{env.C1, env.C2}
 	for _, cluster := range clusters {
 		if !slices.Contains(drpolicy.Spec.DRClusters, cluster.Name) {
 			return fmt.Errorf("cluster %q is not defined in drpolicy %q, clusters in drpolicy: %q",
@@ -164,7 +164,7 @@ func clustersInClusterSet(ctx types.Context) error {
 		return err
 	}
 
-	clusters := []types.Cluster{env.C1, env.C2}
+	clusters := []*types.Cluster{env.C1, env.C2}
 	for _, cluster := range clusters {
 		if !slices.Contains(clusterNames, cluster.Name) {
 			return fmt.Errorf("cluster %q is not defined in ClusterSet %q, clusters in ClusterSet: %q",
@@ -193,7 +193,7 @@ func detectDistro(ctx types.Context) error {
 
 	var detectedDistro string
 
-	clusters := []*types.Cluster{&env.Hub, &env.C1, &env.C2}
+	clusters := []*types.Cluster{env.Hub, env.C1, env.C2}
 	for _, cluster := range clusters {
 		distro, err := probeDistro(ctx, cluster)
 		if err != nil {

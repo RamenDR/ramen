@@ -20,7 +20,7 @@ import (
 	"github.com/ramendr/ramen/e2e/types"
 )
 
-func WaitForApplicationSetDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
+func WaitForApplicationSetDelete(ctx types.Context, cluster *types.Cluster, name, namespace string) error {
 	obj := &argocdv1alpha1hack.ApplicationSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -31,7 +31,7 @@ func WaitForApplicationSetDelete(ctx types.Context, cluster types.Cluster, name,
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
-func WaitForConfigMapDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
+func WaitForConfigMapDelete(ctx types.Context, cluster *types.Cluster, name, namespace string) error {
 	obj := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -42,7 +42,7 @@ func WaitForConfigMapDelete(ctx types.Context, cluster types.Cluster, name, name
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
-func WaitForPlacementDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
+func WaitForPlacementDelete(ctx types.Context, cluster *types.Cluster, name, namespace string) error {
 	obj := &ocmv1b1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -53,7 +53,7 @@ func WaitForPlacementDelete(ctx types.Context, cluster types.Cluster, name, name
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
-func WaitForManagedClusterSetBindingDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
+func WaitForManagedClusterSetBindingDelete(ctx types.Context, cluster *types.Cluster, name, namespace string) error {
 	obj := &ocmv1b2.ManagedClusterSetBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -64,7 +64,7 @@ func WaitForManagedClusterSetBindingDelete(ctx types.Context, cluster types.Clus
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
-func WaitForDRPCDelete(ctx types.Context, cluster types.Cluster, name, namespace string) error {
+func WaitForDRPCDelete(ctx types.Context, cluster *types.Cluster, name, namespace string) error {
 	obj := &ramen.DRPlacementControl{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -75,7 +75,7 @@ func WaitForDRPCDelete(ctx types.Context, cluster types.Cluster, name, namespace
 	return waitForResourceDelete(ctx, cluster, obj)
 }
 
-func WaitForNamespaceDelete(ctx types.Context, cluster types.Cluster, name string) error {
+func WaitForNamespaceDelete(ctx types.Context, cluster *types.Cluster, name string) error {
 	log := ctx.Logger()
 	obj := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -114,7 +114,7 @@ func WaitForNamespaceDeleteOnManagedClusters(ctx types.Context, name string) err
 }
 
 // waitForResourceDelete waits until a resource is deleted or deadline is reached
-func waitForResourceDelete(ctx types.Context, cluster types.Cluster, obj client.Object) error {
+func waitForResourceDelete(ctx types.Context, cluster *types.Cluster, obj client.Object) error {
 	log := ctx.Logger()
 	kind := getKind(obj)
 	resourceName := logName(obj)

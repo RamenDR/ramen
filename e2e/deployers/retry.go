@@ -46,7 +46,7 @@ func waitSubscriptionPhase(
 	}
 }
 
-func WaitWorkloadHealth(ctx types.TestContext, cluster types.Cluster, namespace string) error {
+func WaitWorkloadHealth(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
 	log := ctx.Logger()
 	w := ctx.Workload()
 	start := time.Now()

@@ -91,12 +91,12 @@ func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DR
 
 func getTargetCluster(
 	ctx types.TestContext,
-	cluster types.Cluster,
+	cluster *types.Cluster,
 	drPolicyName, currentCluster string,
-) (types.Cluster, error) {
+) (*types.Cluster, error) {
 	drpolicy, err := util.GetDRPolicy(ctx, cluster, drPolicyName)
 	if err != nil {
-		return types.Cluster{}, err
+		return nil, err
 	}
 
 	var targetClusterName string

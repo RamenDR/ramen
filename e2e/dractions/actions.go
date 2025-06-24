@@ -206,7 +206,7 @@ func failoverRelocate(
 	ctx types.TestContext,
 	action ramen.DRAction,
 	state ramen.DRState,
-	currentCluster, targetCluster types.Cluster,
+	currentCluster, targetCluster *types.Cluster,
 ) error {
 	d := ctx.Deployer()
 	if d.IsDiscovered() {
@@ -235,7 +235,7 @@ func waitAndUpdateDRPC(
 	ctx types.TestContext,
 	namespace, drpcName string,
 	action ramen.DRAction,
-	targetCluster types.Cluster,
+	targetCluster *types.Cluster,
 ) error {
 	log := ctx.Logger()
 

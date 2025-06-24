@@ -28,9 +28,9 @@ type Cluster struct {
 }
 
 type Env struct {
-	Hub Cluster `json:"hub"`
-	C1  Cluster `json:"c1"`
-	C2  Cluster `json:"c2"`
+	Hub *Cluster `json:"hub"`
+	C1  *Cluster `json:"c1"`
+	C2  *Cluster `json:"c2"`
 }
 
 // WorkloadStatus holds the status of an application on a specific cluster
@@ -58,7 +58,7 @@ type Workload interface {
 	GetAppName() string
 	GetPath() string
 	GetBranch() string
-	Health(ctx TestContext, cluster Cluster, namespace string) error
+	Health(ctx TestContext, cluster *Cluster, namespace string) error
 	Status(ctx TestContext) ([]WorkloadStatus, error)
 }
 

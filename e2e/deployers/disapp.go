@@ -107,7 +107,7 @@ func (d DiscoveredApp) IsDiscovered() bool {
 	return true
 }
 
-func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespace string) error {
+func DeleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
 	log := ctx.Logger()
 
 	tempDir, err := os.MkdirTemp("", "ramen-")
@@ -143,12 +143,12 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster types.Cluster, namespac
 
 // chooseDeployCluster determines which cluster to deploy the discovered
 // application on based on the status of the workload across clusters.
-func chooseDeployCluster(ctx types.TestContext) (types.Cluster, error) {
+func chooseDeployCluster(ctx types.TestContext) (*types.Cluster, error) {
 	log := ctx.Logger()
 
 	statuses, err := ctx.Workload().Status(ctx)
 	if err != nil {
-		return types.Cluster{}, err
+		return nil, err
 	}
 
 	switch len(statuses) {
@@ -164,7 +164,7 @@ func chooseDeployCluster(ctx types.TestContext) (types.Cluster, error) {
 
 		return ctx.Env().GetCluster(statuses[0].ClusterName)
 	default:
-		return types.Cluster{}, fmt.Errorf("application \"%s/%s\" found on multiple clusters: %+v",
+		return nil, fmt.Errorf("application \"%s/%s\" found on multiple clusters: %+v",
 			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses)
 	}
 }

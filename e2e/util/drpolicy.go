@@ -11,7 +11,7 @@ import (
 )
 
 // nolint:unparam
-func GetDRPolicy(ctx types.Context, cluster types.Cluster, name string) (*ramen.DRPolicy, error) {
+func GetDRPolicy(ctx types.Context, cluster *types.Cluster, name string) (*ramen.DRPolicy, error) {
 	drpolicy := &ramen.DRPolicy{}
 	key := k8stypes.NamespacedName{Name: name}
 

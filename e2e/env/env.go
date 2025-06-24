@@ -93,13 +93,13 @@ func newCluster(
 	key string,
 	clusterConfig config.Cluster,
 	log *zap.SugaredLogger,
-) (types.Cluster, error) {
+) (*types.Cluster, error) {
 	client, err := newClient(clusterConfig.Kubeconfig)
 	if err != nil {
-		return types.Cluster{}, fmt.Errorf("failed to create cluster %q: %w", key, err)
+		return nil, fmt.Errorf("failed to create cluster %q: %w", key, err)
 	}
 
-	cluster := types.Cluster{
+	cluster := &types.Cluster{
 		Client:     client,
 		Kubeconfig: clusterConfig.Kubeconfig,
 	}
@@ -111,9 +111,9 @@ func newCluster(
 		log.Infof("Using %q cluster name: %q", key, cluster.Name)
 	case "c1", "c2":
 		// For c1 and c2 clusters, get the cluster name from ClusterClaim
-		cluster.Name, err = getClusterClaimName(ctx, &cluster)
+		cluster.Name, err = getClusterClaimName(ctx, cluster)
 		if err != nil {
-			return types.Cluster{}, fmt.Errorf("failed to get ClusterClaim name for the %q managed cluster: %w", key, err)
+			return nil, fmt.Errorf("failed to get ClusterClaim name for the %q managed cluster: %w", key, err)
 		}
 
 		log.Infof("Detected %q managed cluster name: %q", key, cluster.Name)
