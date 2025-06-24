@@ -28,9 +28,10 @@ type Cluster struct {
 }
 
 type Env struct {
-	Hub *Cluster `json:"hub"`
-	C1  *Cluster `json:"c1"`
-	C2  *Cluster `json:"c2"`
+	Hub        *Cluster `json:"hub"`
+	PassiveHub *Cluster `json:"passive-hub,omitempty"`
+	C1         *Cluster `json:"c1"`
+	C2         *Cluster `json:"c2"`
 }
 
 // WorkloadStatus holds the status of an application on a specific cluster

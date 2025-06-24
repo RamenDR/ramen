@@ -60,6 +60,13 @@ func New(ctx context.Context, clusters map[string]config.Cluster, log *zap.Sugar
 		return nil, fmt.Errorf("failed to create env: %w", err)
 	}
 
+	if clusters["passive-hub"].Kubeconfig != "" {
+		env.PassiveHub, err = newCluster(ctx, "passive-hub", clusters["passive-hub"], log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create env: %w", err)
+		}
+	}
+
 	return env, nil
 }
 
@@ -109,6 +116,10 @@ func newCluster(
 		// For hub cluster, use generic name "hub"
 		cluster.Name = "hub"
 		log.Infof("Using %q cluster name: %q", key, cluster.Name)
+	case "passive-hub":
+		// For passive hub cluster, use generic name "passive-hub"
+		cluster.Name = "passive-hub"
+		log.Infof("Using %q cluster name: %q", key, cluster.Name)
 	case "c1", "c2":
 		// For c1 and c2 clusters, get the cluster name from ClusterClaim
 		cluster.Name, err = getClusterClaimName(ctx, cluster)
@@ -119,7 +130,7 @@ func newCluster(
 		log.Infof("Detected %q managed cluster name: %q", key, cluster.Name)
 	default:
 		// Panic for unexpected keys
-		panic(fmt.Sprintf("Unexpected cluster key: %q, expected \"hub\", \"c1\", or \"c2\"", key))
+		panic(fmt.Sprintf("Unexpected cluster key: %q, expected \"hub\", \"passive-hub\", \"c1\", or \"c2\"", key))
 	}
 
 	return cluster, nil

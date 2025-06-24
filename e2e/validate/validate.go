@@ -194,6 +194,10 @@ func detectDistro(ctx types.Context) error {
 	var detectedDistro string
 
 	clusters := []*types.Cluster{env.Hub, env.C1, env.C2}
+	if env.PassiveHub != nil {
+		clusters = append(clusters, env.PassiveHub)
+	}
+
 	for _, cluster := range clusters {
 		distro, err := probeDistro(ctx, cluster)
 		if err != nil {
