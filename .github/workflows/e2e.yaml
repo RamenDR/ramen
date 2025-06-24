@@ -28,6 +28,9 @@ jobs:
     - name: Checkout Repo
       uses: actions/checkout@v4
 
+    - name: Build ramen-operator container
+      run: make docker-build
+
     - name: Create virtual environment
       run: |
         hack/make-venv .venv
@@ -57,9 +60,6 @@ jobs:
           cd test
           source ../venv
           drenv start --max-workers ${{ env.MAX_WORKERS }} envs/regional-dr.yaml
-
-    - name: Build ramen-operator container
-      run: make docker-build
 
     - name: Deploy ramen
       run: |
