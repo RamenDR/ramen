@@ -2575,7 +2575,7 @@ func (v *vrgTest) cleanupPVCs(
 	} else if vrg.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		pvcPostDeleteVerify1 = func(pvcNamespacedName types.NamespacedName, pvName string) {
 			pvcPostDeleteVerify(pvcNamespacedName, pvName)
-			pvcUnprotectedEventuallyVerify(client.ObjectKeyFromObject(vrg), pvcNamespacedName, pvName)
+			pvcUnprotectedVerify(*vrg, pvcNamespacedName, pvName)
 		}
 	}
 
@@ -2610,11 +2610,6 @@ func pvcDelete(
 	postDeleteVerify(pvcNamespacedName, pvNamespacedName.Name)
 }
 
-func pvcUnprotectedEventuallyVerify(vrgNamespacedName, pvcNamespacedName types.NamespacedName, pvName string) {
-	pvAndPvcObjectReplicasAbsentVerify(vrgNamespacedName, pvcNamespacedName, pvName)
-	vrgPvcStatusAbsentEventually(vrgNamespacedName, pvcNamespacedName)
-}
-
 func vrgPvcStatusAbsentEventually(vrgNamespacedName, pvcNamespacedName types.NamespacedName) {
 	Eventually(func() *ramendrv1alpha1.ProtectedPVC {
 		return vrgController.FindProtectedPVC(vrgGet(vrgNamespacedName), pvcNamespacedName.Namespace, pvcNamespacedName.Name)
@@ -2624,8 +2619,8 @@ func vrgPvcStatusAbsentEventually(vrgNamespacedName, pvcNamespacedName types.Nam
 func pvcUnprotectedVerify(
 	vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string,
 ) {
+	vrgPvcStatusAbsentEventually(client.ObjectKeyFromObject(&vrg), pvcNamespacedName)
 	pvAndPvcObjectReplicasAbsentVerify(client.ObjectKeyFromObject(&vrg), pvcNamespacedName, pvName)
-	vrgPvcStatusAbsentVerify(vrg, pvcNamespacedName, pvName)
 }
 
 type pvcPreDeleteVerify func(ramendrv1alpha1.VolumeReplicationGroup, types.NamespacedName, string)
