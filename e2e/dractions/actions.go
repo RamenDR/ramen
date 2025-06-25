@@ -89,7 +89,7 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+	if err = deployers.WaitWorkloadHealth(ctx, cluster); err != nil {
 		return err
 	}
 
@@ -228,7 +228,7 @@ func failoverRelocate(
 		return err
 	}
 
-	return deployers.WaitWorkloadHealth(ctx, targetCluster, ctx.AppNamespace())
+	return deployers.WaitWorkloadHealth(ctx, targetCluster)
 }
 
 func waitAndUpdateDRPC(
