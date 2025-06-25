@@ -62,7 +62,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
-	if err = WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+	if err = WaitWorkloadHealth(ctx, cluster); err != nil {
 		return err
 	}
 

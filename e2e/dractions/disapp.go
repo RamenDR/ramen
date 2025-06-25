@@ -59,7 +59,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	if err = deployers.WaitWorkloadHealth(ctx, cluster, appNamespace); err != nil {
+	if err = deployers.WaitWorkloadHealth(ctx, cluster); err != nil {
 		return err
 	}
 
@@ -160,7 +160,7 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	return deployers.WaitWorkloadHealth(ctx, targetCluster, appNamespace)
+	return deployers.WaitWorkloadHealth(ctx, targetCluster)
 }
 
 // findProtectCluster determines which cluster contains the discovered application

@@ -46,26 +46,27 @@ func waitSubscriptionPhase(
 	}
 }
 
-func WaitWorkloadHealth(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
+func WaitWorkloadHealth(ctx types.TestContext, cluster *types.Cluster) error {
 	log := ctx.Logger()
 	w := ctx.Workload()
 	start := time.Now()
 
-	log.Debugf("Waiting until workload \"%s/%s\" is healthy in cluster %q", namespace, w.GetAppName(), cluster.Name)
+	log.Debugf("Waiting until workload \"%s/%s\" is healthy in cluster %q",
+		ctx.AppNamespace(), w.GetAppName(), cluster.Name)
 
 	for {
-		err := w.Health(ctx, cluster, namespace)
+		err := w.Health(ctx, cluster)
 		if err == nil {
 			elapsed := time.Since(start)
 			log.Debugf("Workload \"%s/%s\" is healthy in cluster %q in %.3f seconds",
-				namespace, w.GetAppName(), cluster.Name, elapsed.Seconds())
+				ctx.AppNamespace(), w.GetAppName(), cluster.Name, elapsed.Seconds())
 
 			return nil
 		}
 
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
 			return fmt.Errorf("workload \"%s/%s\" is not healthy in cluster %q: %w",
-				namespace, w.GetAppName(), cluster.Name, err)
+				ctx.AppNamespace(), w.GetAppName(), cluster.Name, err)
 		}
 	}
 }
