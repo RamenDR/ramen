@@ -1506,11 +1506,16 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		pvcNamespacedName := client.ObjectKeyFromObject(&pvc)
 		log1 := log.WithValues("pvc", pvcNamespacedName.String())
 
-		if _, ok := pvcsVr[pvcNamespacedName]; !ok {
-			v.pvcUnprotectVolRep(pvc, log1.WithName("VolRep"))
+		_, pvcUnderVRProtection := pvcsVr[pvcNamespacedName]
+		_, pvcUnderVSProtection := pvcsVs[pvcNamespacedName]
+
+		if pvcUnderVRProtection || pvcUnderVSProtection {
+			continue
 		}
 
-		if _, ok := pvcsVs[pvcNamespacedName]; !ok {
+		if controllerutil.ContainsFinalizer(&pvc, PvcVRFinalizerProtected) {
+			v.pvcUnprotectVolRep(pvc, log1.WithName("VolRep"))
+		} else {
 			v.pvcUnprotectVolSync(pvc, log1.WithName("VolSync"))
 		}
 	}
