@@ -30,6 +30,7 @@ import (
 
 const (
 	DrClusterManifestWorkName = "ramen-dr-cluster"
+	ClusterRoleAggregateLabel = "open-cluster-management.io/aggregate-to-work"
 
 	// ManifestWorkNameFormat is a formated a string used to generate the manifest name
 	// The format is name-namespace-type-mw where:
@@ -442,11 +443,8 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 	objects := append(
 		[]interface{}{
 			vrgClusterRole,
-			vrgClusterRoleBinding,
 			mModeClusterRole,
-			mModeClusterRoleBinding,
 			drClusterConfigRole,
-			drClusterConfigRoleBinding,
 		},
 		objectsToAppend...,
 	)
@@ -479,8 +477,13 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 
 var (
 	vrgClusterRole = &rbacv1.ClusterRole{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"ramendr.openshift.io"},
@@ -490,26 +493,14 @@ var (
 		},
 	}
 
-	vrgClusterRoleBinding = &rbacv1.ClusterRoleBinding{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit"},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "klusterlet-work-sa",
-				Namespace: "open-cluster-management-agent",
+	mModeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
 			},
 		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
-		},
-	}
-
-	mModeClusterRole = &rbacv1.ClusterRole{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"ramendr.openshift.io"},
@@ -519,49 +510,20 @@ var (
 		},
 	}
 
-	mModeClusterRoleBinding = &rbacv1.ClusterRoleBinding{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit"},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "klusterlet-work-sa",
-				Namespace: "open-cluster-management-agent",
+	drClusterConfigRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
 			},
 		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
-		},
-	}
-
-	drClusterConfigRole = &rbacv1.ClusterRole{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit"},
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"ramendr.openshift.io"},
 				Resources: []string{"drclusterconfigs"},
 				Verbs:     []string{"create", "get", "list", "update", "delete"},
 			},
-		},
-	}
-
-	drClusterConfigRoleBinding = &rbacv1.ClusterRoleBinding{
-		TypeMeta:   metav1.TypeMeta{Kind: "ClusterRoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit"},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "klusterlet-work-sa",
-				Namespace: "open-cluster-management-agent",
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
 		},
 	}
 )
