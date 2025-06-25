@@ -90,8 +90,13 @@ func appendSubscriptionObject(
 }
 
 var olmClusterRole = &rbacv1.ClusterRole{
-	TypeMeta:   metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-	ObjectMeta: metav1.ObjectMeta{Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit"},
+	TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+	ObjectMeta: metav1.ObjectMeta{
+		Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
+		Labels: map[string]string{
+			util.ClusterRoleAggregateLabel: "true",
+		},
+	},
 	Rules: []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"operators.coreos.com"},
@@ -128,32 +133,9 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 	return append(objects,
 		util.Namespace(drClusterOperatorNamespaceName),
 		olmClusterRole,
-		olmRoleBinding(drClusterOperatorNamespaceName),
 		operatorGroup(drClusterOperatorNamespaceName),
 		drClusterOperatorConfigMap,
 	), nil
-}
-
-func olmRoleBinding(namespaceName string) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
-		TypeMeta: metav1.TypeMeta{Kind: "RoleBinding", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
-			Namespace: namespaceName,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "klusterlet-work-sa",
-				Namespace: "open-cluster-management-agent",
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
-		},
-	}
 }
 
 func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
