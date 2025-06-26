@@ -1055,7 +1055,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(namespace, managedCluster string) {
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(12))
+	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(8))
 
 	vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
 	Expect(vrgClusterRoleManifest).ToNot(BeNil())
