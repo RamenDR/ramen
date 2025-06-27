@@ -456,15 +456,12 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 				logger.Info("Comparing PVC names",
 					"from VRG", rs.ProtectedPVC.Name,
 					"from restoredPVC", restoredPVC.RestoredPVCName)
-				logger.Info("Ip address", "rsspec", rs.RsyncTLS.Address)
 				if fmt.Sprintf(RestorePVCinCGNameFormat, rs.ProtectedPVC.Name) == restoredPVC.RestoredPVCName {
 					rdService = rs.RsyncTLS.Address
 					break
 				}
 			}
 		}
-
-		logger.Info("Before CreateOrUpdate", "rdService", rdService)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
 			if err := ctrl.SetControllerReference(owner, replicationSource, h.Client.Scheme()); err != nil {

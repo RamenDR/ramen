@@ -381,7 +381,8 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 		}
 
 		if rd != nil && rdInfoForStatus != nil {
-			v.log.Info("rdInfoForStatus as Secondary", "RDSpec", rdInfoForStatus)
+			v.log.Info("Computed RDInfo for VRG (secondary role)", "RDInfo", rdInfoForStatus)
+
 			// Update the VSRG status with this rdInfo
 			v.instance.Status.RDInfo = v.volSyncHandler.AppendOrUpdate(v.instance.Status.RDInfo, *rdInfoForStatus)
 		}
@@ -438,7 +439,6 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 		)
 
 		v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", v.getRDSpecGroupName(groups[groupKey]))
-		v.log.Info("submariner value", "true/false", util.IsSubmarinerEnabled(v.instance.GetAnnotations()))
 
 		namespace := v.commonProtectedPVCNamespace(groupVal)
 		if namespace == "" {
@@ -480,7 +480,7 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 
 		if !util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
 
-			v.log.Info("CG when Submariner is not enabled")
+			v.log.Info("Setting up Consistency Group (CG) replication using direct TLS connection (Submariner disabled)")
 
 			for _, rdRef := range replicationGroupDestination.Status.ReplicationDestinations {
 				rd := &volsyncv1alpha1.ReplicationDestination{}
@@ -504,7 +504,7 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 					},
 				}
 
-				v.log.Info("Updating CG RDInfo to VRG.Status.RDInfo", "PVC", rdRef.Name, "Address", rdInfo.RsyncTLS.Address)
+				v.log.Info("Updating VRG.Status.RDInfo with ReplicationDestination details", "PVC", rdRef.Name, "Address", rdInfo.RsyncTLS.Address)
 
 				v.instance.Status.RDInfo = v.volSyncHandler.AppendOrUpdate(v.instance.Status.RDInfo, rdInfo)
 			}

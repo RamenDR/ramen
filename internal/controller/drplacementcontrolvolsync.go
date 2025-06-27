@@ -17,7 +17,7 @@ import (
 )
 
 func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error {
-	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup) // TODO: Update progression string
+	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup)
 
 	// Create or update the destination VRG
 	opResult, err := d.createOrUpdateSecondaryManifestWork(srcCluster)
@@ -38,7 +38,8 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 		return err
 	}
 
-	if !d.ramenConfig.VolSync.SubmarinerEnabled {
+	if !rmnutil.IsSubmarinerEnabled(d.instance.GetAnnotations()) {
+		d.log.Info("Ensuring VolSync replication source")
 		err = d.ensureVolSyncReplicationSource(srcCluster)
 		if err != nil {
 			return err
@@ -76,12 +77,10 @@ func (d *DRPCInstance) ensureVolSyncReplicationSource(srcCluster string) error {
 			return fmt.Errorf("Waiting for VolSync RDInfo")
 		}
 
-		// if len(dstVSRG.Status.VolSyncRepStatus.RDInfo) != len(srcVSRG.Spec.VolSync.RSSpec) {
 		err := d.updateSourceVSRG(srcCluster, srcVSRG, dstVSRG)
 		if err != nil {
 			return fmt.Errorf("failed to update dst VSRG on cluster %s - %w", srcCluster, err)
 		}
-		// }
 
 		d.log.Info("Replication Destination", "info", dstVSRG.Status.RDInfo)
 		break
