@@ -2394,10 +2394,6 @@ func (v *vrgTest) ensureVRGIsUploadedToS3(expectedStatus bool, reason string) {
 			}
 		}
 
-		if v.isAnyPVCProtectedByVolSync(vrg) {
-			return true
-		}
-
 		return clusterDataProtectionCondition.Status != metav1.ConditionTrue
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"while waiting for VRG TRUE condition %s/%s", v.vrgName, v.namespace)
@@ -2520,16 +2516,15 @@ func vrgObjectProtectionValidate(tests []*vrgTest) {
 		v.ensureVRGIsUploadedToS3(true, vrgController.VRGConditionReasonUploaded)
 	}
 
-	protectedVrgList := protectedVrgListCreateAndStatusWait("protectedvrglist-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
 	vrgs := make([]ramendrv1alpha1.VolumeReplicationGroup, len(tests))
 
 	for i, v := range tests {
 		vrg := v.kubeObjectProtectionValidate()
 		vrgController.VrgTidyForList(vrg)
 		vrgs[i] = *vrg
-		protectedVrgListExpectInclude(protectedVrgList, vrgs[i:i+1])
 	}
 
+	protectedVrgList := protectedVrgListCreateAndStatusWait("protectedvrglist-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
 	protectedVrgListExpectInclude(protectedVrgList, vrgs)
 	protectedVrgListDeleteAndNotFoundWait(protectedVrgList)
 }
