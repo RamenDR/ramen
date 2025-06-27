@@ -147,8 +147,8 @@ func failoverRelocateDiscoveredApps(
 		return err
 	}
 
-	// delete pvc and deployment from dr cluster
-	if err := deployers.DeleteDiscoveredApps(ctx, currentCluster, appNamespace); err != nil {
+	// delete and wait for discovered app deletion from dr cluster
+	if err := deployers.DeleteDiscoveredAppsAndWait(ctx, currentCluster, appNamespace); err != nil {
 		return err
 	}
 

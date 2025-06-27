@@ -6,6 +6,7 @@ package deployers
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -108,8 +109,36 @@ func (d DiscoveredApp) IsDiscovered() bool {
 }
 
 func DeleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
-	log := ctx.Logger()
+	if err := deleteDiscoveredApps(ctx, cluster, namespace, false); err != nil {
+		return err
+	}
 
+	log := ctx.Logger()
+	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q", namespace, ctx.Workload().GetAppName(), cluster.Name)
+
+	return nil
+}
+
+func DeleteDiscoveredAppsAndWait(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
+	log := ctx.Logger()
+	startTime := time.Now()
+
+	log.Debugf("Deleting discovered app \"%s/%s\" in cluster %q and waiting for deletion",
+		namespace, ctx.Workload().GetAppName(), cluster.Name)
+
+	if err := deleteDiscoveredApps(ctx, cluster, namespace, true); err != nil {
+		return fmt.Errorf("failed to delete discovered app \"%s/%s\" in cluster %q: %w",
+			namespace, ctx.Workload().GetAppName(), cluster.Name, err)
+	}
+
+	elapsed := time.Since(startTime)
+	log.Debugf("Discovered app \"%s/%s\" deleted in cluster %q in %.3f seconds",
+		namespace, ctx.Workload().GetAppName(), cluster.Name, elapsed.Seconds())
+
+	return nil
+}
+
+func deleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespace string, wait bool) error {
 	tempDir, err := os.MkdirTemp("", "ramen-")
 	if err != nil {
 		return err
@@ -122,23 +151,16 @@ func DeleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespa
 		return err
 	}
 
-	if err := util.RunCommand(
+	return util.RunCommand(
 		ctx.Context(),
 		"kubectl",
 		"delete",
 		"--kustomize", tempDir,
 		"--namespace", namespace,
 		"--kubeconfig", cluster.Kubeconfig,
-		"--wait=false",
+		fmt.Sprintf("--wait=%t", wait),
 		"--ignore-not-found",
-	); err != nil {
-		return err
-	}
-
-	log.Debugf("Deleted discovered app \"%s/%s\" in cluster %q",
-		namespace, ctx.Workload().GetAppName(), cluster.Name)
-
-	return nil
+	)
 }
 
 // chooseDeployCluster determines which cluster to deploy the discovered
