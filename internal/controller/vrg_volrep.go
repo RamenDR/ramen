@@ -344,7 +344,7 @@ func setPVCStorageIdentifiers(
 		}
 	}
 
-	if value, ok := volumeReplicationClass.GetLabels()[VolumeReplicationIDLabel]; ok {
+	if value, ok := volumeReplicationClass.GetLabels()[ReplicationIDLabel]; ok {
 		protectedPVC.StorageIdentifiers.ReplicationID.ID = value
 		if modes, ok := volumeReplicationClass.GetLabels()[MModesLabel]; ok {
 			protectedPVC.StorageIdentifiers.ReplicationID.Modes = MModesFromCSV(modes)
@@ -1389,7 +1389,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	filterMatchingReplicationClass := func(replicationClass client.Object, parameters map[string]string,
 		provisioner string,
 	) {
-		schedulingInterval, found := parameters[VRClassScheduleKey]
+		schedulingInterval, found := parameters[ReplicationClassScheduleKey]
 
 		if storageClass.Provisioner != provisioner || !found {
 			// skip this replication class if provisioner does not match or if schedule not found
