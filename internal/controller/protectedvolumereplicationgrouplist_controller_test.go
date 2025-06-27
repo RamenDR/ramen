@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -91,11 +92,64 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 	Expect(protectedVrgList.Status.Items).To(ConsistOf(vrgsExpected))
 }
 
+func matchVRG(expected, got ramen.VolumeReplicationGroup) (found, valid bool, msg string) {
+	if expected.Namespace != got.Namespace || expected.Name != got.Name {
+		return false, false, fmt.Sprintf("VRG %s/%s does not match expected: "+
+			"got: %s/%s",
+			expected.Namespace, expected.Name,
+			got.Namespace, got.Name)
+	}
+
+	if expected.Status.ObservedGeneration != got.Status.ObservedGeneration ||
+		expected.Status.State != got.Status.State {
+		return true, false, fmt.Sprintf("VRG %s/%s in pvrgl has mismatched status, expected: "+
+			"Generation: %d, state: %s, "+
+			" got: Generation: %d, state: %s",
+			expected.Namespace, expected.Name,
+			expected.Status.ObservedGeneration, expected.Status.State,
+			got.Status.ObservedGeneration, got.Status.State)
+	}
+
+	return true, true, ""
+}
+
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
-	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
-	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
+	expectedList := make([]string, 0, len(vrgsExpected))
+	gotList := make([]string, 0, len(protectedVrgList.Status.Items))
+
+	for _, vrgExpected := range vrgsExpected {
+		expectedList = append(expectedList, fmt.Sprintf("%s/%s", vrgExpected.Namespace, vrgExpected.Name))
+	}
+
+	for _, vrg := range protectedVrgList.Status.Items {
+		gotList = append(gotList, fmt.Sprintf("%s/%s", vrg.Namespace, vrg.Name))
+	}
+
+	for _, vrgExpected := range vrgsExpected {
+		var found, valid bool
+
+		var msg string
+
+		for _, vrg := range protectedVrgList.Status.Items {
+			found, valid, msg = matchVRG(vrgExpected, vrg)
+
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			msg := fmt.Sprintf("Expected VRG not found in pvrgl %s/%s, expected list: %v, got list: %v",
+				vrgExpected.Namespace, vrgExpected.Name, expectedList, gotList)
+			Fail(msg)
+		}
+
+		if !valid {
+			Fail(msg)
+		}
+	}
 }
 
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
