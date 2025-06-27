@@ -1795,11 +1795,12 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 // or updated as needed, such as the PrepareForFinalSync and RunFinalSync fields.
 func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeReplicationGroup, homeCluster string) {
 	vrg.ObjectMeta.Annotations = map[string]string{
-		DestinationClusterAnnotationKey: homeCluster,
-		DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
-		DRPCUIDAnnotation:               string(d.instance.UID),
-		rmnutil.IsCGEnabledAnnotation:   d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
-		rmnutil.UseVolSyncAnnotation:    d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		DestinationClusterAnnotationKey:       homeCluster,
+		DoNotDeletePVCAnnotation:              d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
+		DRPCUIDAnnotation:                     string(d.instance.UID),
+		rmnutil.IsCGEnabledAnnotation:         d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
+		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces

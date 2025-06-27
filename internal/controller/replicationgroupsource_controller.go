@@ -118,7 +118,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 	result, err := statemachine.Run(
 		ctx,
-		cephfscg.NewRGSMachine(r.Client, rgs,
+		cephfscg.NewRGSMachine(r.Client, rgs, vrg,
 			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
 				&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
 				volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
