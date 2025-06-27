@@ -1062,7 +1062,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				}
 			}
 		})
-		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgTestCases) })
+		It("protects kube objects", func() { vrgObjectProtectionValidate(vrgTestCases) })
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTestCases); c++ {
 				v := vrgTestCases[c]
@@ -1197,7 +1197,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				}
 			}
 		})
-		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgTests) })
+		It("protects kube objects", func() { vrgObjectProtectionValidate(vrgTests) })
 		It("cleans up after testing", func() {
 			for c := 0; c < len(vrgTests); c++ {
 				v := vrgTests[c]
@@ -1246,7 +1246,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
-		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatusTests) })
+		It("protects kube objects", func() { vrgObjectProtectionValidate(vrgStatusTests) })
 		It("cleans up after testing", func() {
 			v.cleanupProtected()
 			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
@@ -1285,7 +1285,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
-		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus2Tests) })
+		It("protects kube objects", func() { vrgObjectProtectionValidate(vrgStatus2Tests) })
 		It("cleans up after testing", func() {
 			v := vrgStatus2Tests[0]
 			v.cleanupProtected()
@@ -1335,7 +1335,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v.promoteVolReps()
 			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
-		It("protects kube objects", func() { kubeObjectProtectionValidate(vrgStatus3Tests) })
+		It("protects kube objects", func() { vrgObjectProtectionValidate(vrgStatus3Tests) })
 		It("cleans up after testing", func() {
 			v.cleanupProtected()
 			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
@@ -1372,7 +1372,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v := vrgScheduleTests[0]
 			v.verifyVRGStatusExpectation(false, "")
 		})
-		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgScheduleTests) })
+		// It("protects kube objects", func() { vrgObjectProtectionValidate(vrgScheduleTests) })
 		It("cleans up after testing", func() {
 			v := vrgScheduleTests[0]
 			v.cleanupStatusAbsent()
@@ -1409,7 +1409,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v := vrgSchedule2Tests[0]
 			v.verifyVRGStatusExpectation(false, "")
 		})
-		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule2Tests) })
+		// It("protects kube objects", func() { vrgObjectProtectionValidate(vrgSchedule2Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule2Tests[0]
 			v.cleanupStatusAbsent()
@@ -1445,7 +1445,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			v := vrgSchedule3Tests[0]
 			v.verifyVRGStatusExpectation(false, "")
 		})
-		// It("protects kube objects", func() { kubeObjectProtectionValidate(vrgSchedule3Tests) })
+		// It("protects kube objects", func() { vrgObjectProtectionValidate(vrgSchedule3Tests) })
 		It("cleans up after testing", func() {
 			v := vrgSchedule3Tests[0]
 			v.cleanupStatusAbsent()
@@ -2515,7 +2515,7 @@ func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicat
 	return vrg
 }
 
-func kubeObjectProtectionValidate(tests []*vrgTest) {
+func vrgObjectProtectionValidate(tests []*vrgTest) {
 	for _, v := range tests {
 		v.ensureVRGIsUploadedToS3(true, vrgController.VRGConditionReasonUploaded)
 	}
