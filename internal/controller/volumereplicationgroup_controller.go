@@ -2016,8 +2016,7 @@ func vrgInAdminNamespace(vrg *ramendrv1alpha1.VolumeReplicationGroup, ramenConfi
 	return slices.Contains(vrgAdminNamespaceNames, vrg.Namespace)
 }
 
-func filterVRGDependentObjects(reader client.Reader, obj client.Object, objNamespacedName types.NamespacedName,
-	log logr.Logger,
+func filterVRGDependentObjects(reader client.Reader, obj client.Object, log logr.Logger,
 ) []reconcile.Request {
 	req := []reconcile.Request{}
 
@@ -2034,13 +2033,6 @@ func filterVRGDependentObjects(reader client.Reader, obj client.Object, objNames
 		log1 := log.WithValues("vrg", vrg.Name)
 
 		if vrg.Spec.ProtectedNamespaces == nil || len(*vrg.Spec.ProtectedNamespaces) == 0 {
-			if vrg.Namespace == objNamespacedName.Namespace {
-				req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{
-					Name:      vrg.Name,
-					Namespace: vrg.Namespace,
-				}})
-			}
-
 			continue
 		}
 
@@ -2070,9 +2062,8 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 		return []reconcile.Request{}
 	}
 
-	vgrNamespacedName := types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}
-
-	return filterVRGDependentObjects(r.Client, obj, vgrNamespacedName, log.WithValues("vgr", vgrNamespacedName))
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -2085,9 +2076,8 @@ func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj cl
 		return []reconcile.Request{}
 	}
 
-	vrNamespacedName := types.NamespacedName{Name: vr.Name, Namespace: vr.Namespace}
-
-	return filterVRGDependentObjects(r.Client, obj, vrNamespacedName, log.WithValues("vr", vrNamespacedName))
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("vr", types.NamespacedName{Name: vr.Name, Namespace: vr.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) RDMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -2100,9 +2090,8 @@ func (r *VolumeReplicationGroupReconciler) RDMapFunc(ctx context.Context, obj cl
 		return []reconcile.Request{}
 	}
 
-	rdNamespacedName := types.NamespacedName{Name: rd.Name, Namespace: rd.Namespace}
-
-	return filterVRGDependentObjects(r.Client, obj, rdNamespacedName, log.WithValues("rd", rdNamespacedName))
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("rd", types.NamespacedName{Name: rd.Name, Namespace: rd.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -2115,9 +2104,8 @@ func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj cl
 		return []reconcile.Request{}
 	}
 
-	rsNamespacedName := types.NamespacedName{Name: rs.Name, Namespace: rs.Namespace}
-
-	return filterVRGDependentObjects(r.Client, obj, rsNamespacedName, log.WithValues("rs", rsNamespacedName))
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("rs", types.NamespacedName{Name: rs.Name, Namespace: rs.Namespace}))
 }
 
 func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder *builder.Builder) *builder.Builder {
