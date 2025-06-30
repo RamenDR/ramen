@@ -20,6 +20,11 @@ const (
 	deploymentAppName = "busybox"
 	deploymentPath    = "workloads/deployment/base"
 	pvcName           = "busybox-pvc"
+
+	//nolint:lll
+	// deploymentMinimumReplicasAvailable is added in a deployment when it has its minimum replicas required available.
+	// https://github.com/kubernetes/kubernetes/blob/95bff1b249e048b7e36ae857d7478dd2ac05346a/pkg/controller/deployment/util/deployment_util.go#L97
+	deploymentMinimumReplicasAvailable = "MinimumReplicasAvailable"
 )
 
 type Deployment struct {
@@ -93,12 +98,30 @@ func (w Deployment) Health(ctx types.TestContext, cluster *types.Cluster) error 
 		return err
 	}
 
-	if deploy.Status.Replicas == deploy.Status.ReadyReplicas {
-		return nil
+	if deploy.GetGeneration() != deploy.Status.ObservedGeneration {
+		return fmt.Errorf("deployment \"%s/%s\" status has stale generation in cluster %q (expected: %d, observed: %d)",
+			ctx.AppNamespace(), w.GetAppName(), cluster.Name, deploy.GetGeneration(), deploy.Status.ObservedGeneration)
 	}
 
-	return fmt.Errorf("deployment \"%s/%s\" not ready in cluster %q: %d/%d replicas ready",
-		ctx.AppNamespace(), w.GetAppName(), cluster.Name, deploy.Status.ReadyReplicas, deploy.Status.Replicas)
+	condition := findDeploymentCondition(deploy.Status.Conditions, appsv1.DeploymentAvailable)
+	if condition == nil {
+		return fmt.Errorf("deployment \"%s/%s\" missing %q condition in cluster %q",
+			ctx.AppNamespace(), w.GetAppName(), appsv1.DeploymentAvailable, cluster.Name)
+	}
+
+	if condition.Status != corev1.ConditionTrue {
+		return fmt.Errorf("deployment \"%s/%s\" condition %q is %q in cluster %q: %s",
+			ctx.AppNamespace(), w.GetAppName(), appsv1.DeploymentAvailable,
+			condition.Status, cluster.Name, condition.Message)
+	}
+
+	if condition.Reason != deploymentMinimumReplicasAvailable {
+		return fmt.Errorf("deployment \"%s/%s\" condition %q has reason %q but expected %q in cluster %q",
+			ctx.AppNamespace(), w.GetAppName(), appsv1.DeploymentAvailable,
+			condition.Reason, deploymentMinimumReplicasAvailable, cluster.Name)
+	}
+
+	return nil
 }
 
 // Status returns the deployment status across managed clusters.
@@ -199,4 +222,17 @@ func findPVC(ctx types.TestContext, cluster *types.Cluster, namespace, name stri
 	}
 
 	return true, nil
+}
+
+func findDeploymentCondition(
+	conditions []appsv1.DeploymentCondition,
+	conditionType appsv1.DeploymentConditionType,
+) *appsv1.DeploymentCondition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
+		}
+	}
+
+	return nil
 }
