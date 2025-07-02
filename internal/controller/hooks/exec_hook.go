@@ -299,7 +299,7 @@ func (e ExecHook) getExecPodsFromStatefulSetForSinglePodOnly(log logr.Logger) ([
 	}
 
 	if e.Hook.NameSelector != "" {
-		objs, err := getResourcesUsingNameSelector(e.Reader, e.Hook, statefulSetList)
+		selectorType, objs, err := getResourcesUsingNameSelector(e.Reader, e.Hook, statefulSetList)
 		if err != nil {
 			return execPods, err
 		}
@@ -312,7 +312,8 @@ func (e ExecHook) getExecPodsFromStatefulSetForSinglePodOnly(log logr.Logger) ([
 		}
 
 		log.Info("statefulsets count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "selectResource", e.Hook.SelectResource, "statefulSetCount", len(ss))
+			"nameSelector", e.Hook.NameSelector, "nameSelectorType", selectorType,
+			"selectResource", e.Hook.SelectResource, "statefulSetCount", len(ss))
 	}
 
 	return e.getPodsFromStatefulsets(ss)
@@ -472,7 +473,7 @@ func (e ExecHook) getDeploymentsForSinglePodOnly(log logr.Logger) ([]appsv1.Depl
 	}
 
 	if e.Hook.NameSelector != "" {
-		objs, err := getResourcesUsingNameSelector(e.Reader, e.Hook, deploymentList)
+		selectorType, objs, err := getResourcesUsingNameSelector(e.Reader, e.Hook, deploymentList)
 		if err != nil {
 			return deps, err
 		}
@@ -486,7 +487,8 @@ func (e ExecHook) getDeploymentsForSinglePodOnly(log logr.Logger) ([]appsv1.Depl
 		}
 
 		log.Info("deployments count obtained using name selector for", "hook", e.Hook.Name,
-			"nameSelector", e.Hook.NameSelector, "selectResource", e.Hook.SelectResource, "deploymentCount", len(deps))
+			"nameSelector", e.Hook.NameSelector, "selectorType", selectorType, "selectResource", e.Hook.SelectResource,
+			"deploymentCount", len(deps))
 	}
 
 	return deps, err
