@@ -18,16 +18,25 @@ const (
 	defaultOnErrorValue = "fail"
 )
 
+type NameSelectorType string
+
+const (
+	ValidNameSelector   NameSelectorType = "valid"
+	RegexNameSelector   NameSelectorType = "regex"
+	InvalidNameSelector NameSelectorType = "invalid"
+)
+
 func getResourcesUsingNameSelector(r client.Reader, hook *kubeobjects.HookSpec,
 	objList client.ObjectList,
-) ([]client.Object, error) {
+) (NameSelectorType, []client.Object, error) {
 	filteredObjs := make([]client.Object, 0)
 
 	var err error
-
 	if isValidK8sName(hook.NameSelector) {
 		// use nameSelector for Matching field
-		return getObjectsUsingValidK8sName(r, hook, objList)
+		objs, err := getObjectsUsingValidK8sName(r, hook, objList)
+
+		return ValidNameSelector, objs, err
 	} else if isValidRegex(hook.NameSelector) {
 		// after listing without the fields selector, match with the regex for filtering
 		listOps := &client.ListOptions{
@@ -36,13 +45,13 @@ func getResourcesUsingNameSelector(r client.Reader, hook *kubeobjects.HookSpec,
 
 		err = r.List(context.Background(), objList, listOps)
 		if err != nil {
-			return filteredObjs, err
+			return RegexNameSelector, filteredObjs, err
 		}
 
-		return getObjectsBasedOnTypeAndRegex(objList, hook.NameSelector), nil
+		return RegexNameSelector, getObjectsBasedOnTypeAndRegex(objList, hook.NameSelector), nil
 	}
 
-	return filteredObjs, fmt.Errorf("nameSelector is neither distinct name nor regex")
+	return InvalidNameSelector, filteredObjs, fmt.Errorf("nameSelector is neither distinct name nor regex")
 }
 
 func getObjectsUsingValidK8sName(r client.Reader, hook *kubeobjects.HookSpec,
