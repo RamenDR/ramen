@@ -19,7 +19,7 @@ const (
 	deploymentName    = "deploy"
 	deploymentAppName = "busybox"
 	deploymentPath    = "workloads/deployment/base"
-	pvcName           = "busybox-pvc"
+	deploymentPVCName = "busybox-pvc"
 
 	//nolint:lll
 	// deploymentMinimumReplicasAvailable is added in a deployment when it has its minimum replicas required available.
@@ -151,7 +151,7 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
+	pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
 	if err != nil {
 		return types.WorkloadStatus{}, err
 	}
