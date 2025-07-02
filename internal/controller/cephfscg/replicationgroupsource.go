@@ -20,6 +20,7 @@ import (
 type replicationGroupSourceMachine struct {
 	client.Client
 	ReplicationGroupSource *ramendrv1alpha1.ReplicationGroupSource
+	Vrg                    *ramendrv1alpha1.VolumeReplicationGroup
 	VSHandler              *volsync.VSHandler // VSHandler will be used to call the exist funcs
 	VolumeGroupHandler     VolumeGroupSourceHandler
 	Logger                 logr.Logger
@@ -28,6 +29,7 @@ type replicationGroupSourceMachine struct {
 func NewRGSMachine(
 	client client.Client,
 	replicationGroupSource *ramendrv1alpha1.ReplicationGroupSource,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	vsHandler *volsync.VSHandler,
 	volumeGroupHandler VolumeGroupSourceHandler,
 	logger logr.Logger,
@@ -35,6 +37,7 @@ func NewRGSMachine(
 	return &replicationGroupSourceMachine{
 		Client:                 client,
 		ReplicationGroupSource: replicationGroupSource,
+		Vrg:                    vrg,
 		VSHandler:              vsHandler,
 		VolumeGroupHandler:     volumeGroupHandler,
 		Logger:                 logger.WithName("ReplicationGroupSourceMachine"),
@@ -152,7 +155,7 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 	}
 
 	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
-		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource)
+		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource, m.Vrg, m.VSHandler.IsSubmarinerEnabled())
 	if err != nil {
 		m.Logger.Error(err, "Failed to create replication source")
 
