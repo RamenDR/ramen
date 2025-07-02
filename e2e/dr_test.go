@@ -67,6 +67,7 @@ func TestDR(dt *testing.T) {
 	}
 }
 
+//nolint:cyclop
 func runTestFlow(t *test.T, ctx test.Context) {
 	t.Helper()
 
@@ -83,6 +84,30 @@ func runTestFlow(t *test.T, ctx test.Context) {
 	}
 
 	if !t.Run("Failover", ctx.Failover) {
+		t.FailNow()
+	}
+
+	if !t.Run("Disable", ctx.Disable) {
+		t.FailNow()
+	}
+
+	if !t.Run("Enable", ctx.Enable) {
+		t.FailNow()
+	}
+
+	if !t.Run("Relocate", ctx.Relocate) {
+		t.FailNow()
+	}
+
+	if !t.Run("Failover", ctx.Failover) {
+		t.FailNow()
+	}
+
+	if !t.Run("Failover", ctx.Failover) {
+		t.FailNow()
+	}
+
+	if !t.Run("Relocate", ctx.Relocate) {
 		t.FailNow()
 	}
 
