@@ -1776,7 +1776,12 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 
 func (v *VRGInstance) updateProtectedCGs() error {
 	var vgrs volrep.VolumeGroupReplicationList
-	if err := v.reconciler.List(v.ctx, &vgrs); err != nil {
+
+	listOptions := []client.ListOption{
+		client.MatchingLabels(util.OwnerLabels(v.instance)),
+	}
+
+	if err := v.reconciler.List(v.ctx, &vgrs, listOptions...); err != nil {
 		return fmt.Errorf("failed to list Volume Group Replications, %w", err)
 	}
 
@@ -1784,11 +1789,6 @@ func (v *VRGInstance) updateProtectedCGs() error {
 
 	for idx := range vgrs.Items {
 		vgr := &vgrs.Items[idx]
-
-		ownerNamespaceName, ownerName, _ := util.OwnerNamespaceNameAndName(vgr.GetLabels())
-		if ownerNamespaceName != v.instance.Namespace || ownerName != v.instance.Name {
-			continue
-		}
 
 		group := ramendrv1alpha1.Groups{Grouped: []string{}}
 
