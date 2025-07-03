@@ -9,8 +9,8 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
-	groupsnapv1beta1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 
@@ -308,30 +308,6 @@ func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string,
 	return ""
 }
 
-// isGroupingEnabledForReplication determines if grouping is enabled based on the provided vrcID and vgrcID.
-// Grouping is enabled only when both vrcID and vgrcID are non-empty and equal.
-// Returns the vrcID (if applicable) and a boolean indicating whether grouping is enabled.
-func isGroupingEnabledForReplication(vrcID, vgrcID string) (string, bool) {
-	// grouping is enabled if both vrcID and vgrcID are non-empty and equal.
-	// we return vrcid (since vrcID and vgrcID are equal) and true
-	if vrcID != "" && vrcID == vgrcID {
-		return vrcID, true
-	}
-
-	// if only vrcID is non-empty, we return vrcID and not enable grouping
-	if vrcID != "" {
-		return vrcID, false
-	}
-
-	// if only vgrcID is non-empty, we return empty string and not enable grouping
-	if vgrcID != "" {
-		return "", false
-	}
-
-	// if vrcID and vgrcID are empty then return empty string and not enable grouping
-	return "", false
-}
-
 // getAsyncPeers determines if scName in the first classList has asynchronous peers in the remaining classLists.
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
 // the desired asynchronous schedule that requires to be matched
@@ -350,10 +326,11 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				break
 			}
 
-			vrcID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+			rID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 			vgrcID := getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 
-			rID, grouping := isGroupingEnabledForReplication(vrcID, vgrcID)
+			grouping := rID != "" && rID == vgrcID
+
 			if rID == "" {
 				if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
 					grouping = true
@@ -785,6 +762,14 @@ func deleteViewsForClasses(m util.ManagedClusterViewGetter, log logr.Logger, clu
 	}
 
 	if err := pruneVSClassViews(m, log, clusterName, []string{}); err != nil {
+		return err
+	}
+
+	if err := pruneVGSClassViews(m, log, clusterName, []string{}); err != nil {
+		return err
+	}
+
+	if err := pruneVGRClassViews(m, log, clusterName, []string{}); err != nil {
 		return err
 	}
 
