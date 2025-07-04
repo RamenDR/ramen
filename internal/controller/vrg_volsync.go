@@ -278,7 +278,11 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 		v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
 		v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
 
-		v.updateWorkloadActivityAsSecondary()
+		if requeue := v.updateWorkloadActivityAsSecondary(); requeue {
+			v.log.Info("Workload is still active, requeueing for VolSync reconciliation as Secondary")
+
+			return true // requeue
+		}
 	}
 
 	// Reset status finalsync flags and condition
@@ -290,7 +294,7 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 
 // updateWorkloadActivityAsSecondary updates workload status of volsync PVCs if still in use by the workload. This is
 // useful to set DataReady on VRG as false if VRG is being reconciled as Secondary.
-func (v *VRGInstance) updateWorkloadActivityAsSecondary() {
+func (v *VRGInstance) updateWorkloadActivityAsSecondary() bool {
 	for idx := range v.volSyncPVCs {
 		pvcNSName := types.NamespacedName{
 			Namespace: v.volSyncPVCs[idx].GetNamespace(),
@@ -305,7 +309,7 @@ func (v *VRGInstance) updateWorkloadActivityAsSecondary() {
 
 			v.log.Info("Failed to determine if pvc is in use", "error", err, "pvc", pvcNSName)
 
-			return
+			return true // requeue
 		}
 
 		if inUse {
@@ -314,9 +318,11 @@ func (v *VRGInstance) updateWorkloadActivityAsSecondary() {
 			v.log.Info("One or more pvcs are in use as secondary, waiting for workload to be inactive",
 				"pvc", pvcNSName)
 
-			return
+			return true // requeue
 		}
 	}
+
+	return false // no requeue
 }
 
 func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
