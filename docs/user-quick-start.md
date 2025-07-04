@@ -233,7 +233,7 @@ enough resources:
    ```
 
    kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.7.0.
+   version 0.8.0.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 1. Install `helm` tool - on Fedora you can use:
