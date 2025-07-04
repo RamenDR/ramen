@@ -8,7 +8,7 @@ templates:
   - name: cluster
     driver: $vm
     container_runtime: containerd
-    memory: 2g
+    memory: 3g
 profiles:
   - name: c1
     template: cluster

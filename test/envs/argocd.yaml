@@ -17,7 +17,7 @@ templates:
     container_runtime: containerd
     network: "$network"
     cpus: 2
-    memory: "2g"
+    memory: "3g"
 
 profiles:
   - name: hub

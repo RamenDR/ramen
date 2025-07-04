@@ -9,7 +9,7 @@ profiles:
     driver: $vm
     container_runtime: containerd
     cpus: 2
-    memory: "2g"
+    memory: "3g"
     rosetta: false
     workers:
       - addons:

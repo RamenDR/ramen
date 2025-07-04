@@ -10,7 +10,7 @@ templates:
     driver: $vm
     container_runtime: containerd
     network: $network
-    memory: 2g
+    memory: 3g
     workers:
       - addons:
           - name: submariner

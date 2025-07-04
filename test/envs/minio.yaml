@@ -9,7 +9,7 @@ profiles:
   - name: c1
     driver: $vm
     container_runtime: containerd
-    memory: 2g
+    memory: 3g
     workers:
       - addons:
           - name: minio
