@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"time"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/go-logr/logr"
@@ -1282,6 +1284,8 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 
 	r.updateResourceCondition(ctx, drpc, userPlacement, log)
 
+	r.updateResourceConditionVolumeReplication(ctx, drpc, log)
+
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		if err := r.setDRPCMetrics(ctx, drpc, log); err != nil {
@@ -1398,6 +1402,67 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	}
 
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
+}
+
+func getReplicationStatus(vr *volrep.VolumeReplication) string {
+	for _, cond := range vr.Status.Conditions {
+		if cond.Type == "Replicating" {
+			switch cond.Status {
+			case metav1.ConditionTrue:
+				return "Replicating"
+			case metav1.ConditionFalse:
+				return "NotReplicating"
+			case metav1.ConditionUnknown:
+				return "Unknown"
+			}
+		}
+	}
+
+	return "ConditionMissing"
+}
+
+func mapToConditionStatus(status string) metav1.ConditionStatus {
+	switch status {
+	case "Replicating":
+		return metav1.ConditionTrue
+	case "NotReplicating":
+		return metav1.ConditionFalse
+	default:
+		return metav1.ConditionUnknown
+	}
+}
+
+// updateResourceConditionVolumeReplication updates DRPC status sub-resource with updated status from VR,
+//
+//nolint:funlen,cyclop
+func (r *DRPlacementControlReconciler) updateResourceConditionVolumeReplication(ctx context.Context,
+	drpc *rmn.DRPlacementControl, log logr.Logger,
+) {
+	var vrList volrep.VolumeReplicationList
+	if err := r.List(ctx, &vrList, client.InNamespace(drpc.Namespace)); err != nil {
+		log.Error(err, "unable to list VolumeReplication resources")
+
+		return
+	}
+
+	for _, vr := range vrList.Items {
+		if vr.Labels["ramen.openshift.io/drpc-name"] != drpc.Name {
+			continue
+		}
+
+		status := getReplicationStatus(&vr)
+
+		meta.SetStatusCondition(&drpc.Status.Conditions, metav1.Condition{
+			Type:               "ReplicationStatus",
+			Status:             mapToConditionStatus(status),
+			Reason:             status,
+			Message:            "Replication status derived from VolumeReplication condition",
+			ObservedGeneration: drpc.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
+
+		return
+	}
 }
 
 // clusterForVRGStatus determines which cluster's VRG should be inspected for status updates to DRPC

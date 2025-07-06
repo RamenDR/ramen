@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"reflect"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/equality"
+
 	"github.com/go-logr/logr"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -270,6 +273,48 @@ func DRPolicyPredicateFunc() predicate.Funcs {
 	}
 
 	return drPolicyPredicate
+}
+
+func VolumeReplicationPredicateFunc() predicate.Funcs {
+	volumeReplicationPredicate := predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldVR, okOld := e.ObjectOld.(*volrep.VolumeReplication)
+			newVR, okNew := e.ObjectNew.(*volrep.VolumeReplication)
+			if !okOld || !okNew {
+				return false
+			}
+
+			return !equality.Semantic.DeepEqual(oldVR.Status, newVR.Status)
+		},
+		CreateFunc:  func(e event.CreateEvent) bool { return false },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
+
+	return volumeReplicationPredicate
+}
+
+// FilterVolumeReplication filters and returns the DRPC resources that need reconciliation
+// in response to a VolumeReplication status sub-resource update event. This ensures that only relevant DRPCs are processed
+// based on the changes in the associated VolumeReplication's status sub-resource.
+func filterVolumeReplication(vr *volrep.VolumeReplication) []reconcile.Request {
+	const drpcLabelKey = "ramen.openshift.io/drpc-name"
+	drpcName, exists := vr.Labels[drpcLabelKey]
+
+	if !exists || drpcName == "" {
+		ctrl.Log.WithName("mapVRToDRPC").Info("VR missing DRPC label", "VR", vr.Name)
+
+		return nil
+	}
+
+	return []reconcile.Request{
+		{
+			NamespacedName: types.NamespacedName{
+				Name:      drpcName,
+				Namespace: vr.Namespace,
+			},
+		},
+	}
 }
 
 // DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
@@ -674,6 +719,20 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 			return r.FilterDRPCsForDRPolicyUpdate(drPolicy)
 		}))
 
+	volRepPred := VolumeReplicationPredicateFunc()
+
+	mapVRToDRPC := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			vr, ok := obj.(*volrep.VolumeReplication)
+			if !ok {
+				return []reconcile.Request{}
+			}
+
+			ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering VolumeReplication (%s)", vr.Name))
+
+			return filterVolumeReplication(vr)
+		}))
+
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	options := ctrlcontroller.Options{
@@ -692,5 +751,6 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 		Watches(&clrapiv1beta1.Placement{}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
 		Watches(&rmn.DRCluster{}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
 		Watches(&rmn.DRPolicy{}, drPolicyMapFun, builder.WithPredicates(drPolicyPred)).
+		Watches(&volrep.VolumeReplication{}, mapVRToDRPC, builder.WithPredicates(volRepPred)).
 		Complete(r)
 }
