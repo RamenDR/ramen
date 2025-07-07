@@ -51,8 +51,6 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 }
 
 func (d *DRPCInstance) ensureVolSyncReplicationSource(srcCluster string) error {
-	d.log.Info("Ensuring VolSync replication source")
-
 	const maxNumberOfVSRG = 2
 	if len(d.vrgs) != maxNumberOfVSRG {
 		return fmt.Errorf("wrong number of VRGS %v", d.vrgs)
@@ -81,8 +79,6 @@ func (d *DRPCInstance) ensureVolSyncReplicationSource(srcCluster string) error {
 		if err != nil {
 			return fmt.Errorf("failed to update dst VSRG on cluster %s - %w", srcCluster, err)
 		}
-
-		d.log.Info("Replication Destination", "info", dstVSRG.Status.RDInfo)
 		break
 	}
 
@@ -150,15 +146,7 @@ func (d *DRPCInstance) updateVSRGSpec(clusterName string, tgtVSRG *rmn.VolumeRep
 		return err
 	}
 
-	if vsrg.Spec.ReplicationState == rmn.Primary {
-		vsrg.Spec.VolSync.RSSpec = tgtVSRG.Spec.VolSync.RSSpec
-	} else if vsrg.Spec.ReplicationState == rmn.Secondary {
-		vsrg.Spec.VolSync.RDSpec = tgtVSRG.Spec.VolSync.RDSpec
-	} else {
-		d.log.Info(fmt.Sprintf("VSRG %s is neither primary nor secondary on this cluster %s", vsrg.Name, mw.Namespace))
-
-		return fmt.Errorf("failed to update MW due to wrong state")
-	}
+	vsrg.Spec.VolSync.RSSpec = tgtVSRG.Spec.VolSync.RSSpec
 
 	vsrgClientManifest, err := d.mwu.GenerateManifest(vsrg)
 	if err != nil {
@@ -174,7 +162,7 @@ func (d *DRPCInstance) updateVSRGSpec(clusterName string, tgtVSRG *rmn.VolumeRep
 		return fmt.Errorf("failed to update MW (%w)", err)
 	}
 
-	d.log.Info(fmt.Sprintf("Updated VSRG running in cluster %s. VSRG (%+v)", clusterName, vsrg))
+	d.log.Info("Successfully updated ManifestWork")
 
 	return nil
 }

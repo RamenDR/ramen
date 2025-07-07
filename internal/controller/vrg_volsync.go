@@ -389,6 +389,11 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 
 	}
 
+	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+		v.log.Error(err, "Failed to persist VRG.Status.RDInfo")
+		requeue = true
+	}
+
 	if !requeue {
 		v.log.Info("Successfully reconciled VolSync as Secondary")
 	}
@@ -508,8 +513,17 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 
 				v.instance.Status.RDInfo = v.volSyncHandler.AppendOrUpdate(v.instance.Status.RDInfo, rdInfo)
 			}
+
+			if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+				v.log.Error(err, "Failed to persist updated VRG.Status.RDInfo CG")
+				requeue = true
+			}
 		}
 
+	}
+
+	if !requeue {
+		v.log.Info("Successfully updated VRG.Status.RDInfo CG")
 	}
 
 	return requeue, nil
