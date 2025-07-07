@@ -8,6 +8,7 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -1279,6 +1280,472 @@ var _ = Describe("updatePeerClassesInternal", func() {
 			"1m",
 			[]peerInfo{},
 			[]peerInfo{},
+		),
+		Entry("Single async peer, having related VGRC where grouping is true",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "cl-1-2-rID",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         true,
+				},
+			},
+		),
+		Entry("Single async peer, having related VGSC where grouping is true",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Driver: "sample.csi.com",
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Driver: "sample.csi.com",
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         true,
+				},
+			},
+		),
+		Entry("Single async peer, having different rID in VGRC and VRC where grouping is false",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID-mismtach",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample1.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID-mismatch",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample1.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "cl-1-2-rID",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         false,
+				},
+			},
+		),
+		Entry("Multiple async peer, having related [VGR|VGS]Classes where grouping is true",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID2",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vsClasses: []*snapv1.VolumeSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Driver: "sample.csi.com",
+						},
+					},
+					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-1-sID1",
+								},
+							},
+							Driver: "sample.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-1-sID2",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-1-sID2",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID2",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vsClasses: []*snapv1.VolumeSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Driver: "sample.csi.com",
+						},
+					},
+					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgsc1",
+								Labels: map[string]string{
+									StorageIDLabel: "cl-2-sID1",
+								},
+							},
+							Driver: "sample.csi.com",
+						},
+					},
+					vrClasses: []*volrep.VolumeReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vrc1",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-2-sID2",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc2",
+								Labels: map[string]string{
+									StorageIDLabel:     "cl-2-sID2",
+									ReplicationIDLabel: "cl-1-2-rID",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:    "",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         true,
+				},
+				{
+					replicationID:    "cl-1-2-rID",
+					storageIDs:       []string{"cl-1-sID2", "cl-2-sID2"},
+					storageClassName: "sc2",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         true,
+				},
+			},
 		),
 	)
 })
