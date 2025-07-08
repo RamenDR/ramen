@@ -190,7 +190,6 @@ func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context) (*ramen.DR
 	}
 
 	drClusterIDsToNames := map[string]string{}
-
 	for idx := range drClusters.Items {
 		mc, err := util.NewManagedClusterInstance(ctx, r.Client, drClusters.Items[idx].GetName())
 		if err != nil {

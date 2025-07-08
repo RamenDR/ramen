@@ -450,7 +450,16 @@ func DeleteRGS(ctx context.Context, k8sClient client.Client, ownerName, ownerNam
 		return err
 	}
 
-	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgsList.Items), logger)
+	logger.Info("Cleaning up RGSs", "count", len(rgsList.Items))
+	for _, rgs := range rgsList.Items {
+
+		logger.Info("Cleaning up RGS", "name", rgs.GetName(), "kind", rgs.GetObjectKind().GroupVersionKind().Kind)
+		if err := k8sClient.Delete(ctx, &rgs); err != nil {
+			logger.Error(err, "Error cleaning up RGS", "name", rgs.GetName())
+		}
+	}
+
+	return nil
 }
 
 func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger,
@@ -462,7 +471,16 @@ func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNam
 		return err
 	}
 
-	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgdList.Items), logger)
+	logger.Info("Cleaning up RGDs", "count", len(rgdList.Items))
+	for _, rgd := range rgdList.Items {
+
+		logger.Info("Cleaning up RGD", "name", rgd.GetName(), "kind", rgd.GetObjectKind().GroupVersionKind().Kind)
+		if err := k8sClient.Delete(ctx, &rgd); err != nil {
+			logger.Error(err, "Error cleaning up RGD", "name", rgd.GetName())
+		}
+	}
+
+	return nil
 }
 
 func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, objList client.ObjectList, ownerName,
