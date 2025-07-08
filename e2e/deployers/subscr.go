@@ -84,7 +84,6 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 func (s Subscription) Undeploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
-	config := ctx.Config()
 	managementNamespace := ctx.ManagementNamespace()
 
 	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, name)
@@ -100,41 +99,45 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 	}
 
-	err = DeleteSubscription(ctx, s)
-	if err != nil {
+	if err := s.DeleteResources(ctx); err != nil {
 		return err
 	}
 
-	err = DeletePlacement(ctx, name, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	err = DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	err = util.DeleteNamespace(ctx, ctx.Env().Hub, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	if err := util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace()); err != nil {
-		return err
-	}
-
-	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, managementNamespace); err != nil {
-		return err
-	}
-
-	if err := util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace()); err != nil {
+	if err := s.WaitForResourcesDelete(ctx); err != nil {
 		return err
 	}
 
 	log.Info("Workload undeployed")
 
 	return nil
+}
+
+func (s Subscription) DeleteResources(ctx types.TestContext) error {
+	if err := DeleteSubscription(ctx, s); err != nil {
+		return err
+	}
+
+	if err := DeletePlacement(ctx, ctx.Name(), ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	if err := DeleteManagedClusterSetBinding(ctx, ctx.Config().ClusterSet, ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	if err := util.DeleteNamespace(ctx, ctx.Env().Hub, ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	return util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace())
+}
+
+func (s Subscription) WaitForResourcesDelete(ctx types.TestContext) error {
+	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	return util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace())
 }
 
 func (s Subscription) IsDiscovered() bool {
