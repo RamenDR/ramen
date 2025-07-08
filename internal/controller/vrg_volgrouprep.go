@@ -22,6 +22,11 @@ import (
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
+const (
+	// VolumeGroupReplication do not reconcile annotation
+	ReplicationOffloaded = "replication.storage.openshift.io/vgr-do-not-reconcile"
+)
+
 //nolint:gocognit,cyclop,funlen
 func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
@@ -180,6 +185,11 @@ func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.Namespac
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr)
 	if err != nil {
 		return fmt.Errorf("failed to get VGR (%w)", err)
+	}
+
+	if _, ok := vgr.Annotations[ReplicationOffloaded]; ok {
+		// do not upload
+		return nil
 	}
 
 	if v.isVGRandVGRCArchivedAlready(vgr, log) {
@@ -746,19 +756,31 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 }
 
 // createVGR creates a VolumeGroupReplication CR
+//
+//nolint:funlen
 func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState,
 ) error {
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], false)
+	storageClass, err := v.validateAndGetStorageClass(pvcs[0].Spec.StorageClassName, pvcs[0])
 	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+		return err
 	}
+
+	offloaded := rmnutil.HasLabel(storageClass, StorageOffloadedLabel)
 
 	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], true)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeGroupReplicationClass (%s) %w",
 			v.instance.Name, err)
+	}
+
+	var volumeReplicationClass client.Object
+	if !offloaded {
+		volumeReplicationClass, err = v.selectVolumeReplicationClass(pvcs[0], false)
+		if err != nil {
+			return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+				v.instance.Name, err)
+		}
 	}
 
 	cg, ok := pvcs[0].GetLabels()[ConsistencyGroupLabel]
@@ -783,6 +805,10 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 				Selector: selector,
 			},
 		},
+	}
+
+	if offloaded {
+		volRep.Annotations = map[string]string{ReplicationOffloaded: ""}
 	}
 
 	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
