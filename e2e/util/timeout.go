@@ -60,6 +60,7 @@ const (
 	UndeployTimeout = 5 * time.Minute
 	EnableTimeout   = 5 * time.Minute
 	DisableTimeout  = 5 * time.Minute
+	PurgeTimeout    = 5 * time.Minute
 
 	// With appset deployment may need 2m30s after failover and relocate.
 	FailoverTimeout = 15 * time.Minute

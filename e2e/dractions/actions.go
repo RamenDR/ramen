@@ -195,6 +195,44 @@ func Relocate(ctx types.TestContext) error {
 	return nil
 }
 
+// Purge deletes the workload's protection resources, then the workload,
+// and waits for all related resources to be completely deleted.
+func Purge(ctx types.TestContext) error {
+	log := ctx.Logger()
+
+	cluster, err := util.GetCurrentCluster(ctx, ctx.ManagementNamespace(), ctx.Name())
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+
+		log.Infof("Purging workload \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+	} else {
+		log.Infof("Purging workload \"%s/%s\" in cluster %q",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+	}
+
+	if err := deleteProtectionResources(ctx); err != nil {
+		return err
+	}
+
+	if err := ctx.Deployer().DeleteResources(ctx); err != nil {
+		return err
+	}
+
+	if err := waitForProtectionResourcesDelete(ctx); err != nil {
+		return err
+	}
+
+	if err := ctx.Deployer().WaitForResourcesDelete(ctx); err != nil {
+		return err
+	}
+
+	log.Info("Workload purged")
+
+	return nil
+}
+
 func failoverRelocate(
 	ctx types.TestContext,
 	action ramen.DRAction,
