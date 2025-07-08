@@ -145,6 +145,10 @@ func (r *DRPolicyReconciler) reconcile(
 	ramenConfig *ramen.RamenConfig,
 	drClusterIDsToNames map[string]string,
 ) (ctrl.Result, error) {
+	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+	}
+
 	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
 	}
@@ -156,12 +160,7 @@ func (r *DRPolicyReconciler) reconcile(
 	// we will be able to validate conflicts only after PeerClasses are updated
 	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drclusters, drClusterIDsToNames)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("drpolicy conflict validate: %w",
-			u.validatedSetFalse("DRPolicyConflictFound", err))
-	}
-
-	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+		return ctrl.Result{}, fmt.Errorf("drpolicy conflict validate failed")
 	}
 
 	if err := r.initiateDRPolicyMetrics(u.object, drclusters); err != nil {
@@ -195,7 +194,9 @@ func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context) (*ramen.DR
 	for idx := range drClusters.Items {
 		mc, err := util.NewManagedClusterInstance(ctx, r.Client, drClusters.Items[idx].GetName())
 		if err != nil {
-			return nil, nil, fmt.Errorf("drclusters ManagedCluster (%s): %w", drClusters.Items[idx].GetName(), err)
+			r.Log.Error(err, "Failed to get a new MC instance", "drcluster", drClusters.Items[idx].GetName())
+
+			continue
 		}
 
 		clID, err := mc.ClusterID()
@@ -204,6 +205,10 @@ func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context) (*ramen.DR
 		}
 
 		drClusterIDsToNames[clID] = drClusters.Items[idx].GetName()
+	}
+
+	if len(drClusterIDsToNames) == 0 {
+		return nil, nil, fmt.Errorf("no DRClusters found")
 	}
 
 	return drClusters, drClusterIDsToNames, nil
