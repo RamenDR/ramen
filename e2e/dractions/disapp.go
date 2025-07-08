@@ -11,7 +11,6 @@ import (
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
@@ -64,63 +63,6 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	}
 
 	log.Info("Workload protected")
-
-	return nil
-}
-
-// remove DRPC
-// update placement annotation
-func DisableProtectionDiscoveredApps(ctx types.TestContext) error {
-	name := ctx.Name()
-	log := ctx.Logger()
-	config := ctx.Config()
-	managementNamespace := ctx.ManagementNamespace()
-	appNamespace := ctx.AppNamespace()
-
-	placementName := name
-	drpcName := name
-
-	cluster, err := util.GetCurrentCluster(ctx, managementNamespace, placementName)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return err
-		}
-
-		log.Debugf("Could not retrieve the cluster name: %s", err)
-		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
-	} else {
-		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
-	}
-
-	if err := deleteDRPC(ctx, managementNamespace, drpcName); err != nil {
-		return err
-	}
-
-	// delete placement
-	if err := deployers.DeletePlacement(ctx, placementName, managementNamespace); err != nil {
-		return err
-	}
-
-	err = deployers.DeleteManagedClusterSetBinding(ctx, config.ClusterSet, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	if err := util.WaitForDRPCDelete(ctx, ctx.Env().Hub, drpcName, managementNamespace); err != nil {
-		return err
-	}
-
-	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, placementName, managementNamespace); err != nil {
-		return err
-	}
-
-	if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, config.ClusterSet,
-		managementNamespace); err != nil {
-		return err
-	}
-
-	log.Info("Workload unprotected")
 
 	return nil
 }
