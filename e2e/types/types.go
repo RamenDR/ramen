@@ -49,6 +49,11 @@ type Deployer interface {
 	GetNamespace(TestContext) string
 	// Return true for OCM discovered application, false for OCM managed applications.
 	IsDiscovered() bool
+
+	// DeleteResources removes all resources that were deployed as part of the workload
+	DeleteResources(TestContext) error
+	// WaitForResourcesDelete waits for all workload resources to be deleted
+	WaitForResourcesDelete(TestContext) error
 }
 
 type Workload interface {

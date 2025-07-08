@@ -52,7 +52,6 @@ func (a ApplicationSet) Deploy(ctx types.TestContext) error {
 }
 
 // Undeploy deletes an ApplicationSet from the hub cluster, deleting the workload from the managed clusters.
-// nolint:cyclop
 func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 	name := ctx.Name()
 	log := ctx.Logger()
@@ -71,44 +70,49 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
 	}
 
-	err = DeleteApplicationSet(ctx, a)
-	if err != nil {
+	if err := a.DeleteResources(ctx); err != nil {
 		return err
 	}
 
-	err = DeleteConfigMap(ctx, name, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	err = DeletePlacement(ctx, name, managementNamespace)
-	if err != nil {
-		return err
-	}
-
-	if err := util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace()); err != nil {
-		return err
-	}
-
-	if err := util.WaitForApplicationSetDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
-		return err
-	}
-
-	if err := util.WaitForConfigMapDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
-		return err
-	}
-
-	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, name, managementNamespace); err != nil {
-		return err
-	}
-
-	if err := util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace()); err != nil {
+	if err := a.WaitForResourcesDelete(ctx); err != nil {
 		return err
 	}
 
 	log.Info("Workload undeployed")
 
 	return nil
+}
+
+func (a ApplicationSet) DeleteResources(ctx types.TestContext) error {
+	if err := DeleteApplicationSet(ctx, a); err != nil {
+		return err
+	}
+
+	if err := DeleteConfigMap(ctx, ctx.Name(), ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	if err := DeletePlacement(ctx, ctx.Name(), ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	return util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace())
+}
+
+func (a ApplicationSet) WaitForResourcesDelete(ctx types.TestContext) error {
+	if err := util.WaitForApplicationSetDelete(ctx, ctx.Env().Hub, ctx.Name(), ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	if err := util.WaitForConfigMapDelete(ctx, ctx.Env().Hub, ctx.Name(), ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, ctx.Name(), ctx.ManagementNamespace()); err != nil {
+		return err
+	}
+
+	return util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace())
 }
 
 func (a ApplicationSet) GetName() string {

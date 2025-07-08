@@ -79,29 +79,33 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	log.Infof("Undeploying discovered app \"%s/%s\" in clusters %q and %q",
 		appNamespace, ctx.Workload().GetAppName(), ctx.Env().C1.Name, ctx.Env().C2.Name)
 
-	// delete app on both clusters
-
-	if err := DeleteDiscoveredApps(ctx, ctx.Env().C1, appNamespace); err != nil {
+	if err := d.DeleteResources(ctx); err != nil {
 		return err
 	}
 
-	if err := DeleteDiscoveredApps(ctx, ctx.Env().C2, appNamespace); err != nil {
-		return err
-	}
-
-	// delete namespace on both clusters
-	if err := util.DeleteNamespaceOnManagedClusters(ctx, appNamespace); err != nil {
-		return err
-	}
-
-	// wait for namespace to be deleted on both clusters
-	if err := util.WaitForNamespaceDeleteOnManagedClusters(ctx, appNamespace); err != nil {
+	if err := d.WaitForResourcesDelete(ctx); err != nil {
 		return err
 	}
 
 	log.Info("Workload undeployed")
 
 	return nil
+}
+
+func (d DiscoveredApp) DeleteResources(ctx types.TestContext) error {
+	if err := DeleteDiscoveredApps(ctx, ctx.Env().C1, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
+	if err := DeleteDiscoveredApps(ctx, ctx.Env().C2, ctx.AppNamespace()); err != nil {
+		return err
+	}
+
+	return util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace())
+}
+
+func (d DiscoveredApp) WaitForResourcesDelete(ctx types.TestContext) error {
+	return util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace())
 }
 
 func (d DiscoveredApp) IsDiscovered() bool {
