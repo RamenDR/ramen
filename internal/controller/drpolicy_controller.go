@@ -149,29 +149,32 @@ func (r *DRPolicyReconciler) reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
 	}
 
-	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
-	}
-
 	if err := updatePeerClasses(u, r.MCVGetter); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy peerClass update: %w", err)
 	}
 
+	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
+	}
+
 	// we will be able to validate conflicts only after PeerClasses are updated
-	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drclusters, drClusterIDsToNames)
+	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drClusterIDsToNames)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy conflict validate failed")
 	}
 
-	if err := r.initiateDRPolicyMetrics(u.object, drclusters); err != nil {
+	if err := r.initiateDRPolicyMetrics(u.object); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error in intiating policy metrics: %w", err)
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *DRPolicyReconciler) initiateDRPolicyMetrics(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClusterList) error {
-	isMetro, _ := dRPolicySupportsMetro(drpolicy, drclusters.Items, nil)
+func (r *DRPolicyReconciler) initiateDRPolicyMetrics(drpolicy *ramen.DRPolicy) error {
+	isMetro, _, err := dRPolicySupportsMetro(drpolicy, nil)
+	if err != nil {
+		return fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
+	}
 
 	// Do not set metric for metro-dr
 	if !isMetro {
@@ -280,7 +283,6 @@ func ensureDRClustersAvailable(drpolicy *ramen.DRPolicy, drclusters *ramen.DRClu
 func validatePolicyConflicts(ctx context.Context,
 	apiReader client.Reader,
 	drpolicy *ramen.DRPolicy,
-	drclusters *ramen.DRClusterList,
 	drClusterIDsToNames map[string]string,
 ) error {
 	// DRPolicy does not support both Sync and Async configurations in one single DRPolicy
@@ -293,7 +295,7 @@ func validatePolicyConflicts(ctx context.Context,
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
 	}
 
-	err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies, drClusterIDsToNames)
+	err = hasConflictingDRPolicy(drpolicy, drpolicies, drClusterIDsToNames)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
 	}
@@ -305,7 +307,6 @@ func validatePolicyConflicts(ctx context.Context,
 // a metro supported drpolicy, then fail.
 func hasConflictingDRPolicy(
 	match *ramen.DRPolicy,
-	drclusters *ramen.DRClusterList,
 	list ramen.DRPolicyList,
 	drClusterIDsToNames map[string]string,
 ) error {
@@ -329,7 +330,7 @@ func hasConflictingDRPolicy(
 		}
 
 		// None of the common managed clusters should belong to Metro clusters in either of the drpolicies.
-		if haveOverlappingMetroZones(match, drp, drclusters, drClusterIDsToNames) {
+		if haveOverlappingMetroZones(match, drp, drClusterIDsToNames) {
 			return fmt.Errorf("drpolicy: %v has overlapping clusters with another drpolicy %v", match.Name, drp.Name)
 		}
 	}
@@ -337,15 +338,15 @@ func hasConflictingDRPolicy(
 	return nil
 }
 
+//nolint:errcheck
 func haveOverlappingMetroZones(
 	d1, d2 *ramen.DRPolicy,
-	drclusters *ramen.DRClusterList,
 	drClusterIDsToNames map[string]string,
 ) bool {
 	d1ClusterNames := sets.NewString(util.DRPolicyClusterNames(d1)...)
-	d1SupportsMetro, d1MetroClusters := dRPolicySupportsMetro(d1, drclusters.Items, drClusterIDsToNames)
+	d1SupportsMetro, d1MetroClusters, _ := dRPolicySupportsMetro(d1, drClusterIDsToNames)
 	d2ClusterNames := sets.NewString(util.DRPolicyClusterNames(d2)...)
-	d2SupportsMetro, d2MetroClusters := dRPolicySupportsMetro(d2, drclusters.Items, drClusterIDsToNames)
+	d2SupportsMetro, d2MetroClusters, _ := dRPolicySupportsMetro(d2, drClusterIDsToNames)
 	commonClusters := d1ClusterNames.Intersection(d2ClusterNames)
 
 	// No common managed clusters, so we are good
@@ -408,7 +409,12 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 	}
 
 	// proceed to delete metrics if non-metro-dr
-	isMetro, _ := dRPolicySupportsMetro(u.object, drclusters.Items, nil)
+	isMetro, _, err := dRPolicySupportsMetro(u.object,
+		nil)
+	if err != nil {
+		return fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
+	}
+
 	if !isMetro {
 		// delete metrics if matching labels are found
 		metricLabels := DRPolicySyncIntervalMetricLabels(u.object)
