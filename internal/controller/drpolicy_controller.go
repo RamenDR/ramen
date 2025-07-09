@@ -79,7 +79,7 @@ const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.9.2/pkg/reconcile
 //
-//nolint:cyclop,funlen
+//nolint:cyclop,funlen,gocognit
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drp", req.NamespacedName.Name, "rid", util.GetRID())
 	log.Info("reconcile enter")
@@ -90,6 +90,8 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.Client.Get(ctx, req.NamespacedName, drpolicy); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
 	}
+
+	oldStatus := drpolicy.Status.DeepCopy()
 
 	u := &drpolicyUpdater{ctx, drpolicy, r.Client, log}
 
@@ -103,9 +105,22 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			u.validatedSetFalse("NamespaceCreateFailed", err))
 	}
 
-	drclusters, drClusterIDsToNames, err := r.getDRClusterDetails(ctx)
+	drclusters, drClusterIDsToNames, err := r.getDRClusterDetails(ctx, log)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters details: %w", u.validatedSetFalse("drClusterDetailsFailed", err))
+		if !errors.Is(err, errMappingFailed) {
+			return ctrl.Result{}, fmt.Errorf("drclusters details: %w", u.validatedSetFalse("drClusterDetailsFailed", err))
+		}
+
+		// mapping failed
+		oldValidatedCondition := util.FindCondition(oldStatus.Conditions, ramen.DRPolicyValidated)
+
+		// Only fail if the DRPolicy is not validated
+		// If we have a validated DRPolicy, but we could not map DRCluster IDs
+		// to names it might be a hub recovery scenario, don't fail the
+		// reconciliation
+		if oldValidatedCondition == nil || oldValidatedCondition.Status != metav1.ConditionTrue {
+			return ctrl.Result{}, fmt.Errorf("drclusters details: %w", u.validatedSetFalse("drClusterDetailsFailed", err))
+		}
 	}
 
 	secretsUtil := &util.SecretsUtil{Client: r.Client, APIReader: r.APIReader, Ctx: ctx, Log: log}
@@ -184,7 +199,11 @@ func (r *DRPolicyReconciler) initiateDRPolicyMetrics(drpolicy *ramen.DRPolicy, d
 	return nil
 }
 
-func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context) (*ramen.DRClusterList, map[string]string, error) {
+var errMappingFailed = fmt.Errorf("failed to map DRClusters to ManagedClusters")
+
+func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context, log logr.Logger) (
+	*ramen.DRClusterList, map[string]string, error,
+) {
 	drClusters := &ramen.DRClusterList{}
 	if err := r.Client.List(ctx, drClusters); err != nil {
 		return nil, nil, fmt.Errorf("drclusters list: %w", err)
@@ -195,12 +214,16 @@ func (r *DRPolicyReconciler) getDRClusterDetails(ctx context.Context) (*ramen.DR
 	for idx := range drClusters.Items {
 		mc, err := util.NewManagedClusterInstance(ctx, r.Client, drClusters.Items[idx].GetName())
 		if err != nil {
-			return nil, nil, fmt.Errorf("drclusters ManagedCluster (%s): %w", drClusters.Items[idx].GetName(), err)
+			log.Error(err, "unable to get managed cluster", "drclusters ManagedCluster", drClusters.Items[idx].GetName())
+
+			return drClusters, nil, errMappingFailed
 		}
 
 		clID, err := mc.ClusterID()
 		if err != nil {
-			return nil, nil, fmt.Errorf("drclusters cluster ID (%s): %w", drClusters.Items[idx].GetName(), err)
+			log.Error(err, "unable to get managed cluster ID", "drclusters ManagedCluster", drClusters.Items[idx].GetName())
+
+			return drClusters, nil, errMappingFailed
 		}
 
 		drClusterIDsToNames[clID] = drClusters.Items[idx].GetName()
@@ -288,9 +311,13 @@ func validatePolicyConflicts(ctx context.Context,
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
 	}
 
-	err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies, drClusterIDsToNames)
-	if err != nil {
-		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
+	// We can only validate policy conflicts if we have the mapping of DRCluster IDs to names.
+	// In Hub recovery scenarios, we may not have the mapping available, so we skip the validation.
+	if len(drClusterIDsToNames) > 0 {
+		err = hasConflictingDRPolicy(drpolicy, drclusters, drpolicies, drClusterIDsToNames)
+		if err != nil {
+			return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
+		}
 	}
 
 	return nil
