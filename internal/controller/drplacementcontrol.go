@@ -484,7 +484,7 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 
 	newHomeCluster := d.instance.Spec.FailoverCluster
 
-	err := d.reconciler.retainClusterDecisionAsFailover(d.ctx, d.userPlacement)
+	err := d.reconciler.retainClusterDecisionAsFailover(d.ctx, d.userPlacement, curHomeCluster)
 	if err == nil {
 		err = d.switchToCluster(newHomeCluster, "")
 	}
@@ -1896,19 +1896,24 @@ func (d *DRPCInstance) newVRGSpecSync() *rmn.VRGSyncSpec {
 // dRPolicySupportsMetro returns a boolean indicating that the policy supports a Metro(Sync) DR capability, and a
 // list of list of strings, where each list of strings contains the name of the clusters that are in a Sync
 // relationship
-func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster, drClusterIDsToNames map[string]string) (
-	supportsMetro bool,
-	metroClustersInPolicy [][]string,
+func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drClusterIDsToNames map[string]string) (
+	bool,
+	[][]string,
+	error,
 ) {
 	if len(drpolicy.Status.Sync.PeerClasses) == 0 && len(drpolicy.Status.Async.PeerClasses) == 0 {
-		return checkMetroSupportUsingRegion(drpolicy, drclusters)
+		result, err := checkMetroSupportUsingSchedulingInterval(drpolicy)
+
+		return result, nil, err
 	}
 
 	if len(drpolicy.Status.Sync.PeerClasses) != 0 {
-		return checkMetroSupportUsingPeerClass(drpolicy, drClusterIDsToNames)
+		result, metroClustersInPolicy := checkMetroSupportUsingPeerClass(drpolicy, drClusterIDsToNames)
+
+		return result, metroClustersInPolicy, nil
 	}
 
-	return false, nil
+	return false, nil, nil
 }
 
 func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy, drClusterIDsToNames map[string]string) (bool, [][]string) {
@@ -1946,32 +1951,22 @@ func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy, drClusterIDsToNames
 	return true, metroClustersInPolicy
 }
 
-func checkMetroSupportUsingRegion(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) (
-	supportsMetro bool,
-	metroClustersInPolicy [][]string,
+func checkMetroSupportUsingSchedulingInterval(drpolicy *rmn.DRPolicy) (
+	bool, error,
 ) {
-	allRegionsMap := make(map[rmn.Region][]string)
-	metroClustersInPolicy = [][]string{}
-
-	for _, managedCluster := range rmnutil.DRPolicyClusterNames(drpolicy) {
-		for _, v := range drclusters {
-			if v.Name == managedCluster {
-				allRegionsMap[v.Spec.Region] = append(
-					allRegionsMap[v.Spec.Region],
-					managedCluster)
-			}
-		}
+	// If the DRPolicy has no PeerClasses, then we check if the SchedulingInterval is set
+	// If it is set, then we assume that the policy supports Metro DR.
+	// GetSecondsFromSchedulingInterval retruns a 0 if the SchedulingInterval is not set or is set to 0.
+	secs, err := rmnutil.GetSecondsFromSchedulingInterval(drpolicy)
+	if err != nil {
+		return false, err
 	}
 
-	for _, v := range allRegionsMap {
-		if len(v) > 1 {
-			supportsMetro = true
-
-			metroClustersInPolicy = append(metroClustersInPolicy, v)
-		}
+	if secs == 0 {
+		return true, nil
 	}
 
-	return supportsMetro, metroClustersInPolicy
+	return false, nil
 }
 
 func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
