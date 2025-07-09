@@ -192,25 +192,9 @@ func (m *rgdMachine) ReconcileRD(
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
+	err := m.ensurePSKSecretReady(pskSecretName, log)
 	if err != nil {
-		log.Error(err, "Failed to ValidateSecretAndAddVRGOwnerRef", "PSKSecretName", pskSecretName)
-
 		return nil, err
-	}
-
-	if !secretExists {
-		return nil, fmt.Errorf("psk secret: %s is not found", pskSecretName)
-	}
-
-	if m.VSHandler.IsVRGInAdminNamespace() {
-		// copy the secret to the namespace where the PVC is
-		err = m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupDestination.Namespace)
-		if err != nil {
-			log.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
-
-			return nil, err
-		}
 	}
 
 	dstPVC, err := m.VSHandler.PrecreateDestPVCIfEnabled(rdSpec)
@@ -241,6 +225,30 @@ func (m *rgdMachine) ReconcileRD(
 	}
 
 	return rd, nil
+}
+
+func (m *rgdMachine) ensurePSKSecretReady(pskSecretName string, log logr.Logger) error {
+	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
+	if err != nil {
+		log.Error(err, "Failed to ValidateSecretAndAddVRGOwnerRef", "PSKSecretName", pskSecretName)
+
+		return err
+	}
+
+	if !secretExists {
+		return fmt.Errorf("psk secret: %s is not found", pskSecretName)
+	}
+
+	if m.VSHandler.IsVRGInAdminNamespace() {
+		// copy the secret to the namespace where the PVC is
+		if err := m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupDestination.Namespace); err != nil {
+			log.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
+
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (m *rgdMachine) CreateReplicationDestinations(

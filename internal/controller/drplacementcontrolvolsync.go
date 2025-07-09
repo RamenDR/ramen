@@ -40,6 +40,7 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 
 	if !rmnutil.IsSubmarinerEnabled(d.instance.GetAnnotations()) {
 		d.log.Info("Ensuring VolSync replication source")
+
 		err = d.ensureVolSyncReplicationSource(srcCluster)
 		if err != nil {
 			return err
@@ -47,7 +48,6 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 	}
 
 	return nil
-
 }
 
 func (d *DRPCInstance) ensureVolSyncReplicationSource(srcCluster string) error {
@@ -72,21 +72,25 @@ func (d *DRPCInstance) ensureVolSyncReplicationSource(srcCluster string) error {
 
 		rdInfoLen := len(dstVSRG.Status.RDInfo)
 		if rdInfoLen == 0 {
-			return fmt.Errorf("Waiting for VolSync RDInfo")
+			return fmt.Errorf("waiting for VolSync RDInfo")
 		}
 
 		err := d.updateSourceVSRG(srcCluster, srcVSRG, dstVSRG)
 		if err != nil {
 			return fmt.Errorf("failed to update dst VSRG on cluster %s - %w", srcCluster, err)
 		}
+
 		break
 	}
 
 	return nil
 }
 
-func (d *DRPCInstance) updateSourceVSRG(clusterName string, srcVSRG *rmn.VolumeReplicationGroup,
-	dstVSRG *rmn.VolumeReplicationGroup) error {
+func (d *DRPCInstance) updateSourceVSRG(
+	clusterName string,
+	srcVSRG *rmn.VolumeReplicationGroup,
+	dstVSRG *rmn.VolumeReplicationGroup,
+) error {
 	// Clear any existing RDSpec in the source VRG
 	srcVSRG.Spec.VolSync.RDSpec = nil
 
@@ -111,15 +115,19 @@ func (d *DRPCInstance) updateSourceVSRG(clusterName string, srcVSRG *rmn.VolumeR
 
 // AppendOrUpdate adds rsSpec to the rsSpecList if not present,
 // or updates the existing entry with the same PVCName.
-func (d *DRPCInstance) AppendOrUpdate(rsSpecList []rmn.VolSyncReplicationSourceSpec,
-	rsSpec rmn.VolSyncReplicationSourceSpec) []rmn.VolSyncReplicationSourceSpec {
+func (d *DRPCInstance) AppendOrUpdate(
+	rsSpecList []rmn.VolSyncReplicationSourceSpec,
+	rsSpec rmn.VolSyncReplicationSourceSpec,
+) []rmn.VolSyncReplicationSourceSpec {
 	for i, info := range rsSpecList {
 		if info.ProtectedPVC.Name == rsSpec.ProtectedPVC.Name &&
 			info.ProtectedPVC.Namespace == rsSpec.ProtectedPVC.Namespace {
 			rsSpecList[i] = rsSpec
+
 			return rsSpecList
 		}
 	}
+
 	return append(rsSpecList, rsSpec)
 }
 

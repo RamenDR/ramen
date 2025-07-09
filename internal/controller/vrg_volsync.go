@@ -150,7 +150,8 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 
 // getRSSpecForPVC searches the VRG spec for a VolSyncReplicationSourceSpec matching the given PVC.
 // If found, it returns the matching RSSpec (e.g., with existing RsyncTLS configuration); otherwise, returns an error.
-func (v *VRGInstance) getRSSpecForPVC(pvc corev1.PersistentVolumeClaim) (*ramendrv1alpha1.VolSyncReplicationSourceSpec, error) {
+func (v *VRGInstance) getRSSpecForPVC(pvc corev1.PersistentVolumeClaim,
+) (*ramendrv1alpha1.VolSyncReplicationSourceSpec, error) {
 	for _, rsSpec := range v.instance.Spec.VolSync.RSSpec {
 		if rsSpec.ProtectedPVC.Name == pvc.Name &&
 			rsSpec.ProtectedPVC.Namespace == pvc.Namespace {
@@ -200,10 +201,11 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 			ProtectedPVC: *protectedPVC,
 		}
 	} else {
-		var err error
 		rsSpecInfo, err := v.getRSSpecForPVC(pvc)
 		if err != nil {
-			v.log.Info(fmt.Sprintf("Failed to find VolSyncReplicationSourceSpec for PVC %s/%s: %v", pvc.Namespace, pvc.Name, err))
+			v.log.Info(fmt.Sprintf("Failed to find VolSyncReplicationSourceSpec for PVC %s/%s: %v",
+				pvc.Namespace, pvc.Name, err))
+
 			return true
 		}
 
@@ -345,11 +347,33 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 		return true // requeue
 	}
 
+	requeue := v.reconcileRDsAsSecondary()
+
+	requeue = requeue || v.updateVrgStatus()
+
+	if !requeue {
+		v.log.Info("Successfully reconciled VolSync as Secondary")
+	}
+
+	return requeue
+}
+
+func (v *VRGInstance) updateVrgStatus() bool {
+	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+		v.log.Error(err, "Failed to persist VRG.Status.RDInfo")
+
+		return true
+	}
+
+	return false
+}
+
+func (v *VRGInstance) reconcileRDsAsSecondary() bool {
 	rdSpecsUsingCG, requeue, err := v.reconcileCGMembership()
 	if err != nil {
 		v.log.Error(err, "Failed to reconcile CG for deletion or replication")
 
-		return requeue
+		return true
 	}
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
@@ -368,9 +392,7 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 		if err != nil {
 			v.log.Error(err, "Failed to reconcile VolSync Replication Destination")
 
-			requeue = true
-
-			break
+			return true
 		}
 
 		if rd == nil {
@@ -378,24 +400,16 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 				rdSpec.ProtectedPVC.Name))
 
 			requeue = true
+
+			continue
 		}
 
-		if rd != nil && rdInfoForStatus != nil {
+		if rdInfoForStatus != nil {
 			v.log.Info("Computed RDInfo for VRG (secondary role)", "RDInfo", rdInfoForStatus)
 
 			// Update the VSRG status with this rdInfo
 			v.instance.Status.RDInfo = v.volSyncHandler.AppendOrUpdate(v.instance.Status.RDInfo, *rdInfoForStatus)
 		}
-
-	}
-
-	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-		v.log.Error(err, "Failed to persist VRG.Status.RDInfo")
-		requeue = true
-	}
-
-	if !requeue {
-		v.log.Info("Successfully reconciled VolSync as Secondary")
 	}
 
 	return requeue
@@ -437,89 +451,14 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 	requeue := false
 
 	for groupKey, groupVal := range groups {
-		cephfsCGHandler := cephfscg.NewVSCGHandler(
-			v.ctx, v.reconciler.Client, v.instance,
-			&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: groupKey}},
-			v.volSyncHandler, groupKey, v.log,
-		)
-
-		v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", v.getRDSpecGroupName(groups[groupKey]))
-
-		namespace := v.commonProtectedPVCNamespace(groupVal)
-		if namespace == "" {
-			v.log.Error(fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey),
-				"Failed to create ReplicationGroupDestination")
-
-			requeue = true
-
-			return requeue, fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey)
-		}
-
-		replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
-			v.instance.Name, namespace, groups[groupKey],
-		)
+		rq, err := v.handleReplicationGroupDestination(groupKey, groupVal)
 		if err != nil {
-			v.log.Error(err, "Failed to create ReplicationGroupDestination")
+			return true, err
+		}
 
+		if rq {
 			requeue = true
-
-			return requeue, err
 		}
-
-		ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
-		if err != nil {
-			v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
-
-			requeue = true
-
-			return requeue, err
-		}
-
-		if !ready {
-			v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
-				replicationGroupDestination.Name))
-
-			requeue = true
-			continue
-		}
-
-		if !util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
-
-			v.log.Info("Setting up Consistency Group (CG) replication using direct TLS connection (Submariner disabled)")
-
-			for _, rdRef := range replicationGroupDestination.Status.ReplicationDestinations {
-				rd := &volsyncv1alpha1.ReplicationDestination{}
-				if err := v.reconciler.Client.Get(v.ctx,
-					types.NamespacedName{Name: rdRef.Name, Namespace: rdRef.Namespace}, rd,
-				); err != nil {
-					return false, err
-				}
-
-				if rd.Status == nil || rd.Status.RsyncTLS == nil || rd.Status.RsyncTLS.Address == nil {
-					return false, nil
-				}
-
-				rdInfo := ramendrv1alpha1.VolSyncReplicationDestinationInfo{
-					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
-						Name:      rdRef.Name,
-						Namespace: rdRef.Namespace,
-					},
-					RsyncTLS: &ramendrv1alpha1.RsyncTLSConfig{
-						Address: *rd.Status.RsyncTLS.Address,
-					},
-				}
-
-				v.log.Info("Updating VRG.Status.RDInfo with ReplicationDestination details", "PVC", rdRef.Name, "Address", rdInfo.RsyncTLS.Address)
-
-				v.instance.Status.RDInfo = v.volSyncHandler.AppendOrUpdate(v.instance.Status.RDInfo, rdInfo)
-			}
-
-			if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
-				v.log.Error(err, "Failed to persist updated VRG.Status.RDInfo CG")
-				requeue = true
-			}
-		}
-
 	}
 
 	if !requeue {
@@ -527,6 +466,95 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 	}
 
 	return requeue, nil
+}
+
+func (v *VRGInstance) handleReplicationGroupDestination(
+	groupKey string, groupVal []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) (bool, error) {
+	cephfsCGHandler := cephfscg.NewVSCGHandler(
+		v.ctx, v.reconciler.Client, v.instance,
+		&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: groupKey}},
+		v.volSyncHandler, groupKey, v.log,
+	)
+
+	v.log.Info("Create ReplicationGroupDestination with RDSpecs", "RDSpecs", v.getRDSpecGroupName(groupVal))
+
+	namespace := v.commonProtectedPVCNamespace(groupVal)
+	if namespace == "" {
+		v.log.Error(fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey),
+			"Failed to create ReplicationGroupDestination")
+
+		return true, fmt.Errorf("RDSpecs in the group %s have different namespaces", groupKey)
+	}
+
+	replicationGroupDestination, err := cephfsCGHandler.CreateOrUpdateReplicationGroupDestination(
+		v.instance.Name, namespace, groupVal,
+	)
+	if err != nil {
+		v.log.Error(err, "Failed to create ReplicationGroupDestination")
+
+		return true, err
+	}
+
+	ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
+	if err != nil {
+		return true, err
+	}
+
+	if !ready {
+		v.log.Info(fmt.Sprintf("ReplicationGroupDestination for %s is not ready. We'll retry...",
+			replicationGroupDestination.Name))
+
+		return true, nil
+	}
+
+	return v.processRDInfo(replicationGroupDestination)
+}
+
+func (v *VRGInstance) processRDInfo(
+	replicationGroupDestination *ramendrv1alpha1.ReplicationGroupDestination,
+) (bool, error) {
+	if util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
+		return false, nil
+	}
+
+	v.log.Info("Setting up Consistency Group (CG) replication using direct TLS connection (Submariner disabled)")
+
+	for _, rdRef := range replicationGroupDestination.Status.ReplicationDestinations {
+		rd := &volsyncv1alpha1.ReplicationDestination{}
+		if err := v.reconciler.Client.Get(v.ctx,
+			types.NamespacedName{Name: rdRef.Name, Namespace: rdRef.Namespace}, rd,
+		); err != nil {
+			return false, err
+		}
+
+		if rd.Status == nil || rd.Status.RsyncTLS == nil || rd.Status.RsyncTLS.Address == nil {
+			return false, nil
+		}
+
+		rdInfo := ramendrv1alpha1.VolSyncReplicationDestinationInfo{
+			ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+				Name:      rdRef.Name,
+				Namespace: rdRef.Namespace,
+			},
+			RsyncTLS: &ramendrv1alpha1.RsyncTLSConfig{
+				Address: *rd.Status.RsyncTLS.Address,
+			},
+		}
+
+		v.log.Info("Updating VRG.Status.RDInfo with ReplicationDestination details",
+			"PVC", rdRef.Name, "Address", rdInfo.RsyncTLS.Address)
+
+		v.instance.Status.RDInfo = v.volSyncHandler.AppendOrUpdate(v.instance.Status.RDInfo, rdInfo)
+	}
+
+	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+		v.log.Error(err, "Failed to persist updated VRG.Status.RDInfo CG")
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // commonProtectedPVCNamespace returns the shared namespace of a group of VolSyncReplicationDestinationSpec.

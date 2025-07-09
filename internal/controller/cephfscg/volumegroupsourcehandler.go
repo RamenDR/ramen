@@ -451,13 +451,10 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		if isSubmarinerEnabled {
 			rdService = getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
 		} else {
-			logger.Info("Non submariner", "rsspec", vrg.Spec.VolSync.RSSpec)
 			for _, rs := range vrg.Spec.VolSync.RSSpec {
-				logger.Info("Comparing PVC names",
-					"from VRG", rs.ProtectedPVC.Name,
-					"from restoredPVC", restoredPVC.RestoredPVCName)
 				if fmt.Sprintf(RestorePVCinCGNameFormat, rs.ProtectedPVC.Name) == restoredPVC.RestoredPVCName {
 					rdService = rs.RsyncTLS.Address
+
 					break
 				}
 			}
