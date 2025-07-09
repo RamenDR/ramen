@@ -310,11 +310,6 @@ func deleteProtectionResources(ctx types.TestContext) error {
 		if err := deployers.DeletePlacement(ctx, ctx.Name(), ctx.ManagementNamespace()); err != nil {
 			return err
 		}
-
-		if err := deployers.DeleteManagedClusterSetBinding(ctx, ctx.Config().ClusterSet,
-			ctx.ManagementNamespace()); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -329,11 +324,6 @@ func waitForProtectionResourcesDelete(ctx types.TestContext) error {
 
 	if ctx.Deployer().IsDiscovered() {
 		if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, ctx.Name(), ctx.ManagementNamespace()); err != nil {
-			return err
-		}
-
-		if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, ctx.Config().ClusterSet,
-			ctx.ManagementNamespace()); err != nil {
 			return err
 		}
 	}
