@@ -1798,6 +1798,10 @@ func (r *DRPlacementControlReconciler) removePlacementClusterDecisionForFailover
 		return err
 	}
 
+	if plDecision == nil {
+		return nil
+	}
+
 	dropped := false
 	decisions := []clrapiv1beta1.ClusterDecision{}
 
@@ -1842,12 +1846,13 @@ func (r *DRPlacementControlReconciler) removePlacementClusterDecisionForFailover
 func (r *DRPlacementControlReconciler) retainClusterDecisionAsFailover(
 	ctx context.Context,
 	placement interface{},
+	cluster string,
 ) error {
 	switch obj := placement.(type) {
 	case *plrv1.PlacementRule:
-		return r.retainPlacementRuleClusterDecisionAsFailover(ctx, obj)
+		return r.retainPlacementRuleClusterDecisionAsFailover(ctx, obj, cluster)
 	case *clrapiv1beta1.Placement:
-		return r.retainPlacementClusterDecisionAsFailover(ctx, obj)
+		return r.retainPlacementClusterDecisionAsFailover(ctx, obj, cluster)
 	default:
 		return fmt.Errorf("failed to find Placement or PlacementRule")
 	}
@@ -1856,6 +1861,7 @@ func (r *DRPlacementControlReconciler) retainClusterDecisionAsFailover(
 func (r *DRPlacementControlReconciler) retainPlacementRuleClusterDecisionAsFailover(
 	ctx context.Context,
 	placement *plrv1.PlacementRule,
+	cluster string,
 ) error {
 	return nil
 }
@@ -1863,6 +1869,7 @@ func (r *DRPlacementControlReconciler) retainPlacementRuleClusterDecisionAsFailo
 func (r *DRPlacementControlReconciler) retainPlacementClusterDecisionAsFailover(
 	ctx context.Context,
 	placement *clrapiv1beta1.Placement,
+	cluster string,
 ) error {
 	plDecision, err := r.getPlacementDecisionFromPlacement(placement)
 	if err != nil {
@@ -1870,10 +1877,25 @@ func (r *DRPlacementControlReconciler) retainPlacementClusterDecisionAsFailover(
 	}
 
 	if plDecision == nil {
-		return nil
+		plDecision, err = r.createPlacementDecision(ctx, placement)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(plDecision.Status.Decisions) == 0 {
+		plDecision.Status.Decisions = append(plDecision.Status.Decisions,
+			clrapiv1beta1.ClusterDecision{
+				ClusterName: cluster,
+			},
+		)
 	}
 
 	for idx := range plDecision.Status.Decisions {
+		if plDecision.Status.Decisions[idx].ClusterName != cluster {
+			continue
+		}
+
 		if plDecision.Status.Decisions[idx].Reason == PlacementDecisionReasonFailoverRetained {
 			continue
 		}
