@@ -14,6 +14,7 @@ const (
 
 	MModesLabel                           = "ramendr.openshift.io/maintenancemodes"
 	SClassLabel                           = "ramendr.openshift.io/storageclass"
+	NFClassLabel                          = "ramendr.openshift.io/networkfenceclass"
 	VSClassLabel                          = "ramendr.openshift.io/volumesnapshotclass"
 	VGSClassLabel                         = "ramendr.openshift.io/volumegroupsnapshotclass"
 	VRClassLabel                          = "ramendr.openshift.io/volumereplicationclass"
