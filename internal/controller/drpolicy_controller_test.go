@@ -12,7 +12,6 @@ import (
 	gomegaTypes "github.com/onsi/gomega/types"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
+	placementv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -89,28 +89,28 @@ var _ = Describe("DRPolicyController", func() {
 		},
 	}
 
-	getPlRuleForSecrets := func() map[string]plrv1.PlacementRule {
-		plRuleList := &plrv1.PlacementRuleList{}
+	getPlacementForSecrets := func() map[string]placementv1beta1.Placement {
+		placementList := &placementv1beta1.PlacementList{}
 		listOptions := &client.ListOptions{Namespace: ramenNamespace}
 
-		Expect(apiReader.List(context.TODO(), plRuleList, listOptions)).NotTo(HaveOccurred())
+		Expect(apiReader.List(context.TODO(), placementList, listOptions)).NotTo(HaveOccurred())
 
-		foundPlRules := make(map[string]plrv1.PlacementRule, len(plRuleList.Items))
-		for _, plRule := range plRuleList.Items {
-			if _, ok := plRuleNames[plRule.Name]; !ok {
+		foundPlacements := make(map[string]placementv1beta1.Placement, len(placementList.Items))
+		for _, placement := range placementList.Items {
+			if _, ok := plRuleNames[placement.Name]; !ok {
 				continue
 			}
-			foundPlRules[plRule.Name] = plRule
+			foundPlacements[placement.Name] = placement
 		}
 
-		return foundPlRules
+		return foundPlacements
 	}
 	vaildateSecretDistribution := func(drPolicies []ramen.DRPolicy) {
-		plRules := getPlRuleForSecrets()
+		placements := getPlacementForSecrets()
 
-		// If no policies are present, expect no secret placement rules
+		// If no policies are present, expect no secret placements
 		if drPolicies == nil {
-			Expect(len(plRules)).To(Equal(0))
+			Expect(len(placements)).To(Equal(0))
 
 			return
 		}
@@ -121,21 +121,28 @@ var _ = Describe("DRPolicyController", func() {
 			policyCombinationName += drpolicy.Name
 		}
 
-		// Ensure list of secrets for the policy name has as many placement rules
+		// Ensure list of secrets for the policy name has as many placements
 		Eventually(func() bool {
-			plRules = getPlRuleForSecrets()
+			placements = getPlacementForSecrets()
 
-			return len(plRules) == len(drPoliciesAndSecrets[policyCombinationName])
+			return len(placements) == len(drPoliciesAndSecrets[policyCombinationName])
 		}, timeout, interval).Should(BeTrue())
 
 		// Range through secrets in drpolicies name and ensure cluster list is the same
 		for secretName, clusterList := range drPoliciesAndSecrets[policyCombinationName] {
-			_, _, plRuleName, _ := util.GeneratePolicyResourceNames(secretName, util.SecretFormatRamen)
+			_, _, placementName, _ := util.GeneratePolicyResourceNames(secretName, util.SecretFormatRamen)
 
 			Eventually(func() (clusterNames []string) {
-				plRules = getPlRuleForSecrets()
-				for _, cluster := range plRules[plRuleName].Spec.Clusters {
-					clusterNames = append(clusterNames, cluster.Name)
+				placements = getPlacementForSecrets()
+				// Extract cluster names from the new Placement API structure
+				for _, predicate := range placements[placementName].Spec.Predicates {
+					if predicate.RequiredClusterSelector.LabelSelector.MatchExpressions != nil {
+						for _, expression := range predicate.RequiredClusterSelector.LabelSelector.MatchExpressions {
+							if expression.Key == "name" && expression.Operator == metav1.LabelSelectorOpIn {
+								clusterNames = append(clusterNames, expression.Values...)
+							}
+						}
+					}
 				}
 
 				return
@@ -226,7 +233,41 @@ var _ = Describe("DRPolicyController", func() {
 	}
 	var drpolicy *ramen.DRPolicy
 	var drpolicyNumber uint
+
+	// cleanup function to remove leftover placements from previous test runs
+	cleanupLeftoverPlacements := func() {
+		placementList := &placementv1beta1.PlacementList{}
+		listOptions := &client.ListOptions{Namespace: ramenNamespace}
+
+		err := k8sClient.List(context.TODO(), placementList, listOptions)
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, placement := range placementList.Items {
+			if _, ok := plRuleNames[placement.Name]; ok {
+				Expect(k8sClient.Delete(context.TODO(), &placement)).To(Succeed())
+			}
+		}
+
+		Eventually(func() int {
+			placementList := &placementv1beta1.PlacementList{}
+			err := k8sClient.List(context.TODO(), placementList, listOptions)
+			if err != nil {
+				return -1
+			}
+
+			count := 0
+			for _, placement := range placementList.Items {
+				if _, ok := plRuleNames[placement.Name]; ok {
+					count++
+				}
+			}
+
+			return count
+		}, timeout, interval).Should(Equal(0), "All leftover placement objects should be deleted")
+	}
+
 	Specify("initialize tests", func() {
+		cleanupLeftoverPlacements()
 		populateDRClusters()
 		createManagedClusters()
 		createDRClusters(0, 3)
@@ -252,14 +293,14 @@ var _ = Describe("DRPolicyController", func() {
 		drpolicyObjectMetaReset(drpolicyNumber)
 	})
 	When("a 1st drpolicy is created", func() {
-		It("should create a secret placement rule for each cluster specified in a 1st drpolicy", func() {
+		It("should create a secret placement for each cluster specified in a 1st drpolicy", func() {
 			drpolicyCreate(drpolicy)
 			validatedConditionExpect(drpolicy, metav1.ConditionTrue, Ignore())
 			vaildateSecretDistribution(drpolicies[0:1])
 		})
 	})
 	When("a 2nd drpolicy is created specifying some clusters in a 1st drpolicy and some not", func() {
-		It("should create a secret placement rule for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
+		It("should create a secret placement for each cluster specified in a 2nd drpolicy but not a 1st drpolicy",
 			func() {
 				drpolicyCreate(&drpolicies[1])
 				validatedConditionExpect(&drpolicies[1], metav1.ConditionTrue, Ignore())
@@ -268,7 +309,7 @@ var _ = Describe("DRPolicyController", func() {
 		)
 	})
 	When("a 1st drpolicy is deleted", func() {
-		It("should delete a secret placement rule for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
+		It("should delete a secret placement for each cluster specified in a 1st drpolicy but not a 2nd drpolicy",
 			func() {
 				drpolicyDelete(drpolicy)
 				vaildateSecretDistribution(drpolicies[1:2])
@@ -276,7 +317,7 @@ var _ = Describe("DRPolicyController", func() {
 		)
 	})
 	When("a 2nd drpolicy is deleted", func() {
-		It("should delete a secret placement rule for each cluster specified in a 2nd drpolicy", func() {
+		It("should delete a secret placement for each cluster specified in a 2nd drpolicy", func() {
 			drpolicyDelete(&drpolicies[1])
 			vaildateSecretDistribution(nil)
 		})
