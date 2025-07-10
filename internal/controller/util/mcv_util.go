@@ -53,6 +53,12 @@ type ManagedClusterViewGetter interface {
 
 	ListSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
+	GetNFClassFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*csiaddonsv1alpha1.NetworkFenceClass, error)
+
+	ListNFClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
 	GetVSClassFromManagedCluster(
 		resourceName, managedCluster string,
 		annotations map[string]string) (*snapv1.VolumeSnapshotClass, error)
@@ -244,6 +250,31 @@ func (m ManagedClusterViewGetterImpl) GetSClassFromManagedCluster(resourceName, 
 
 func (m ManagedClusterViewGetterImpl) ListSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return m.listMCVsWithLabel(cluster, map[string]string{SClassLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetNFClassFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*csiaddonsv1alpha1.NetworkFenceClass, error) {
+	nfc := &csiaddonsv1alpha1.NetworkFenceClass{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{NFClassLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeNFClass),
+		"NetworkFenceClass",
+		csiaddonsv1alpha1.GroupVersion.Group,
+		csiaddonsv1alpha1.GroupVersion.Version,
+		nfc,
+	)
+
+	return nfc, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListNFClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{NFClassLabel: ""})
 }
 
 func (m ManagedClusterViewGetterImpl) GetVSClassFromManagedCluster(resourceName, managedCluster string,

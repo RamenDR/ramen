@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	"golang.org/x/time/rate"
@@ -305,6 +306,14 @@ func (r *DRClusterConfigReconciler) UpdateSupportedClasses(
 	drCConfig.Status.VolumeReplicationClasses = vrClasses
 	slices.Sort(drCConfig.Status.VolumeReplicationClasses)
 
+	nfClases, err := r.listDRSupportedNFCs(ctx)
+	if err != nil {
+		return err
+	}
+
+	drCConfig.Status.NetworkFenceClasses = nfClases
+	slices.Sort(drCConfig.Status.NetworkFenceClasses)
+
 	return nil
 }
 
@@ -368,6 +377,23 @@ func (r *DRClusterConfigReconciler) listDRSupportedVRCs(ctx context.Context) ([]
 	return vrcs, nil
 }
 
+// listDRSupportedNFCs returns a list of NetworkFenceClass
+func (r *DRClusterConfigReconciler) listDRSupportedNFCs(ctx context.Context) ([]string, error) {
+	nfcs := []string{}
+
+	nfClasses := &csiaddonsv1alpha1.NetworkFenceClassList{}
+	if err := r.Client.List(ctx, nfClasses); err != nil {
+		return nil, fmt.Errorf("failed to list NetworkFenceClasses, %w", err)
+	}
+
+	for i := range nfClasses.Items {
+		// TODO: add any check to filter like labels before appending
+		nfcs = append(nfcs, nfClasses.Items[i].Name)
+	}
+
+	return nfcs, nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	drccMapFn := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
@@ -414,5 +440,6 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
 		Watches(&snapv1.VolumeSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
+		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
 		Complete(r)
 }
