@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -774,6 +776,90 @@ func (u *drclusterInstance) handleDeletion() (bool, error) {
 	return u.cleanClusters([]ramen.DRCluster{*u.object, peerCluster})
 }
 
+func pruneNFClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListNFClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
+func getNFClassesFromCluster(
+	u *drclusterInstance,
+	m util.ManagedClusterViewGetter,
+	drcConfig *ramen.DRClusterConfig,
+	clusterName string,
+) ([]*csiaddonsv1alpha1.NetworkFenceClass, error) {
+	nfClasses := []*csiaddonsv1alpha1.NetworkFenceClass{}
+	nfClassNames := drcConfig.Status.NetworkFenceClasses
+	annotations := make(map[string]string)
+	// annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, nfClassName := range nfClassNames {
+		nfClass, err := m.GetNFClassFromManagedCluster(nfClassName, clusterName, annotations)
+		if err != nil {
+			return []*csiaddonsv1alpha1.NetworkFenceClass{}, err
+		}
+
+		nfClasses = append(nfClasses, nfClass)
+	}
+
+	return nfClasses, pruneNFClassViews(m, u.log, clusterName, nfClassNames)
+}
+
+func (u *drclusterInstance) findMatchingNFClasses(
+	networkFenceClasses []*csiaddonsv1alpha1.NetworkFenceClass, storageClasses []*storagev1.StorageClass,
+) []*csiaddonsv1alpha1.NetworkFenceClass {
+	nfClasses := []*csiaddonsv1alpha1.NetworkFenceClass{}
+
+	for _, nfc := range networkFenceClasses {
+		for _, sc := range storageClasses {
+			storageID := sc.GetLabels()[StorageIDLabel]
+
+			nfClassAnnoations, ok := nfc.GetAnnotations()[storageID]
+			if !ok {
+				continue
+			}
+
+			if sc.Provisioner == nfc.Spec.Provisioner &&
+				slices.Contains(strings.Split(nfClassAnnoations, ","), storageID) {
+				nfClasses = append(nfClasses, nfc)
+			}
+		}
+	}
+
+	return nfClasses
+}
+
+func (u *drclusterInstance) getNFClassesFromDRClusterConfig(cluster *ramen.DRCluster,
+) ([]*csiaddonsv1alpha1.NetworkFenceClass, error) {
+	annotations := make(map[string]string)
+	// annotations[AllDRPolicyAnnotation] = cluster ?? check this
+
+	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(cluster.GetName(), annotations)
+	if err != nil {
+		return []*csiaddonsv1alpha1.NetworkFenceClass{}, err
+	}
+
+	nfClasses, err := getNFClassesFromCluster(u, u.reconciler.MCVGetter, drcConfig, cluster.GetName())
+	if err != nil {
+		return nfClasses, err
+	}
+
+	storageClasses, err := GetSClassesFromCluster(u.log, u.reconciler.MCVGetter, drcConfig, cluster.GetName())
+	if err != nil {
+		return nil, err
+	}
+
+	return u.findMatchingNFClasses(nfClasses, storageClasses), nil
+}
+
 func (u *drclusterInstance) clusterFence() (bool, error) {
 	// Ideally, here it should collect all the DRClusters available
 	// in the cluster and then match the appropriate peer cluster
@@ -795,7 +881,12 @@ func (u *drclusterInstance) clusterFence() (bool, error) {
 			u.object.Name, err)
 	}
 
-	return u.fenceClusterOnCluster(&peerCluster)
+	nfClasses, err := u.getNFClassesFromDRClusterConfig(&peerCluster)
+	if err != nil { // may need to handle the error and return and not log
+		u.log.Info(fmt.Sprintf("got NFClasses %v", nfClasses))
+	}
+
+	return u.fenceClusterOnCluster(&peerCluster, nfClasses)
 }
 
 func (u *drclusterInstance) clusterUnfence() (bool, error) {
@@ -850,8 +941,11 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 //	return requeue, nil
 //
 // endif
-func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster) (bool, error) {
+func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
+	networkFenceClasses []*csiaddonsv1alpha1.NetworkFenceClass) (bool, error) {
 	if !u.isFencingOrFenced() {
+
+		// nfclass := networkFenceClasses[0]
 		u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
 
 		if err := u.createNFManifestWork(u.object, peerCluster, u.log); err != nil {

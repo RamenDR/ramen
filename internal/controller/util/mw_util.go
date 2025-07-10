@@ -47,6 +47,7 @@ const (
 	MWTypeNF        string = "nf"
 	MWTypeMMode     string = "mmode"
 	MWTypeSClass    string = "sc"
+	MWTypeNFClass   string = "nfc"
 	MWTypeVSClass   string = "vsc"
 	MWTypeVGSClass  string = "vgsc"
 	MWTypeVRClass   string = "vrc"
