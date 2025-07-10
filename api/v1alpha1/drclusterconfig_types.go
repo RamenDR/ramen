@@ -58,6 +58,10 @@ type DRClusterConfigStatus struct {
 	// VolumeGroupReplicationClasses lists the detected volume group replication classes on the cluster that carry the
 	// ramen replicationid label
 	VolumeGroupReplicationClasses []string `json:"volumeGroupReplicationClasses,omitempty"`
+
+	// NetworkFenceClass lists all the classes that match the provioner on the cluster that can be used for fencing
+	// operations
+	NetworkFenceClasses []string `json:"networkFenceClasses,omitempty"`
 }
 
 //+kubebuilder:object:root=true

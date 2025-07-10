@@ -216,6 +216,17 @@ func HasLabel(obj client.Object, key string) bool {
 	return false
 }
 
+func HasAnnotation(obj client.Object, key string) bool {
+	annotations := obj.GetAnnotations()
+	for k := range annotations {
+		if k == key {
+			return true
+		}
+	}
+
+	return false
+}
+
 func HasLabelWithValue(obj client.Object, key string, value string) bool {
 	labels := obj.GetLabels()
 	for k, v := range labels {
