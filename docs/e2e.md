@@ -152,7 +152,8 @@ All tests completed successfully!
 ### Tests configuration
 
 The tests are defined in the configuration file. Each test specifies a deployer
-name, workload name, and PVCSpec:
+name, workload name, and PVCSpec. The PVCSpec and Deployer names should match a
+name in the PVCSpecs and Deployers sections of the configuration file.:
 
 ```yaml
 tests:
@@ -165,6 +166,13 @@ tests:
 The tests are generated from the configuration as
 "TestDR/{deployer}-{workload}-{pvcspec}-busybox".
 See [Running DR tests](#running-dr-tests) section for complete test list.
+
+#### Deployers
+
+The deployers section defines the available deployment methods. Each deployer
+has a name, type, and description. The type is used to identify the deployer
+implementation. There are 3 types available, appset, subscr, and disapp. The
+description provides additional context about the deployer.
 
 ### Run specific DR tests
 
