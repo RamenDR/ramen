@@ -24,9 +24,23 @@ pvcspecs:
     storageclassname: rook-cephfs-fs1
     accessmodes: ReadWriteMany
 
+# List of Deployer specifications.
+# These define the configuration values for different deployers.
+# Available types: appset, subscr, disapp
+deployers:
+  - name: appset
+    type: appset
+    description: "ApplicationSet deployer for ArgoCD"
+  - name: subscr
+    type: subscr
+    description: "Subscription deployer for OCM subscriptions"
+  - name: disapp
+    type: disapp
+    description: "Discovered Application deployer for discovered applications"
+
 # List to tests to run.
 # Available workloads: deploy
-# Available deployers: appset, subscr, disapp
+# Deployer should be the name of the deployer to use from the deployers list.
 # Test names are generated as "{deployer}-{workload}-{pvcspec}".
 tests:
   - deployer: appset

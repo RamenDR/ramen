@@ -41,6 +41,7 @@ func TestDR(dt *testing.T) {
 	})
 
 	pvcSpecs := config.PVCSpecsMap(Ctx.config)
+	deploySpecs := config.DeployersMap(Ctx.config)
 
 	for _, tc := range Ctx.config.Tests {
 		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
@@ -53,7 +54,12 @@ func TestDR(dt *testing.T) {
 			panic(err)
 		}
 
-		deployer, err := deployers.New(tc.Deployer)
+		deployerSpec, ok := deploySpecs[tc.Deployer]
+		if !ok {
+			panic("unknown deployer")
+		}
+
+		deployer, err := deployers.New(deployerSpec)
 		if err != nil {
 			panic(err)
 		}

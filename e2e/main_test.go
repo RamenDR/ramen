@@ -88,7 +88,7 @@ func testMain(m *testing.M) int {
 	log.Infof("Using log file %q", logFile)
 
 	options := config.Options{
-		Deployers: deployers.AvailableNames(),
+		Deployers: deployers.AvailableTypes(),
 		Workloads: workloads.AvailableNames(),
 	}
 

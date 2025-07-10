@@ -8,25 +8,26 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
 // factoryFunc is the new() function type for deployers
-type factoryFunc func() types.Deployer
+type factoryFunc func(config.Deployer) types.Deployer
 
 var registry = map[string]factoryFunc{}
 
 // New creates a new deployer for name
-func New(name string) (types.Deployer, error) {
-	factory := registry[name]
+func New(deployer config.Deployer) (types.Deployer, error) {
+	factory := registry[deployer.Type]
 	if factory == nil {
-		return nil, fmt.Errorf("unknown deployer %q (choose from %q)", name, AvailableNames())
+		return nil, fmt.Errorf("unknown deployer %q (choose from %q)", deployer.Type, AvailableTypes())
 	}
 
-	return factory(), nil
+	return factory(deployer), nil
 }
 
-func AvailableNames() []string {
+func AvailableTypes() []string {
 	return slices.Collect(maps.Keys(registry))
 }
 

@@ -21,6 +21,13 @@ pvcspecs:
   - name: cephfs
     storageclassname: rook-cephfs-fs1
     accessmodes: ReadWriteMany
+deployers:
+  - name: appset
+    type: appset
+  - name: subscr
+    type: subscr
+  - name: disapp
+    type: disapp
 tests:
   - deployer: appset
     workload: deploy
