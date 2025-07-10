@@ -492,9 +492,9 @@ func pruneSClassViews(
 	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
 }
 
-// getSClassesFromCluster gets StorageClasses that are claimed in the DRClusterConfig status
-func getSClassesFromCluster(
-	u *drpolicyUpdater,
+// GetSClassesFromCluster gets StorageClasses that are claimed in the DRClusterConfig status
+func GetSClassesFromCluster(
+	log logr.Logger,
 	m util.ManagedClusterViewGetter,
 	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
@@ -518,7 +518,7 @@ func getSClassesFromCluster(
 		sClasses = append(sClasses, sClass)
 	}
 
-	return sClasses, pruneSClassViews(m, u.log, clusterName, sClassNames)
+	return sClasses, pruneSClassViews(m, log, clusterName, sClassNames)
 }
 
 // getClusterClasses inspects, using ManagedClusterView, the DRClusterConfig claims for all storage related classes,
@@ -546,7 +546,7 @@ func getClusterClasses(
 		return classLists{}, err
 	}
 
-	sClasses, err := getSClassesFromCluster(u, m, drcConfig, cluster)
+	sClasses, err := GetSClassesFromCluster(u.log, m, drcConfig, cluster)
 	if err != nil || len(sClasses) == 0 {
 		return classLists{}, err
 	}
