@@ -143,3 +143,11 @@ func (s Subscription) WaitForResourcesDelete(ctx types.TestContext) error {
 func (s Subscription) IsDiscovered() bool {
 	return false
 }
+
+func NewSubscription() types.Deployer {
+	return &Subscription{}
+}
+
+func init() {
+	register("subscr", NewSubscription)
+}
