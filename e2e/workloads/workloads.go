@@ -20,7 +20,7 @@ var registry = map[string]factoryFunc{}
 func New(name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
 	factory := registry[name]
 	if factory == nil {
-		return nil, fmt.Errorf("unknown deployment: %q (choose from %q)", name, AvailableNames())
+		return nil, fmt.Errorf("unknown workload: %q (choose from %q)", name, AvailableNames())
 	}
 
 	return factory(branch, pvcSpec), nil
