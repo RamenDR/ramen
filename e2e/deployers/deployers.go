@@ -16,16 +16,6 @@ type factoryFunc func() types.Deployer
 
 var registry = map[string]factoryFunc{}
 
-// register needs to be called by every deployer in the init() function to
-// register itself with the deployer registry.
-func register(deployerType string, f factoryFunc) {
-	if _, exists := registry[deployerType]; exists {
-		panic(fmt.Sprintf("deployer %q already registered", deployerType))
-	}
-
-	registry[deployerType] = f
-}
-
 // New creates a new deployer for name
 func New(name string) (types.Deployer, error) {
 	factory := registry[name]
@@ -38,4 +28,14 @@ func New(name string) (types.Deployer, error) {
 
 func AvailableNames() []string {
 	return slices.Collect(maps.Keys(registry))
+}
+
+// register needs to be called by every deployer in the init() function to
+// register itself with the deployer registry.
+func register(deployerType string, f factoryFunc) {
+	if _, exists := registry[deployerType]; exists {
+		panic(fmt.Sprintf("deployer %q already registered", deployerType))
+	}
+
+	registry[deployerType] = f
 }
