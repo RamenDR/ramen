@@ -128,6 +128,16 @@ func DisableProtection(ctx types.TestContext) error {
 		return err
 	}
 
+	// If the cluster is not nil, the workload exists and its health is validated.
+	if cluster != nil {
+		if err := ctx.Workload().Health(ctx, cluster); err != nil {
+			return err
+		}
+
+		log.Debugf("Workload \"%s/%s\" is healthy in cluster %q",
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
+	}
+
 	log.Info("Workload unprotected")
 
 	return nil
