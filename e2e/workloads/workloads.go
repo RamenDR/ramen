@@ -5,7 +5,6 @@ package workloads
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
@@ -14,17 +13,11 @@ import (
 // factoryFunc is the new() function type for workloads
 type factoryFunc func(revision string, pvcSpec config.PVCSpec) types.Workload
 
-var (
-	mutex    sync.Mutex
-	registry = map[string]factoryFunc{}
-)
+var registry = map[string]factoryFunc{}
 
 // register needs to be called by every workload in the init() function to
 // register itself with the workload registry.
 func register(workloadType string, f factoryFunc) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
 	if _, exists := registry[workloadType]; exists {
 		panic(fmt.Sprintf("workload %q already registered", workloadType))
 	}
@@ -32,15 +25,8 @@ func register(workloadType string, f factoryFunc) {
 	registry[workloadType] = f
 }
 
-func getFactory(name string) factoryFunc {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	return registry[name]
-}
-
 func New(name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
-	fac := getFactory(name)
+	fac := registry[name]
 	if fac == nil {
 		return nil, fmt.Errorf("unknown deployment: %q (choose from %q)", name, AvailableNames())
 	}
@@ -49,9 +35,6 @@ func New(name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
 }
 
 func AvailableNames() []string {
-	mutex.Lock()
-	defer mutex.Unlock()
-
 	keys := make([]string, 0, len(registry))
 
 	for k := range registry {
