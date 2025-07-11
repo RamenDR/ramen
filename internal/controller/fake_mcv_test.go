@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 
@@ -49,6 +50,15 @@ func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster 
 }
 
 func (f FakeMCVGetter) ListSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return &viewv1beta1.ManagedClusterViewList{}, nil
+}
+
+func (f FakeMCVGetter) GetNFClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+) (*csiaddonsv1alpha1.NetworkFenceClass, error) {
+	return nil, nil
+}
+
+func (f FakeMCVGetter) ListNFClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return &viewv1beta1.ManagedClusterViewList{}, nil
 }
 
