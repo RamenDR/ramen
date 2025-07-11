@@ -351,6 +351,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 // +kubebuilder:rbac:groups=argoproj.io,resources=applicationsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,resourceNames=kube-system,verbs=get;list;watch
 
 func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
@@ -651,6 +652,21 @@ func (u *drclusterInstance) ensureDRClusterConfig() error {
 	return nil
 }
 
+// getK8sClusterID getClusterID returns the cluster ID of the k8s Cluster
+func (u *drclusterInstance) getK8sClusterID() string {
+	kubeSystemNamespace := &corev1.Namespace{}
+	if err := u.client.Get(u.ctx, types.NamespacedName{
+		Name:      "kube-system",
+		Namespace: "",
+	}, kubeSystemNamespace); err != nil {
+		u.log.Error(err, "Failed to get the namespace kube-system")
+
+		return ""
+	}
+
+	return fmt.Sprint(kubeSystemNamespace.GetObjectMeta().GetUID())
+}
+
 //nolint:funlen
 func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, error) {
 	mc, err := util.NewManagedClusterInstance(u.ctx, u.client, u.object.GetName())
@@ -661,6 +677,10 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 	clusterID, err := mc.ClusterID()
 	if err != nil {
 		return nil, err
+	}
+
+	if clusterID != u.getK8sClusterID() {
+		return nil, fmt.Errorf("cluster ID claim value %v differs from that of the k8s cluster", clusterID)
 	}
 
 	drcConfig := ramen.DRClusterConfig{
@@ -678,13 +698,22 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 
 	util.AddLabel(&drcConfig, util.CreatedByRamenLabel, "true")
 
-	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	err = u.ensureNoDuplicateSchedules(&drcConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ensure that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate schedule from
-	// another DRPolicy
+	return &drcConfig, nil
+}
+
+// ensureNoDuplicateSchedules ensures that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate
+// schedule from another DRPolicy
+func (u *drclusterInstance) ensureNoDuplicateSchedules(drcConfig *ramen.DRClusterConfig) error {
+	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	if err != nil {
+		return err
+	}
+
 	added := map[string]bool{}
 
 	for idx := range drpolicies.Items {
@@ -711,7 +740,7 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		}
 	}
 
-	return &drcConfig, nil
+	return nil
 }
 
 // TODO:
