@@ -120,6 +120,10 @@ func DisableProtection(ctx types.TestContext) error {
 			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
+	if err := annotateDRPCDoNotDeletePVC(ctx, name); err != nil {
+		return err
+	}
+
 	if err := deleteProtectionResources(ctx); err != nil {
 		return err
 	}
