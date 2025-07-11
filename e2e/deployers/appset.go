@@ -11,6 +11,10 @@ import (
 
 type ApplicationSet struct{}
 
+func NewApplicationSet() types.Deployer {
+	return &ApplicationSet{}
+}
+
 // Deploy creates an ApplicationSet on the hub cluster, creating the workload on one of the managed clusters.
 func (a ApplicationSet) Deploy(ctx types.TestContext) error {
 	name := ctx.Name()
@@ -125,10 +129,6 @@ func (a ApplicationSet) GetNamespace(ctx types.TestContext) string {
 
 func (a ApplicationSet) IsDiscovered() bool {
 	return false
-}
-
-func NewApplicationSet() types.Deployer {
-	return &ApplicationSet{}
 }
 
 func init() {

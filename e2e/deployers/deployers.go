@@ -5,7 +5,8 @@ package deployers
 
 import (
 	"fmt"
-	"sync"
+	"maps"
+	"slices"
 
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -13,37 +14,11 @@ import (
 // factoryFunc is the new() function type for deployers
 type factoryFunc func() types.Deployer
 
-var mutex sync.Mutex
-
-var registry map[string]factoryFunc
-
-// register needs to be called by every deployer in the init() function to
-// register itself with the deployer registry.
-func register(deployerType string, f factoryFunc) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	if registry == nil {
-		registry = make(map[string]factoryFunc)
-	}
-
-	if _, exists := registry[deployerType]; exists {
-		panic(fmt.Sprintf("deployer %q already registered", deployerType))
-	}
-
-	registry[deployerType] = f
-}
-
-func getFactory(name string) factoryFunc {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	return registry[name]
-}
+var registry = map[string]factoryFunc{}
 
 // New creates a new deployer for name
 func New(name string) (types.Deployer, error) {
-	factory := getFactory(name)
+	factory := registry[name]
 	if factory == nil {
 		return nil, fmt.Errorf("unknown deployer %q (choose from %q)", name, AvailableNames())
 	}
@@ -52,14 +27,15 @@ func New(name string) (types.Deployer, error) {
 }
 
 func AvailableNames() []string {
-	mutex.Lock()
-	defer mutex.Unlock()
+	return slices.Collect(maps.Keys(registry))
+}
 
-	keys := make([]string, 0, len(registry))
-
-	for k := range registry {
-		keys = append(keys, k)
+// register needs to be called by every deployer in the init() function to
+// register itself with the deployer registry.
+func register(deployerType string, f factoryFunc) {
+	if _, exists := registry[deployerType]; exists {
+		panic(fmt.Sprintf("deployer %q already registered", deployerType))
 	}
 
-	return keys
+	registry[deployerType] = f
 }
