@@ -71,7 +71,8 @@ func EvaluateCheckHook(k8sReader client.Reader, hook *kubeobjects.HookSpec, log 
 	for int(pollInterval.Seconds()) < timeout {
 		select {
 		case <-ctx.Done():
-			return false, fmt.Errorf("timeout waiting for resource %s to be ready: %w", hook.NameSelector, ctx.Err())
+			return false, fmt.Errorf("no resource found with nameSelector %s and labelSelector %s: %w",
+				hook.NameSelector, hook.LabelSelector, ctx.Err())
 		case <-ticker.C:
 			objs, err := getResourcesList(k8sReader, hook, log)
 			if err != nil {
@@ -148,11 +149,12 @@ func getResourcesList(k8sReader client.Reader, hook *kubeobjects.HookSpec, log l
 	if hook.NameSelector != "" {
 		log.Info("getting resources using nameSelector", "nameSelector", hook.NameSelector)
 
-		objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sReader, hook, objList)
+		selectorType, objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sReader, hook, objList)
 		if err != nil {
 			return resourceList, fmt.Errorf("error getting resources using nameSelector: %w", err)
 		}
 
+		log.Info("resources found using nameSelector", "selectorType", selectorType, "count", len(objsUsingNameSelector))
 		resourceList = append(resourceList, objsUsingNameSelector...)
 	}
 
