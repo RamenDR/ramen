@@ -57,8 +57,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		}
 		vrcLabels = func() map[string]string {
 			return map[string]string{
-				controllers.VolumeReplicationIDLabel: replicationIDs[0],
-				controllers.StorageIDLabel:           storageIDs[0],
+				controllers.ReplicationIDLabel: replicationIDs[0],
+				controllers.StorageIDLabel:     storageIDs[0],
 			}
 		}
 		peerClass = func(replicationID, storageClassName string, sIDs []string) ramen.PeerClass {

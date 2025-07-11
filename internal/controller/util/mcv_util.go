@@ -12,6 +12,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,6 +65,18 @@ type ManagedClusterViewGetter interface {
 		annotations map[string]string) (*volrep.VolumeReplicationClass, error)
 
 	ListVRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
+	GetVGSClassFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error)
+
+	ListVGSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
+
+	GetVGRClassFromManagedCluster(
+		resourceName, managedCluster string,
+		annotations map[string]string) (*volrep.VolumeGroupReplicationClass, error)
+
+	ListVGRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
 	GetResource(mcv *viewv1beta1.ManagedClusterView, resource interface{}) error
 
@@ -269,6 +282,56 @@ func (m ManagedClusterViewGetterImpl) GetVSClassFromManagedCluster(resourceName,
 
 func (m ManagedClusterViewGetterImpl) ListVSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return m.listMCVsWithLabel(cluster, map[string]string{VSClassLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
+	vgsc := &groupsnapv1beta1.VolumeGroupSnapshotClass{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{VGSClassLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeVGSClass),
+		"VolumeGroupSnapshotClass",
+		groupsnapv1beta1.SchemeGroupVersion.Group,
+		groupsnapv1beta1.SchemeGroupVersion.Version,
+		vgsc,
+	)
+
+	return vgsc, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListVGSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{VGSClassLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetVGRClassFromManagedCluster(resourceName, managedCluster string,
+	annotations map[string]string,
+) (*volrep.VolumeGroupReplicationClass, error) {
+	vgrc := &volrep.VolumeGroupReplicationClass{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		managedCluster,
+		annotations,
+		map[string]string{VGRClassLabel: ""},
+		BuildManagedClusterViewName(resourceName, "", MWTypeVGRClass),
+		"VolumeGroupReplicationClass",
+		volrep.GroupVersion.Group,
+		volrep.GroupVersion.Version,
+		vgrc,
+	)
+
+	return vgrc, err
+}
+
+func (m ManagedClusterViewGetterImpl) ListVGRClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return m.listMCVsWithLabel(cluster, map[string]string{VGRClassLabel: ""})
 }
 
 func (m ManagedClusterViewGetterImpl) GetVRClassFromManagedCluster(resourceName, managedCluster string,
