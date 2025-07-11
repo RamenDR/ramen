@@ -26,12 +26,12 @@ func register(workloadType string, f factoryFunc) {
 }
 
 func New(name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
-	fac := registry[name]
-	if fac == nil {
+	factory := registry[name]
+	if factory == nil {
 		return nil, fmt.Errorf("unknown deployment: %q (choose from %q)", name, AvailableNames())
 	}
 
-	return fac(branch, pvcSpec), nil
+	return factory(branch, pvcSpec), nil
 }
 
 func AvailableNames() []string {
