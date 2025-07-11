@@ -62,6 +62,9 @@ const (
 
 	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
 	DoNotDeletePVCAnnotationVal = "true"
+
+	IsSubmarinerEnabledAnnotation    = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
+	IsSubmarinerEnabledAnnotationVal = "true"
 )
 
 var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
@@ -2545,6 +2548,8 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 		case rmnutil.IsCGEnabledAnnotation:
 			fallthrough
 		case rmnutil.UseVolSyncAnnotation:
+			fallthrough
+		case rmnutil.IsSubmarinerEnabledAnnotation:
 			fallthrough
 		case DRPCUIDAnnotation:
 			rmnutil.AddAnnotation(vrg, k, v)
