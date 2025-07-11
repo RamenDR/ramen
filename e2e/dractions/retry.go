@@ -10,10 +10,13 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
+
+const drpcDoNotDeletePVC = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
 
 func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) error {
 	log := ctx.Logger()
@@ -140,6 +143,78 @@ func waitDRPCProgression(
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
 			return fmt.Errorf("drpc %q progression is not %q in cluster %q: %w",
 				name, progression, hub.Name, err)
+		}
+	}
+}
+
+func addDRPCAnnotation(ctx types.TestContext, namespace, drpcName string) error {
+	log := ctx.Logger()
+
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		drpc, err := getDRPC(ctx, namespace, drpcName)
+		if err != nil {
+			return err
+		}
+
+		if drpc.Annotations == nil {
+			drpc.Annotations = make(map[string]string)
+		}
+
+		drpc.Annotations[drpcDoNotDeletePVC] = "true"
+
+		if err := updateDRPC(ctx, drpc); err != nil {
+			return err
+		}
+
+		log.Debugf("Annotated drpc \"%s/%s\" with \"%s: %s\" in cluster %q",
+			namespace, drpcName, drpcDoNotDeletePVC,
+			drpc.Annotations[drpcDoNotDeletePVC], ctx.Env().Hub.Name)
+
+		return nil
+	})
+}
+
+func waitForDRPCAnnotationPropagation(ctx types.TestContext, namespace, drpcName string) error {
+	log := ctx.Logger()
+	start := time.Now()
+
+	log.Debugf("Waiting until drpc \"%s/%s\" annotation %q is propagated to primary vrg",
+		namespace, drpcName, drpcDoNotDeletePVC)
+
+	for {
+		drpc, err := getDRPC(ctx, namespace, drpcName)
+		if err != nil {
+			return err
+		}
+
+		preferredClusterName := drpc.Spec.PreferredCluster
+
+		preferredCluster, err := ctx.Env().GetCluster(preferredClusterName)
+		if err != nil {
+			return err
+		}
+
+		vrgName := drpcName
+
+		vrg, err := getVRG(ctx, preferredCluster, ctx.AppNamespace(), vrgName)
+		if err != nil {
+			return err
+		}
+
+		if vrg.Annotations != nil {
+			if value, exists := vrg.Annotations[drpcDoNotDeletePVC]; exists && value == "true" {
+				elapsed := time.Since(start)
+				log.Debugf("DRPC \"%s/%s\" annotation \"%s: %s\" propagated to primary vrg \"%s/%s\" in cluster %q in %.3f seconds",
+					namespace, drpcName, drpcDoNotDeletePVC, drpc.Annotations[drpcDoNotDeletePVC], ctx.AppNamespace(),
+					vrgName, preferredCluster.Name, elapsed.Seconds())
+
+				return nil
+			}
+		}
+
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return fmt.Errorf("drpc \"%s/%s\" annotation \"%s: %s\" propagation failed: %w",
+				namespace, drpcName, drpcDoNotDeletePVC, drpc.Annotations[drpcDoNotDeletePVC], err)
 		}
 	}
 }
