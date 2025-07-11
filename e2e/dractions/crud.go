@@ -22,6 +22,22 @@ func updatePlacement(ctx types.TestContext, placement *clusterv1beta1.Placement)
 	return hub.Client.Update(ctx.Context(), placement)
 }
 
+func getVRG(
+	ctx types.TestContext,
+	cluster *types.Cluster,
+	namespace, name string,
+) (*ramen.VolumeReplicationGroup, error) {
+	vrg := &ramen.VolumeReplicationGroup{}
+	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
+
+	err := cluster.Client.Get(ctx.Context(), key, vrg)
+	if err != nil {
+		return nil, err
+	}
+
+	return vrg, nil
+}
+
 func getDRPC(ctx types.TestContext, namespace, name string) (*ramen.DRPlacementControl, error) {
 	hub := ctx.Env().Hub
 
@@ -206,4 +222,16 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 	}
 
 	return drpc
+}
+
+func annotateDRPCDoNotDeletePVC(ctx types.TestContext, managementNamespace, drpcName string) error {
+	if err := addDRPCAnnotation(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	if err := waitForDRPCAnnotationPropagation(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	return nil
 }
