@@ -34,6 +34,12 @@ func TestReadConfig(t *testing.T) {
 			{Name: "rbd", StorageClassName: "rook-ceph-block", AccessModes: "ReadWriteOnce"},
 			{Name: "cephfs", StorageClassName: "rook-cephfs-fs1", AccessModes: "ReadWriteMany"},
 		},
+		Deployers: []Deployer{
+			{Name: "appset", Type: "appset"},
+			{Name: "subscr", Type: "subscr"},
+			{Name: "disapp", Type: "disapp"},
+			{Name: "disapp-recipe", Type: "disapp"},
+		},
 		Tests: []Test{
 			{Workload: "deploy", Deployer: "appset", PVCSpec: "rbd"},
 			{Workload: "deploy", Deployer: "appset", PVCSpec: "cephfs"},
@@ -250,6 +256,70 @@ func TestConfigNotEqual(t *testing.T) {
 
 			if c1.Equal(c2) {
 				t.Errorf("config %+v is equal to non-equal config %+v", c1, c2)
+			}
+		})
+	}
+}
+
+func TestValidateDeployers(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *Config
+		valid  bool
+	}{
+		{
+			name: "valid",
+			config: &Config{
+				Deployers: []Deployer{
+					{Name: "appset", Type: "appset"},
+					{Name: "subscr", Type: "subscr"},
+					{Name: "disapp", Type: "disapp"},
+				},
+			},
+			valid: true,
+		},
+		{
+			name: "empty",
+			config: &Config{
+				Deployers: []Deployer{},
+			},
+			valid: false,
+		},
+		{
+			name: "duplicate names",
+			config: &Config{
+				Deployers: []Deployer{
+					{Name: "appset", Type: "appset"},
+					{Name: "appset", Type: "appset"},
+				},
+			},
+			valid: false,
+		},
+		{
+			name: "two deployers with different names but same configuration",
+			config: &Config{
+				Deployers: []Deployer{
+					{Name: "disapp", Type: "disapp"},
+					{Name: "disapp-recipe", Type: "disapp"},
+				},
+			},
+			valid: true,
+		},
+	}
+
+	options := Options{
+		Deployers: []string{"appset", "subscr", "disapp"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDeployers(tt.config, options)
+			if tt.valid && err != nil {
+				t.Errorf("valid config %+v, failed: %s", tt.config.Deployers, err)
+			}
+
+			if !tt.valid && err == nil {
+				t.Errorf("invalid config %+v, did not fail", tt.config.Deployers)
 			}
 		})
 	}

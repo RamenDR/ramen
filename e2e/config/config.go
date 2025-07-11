@@ -62,6 +62,15 @@ type PVCSpec struct {
 	AccessModes      string `json:"accessModes"`
 }
 
+// Deployer is a deployer configuration.
+type Deployer struct {
+	// Name of the deployer instance. Refer to this name in tests.
+	Name string `json:"name"`
+	// Type specifies the type of deployer.
+	// Available types: appset, subscr, and disapp.
+	Type string `json:"type"`
+}
+
 type Cluster struct {
 	Kubeconfig string `json:"kubeconfig"`
 }
@@ -81,6 +90,7 @@ type Config struct {
 	Repo       Repo               `json:"repo"`
 	DRPolicy   string             `json:"drPolicy"`
 	PVCSpecs   []PVCSpec          `json:"pvcSpecs"`
+	Deployers  []Deployer         `json:"deployers"`
 	Tests      []Test             `json:"tests"`
 
 	// Generated values
@@ -128,6 +138,10 @@ func ReadConfig(configFile string, options Options) (*Config, error) {
 	}
 
 	if err := validatePVCSpecs(config); err != nil {
+		return nil, err
+	}
+
+	if err := validateDeployers(config, options); err != nil {
 		return nil, err
 	}
 
@@ -299,6 +313,11 @@ func validateTests(config *Config, options *Options) error {
 		pvcSpecNames = append(pvcSpecNames, spec.Name)
 	}
 
+	deployerNames := make([]string, 0, len(config.Deployers))
+	for _, deployer := range config.Deployers {
+		deployerNames = append(deployerNames, deployer.Name)
+	}
+
 	testsSeen := map[Test]struct{}{}
 
 	for _, t := range config.Tests {
@@ -307,8 +326,8 @@ func validateTests(config *Config, options *Options) error {
 				t.Deployer, t.Workload, t.PVCSpec)
 		}
 
-		if !slices.Contains(options.Deployers, t.Deployer) {
-			return fmt.Errorf("invalid test deployer: %q (available %q)", t.Deployer, options.Deployers)
+		if !slices.Contains(deployerNames, t.Deployer) {
+			return fmt.Errorf("invalid test deployer: %q (available %q)", t.Deployer, deployerNames)
 		}
 
 		if !slices.Contains(options.Workloads, t.Workload) {
@@ -320,6 +339,40 @@ func validateTests(config *Config, options *Options) error {
 		}
 
 		testsSeen[t] = struct{}{}
+	}
+
+	return nil
+}
+
+// validateDeployers checks that the deployers are configured correctly.
+func validateDeployers(config *Config, options Options) error {
+	if len(config.Deployers) == 0 {
+		return fmt.Errorf("failed to find deployers in configuration")
+	}
+
+	if err := validateDuplicateDeployerNames(config.Deployers); err != nil {
+		return err
+	}
+
+	for _, t := range config.Deployers {
+		if !slices.Contains(options.Deployers, t.Type) {
+			return fmt.Errorf("invalid test deployer: %q (available %q)", t.Type, options.Deployers)
+		}
+	}
+
+	return nil
+}
+
+// validateDuplicateDeployerNames ensures no deployer has a duplicate name
+func validateDuplicateDeployerNames(deployers []Deployer) error {
+	seen := make(map[string]Deployer)
+
+	for _, deployer := range deployers {
+		if existing, exists := seen[deployer.Name]; exists {
+			return fmt.Errorf("duplicate deployer name %q found:\n	%+v\n	%+v", deployer.Name, existing, deployer)
+		}
+
+		seen[deployer.Name] = deployer
 	}
 
 	return nil
