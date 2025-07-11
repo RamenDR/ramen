@@ -35,7 +35,7 @@ func NewContext(
 	w types.Workload,
 	d types.Deployer,
 ) Context {
-	name := strings.ToLower(d.GetName() + "-" + w.GetName() + "-" + w.GetAppName())
+	name := strings.ToLower(d.GetName() + "-" + w.GetName())
 
 	return Context{
 		parent:   parent,
