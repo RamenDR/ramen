@@ -14,19 +14,16 @@ import (
 // factoryFunc is the new() function type for workloads
 type factoryFunc func(revision string, pvcSpec config.PVCSpec) types.Workload
 
-var mutex sync.Mutex
-
-var registry map[string]factoryFunc
+var (
+	mutex    sync.Mutex
+	registry = map[string]factoryFunc{}
+)
 
 // register needs to be called by every workload in the init() function to
 // register itself with the workload registry.
 func register(workloadType string, f factoryFunc) {
 	mutex.Lock()
 	defer mutex.Unlock()
-
-	if registry == nil {
-		registry = make(map[string]factoryFunc)
-	}
 
 	if _, exists := registry[workloadType]; exists {
 		panic(fmt.Sprintf("workload %q already registered", workloadType))
