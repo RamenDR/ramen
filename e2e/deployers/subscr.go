@@ -13,6 +13,10 @@ import (
 
 type Subscription struct{}
 
+func NewSubscription() types.Deployer {
+	return &Subscription{}
+}
+
 func (s Subscription) GetName() string {
 	return "subscr"
 }
@@ -142,10 +146,6 @@ func (s Subscription) WaitForResourcesDelete(ctx types.TestContext) error {
 
 func (s Subscription) IsDiscovered() bool {
 	return false
-}
-
-func NewSubscription() types.Deployer {
-	return &Subscription{}
 }
 
 func init() {
