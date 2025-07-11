@@ -5,6 +5,8 @@ package deployers
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -35,11 +37,5 @@ func New(name string) (types.Deployer, error) {
 }
 
 func AvailableNames() []string {
-	keys := make([]string, 0, len(registry))
-
-	for k := range registry {
-		keys = append(keys, k)
-	}
-
-	return keys
+	return slices.Collect(maps.Keys(registry))
 }
