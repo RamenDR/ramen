@@ -490,7 +490,7 @@ func DeleteTypedObjectList[T client.Object](ctx context.Context, k8sClient clien
 		// Ensure obj is a pointer
 		objCopy := obj
 
-		objPtr, ok := any(&objCopy).(client.Object)
+		objPtr, ok := any(objCopy).(client.Object)
 		if !ok {
 			return fmt.Errorf("obj is not a client.Object")
 		}
