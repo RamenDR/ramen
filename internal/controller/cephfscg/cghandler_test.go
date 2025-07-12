@@ -18,6 +18,7 @@ import (
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,7 +44,7 @@ var _ = Describe("Cghandler", func() {
 				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
-			}, nil, nil, "0", testLogger)
+			}, nil, nil, rgdName, testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default", nil)
 			Expect(err).To(BeNil())
 			Expect(len(rgd.Spec.RDSpecs)).To(Equal(0))
@@ -58,7 +59,7 @@ var _ = Describe("Cghandler", func() {
 				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
-			}, nil, nil, "0", testLogger)
+			}, nil, nil, rgdName, testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default",
 				[]ramendrv1alpha1.VolSyncReplicationDestinationSpec{{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
@@ -68,6 +69,15 @@ var _ = Describe("Cghandler", func() {
 				}})
 			Expect(err).To(BeNil())
 			Expect(len(rgd.Spec.RDSpecs)).To(Equal(1))
+			Expect(cephfscg.DeleteRGD(Ctx, k8sClient, vgdName, "default", testLogger)).To(BeNil())
+			Eventually(func() bool {
+				err := k8sClient.Get(Ctx, types.NamespacedName{
+					Name:      rgdName,
+					Namespace: "default",
+				}, rgd)
+
+				return k8serrors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 	Describe("CreateOrUpdateReplicationGroupSource", func() {
@@ -169,12 +179,21 @@ var _ = Describe("Cghandler", func() {
 				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
-			}, &metav1.LabelSelector{}, nil, "0", testLogger)
+			}, &metav1.LabelSelector{}, nil, rgsName, testLogger)
 			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource(rgsName, "default", false)
 			Expect(err).To(BeNil())
 			Expect(finalSync).To(BeFalse())
 			Expect(rgs.Spec.Trigger.Schedule).NotTo(BeNil())
 			Expect(*rgs.Spec.Trigger.Schedule).NotTo(BeEmpty())
+			Expect(cephfscg.DeleteRGS(Ctx, k8sClient, vrgName, "default", testLogger)).To(BeNil())
+			Eventually(func() bool {
+				err := k8sClient.Get(Ctx, types.NamespacedName{
+					Name:      rgsName,
+					Namespace: "default",
+				}, rgs)
+
+				return k8serrors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 	Describe("GetLatestImageFromRGD", func() {
