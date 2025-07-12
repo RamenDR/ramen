@@ -487,16 +487,8 @@ func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, o
 func DeleteTypedObjectList[T client.Object](ctx context.Context, k8sClient client.Client, items []T, logger logr.Logger,
 ) error {
 	for _, obj := range items {
-		// Ensure obj is a pointer
-		objCopy := obj
-
-		objPtr, ok := any(&objCopy).(client.Object)
-		if !ok {
-			return fmt.Errorf("obj is not a client.Object")
-		}
-
-		if err := k8sClient.Delete(ctx, objPtr); err != nil {
-			logger.Error(err, "Error cleaning up object", "name", objPtr.GetName())
+		if err := k8sClient.Delete(ctx, obj); err != nil {
+			logger.Error(err, "Error cleaning up object", "name", obj.GetName())
 		}
 	}
 
