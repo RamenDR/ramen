@@ -39,6 +39,7 @@ templates:
             args: ["$name", "hub"]
           - name: recipe
       - addons:
+          - name: odf-external-snapshotter
           - name: external-snapshotter
           - name: csi-addons
           - name: olm
