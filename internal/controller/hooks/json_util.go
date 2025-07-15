@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"k8s.io/client-go/util/jsonpath"
 )
 
@@ -22,20 +23,20 @@ const (
 )
 
 // nolint:gocognit,cyclop
-func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
+func evaluateBooleanExpression(hook *kubeobjects.HookSpec, expression string, jsonData interface{}) (bool, error) {
 	expression = strings.TrimSpace(expression)
 
 	// Handle nested parentheses
 	if isFullyEnclosed(expression) {
 		exprContent := expression[1 : len(expression)-1]
 
-		return evaluateBooleanExpression(strings.TrimSpace(exprContent), jsonData)
+		return evaluateBooleanExpression(hook, strings.TrimSpace(exprContent), jsonData)
 	}
 
 	// Split top-level expressions
 	left, operator, right := splitOutsideBrackets(expression)
 	if operator != "" {
-		leftResult, err := evaluateBooleanExpression(strings.TrimSpace(left), jsonData)
+		leftResult, err := evaluateBooleanExpression(hook, strings.TrimSpace(left), jsonData)
 		if err != nil {
 			return false, err
 		}
@@ -48,7 +49,7 @@ func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, e
 			return false, nil // Short-circuit for AND
 		}
 
-		rightResult, err := evaluateBooleanExpression(strings.TrimSpace(right), jsonData)
+		rightResult, err := evaluateBooleanExpression(hook, strings.TrimSpace(right), jsonData)
 		if err != nil {
 			return false, err
 		}
@@ -77,9 +78,8 @@ func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, e
 	}
 
 	if operands[0].Kind() == reflect.Invalid || operands[1].Kind() == reflect.Invalid {
-		return false, fmt.Errorf("check expression to evaluate, one of the jsonpath is either incorrect"+
-			" or value is not updated, operand types are %v and %v",
-			operands[0].Kind(), operands[1].Kind())
+		return false, fmt.Errorf("given %s resource is not found or not initialized, "+
+			"for check hook %s/%s in ns %s", hook.SelectResource, hook.Name, hook.Chk.Name, hook.Namespace)
 	}
 
 	return compare(operands[0], operands[1], op)
