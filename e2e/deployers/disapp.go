@@ -194,3 +194,11 @@ func chooseDeployCluster(ctx types.TestContext) (*types.Cluster, error) {
 			ctx.AppNamespace(), ctx.Workload().GetAppName(), statuses)
 	}
 }
+
+func NewDiscoveredApp() types.Deployer {
+	return &DiscoveredApp{}
+}
+
+func init() {
+	register("disapp", NewDiscoveredApp)
+}

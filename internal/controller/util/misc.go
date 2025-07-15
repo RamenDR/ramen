@@ -38,7 +38,8 @@ const (
 
 	CreatedByRamenLabel = "ramendr.openshift.io/created-by-ramen"
 
-	VGSCRDName = "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
+	VGSCRDPrivateName = "volumegroupsnapshots.groupsnapshot.storage.openshift.io"
+	VGSCRDName        = "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
 )
 
 type ResourceUpdater struct {
@@ -358,7 +359,8 @@ func IsCGEnabled(annotations map[string]string) bool {
 // 2. Whether the VolumeGroupSnapshot CRD is installed.
 // Both conditions must be true for CephFS CG protection to be considered enabled.
 func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader, annotations map[string]string) bool {
-	return IsCGEnabled(annotations) && IsCRDInstalled(ctx, apiReader, VGSCRDName)
+	return IsCGEnabled(annotations) &&
+		(IsCRDInstalled(ctx, apiReader, VGSCRDName) || IsCRDInstalled(ctx, apiReader, VGSCRDPrivateName))
 }
 
 func IsSubmarinerEnabled(annotations map[string]string) bool {

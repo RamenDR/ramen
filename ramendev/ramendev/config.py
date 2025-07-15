@@ -34,6 +34,10 @@ def run(args):
         wait_for_secret_propagation(env["hub"], env["clusters"], args)
         wait_for_dr_clusters(env["hub"], env["clusters"], args)
         wait_for_dr_policy(env["hub"], args)
+
+        # ramen-ops namespace is created by the drpolicy controller. It should
+        # exist when the dr policy is validated.
+        create_ramen_ops_binding(env["hub"])
     else:
         dr_cluster_cm = generate_config_map("dr-cluster", env, args)
 
@@ -75,6 +79,12 @@ def generate_config_map(controller, env, args):
 def create_ramen_config_map(cluster, yaml):
     command.info("Updating ramen config map in cluster '%s'", cluster)
     kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
+
+
+def create_ramen_ops_binding(cluster):
+    command.info("Creating ramen-ops managedclustersetbinding in cluster '%s'", cluster)
+    resource = command.resource("ramen-ops-binding.yaml")
+    kubectl.apply(f"--filename={resource}", context=cluster, log=command.debug)
 
 
 def create_hub_dr_resources(hub, clusters, topology):

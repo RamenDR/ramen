@@ -10,6 +10,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 
@@ -20,10 +21,12 @@ import (
 // classLists contains [storage|snapshot|replication]classes from ManagedClusters with the required ramen storageID or,
 // replicationID labels
 type classLists struct {
-	clusterID string
-	sClasses  []*storagev1.StorageClass
-	vsClasses []*snapv1.VolumeSnapshotClass
-	vrClasses []*volrep.VolumeReplicationClass
+	clusterID  string
+	sClasses   []*storagev1.StorageClass
+	vsClasses  []*snapv1.VolumeSnapshotClass
+	vrClasses  []*volrep.VolumeReplicationClass
+	vgrClasses []*volrep.VolumeGroupReplicationClass
+	vgsClasses []*groupsnapv1beta1.VolumeGroupSnapshotClass
 }
 
 // peerInfo contains a single peer relationship between a PAIR of clusters for a common storageClassName across
@@ -48,6 +51,9 @@ type peerInfo struct {
 
 	// clusterIDs is a list of 2 IDs that denote the IDs for the clusters in this peer relationship
 	clusterIDs []string
+
+	// gouping is flag that indicates wheather to proceed grouping based with replication
+	grouping bool
 }
 
 // peerClassMatchesPeer compares the storage class name across the PeerClass and passed in peer for a match, and if
@@ -97,6 +103,7 @@ func peerClassFromPeer(peer peerInfo) ramen.PeerClass {
 		StorageClassName: peer.storageClassName,
 		StorageID:        peer.storageIDs,
 		ReplicationID:    peer.replicationID,
+		Grouping:         peer.grouping,
 	}
 }
 
@@ -172,11 +179,36 @@ func hasVSClassMatchingSID(scName string, cl classLists, sID string) bool {
 	return false
 }
 
+// hasVGSClassMatchingSID returns if classLists has a VolumeGroupSnapshotClass matching the passed in storageID
+func hasVGSClassMatchingSID(scName string, cl classLists, sID string) bool {
+	for idx := range cl.vgsClasses {
+		sid := cl.vgsClasses[idx].GetLabels()[StorageIDLabel]
+		if sid == "" || sid != sID {
+			continue
+		}
+
+		if !provisionerMatchesSC(scName, cl, cl.vgsClasses[idx].Driver) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
 // isAsyncVSClassPeer inspects provided pair of classLists for a matching VolumeSnapshotClass, that is linked to the
 // StorageClass whose storageID is respectively sIDA or sIDB
 func isAsyncVSClassPeer(scName string, clA, clB classLists, sIDA, sIDB string) bool {
 	// No provisioner match as we can do cross provisioner VSC based protection
 	return hasVSClassMatchingSID(scName, clA, sIDA) && hasVSClassMatchingSID(scName, clB, sIDB)
+}
+
+// isAsyncVGSClassPeer inspects provided pair of classLists for a matching VolumeGroupSnapshotClass,
+// that is linked to the StorageClass whose storageID is respectively sIDA or sIDB
+func isAsyncVGSClassPeer(scName string, clA, clB classLists, sIDA, sIDB string) bool {
+	// No provisioner match as we can do cross provisioner VGSC based protection
+	return hasVGSClassMatchingSID(scName, clA, sIDA) && hasVGSClassMatchingSID(scName, clB, sIDB)
 }
 
 // getVRID inspects VolumeReplicationClass in the passed in classLists at the specified index, and returns,
@@ -188,7 +220,7 @@ func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule st
 		return ""
 	}
 
-	if cl.vrClasses[vrcIdx].Spec.Parameters[VRClassScheduleKey] != schedule {
+	if cl.vrClasses[vrcIdx].Spec.Parameters[ReplicationClassScheduleKey] != schedule {
 		return ""
 	}
 
@@ -196,7 +228,29 @@ func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule st
 		return ""
 	}
 
-	rID := cl.vrClasses[vrcIdx].GetLabels()[VolumeReplicationIDLabel]
+	rID := cl.vrClasses[vrcIdx].GetLabels()[ReplicationIDLabel]
+
+	return rID
+}
+
+// getVGRID inspects VolumeGroupReplicationClass in the passed in classLists at the specified index, and returns,
+// - an empty string if the VGRClass fails to match the passed in storageID, schedule or provisioner, or
+// - the value of replicationID on the VGRClass
+func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule string) string {
+	sID := cl.vgrClasses[vgrcIdx].GetLabels()[StorageIDLabel]
+	if sID == "" || inSID != sID {
+		return ""
+	}
+
+	if cl.vgrClasses[vgrcIdx].Spec.Parameters[ReplicationClassScheduleKey] != schedule {
+		return ""
+	}
+
+	if !provisionerMatchesSC(scName, cl, cl.vgrClasses[vgrcIdx].Spec.Provisioner) {
+		return ""
+	}
+
+	rID := cl.vgrClasses[vgrcIdx].GetLabels()[ReplicationIDLabel]
 
 	return rID
 }
@@ -212,6 +266,33 @@ func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, 
 
 		for vrcBidx := range clB.vrClasses {
 			ridB := getVRID(scName, clB, vrcBidx, sIDB, schedule)
+			if ridB == "" {
+				continue
+			}
+
+			if ridA != ridB {
+				continue
+			}
+
+			return ridA
+		}
+	}
+
+	return ""
+}
+
+// getAsyncVGRClassPeer inspects if there is a common replicationID among the vgrClasses in the passed in classLists,
+// that relate to the corresponding storageIDs and schedule, and returns the replicationID or "" if there was no match
+func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule string) string {
+	for vgrcAidx := range clA.vgrClasses {
+		ridA := getVGRID(scName, clA, vgrcAidx, sIDA, schedule)
+
+		if ridA == "" {
+			continue
+		}
+
+		for vgrcBidx := range clB.vgrClasses {
+			ridB := getVGRID(scName, clB, vgrcBidx, sIDB, schedule)
 			if ridB == "" {
 				continue
 			}
@@ -246,8 +327,14 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 			}
 
 			rID := getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+			vgrcID := getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+
+			grouping := rID != "" && rID == vgrcID
+
 			if rID == "" {
-				if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+				if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+					grouping = true
+				} else if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
 					continue
 				}
 			}
@@ -257,6 +344,7 @@ func getAsyncPeers(scName string, clusterID string, sID string, cls []classLists
 				storageIDs:       []string{sID, sIDcl},
 				clusterIDs:       []string{clusterID, cl.clusterID},
 				replicationID:    rID,
+				grouping:         grouping,
 			})
 
 			break
@@ -521,6 +609,92 @@ func getSClassesFromCluster(
 	return sClasses, pruneSClassViews(m, u.log, clusterName, sClassNames)
 }
 
+// getVGSClassesFromCluster gets VolumeGroupSnapshotClasses that are claimed in the DRClusterConfig status
+func getVGSClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	drcConfig *ramen.DRClusterConfig,
+	clusterName string,
+) ([]*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
+	vgsClasses := []*groupsnapv1beta1.VolumeGroupSnapshotClass{}
+
+	vgsClassNames := drcConfig.Status.VolumeGroupSnapshotClasses
+	if len(vgsClassNames) == 0 {
+		return vgsClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, vgscName := range vgsClassNames {
+		sClass, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
+		if err != nil {
+			return []*groupsnapv1beta1.VolumeGroupSnapshotClass{}, err
+		}
+
+		vgsClasses = append(vgsClasses, sClass)
+	}
+
+	return vgsClasses, pruneVGSClassViews(m, u.log, clusterName, vgsClassNames)
+}
+
+func pruneVGSClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListVGSClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
+// getVGRClassesFromCluster gets VolumeGroupReplicationClasses that are claimed in the DRClusterConfig status
+func getVGRClassesFromCluster(
+	u *drpolicyUpdater,
+	m util.ManagedClusterViewGetter,
+	drcConfig *ramen.DRClusterConfig,
+	clusterName string,
+) ([]*volrep.VolumeGroupReplicationClass, error) {
+	vgrClasses := []*volrep.VolumeGroupReplicationClass{}
+
+	vgrClassNames := drcConfig.Status.VolumeGroupReplicationClasses
+	if len(vgrClassNames) == 0 {
+		return vgrClasses, nil
+	}
+
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = clusterName
+
+	for _, vgrcName := range vgrClassNames {
+		sClass, err := m.GetVGRClassFromManagedCluster(vgrcName, clusterName, annotations)
+		if err != nil {
+			return []*volrep.VolumeGroupReplicationClass{}, err
+		}
+
+		vgrClasses = append(vgrClasses, sClass)
+	}
+
+	return vgrClasses, pruneVGRClassViews(m, u.log, clusterName, vgrClassNames)
+}
+
+func pruneVGRClassViews(
+	m util.ManagedClusterViewGetter,
+	log logr.Logger,
+	clusterName string,
+	survivorClassNames []string,
+) error {
+	mcvList, err := m.ListVGRClassMCVs(clusterName)
+	if err != nil {
+		return err
+	}
+
+	return pruneClassViews(m, log, clusterName, survivorClassNames, mcvList)
+}
+
 // getClusterClasses inspects, using ManagedClusterView, the DRClusterConfig claims for all storage related classes,
 // and returns the set of classLists for the passed in clusters
 func getClusterClasses(
@@ -561,11 +735,23 @@ func getClusterClasses(
 		return classLists{}, err
 	}
 
+	vgsClasses, err := getVGSClassesFromCluster(u, m, drcConfig, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
+	vgrClasses, err := getVGRClassesFromCluster(u, m, drcConfig, cluster)
+	if err != nil {
+		return classLists{}, err
+	}
+
 	return classLists{
-		clusterID: clID,
-		sClasses:  sClasses,
-		vrClasses: vrClasses,
-		vsClasses: vsClasses,
+		clusterID:  clID,
+		sClasses:   sClasses,
+		vrClasses:  vrClasses,
+		vsClasses:  vsClasses,
+		vgrClasses: vgrClasses,
+		vgsClasses: vgsClasses,
 	}, nil
 }
 
@@ -576,6 +762,14 @@ func deleteViewsForClasses(m util.ManagedClusterViewGetter, log logr.Logger, clu
 	}
 
 	if err := pruneVSClassViews(m, log, clusterName, []string{}); err != nil {
+		return err
+	}
+
+	if err := pruneVGSClassViews(m, log, clusterName, []string{}); err != nil {
+		return err
+	}
+
+	if err := pruneVGRClassViews(m, log, clusterName, []string{}); err != nil {
 		return err
 	}
 

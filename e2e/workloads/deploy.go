@@ -236,3 +236,7 @@ func findDeploymentCondition(
 
 	return nil
 }
+
+func init() {
+	register(deploymentName, NewDeployment)
+}

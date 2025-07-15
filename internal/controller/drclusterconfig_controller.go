@@ -12,6 +12,7 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -305,6 +306,22 @@ func (r *DRClusterConfigReconciler) UpdateSupportedClasses(
 	drCConfig.Status.VolumeReplicationClasses = vrClasses
 	slices.Sort(drCConfig.Status.VolumeReplicationClasses)
 
+	vgrClasses, err := r.listDRSupportedVGRCs(ctx)
+	if err != nil {
+		return err
+	}
+
+	drCConfig.Status.VolumeGroupReplicationClasses = vgrClasses
+	slices.Sort(drCConfig.Status.VolumeGroupReplicationClasses)
+
+	vgsClasses, err := r.listDRSupportedVGSCs(ctx)
+	if err != nil {
+		return err
+	}
+
+	drCConfig.Status.VolumeGroupSnapshotClasses = vgsClasses
+	slices.Sort(drCConfig.Status.VolumeGroupSnapshotClasses)
+
 	return nil
 }
 
@@ -358,7 +375,7 @@ func (r *DRClusterConfigReconciler) listDRSupportedVRCs(ctx context.Context) ([]
 	}
 
 	for i := range vrClasses.Items {
-		if !util.HasLabel(&vrClasses.Items[i], VolumeReplicationIDLabel) {
+		if !util.HasLabel(&vrClasses.Items[i], ReplicationIDLabel) {
 			continue
 		}
 
@@ -366,6 +383,46 @@ func (r *DRClusterConfigReconciler) listDRSupportedVRCs(ctx context.Context) ([]
 	}
 
 	return vrcs, nil
+}
+
+// listDRSupportedVGRCs returns a list of VolumeGroupReplicationClasses that are marked as DR supported
+func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([]string, error) {
+	vgrcs := []string{}
+
+	vgrClasses := &volrep.VolumeGroupReplicationClassList{}
+	if err := r.Client.List(ctx, vgrClasses); err != nil {
+		return nil, fmt.Errorf("failed to list VolumeGroupReplicationClasses, %w", err)
+	}
+
+	for i := range vgrClasses.Items {
+		if !util.HasLabel(&vgrClasses.Items[i], ReplicationIDLabel) {
+			continue
+		}
+
+		vgrcs = append(vgrcs, vgrClasses.Items[i].Name)
+	}
+
+	return vgrcs, nil
+}
+
+// listDRSupportedVGSCs returns a list of VolumeGroupSnapshotClasses that are marked as DR supported
+func (r *DRClusterConfigReconciler) listDRSupportedVGSCs(ctx context.Context) ([]string, error) {
+	vgscs := []string{}
+
+	vgsClasses := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
+	if err := r.Client.List(ctx, vgsClasses); err != nil {
+		return nil, fmt.Errorf("failed to list VolumeGroupSnapshotClasses, %w", err)
+	}
+
+	for i := range vgsClasses.Items {
+		if !util.HasLabel(&vgsClasses.Items[i], StorageIDLabel) {
+			continue
+		}
+
+		vgscs = append(vgscs, vgsClasses.Items[i].Name)
+	}
+
+	return vgscs, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -414,5 +471,7 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
 		Watches(&snapv1.VolumeSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
+		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
+		Watches(&groupsnapv1beta1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn).
 		Complete(r)
 }

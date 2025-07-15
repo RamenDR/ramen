@@ -15,7 +15,9 @@ const (
 	MModesLabel                           = "ramendr.openshift.io/maintenancemodes"
 	SClassLabel                           = "ramendr.openshift.io/storageclass"
 	VSClassLabel                          = "ramendr.openshift.io/volumesnapshotclass"
+	VGSClassLabel                         = "ramendr.openshift.io/volumegroupsnapshotclass"
 	VRClassLabel                          = "ramendr.openshift.io/volumereplicationclass"
+	VGRClassLabel                         = "ramendr.openshift.io/volumegroupreplicationclass"
 	ExcludeFromVeleroBackup               = "velero.io/exclude-from-backup"
 	VeleroKubevirtMetadataOnlyBackupLabel = "velero.kubevirt.io/metadataBackup"
 )

@@ -126,3 +126,11 @@ func (a ApplicationSet) GetNamespace(ctx types.TestContext) string {
 func (a ApplicationSet) IsDiscovered() bool {
 	return false
 }
+
+func NewApplicationSet() types.Deployer {
+	return &ApplicationSet{}
+}
+
+func init() {
+	register("appset", NewApplicationSet)
+}

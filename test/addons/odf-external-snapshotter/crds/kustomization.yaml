@@ -1,0 +1,11 @@
+---
+resources:
+  # Private VGS CRDs (Red Hat fork of Kubernetes CSI)
+  - https://raw.githubusercontent.com/red-hat-storage/external-snapshotter/refs/heads/master/config/crd/bases/groupsnapshot.storage.openshift.io_volumegroupsnapshotclasses.yaml
+  - https://raw.githubusercontent.com/red-hat-storage/external-snapshotter/refs/heads/master/config/crd/bases/groupsnapshot.storage.openshift.io_volumegroupsnapshotcontents.yaml
+  - https://raw.githubusercontent.com/red-hat-storage/external-snapshotter/refs/heads/master/config/crd/bases/groupsnapshot.storage.openshift.io_volumegroupsnapshots.yaml
+
+  # Standard CSI VolumeSnapshot CRDs
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/release-8.2/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/release-8.2/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+  - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/release-8.2/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml

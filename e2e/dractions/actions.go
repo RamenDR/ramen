@@ -120,12 +120,26 @@ func DisableProtection(ctx types.TestContext) error {
 			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
+	if err := annotateDRPCDoNotDeletePVC(ctx, name); err != nil {
+		return err
+	}
+
 	if err := deleteProtectionResources(ctx); err != nil {
 		return err
 	}
 
 	if err := waitForProtectionResourcesDelete(ctx); err != nil {
 		return err
+	}
+
+	// If the cluster is not nil, the workload exists and its health is validated.
+	if cluster != nil {
+		if err := ctx.Workload().Health(ctx, cluster); err != nil {
+			return err
+		}
+
+		log.Debugf("Workload \"%s/%s\" is healthy in cluster %q",
+			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 
 	log.Info("Workload unprotected")
@@ -310,11 +324,6 @@ func deleteProtectionResources(ctx types.TestContext) error {
 		if err := deployers.DeletePlacement(ctx, ctx.Name(), ctx.ManagementNamespace()); err != nil {
 			return err
 		}
-
-		if err := deployers.DeleteManagedClusterSetBinding(ctx, ctx.Config().ClusterSet,
-			ctx.ManagementNamespace()); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -329,11 +338,6 @@ func waitForProtectionResourcesDelete(ctx types.TestContext) error {
 
 	if ctx.Deployer().IsDiscovered() {
 		if err := util.WaitForPlacementDelete(ctx, ctx.Env().Hub, ctx.Name(), ctx.ManagementNamespace()); err != nil {
-			return err
-		}
-
-		if err := util.WaitForManagedClusterSetBindingDelete(ctx, ctx.Env().Hub, ctx.Config().ClusterSet,
-			ctx.ManagementNamespace()); err != nil {
 			return err
 		}
 	}

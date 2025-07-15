@@ -428,7 +428,7 @@ func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim
 		return "", err
 	}
 
-	replicationID, ok := vgrClass.GetLabels()[VolumeReplicationIDLabel]
+	replicationID, ok := vgrClass.GetLabels()[ReplicationIDLabel]
 	if !ok {
 		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
 			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
