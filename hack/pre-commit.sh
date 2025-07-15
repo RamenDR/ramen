@@ -53,7 +53,7 @@ check_tool() {
 # https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
 run_mdl() {
     local tool="mdl"
-    local required_version="0.11.0"
+    local required_version="0.13.0"
     local detected_version
 
     echo "=====  $tool ====="
@@ -70,7 +70,7 @@ run_mdl() {
 
 run_shellcheck() {
     local tool="shellcheck"
-    local required_version="0.7.0"
+    local required_version="0.9.0"
     local detected_version
 
     echo "=====  $tool  ====="
@@ -87,7 +87,7 @@ run_shellcheck() {
 
 run_yamllint() {
     local tool="yamllint"
-    local required_version="1.33.0"
+    local required_version="1.35.0"
     local detected_version
 
     echo "=====  $tool  ====="

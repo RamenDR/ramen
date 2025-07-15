@@ -157,6 +157,7 @@ func createPlacementManagedByRamen(ctx types.TestContext, name, namespace string
 	annotations[OcmSchedulingDisable] = "true"
 
 	var numClusters int32 = 1
+
 	placement := &clusterv1beta1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,

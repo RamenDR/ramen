@@ -2185,7 +2185,6 @@ func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
 	var foundVMs []string
 
 	var err error
-
 	if foundVMs, err = util.ListVMsByLabelSelector(v.ctx, v.reconciler.APIReader, v.log,
 		labelSelector,
 		vmNamespace,
@@ -2233,7 +2232,6 @@ func (v *VRGInstance) CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList 
 	var foundVMs []string
 
 	var err error
-
 	if foundVMs, err = util.ListVMsByVMNamespace(v.ctx, v.reconciler.APIReader,
 		v.log, vmNamespaceList, vmList); err != nil {
 		if !k8serrors.IsNotFound(err) {

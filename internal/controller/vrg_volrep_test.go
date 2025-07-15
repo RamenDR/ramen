@@ -1680,7 +1680,6 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
 })
 
-//nolint:maligned
 type vrgTest struct {
 	uniqueID             string
 	namespace            string

@@ -65,8 +65,6 @@ type DRClusterConfigStatus struct {
 //+kubebuilder:resource:scope=Cluster
 
 // DRClusterConfig is the Schema for the drclusterconfigs API
-//
-//nolint:maligned
 type DRClusterConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

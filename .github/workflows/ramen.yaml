@@ -91,9 +91,9 @@ jobs:
           cache: false
 
       - name: GolangCI Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.62.0
+          version: v2.2.2
           working-directory: ${{ matrix.directory }}
 
   unit-test:
