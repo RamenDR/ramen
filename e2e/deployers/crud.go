@@ -94,6 +94,7 @@ func CreatePlacement(ctx types.TestContext, name, namespace string, clusterName 
 	clusterSet := []string{config.ClusterSet}
 
 	var numClusters int32 = 1
+
 	placement := &ocmv1b1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

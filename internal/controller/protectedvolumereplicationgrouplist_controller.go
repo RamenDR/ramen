@@ -139,6 +139,7 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefi
 	vrgsAll := make([]ramendrv1alpha1.VolumeReplicationGroup, 0)
 
 	const NoPrefixToRemove = ""
+
 	namespaceNamesList := getUniqueStringsFromList(prefixNamespaceVRG, ParseSingleSlash, NoPrefixToRemove)
 
 	s.log.Info("namespaceNames:")

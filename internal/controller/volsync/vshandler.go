@@ -752,7 +752,6 @@ func (v *VSHandler) undoAfterFinalSync(pvcName, pvcNamespace string) error {
 		Namespace: pvcNamespace,
 		Name:      getTmpPVCNameForFinalSync(pvcName),
 	})
-
 	if err == nil {
 		err2 := v.client.Delete(v.ctx, tmpPVC)
 		if err2 != nil {

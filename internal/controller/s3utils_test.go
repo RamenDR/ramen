@@ -103,6 +103,7 @@ func (f *fakeObjectStorer) UploadObject(key string, object interface{}) error {
 func (f *fakeObjectStorer) DownloadObject(key string, objectPointer interface{}) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
+
 	object, ok := f.objects[key]
 
 	objectDestination := reflect.ValueOf(objectPointer).Elem()

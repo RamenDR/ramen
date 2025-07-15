@@ -40,6 +40,7 @@ func kubeObjectsCapturePathNamesAndNamePrefix(
 	namespaceName, vrgName string, captureNumber int64, kubeObjects kubeobjects.RequestsManager,
 ) (string, string, string) {
 	const numberBase = 10
+
 	number := strconv.FormatInt(captureNumber, numberBase)
 	pathName := s3PathNamePrefix(namespaceName, vrgName) + "kube-objects/" + number + "/"
 

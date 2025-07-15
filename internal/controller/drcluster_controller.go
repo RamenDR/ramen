@@ -1359,7 +1359,7 @@ func setDRClusterUnfencingFailedCondition(conditions *[]metav1.Condition, observ
 // Unfence operation, unfence = true, fence = false, clean = false
 // TODO: Remove the linter skip when this function is used
 //
-//nolint:deadcode,unused
+//nolint:unused
 func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeFenced,

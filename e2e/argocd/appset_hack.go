@@ -24,7 +24,6 @@ type ApplicationSetList struct {
 	Items           []ApplicationSet `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
-//nolint:maligned
 type ApplicationSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata" protobuf:"bytes,1,opt,name=metadata"`
@@ -109,14 +108,14 @@ type KustomizePatch struct {
 	Options map[string]bool    `json:"options,omitempty" yaml:"options,omitempty" protobuf:"bytes,4,opt,name=options"`
 }
 
-//nolint:lll, golint
+//nolint:lll
 type KustomizeSelector struct {
 	KustomizeResId     `json:",inline,omitempty" yaml:",inline,omitempty" protobuf:"bytes,1,opt,name=resId"`
 	AnnotationSelector string `json:"annotationSelector,omitempty" yaml:"annotationSelector,omitempty" protobuf:"bytes,2,opt,name=annotationSelector"`
 	LabelSelector      string `json:"labelSelector,omitempty" yaml:"labelSelector,omitempty" protobuf:"bytes,3,opt,name=labelSelector"`
 }
 
-//nolint:golint, revive, stylecheck
+//nolint:revive
 type KustomizeResId struct {
 	KustomizeGvk `json:",inline,omitempty" yaml:",inline,omitempty" protobuf:"bytes,1,opt,name=gvk"`
 	Name         string `json:"name,omitempty" yaml:"name,omitempty" protobuf:"bytes,2,opt,name=name"`

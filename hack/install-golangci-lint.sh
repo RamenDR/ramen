@@ -4,13 +4,13 @@ set -e
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 source_url="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
-required_version="1.62.0"
+required_version="2.2.2"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/golangci-lint"
 tool="golangci-lint"
 
 # sample output to parse: 'golangci-lint has version 1.55.2 built with go1.21.3 from e3c2265f on 2023-11-03T12:59:25Z'
-installed_version=$("${target_path}" version --format=short || true)
+installed_version=$("${target_path}" version --short || true)
 
 if [ "$required_version" == "$installed_version" ]; then
   exit 0

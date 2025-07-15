@@ -101,6 +101,7 @@ func testMain(m *testing.M) int {
 
 	// The context will be canceled when receiving a signal.
 	var stop context.CancelFunc
+
 	Ctx.context, stop = signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 

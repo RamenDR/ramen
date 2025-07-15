@@ -601,7 +601,6 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 			return mwu.Client.Update(mwu.Ctx, foundMW)
 		})
-
 		if err == nil {
 			return ctrlutil.OperationResultUpdated, nil
 		}

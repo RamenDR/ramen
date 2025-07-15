@@ -591,10 +591,10 @@ func deleteDRPC() {
 func ensureNamespaceMWsDeletedFromAllClusters(namespace string) {
 	foundMW := &ocmworkv1.ManifestWork{}
 	mwName := fmt.Sprintf(rmnutil.ManifestWorkNameFormat, DRPCCommonName, namespace, rmnutil.MWTypeNS)
+
 	err := k8sClient.Get(context.TODO(),
 		types.NamespacedName{Name: mwName, Namespace: East1ManagedCluster},
 		foundMW)
-
 	if err == nil {
 		Expect(foundMW).To(BeNil())
 	}
@@ -1772,7 +1772,7 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 
 // +kubebuilder:docs-gen:collapse=Imports
 //
-//nolint:errcheck,scopelint
+//nolint:errcheck
 var _ = Describe("DRPlacementControl Reconciler", func() {
 	Specify("DRClusters", func() {
 		populateDRClusters()

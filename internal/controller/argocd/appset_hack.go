@@ -24,7 +24,6 @@ type ApplicationSetList struct {
 	Items           []ApplicationSet `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
-//nolint:maligned
 type ApplicationSet struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata" protobuf:"bytes,1,opt,name=metadata"`
