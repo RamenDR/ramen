@@ -54,15 +54,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := util.RunCommand(
-		ctx.Context(),
-		"kubectl",
-		"apply",
-		"--kustomize", tempDir,
-		"--namespace", appNamespace,
-		"--kubeconfig", cluster.Kubeconfig,
-		"--timeout=5m",
-	); err != nil {
+	if err := util.ApplyKustomization(tempDir, appNamespace, cluster.Kubeconfig); err != nil {
 		return err
 	}
 
@@ -159,16 +151,7 @@ func deleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespa
 		return err
 	}
 
-	return util.RunCommand(
-		ctx.Context(),
-		"kubectl",
-		"delete",
-		"--kustomize", tempDir,
-		"--namespace", namespace,
-		"--kubeconfig", cluster.Kubeconfig,
-		fmt.Sprintf("--wait=%t", wait),
-		"--ignore-not-found",
-	)
+	return util.DeleteKustomization(tempDir, namespace, cluster.Kubeconfig, wait)
 }
 
 // chooseDeployCluster determines which cluster to deploy the discovered
