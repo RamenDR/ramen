@@ -12,10 +12,14 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-type Subscription struct{}
+type Subscription struct {
+	DeployerSpec config.Deployer
+}
 
 func NewSubscription(deployer config.Deployer) types.Deployer {
-	return &Subscription{}
+	return &Subscription{
+		DeployerSpec: deployer,
+	}
 }
 
 func (s Subscription) GetName() string {
