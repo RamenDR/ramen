@@ -36,7 +36,7 @@ spec:
           expr: ramen_workload_protection_status == 0
           for: 10m
           labels:
-            severity: warning
+            severity: critical
           annotations:
             description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions for details."
             alert_type: "DisasterRecovery"
