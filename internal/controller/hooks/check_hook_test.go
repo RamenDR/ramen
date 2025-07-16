@@ -242,7 +242,7 @@ func TestEvaluateCheckHookExp(t *testing.T) {
 				t.Error(err)
 			}
 
-			actualRes, err := hooks.EvaluateCheckHookExp(getHookSpec("deployment", test.jsonPathExprs), jsonData)
+			actualRes, err := hooks.EvaluateCheckHookExp(test.jsonPathExprs, jsonData)
 			if err != nil {
 				t.Logf("EvaluateCheckHookExp() = %v", err)
 			}

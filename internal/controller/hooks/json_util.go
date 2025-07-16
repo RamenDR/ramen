@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"k8s.io/client-go/util/jsonpath"
 )
 
@@ -23,20 +22,20 @@ const (
 )
 
 // nolint:gocognit,cyclop
-func evaluateBooleanExpression(hook *kubeobjects.HookSpec, expression string, jsonData interface{}) (bool, error) {
+func evaluateBooleanExpression(expression string, jsonData interface{}) (bool, error) {
 	expression = strings.TrimSpace(expression)
 
 	// Handle nested parentheses
 	if isFullyEnclosed(expression) {
 		exprContent := expression[1 : len(expression)-1]
 
-		return evaluateBooleanExpression(hook, strings.TrimSpace(exprContent), jsonData)
+		return evaluateBooleanExpression(strings.TrimSpace(exprContent), jsonData)
 	}
 
 	// Split top-level expressions
 	left, operator, right := splitOutsideBrackets(expression)
 	if operator != "" {
-		leftResult, err := evaluateBooleanExpression(hook, strings.TrimSpace(left), jsonData)
+		leftResult, err := evaluateBooleanExpression(strings.TrimSpace(left), jsonData)
 		if err != nil {
 			return false, err
 		}
@@ -49,7 +48,7 @@ func evaluateBooleanExpression(hook *kubeobjects.HookSpec, expression string, js
 			return false, nil // Short-circuit for AND
 		}
 
-		rightResult, err := evaluateBooleanExpression(hook, strings.TrimSpace(right), jsonData)
+		rightResult, err := evaluateBooleanExpression(strings.TrimSpace(right), jsonData)
 		if err != nil {
 			return false, err
 		}
@@ -78,8 +77,7 @@ func evaluateBooleanExpression(hook *kubeobjects.HookSpec, expression string, js
 	}
 
 	if operands[0].Kind() == reflect.Invalid || operands[1].Kind() == reflect.Invalid {
-		return false, fmt.Errorf("given %s resource is not found or not initialized, "+
-			"for check hook %s/%s in ns %s", hook.SelectResource, hook.Name, hook.Chk.Name, hook.Namespace)
+		return false, fmt.Errorf("either resource is not found or status is not initialized")
 	}
 
 	return compare(operands[0], operands[1], op)
