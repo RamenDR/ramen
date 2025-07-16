@@ -70,9 +70,44 @@ type Deployer struct {
 	// Available types: appset, subscr, and disapp.
 	Type string `json:"type"`
 	// Description is a human-readable description of the deployer.
-	Description string `json:"description"`
+	Description string  `json:"description"`
+	Recipe      *Recipe `json:"recipe,omitempty"`
 }
 
+func DeployerConfigEqual(a, b Deployer) bool {
+	if a.Name != b.Name {
+		return false
+	}
+
+	if a.Type != b.Type {
+		return false
+	}
+
+	if a.Description != b.Description {
+		return false
+	}
+
+	if (a.Recipe == nil) != (b.Recipe == nil) {
+		return false
+	}
+
+	if a.Recipe != nil && b.Recipe != nil {
+		if *a.Recipe != *b.Recipe {
+			return false
+		}
+	}
+
+	return true
+}
+
+type Recipe struct {
+	// Type is the name of the recipe to use.
+	// If Type is "generate", a recipe is generated to match the workload.
+	// If Type is "vm", ramen internal recipe for the vm will be used.
+	Type      string `json:"type"`
+	CheckHook bool   `json:"checkHook,omitempty"`
+	ExecHook  bool   `json:"execHook,omitempty"`
+}
 type Cluster struct {
 	Kubeconfig string `json:"kubeconfig"`
 }
@@ -386,11 +421,20 @@ func validateDuplicateDeployerNames(deployers []Deployer) error {
 
 // validateDuplicateDeployerContent ensures no two deployers have the same type and content
 func validateDuplicateDeployerContent(deployers []Deployer) error {
-	seen := make(map[Deployer]Deployer)
+	type content struct {
+		Type   string
+		Recipe Recipe
+	}
+
+	seen := make(map[content]Deployer)
 
 	for _, deployer := range deployers {
-		key := Deployer{
+		key := content{
 			Type: deployer.Type,
+		}
+
+		if deployer.Recipe != nil {
+			key.Recipe = *deployer.Recipe
 		}
 
 		if duplicate, exists := seen[key]; exists {
@@ -455,7 +499,7 @@ func (c *Config) Equal(o *Config) bool {
 		return false
 	}
 
-	if !slices.Equal(c.Deployers, o.Deployers) {
+	if !slices.EqualFunc(c.Deployers, o.Deployers, DeployerConfigEqual) {
 		return false
 	}
 
