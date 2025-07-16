@@ -71,8 +71,17 @@ type Deployer struct {
 	Type string `json:"type"`
 	// Description is a human-readable description of the deployer.
 	Description string `json:"description"`
+	Recipe      Recipe `json:"recipe,omitempty"`
 }
 
+type Recipe struct {
+	// RecipeName is the name of the recipe to use.
+	// If RecipeName is "generate", the generated recipe will use this name.
+	// If RecipeName is "vm", ramen internal recipe for the vm will be used.
+	RecipeName string `json:"recipeName"`
+	CheckHook  bool   `json:"checkHook,omitempty"`
+	ExecHook   bool   `json:"execHook,omitempty"`
+}
 type Cluster struct {
 	Kubeconfig string `json:"kubeconfig"`
 }
