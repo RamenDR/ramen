@@ -105,13 +105,14 @@ func EvaluateCheckHookForObjects(objs []client.Object, hook *kubeobjects.HookSpe
 			return false, err
 		}
 
-		res, err := EvaluateCheckHookExp(hook, data)
+		res, err := EvaluateCheckHookExp(hook.Chk.Condition, data)
 		finalRes = finalRes && res
 
 		if err != nil {
 			log.Info("error executing check hook", "for", hook.Name, "with error", err)
 
-			return false, err
+			return false, fmt.Errorf("error executing check hook %s/%s in namespace %s with selectResource %s: %w",
+				hook.Name, hook.Chk.Name, hook.Namespace, hook.SelectResource, err)
 		}
 
 		log.Info("check hook executed for", "hook", hook.Name, "resource type", hook.SelectResource, "with object name",
@@ -220,6 +221,6 @@ func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) 
 	return objs
 }
 
-func EvaluateCheckHookExp(hook *kubeobjects.HookSpec, jsonData interface{}) (bool, error) {
-	return evaluateBooleanExpression(hook, hook.Chk.Condition, jsonData)
+func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
+	return evaluateBooleanExpression(booleanExpression, jsonData)
 }
