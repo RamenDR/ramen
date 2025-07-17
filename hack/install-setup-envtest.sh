@@ -3,11 +3,12 @@ set -e
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-required_version="release-0.19"
+# Reference : https://sdk.operatorframework.io/docs/upgrading-sdk-version/v1.40.0/#envtest-version-automation-and-improved-test-binary-discovery
+required_version=$(go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $2, $3}')
 source_url="sigs.k8s.io/controller-runtime/tools/setup-envtest@${required_version}"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/setup-envtest"
-k8s_version="1.29.0"
+k8s_version="1.33.0"
 
 # The setup-envtest tool has no versioning, so we need to use the latest version.
 # The go install command is fast enough that it can be run every time.
