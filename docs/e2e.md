@@ -24,6 +24,15 @@ and add the clusters kubeconfig paths into `config.yaml` using:
 cat config.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
 ```
 
+If the `drenv` tool was used to configure RDR clusters with the KubeVirt addon
+for deploying VirtualMachine workloads using the configuration file located at
+`envs/regional-dr-kubevirt.yaml`, follow these steps to complete the e2e setup
+for VM workload testing:
+
+```sh
+cat config-vm.yaml.sample ~/.config/drenv/rdr-kubevirt/config.yaml > config.yaml
+```
+
 #### For real cluster
 
 Create a `config.yaml` file by copying the `config.yaml.sample` template:
