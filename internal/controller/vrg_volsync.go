@@ -192,7 +192,11 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		ProtectedPVC: *protectedPVC,
 	}
 
+	cg, ok := pvc.Labels[ConsistencyGroupLabel]
+	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
+
 	err = v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
+		isCGEnabled,
 		v.volSyncHandler.IsCopyMethodDirect(),
 		v.instance.Spec.PrepareForFinalSync,
 		v.instance.Spec.RunFinalSync,
@@ -205,8 +209,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 
 	*finalSyncPrepared = true
 
-	cg, ok := pvc.Labels[ConsistencyGroupLabel]
-	if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
+	if isCGEnabled {
 		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
@@ -724,7 +727,8 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		return
 	}
 
-	if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
+	_, ok := pvc.Labels[ConsistencyGroupLabel]
+	if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 		// At this moment, we don't support unprotecting CG PVCs.
 		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
 
