@@ -246,6 +246,11 @@ func (mwu *MWUtil) CreateOrUpdateNFManifestWork(
 	name, homeCluster string,
 	nf csiaddonsv1alpha1.NetworkFence, annotations map[string]string,
 ) error {
+	// Append ManifestWork name with NetworkFenceClassName when NetworkFenceClass is available
+	if nf.Spec.NetworkFenceClassName != "" {
+		name += "-" + nf.Spec.NetworkFenceClassName
+	}
+
 	manifestWork, err := mwu.generateNFManifestWork(name, homeCluster, nf, annotations)
 	if err != nil {
 		return err
