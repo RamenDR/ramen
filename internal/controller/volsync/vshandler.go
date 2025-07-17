@@ -806,6 +806,7 @@ func (v *VSHandler) undoAfterFinalSync(pvcName, pvcNamespace string) error {
 }
 
 func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
+	isCGEnabled,
 	copyMethodDirect,
 	prepFinalSync,
 	runFinalSync bool,
@@ -818,7 +819,7 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 		}
 	}
 
-	if prepFinalSync && !util.IsCGEnabledForVolSync(v.ctx, v.client) {
+	if prepFinalSync && !isCGEnabled {
 		err := v.prepareForFinalSync(pvcNamespacedName)
 		if err != nil {
 			return err
