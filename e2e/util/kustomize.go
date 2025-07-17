@@ -5,221 +5,161 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
+	"os"
+	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/ramendr/ramen/e2e/types"
+	"gopkg.in/yaml.v2"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/discovery/cached/memory"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/restmapper"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/kustomize/api/krusty"
+	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
-// buildKustomization builds the kustomization and returns YAML bytes
-func buildKustomization(kustomizationPath string) ([]byte, error) {
+const fMode = 0o600
+
+type CombinedData map[string]interface{}
+
+// ApplyKustomization builds and applies a kustomization
+func ApplyKustomization(ctx types.TestContext, client client.Client, kustomizationPath, namespace string) error {
+	resMap, err := buildKustomization(kustomizationPath)
+	if err != nil {
+		return fmt.Errorf("failed to build kustomization: %w", err)
+	}
+
+	return applyResources(ctx, client, resMap, namespace)
+}
+
+// CreateKustomizationFile creates a kustomization file
+func CreateKustomizationFile(ctx types.TestContext, dir string) error {
+	w := ctx.Workload()
+	config := ctx.Config()
+	yamlData := `resources:
+- ` + config.Repo.URL + `/` + w.GetPath() + `?ref=` + w.GetBranch()
+
+	var yamlContent CombinedData
+
+	err := yaml.Unmarshal([]byte(yamlData), &yamlContent)
+	if err != nil {
+		return err
+	}
+
+	patch := w.Kustomize()
+
+	var jsonContent CombinedData
+
+	err = json.Unmarshal([]byte(patch), &jsonContent)
+	if err != nil {
+		return err
+	}
+
+	for key, value := range jsonContent {
+		yamlContent[key] = value
+	}
+
+	combinedYAML, err := yaml.Marshal(&yamlContent)
+	if err != nil {
+		return err
+	}
+
+	outputFile := dir + "/kustomization.yaml"
+
+	return os.WriteFile(outputFile, combinedYAML, fMode)
+}
+
+// DeleteKustomization builds and deletes resources from a kustomization
+func DeleteKustomization(ctx types.TestContext, client client.Client, kustomizationPath, namespace string, wait bool) error {
+	resMap, err := buildKustomization(kustomizationPath)
+	if err != nil {
+		return fmt.Errorf("failed to build kustomization: %w", err)
+	}
+
+	return deleteResources(ctx, client, resMap, namespace)
+}
+
+// applyResources applies resources from a Resource Map to kubernetes objects
+func applyResources(ctx types.TestContext, client client.Client, resMap resmap.ResMap, namespace string) error {
+	for _, resource := range resMap.Resources() {
+		object, err := resource.Map()
+		if err != nil {
+			return fmt.Errorf("failed to get resource map: %w", err)
+		}
+		obj := &unstructured.Unstructured{}
+		obj.SetUnstructuredContent(object)
+
+		if obj.GetNamespace() == "" && namespace != "" {
+			obj.SetNamespace(namespace)
+		}
+
+		if err := client.Create(ctx.Context(), obj); err != nil {
+			return fmt.Errorf("failed to apply resource %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+		}
+	}
+
+	ctx.Logger().Info("Applied resources successfully")
+	return nil
+}
+
+// buildKustomization builds the kustomization and returns a Resource Map
+func buildKustomization(kustomizationPath string) (resmap.ResMap, error) {
 	fSys := filesys.MakeFsOnDisk()
 
 	options := krusty.MakeDefaultOptions()
 	k := krusty.MakeKustomizer(options)
 
-	resMap, err := k.Run(fSys, kustomizationPath)
-	if err != nil {
-		return nil, fmt.Errorf("kustomize build failed: %w", err)
-	}
-
-	yaml, err := resMap.AsYaml()
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert to YAML: %w", err)
-	}
-
-	return yaml, nil
+	return k.Run(fSys, kustomizationPath)
 }
 
-// createK8sClient creates a dynamic Kubernetes client and REST mapper
-func createK8sClient(kubeconfig string) (dynamic.Interface, meta.RESTMapper, error) {
-	config, err := clientcmd.LoadFromFile(kubeconfig)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load kubeconfig: %w", err)
-	}
+// deleteResources deletes the kubernetes resources
+func deleteResources(ctx types.TestContext, k8sClient client.Client, resMap resmap.ResMap, namespace string) error {
+	timeOut := 2 * time.Minute
+	pollInterval := 2 * time.Second
 
-	restConfig, err := clientcmd.NewDefaultClientConfig(*config, nil).ClientConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create REST config: %w", err)
-	}
+	for _, resource := range resMap.Resources() {
 
-	dynamicClient, err := dynamic.NewForConfig(restConfig)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create dynamic client: %w", err)
-	}
-
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create discovery client: %w", err)
-	}
-
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(discoveryClient))
-
-	return dynamicClient, mapper, nil
-}
-
-// ApplyKustomization builds and applies a kustomization using Kubernetes API
-func ApplyKustomization(kustomizationPath, namespace, kubeconfig string) error {
-	ctx := context.Background()
-
-	yamlData, err := buildKustomization(kustomizationPath)
-	if err != nil {
-		return fmt.Errorf("failed to build kustomization: %w", err)
-	}
-
-	client, mapper, err := createK8sClient(kubeconfig)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-
-	return applyYAML(ctx, client, mapper, yamlData, namespace)
-}
-
-// applyYAML parses YAML and applies resources using Kubernetes API
-func applyYAML(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, yamlData []byte, namespace string) error {
-	resources, err := parseYAMLResources(yamlData)
-	if err != nil {
-		return fmt.Errorf("failed to parse YAML resources: %w", err)
-	}
-
-	for _, resource := range resources {
-		if err := applyResource(ctx, client, mapper, resource, namespace); err != nil {
-			return fmt.Errorf("failed to apply resource %s/%s: %w", resource.GetKind(), resource.GetName(), err)
-		}
-	}
-
-	fmt.Println("Applied resources successfully")
-
-	return nil
-}
-
-// applyResource applies a single resource using the Kubernetes API
-func applyResource(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, obj *unstructured.Unstructured, namespace string) error {
-	if obj.GetNamespace() == "" && namespace != "" {
-		obj.SetNamespace(namespace)
-	}
-
-	gvk := obj.GroupVersionKind()
-	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-	if err != nil {
-		return fmt.Errorf("failed to get REST mapping for %s: %w", gvk, err)
-	}
-
-	var resourceInterface dynamic.ResourceInterface
-	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-		resourceInterface = client.Resource(mapping.Resource).Namespace(obj.GetNamespace())
-	} else {
-		resourceInterface = client.Resource(mapping.Resource)
-	}
-
-	existing, err := resourceInterface.Get(ctx, obj.GetName(), metav1.GetOptions{})
-	if err != nil {
-		_, err = resourceInterface.Create(ctx, obj, metav1.CreateOptions{})
-		return err
-	}
-
-	obj.SetResourceVersion(existing.GetResourceVersion())
-	_, err = resourceInterface.Update(ctx, obj, metav1.UpdateOptions{})
-	return err
-}
-
-// DeleteKustomization builds and deletes resources from a kustomization using Kubernetes API
-func DeleteKustomization(kustomizationPath, namespace, kubeconfig string, wait bool) error {
-	ctx := context.Background()
-
-	yamlData, err := buildKustomization(kustomizationPath)
-	if err != nil {
-		return fmt.Errorf("failed to build kustomization: %w", err)
-	}
-
-	client, mapper, err := createK8sClient(kubeconfig)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-
-	return deleteYAML(ctx, client, mapper, yamlData, namespace)
-}
-
-// deleteYAML parses YAML and deletes resources using Kubernetes API
-func deleteYAML(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, yamlData []byte, namespace string) error {
-	resources, err := parseYAMLResources(yamlData)
-	if err != nil {
-		return fmt.Errorf("failed to parse YAML resources: %w", err)
-	}
-
-	for _, resource := range resources {
-		if err := deleteResource(ctx, client, mapper, resource, namespace); err != nil {
-			return fmt.Errorf("failed to delete resource %s/%s: %w", resource.GetKind(), resource.GetName(), err)
-		}
-	}
-
-	fmt.Println("Deleted resources successfully")
-
-	return nil
-}
-
-func deleteResource(ctx context.Context, client dynamic.Interface, mapper meta.RESTMapper, obj *unstructured.Unstructured, namespace string) error {
-	if obj.GetNamespace() == "" && namespace != "" {
-		obj.SetNamespace(namespace)
-	}
-
-	gvk := obj.GroupVersionKind()
-	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-	if err != nil {
-		return fmt.Errorf("failed to get REST mapping for %s: %w", gvk, err)
-	}
-
-	var resourceInterface dynamic.ResourceInterface
-	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-		resourceInterface = client.Resource(mapping.Resource).Namespace(obj.GetNamespace())
-	} else {
-		resourceInterface = client.Resource(mapping.Resource)
-	}
-
-	return resourceInterface.Delete(ctx, obj.GetName(), metav1.DeleteOptions{})
-}
-
-// parseYAMLResources parses multi-document YAML into unstructured objects
-func parseYAMLResources(yamlData []byte) ([]*unstructured.Unstructured, error) {
-	var resources []*unstructured.Unstructured
-
-	decoder := yaml.NewYAMLToJSONDecoder(strings.NewReader(string(yamlData)))
-	for {
-		var rawObj runtime.RawExtension
-		if err := decoder.Decode(&rawObj); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, fmt.Errorf("failed to decode YAML: %w", err)
-		}
-
-		if len(rawObj.Raw) == 0 {
-			continue
+		object, err := resource.Map()
+		if err != nil {
+			return fmt.Errorf("failed to get resource map: %w", err)
 		}
 
 		obj := &unstructured.Unstructured{}
-		if err := obj.UnmarshalJSON(rawObj.Raw); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+		obj.SetUnstructuredContent(object)
+
+		if obj.GetNamespace() == "" && namespace != "" {
+			obj.SetNamespace(namespace)
 		}
 
-		if obj.GetKind() == "" {
+		if err := k8sClient.Delete(ctx.Context(), obj); err != nil {
+			if !errors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete resource %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+			}
+			ctx.Logger().Info("Resource already deleted", "kind", obj.GetKind(), "name", obj.GetName())
 			continue
 		}
 
-		resources = append(resources, obj)
+		key := client.ObjectKeyFromObject(obj)
+
+		pollErr := wait.PollUntilContextTimeout(ctx.Context(), pollInterval, timeOut, true, func(ctx context.Context) (bool, error) {
+			err := k8sClient.Get(ctx, key, obj)
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			if err != nil {
+				return false, fmt.Errorf("error waiting for deletion of %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+			}
+			return false, nil
+		})
+
+		if pollErr != nil {
+			return err
+		}
 	}
 
-	return resources, nil
+	ctx.Logger().Info("Deleted resources successfully")
+	return nil
 }

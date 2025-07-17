@@ -50,11 +50,10 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	// Clean up by removing the temporary directory when done
 	defer os.RemoveAll(tempDir)
 
-	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
+	if err = util.CreateKustomizationFile(ctx, tempDir); err != nil {
 		return err
 	}
-
-	if err := util.ApplyKustomization(tempDir, appNamespace, cluster.Kubeconfig); err != nil {
+	if err := util.ApplyKustomization(ctx, cluster.Client, tempDir, appNamespace); err != nil {
 		return err
 	}
 
@@ -147,11 +146,11 @@ func deleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespa
 	// Clean up by removing the temporary directory when done
 	defer os.RemoveAll(tempDir)
 
-	if err = CreateKustomizationFile(ctx, tempDir); err != nil {
+	if err = util.CreateKustomizationFile(ctx, tempDir); err != nil {
 		return err
 	}
 
-	return util.DeleteKustomization(tempDir, namespace, cluster.Kubeconfig, wait)
+	return util.DeleteKustomization(ctx, cluster.Client, tempDir, namespace, wait)
 }
 
 // chooseDeployCluster determines which cluster to deploy the discovered
