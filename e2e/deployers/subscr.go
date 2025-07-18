@@ -7,14 +7,19 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-type Subscription struct{}
+type Subscription struct {
+	DeployerSpec config.Deployer
+}
 
-func NewSubscription() types.Deployer {
-	return &Subscription{}
+func NewSubscription(deployer config.Deployer) types.Deployer {
+	return &Subscription{
+		DeployerSpec: deployer,
+	}
 }
 
 func (s Subscription) GetName() string {

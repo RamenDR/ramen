@@ -8,14 +8,19 @@ import (
 	"os"
 	"time"
 
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-type DiscoveredApp struct{}
+type DiscoveredApp struct {
+	DeployerSpec config.Deployer
+}
 
-func NewDiscoveredApp() types.Deployer {
-	return &DiscoveredApp{}
+func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
+	return &DiscoveredApp{
+		DeployerSpec: deployer,
+	}
 }
 
 func (d DiscoveredApp) GetName() string {

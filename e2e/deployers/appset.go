@@ -4,15 +4,21 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-type ApplicationSet struct{}
+type ApplicationSet struct {
+	DeployerSpec config.Deployer
+}
 
-func NewApplicationSet() types.Deployer {
-	return &ApplicationSet{}
+func NewApplicationSet(deployer config.Deployer) types.Deployer {
+	return &ApplicationSet{
+		DeployerSpec: deployer,
+	}
 }
 
 // Deploy creates an ApplicationSet on the hub cluster, creating the workload on one of the managed clusters.
