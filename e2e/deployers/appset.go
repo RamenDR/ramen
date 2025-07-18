@@ -4,14 +4,16 @@
 package deployers
 
 import (
+	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type ApplicationSet struct{}
 
-func NewApplicationSet() types.Deployer {
+func NewApplicationSet(deployer config.Deployer) types.Deployer {
 	return &ApplicationSet{}
 }
 
