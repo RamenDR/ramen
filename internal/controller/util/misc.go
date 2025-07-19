@@ -438,3 +438,16 @@ func GenerateCombinedName(name, storageID string) string {
 	// e.g. "nameHash.storageID"
 	return nameHash + labelSeparator + storageID
 }
+
+// GetK8sClusterID getClusterID returns the cluster ID of the k8s Cluster
+func GetK8sClusterID(ctx context.Context, k8sClient client.Client) (string, error) {
+	kubeSystemNamespace := &corev1.Namespace{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      "kube-system",
+		Namespace: "",
+	}, kubeSystemNamespace); err != nil {
+		return "", fmt.Errorf("failed to read clusterID %v", err)
+	}
+
+	return fmt.Sprint(kubeSystemNamespace.GetObjectMeta().GetUID()), nil
+}
