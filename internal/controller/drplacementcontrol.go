@@ -350,9 +350,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	}
 
 	failoverCluster := d.instance.Spec.FailoverCluster
-	if !d.isValidFailoverTarget(failoverCluster) {
-		err := fmt.Errorf("unable to start failover, spec.FailoverCluster (%s) is not a valid Secondary target",
-			failoverCluster)
+	if ok, checkerr := d.isValidFailoverTarget(failoverCluster); !ok {
+		err := fmt.Errorf("unable to start failover, spec.FailoverCluster (%s) is not a valid Secondary target: %w",
+			failoverCluster, checkerr)
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), err.Error())
 
@@ -397,7 +397,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
 // may already be Primary
-func (d *DRPCInstance) isValidFailoverTarget(cluster string) bool {
+func (d *DRPCInstance) isValidFailoverTarget(cluster string) (bool, error) {
 	annotations := make(map[string]string)
 	annotations[DRPCNameAnnotation] = d.instance.GetName()
 	annotations[DRPCNamespaceAnnotation] = d.instance.GetNamespace()
@@ -407,22 +407,23 @@ func (d *DRPCInstance) isValidFailoverTarget(cluster string) bool {
 		d.log.Info("Failed to get VRG from managed cluster", "name", d.instance.Name, "namespace", d.vrgNamespace,
 			"cluster", cluster, "annotations", annotations, "error", err)
 
-		return false
+		return false, fmt.Errorf("failed to get VRG from managed cluster %s: %w", cluster, err)
 	}
 
 	if isVRGPrimary(vrg) {
 		// VRG is Primary, valid target with possible failover in progress
-		return true
+		return true, nil
 	}
 
 	if vrg.Status.State != rmn.SecondaryState || vrg.Status.ObservedGeneration != vrg.Generation {
 		d.log.Info(fmt.Sprintf("VRG on %s has not transitioned to secondary yet. Spec-State/Status-State %s/%s",
 			cluster, vrg.Spec.ReplicationState, vrg.Status.State))
 
-		return false
+		return false, fmt.Errorf("VRG on %s has not transitioned to secondary yet. Spec-State/Status-State %s/%s",
+			cluster, vrg.Spec.ReplicationState, vrg.Status.State)
 	}
 
-	return true
+	return true, nil
 }
 
 func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRCluster) (bool, error) {
