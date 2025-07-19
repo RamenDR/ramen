@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"time"
 
@@ -62,6 +63,9 @@ const (
 
 	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
 	DoNotDeletePVCAnnotationVal = "true"
+
+	SubmarinerEnabledAnnotation    = "drplacementcontrol.ramendr.openshift.io/submariner-enabled"
+	SubmarinerEnabledAnnotationVal = "true"
 )
 
 var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
@@ -586,6 +590,14 @@ func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	}
 
 	update = rmnutil.AddAnnotation(drpc, DRPCAppNamespace, vrgNamespace) || update
+	val := os.Getenv("SUBMARINER_DEP_ENABLED")
+
+	if len(val) == 0 {
+		// todo make it false by default?
+		val = SubmarinerEnabledAnnotationVal
+	}
+
+	update = rmnutil.AddAnnotation(drpc, SubmarinerEnabledAnnotation, val) || update
 
 	if update {
 		if err := r.Update(ctx, drpc); err != nil {
@@ -2538,6 +2550,8 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 
 	for k, v := range viewVRG.GetAnnotations() {
 		switch k {
+		case SubmarinerEnabledAnnotation:
+			fallthrough
 		case DestinationClusterAnnotationKey:
 			fallthrough
 		case DoNotDeletePVCAnnotation:
