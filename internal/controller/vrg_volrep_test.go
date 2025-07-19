@@ -98,7 +98,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		replicationClassLabels: vrcLabels,
 	}
 
-	syncPeerClass := genPeerClass("", testcaseTemplate.storageClassName, []string{storageID})
+	syncPeerClass := genPeerClass("", testcaseTemplate.storageClassName, []string{storageID}, false)
 	var dataReadyCondition *metav1.Condition
 	syncPeerClasses := []ramendrv1alpha1.PeerClass{syncPeerClass}
 	Context("Sync Basic Test", func() {
@@ -273,7 +273,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID})
+			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
 			vtest.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			vtest.skipCreationPVandPVC = true
 			pvList := vtest.generateFakePVs("pv", numPVs)
@@ -317,7 +317,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID})
+			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
 			vrgTestBoundPV.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
 			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
@@ -880,7 +880,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgVGRDeleteEnsureTestCase = newVRGTestCaseCreate(1, createTestTemplate, true, false)
-			vrgVGRDeleteEnsureTestCase.repGroup = true
+			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
+			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			vrgVGRDeleteEnsureTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
+			vrgVGRDeleteEnsureTestCase.createVGRC(createTestTemplate)
 			vrgVGRDeleteEnsureTestCase.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VGR for all PVCs", func() {
@@ -951,7 +954,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("sets up PVCs, PVs and VRGs", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgCreateVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, true, false)
-			vrgCreateVGRTestCase.repGroup = true
+			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
+			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			vrgCreateVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
+			vrgCreateVGRTestCase.createVGRC(createTestTemplate)
 			vrgCreateVGRTestCase.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VGR for all PVCs", func() {
@@ -993,7 +999,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("sets up PVCs, PVs and VRGs", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgPVCnotBoundVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, false, false)
-			vrgPVCnotBoundVGRTestCase.repGroup = true
+			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
+			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			vrgPVCnotBoundVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
+			vrgPVCnotBoundVGRTestCase.createVGRC(createTestTemplate)
 			vrgPVCnotBoundVGRTestCase.VRGTestCaseStart()
 		})
 		It("expect no VR to be created as PVC not bound", func() {
@@ -1695,7 +1704,6 @@ type vrgTest struct {
 	checkBind            bool
 	vrgFirst             bool
 	asyncPeerClasses     []ramendrv1alpha1.PeerClass
-	repGroup             bool
 	template             *template
 }
 
@@ -1773,10 +1781,6 @@ func (v *vrgTest) VRGTestCaseStart() {
 	v.createSC(v.template)
 	v.createVRC(v.template)
 
-	if v.repGroup {
-		v.createVGRC(v.template)
-	}
-
 	if v.vrgFirst {
 		v.createVRG()
 
@@ -1819,7 +1823,7 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 
 	storageID := testTemplate.storageIDLabels[vrgController.StorageIDLabel]
 	if includePeerClasses {
-		asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID})
+		asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID}, false)
 		v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 	}
 
@@ -2106,14 +2110,6 @@ func (v *vrgTest) createVRG() {
 			},
 			S3Profiles: v.template.s3Profiles,
 		},
-	}
-
-	if v.repGroup {
-		if vrg.ObjectMeta.Annotations == nil {
-			vrg.ObjectMeta.Annotations = map[string]string{}
-		}
-
-		vrg.ObjectMeta.Annotations[util.IsCGEnabledAnnotation] = "true"
 	}
 
 	err := k8sClient.Create(context.TODO(), vrg)
@@ -3410,11 +3406,13 @@ func genStorageIDLabel(storageID string) map[string]string {
 	}
 }
 
-func genPeerClass(replicationID, storageClassName string, storageIDs []string) ramendrv1alpha1.PeerClass {
+func genPeerClass(replicationID, storageClassName string, storageIDs []string, grouping bool,
+) ramendrv1alpha1.PeerClass {
 	return ramendrv1alpha1.PeerClass{
 		ReplicationID:    replicationID,
 		StorageID:        storageIDs,
 		StorageClassName: storageClassName,
+		Grouping:         grouping,
 	}
 }
 
