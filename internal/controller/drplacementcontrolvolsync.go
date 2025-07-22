@@ -33,7 +33,6 @@ func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error 
 		return fmt.Errorf("failed to find source VRG in cluster %s. VRGs %v", srcCluster, d.vrgs)
 	}
 
-	return d.EnsureVolSyncReplicationSetup(srcCluster)
 	err = d.EnsureVolSyncReplicationSetup(srcCluster)
 	if err != nil {
 		return err
