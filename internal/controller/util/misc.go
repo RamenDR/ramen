@@ -28,6 +28,8 @@ const (
 
 	IsCGEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-cg-enabled"
 
+	IsSubmarinerEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
+
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
 
@@ -356,6 +358,10 @@ func IsCGEnabledForVolRep(ctx context.Context, apiReader client.Reader) bool {
 // This condition must be true for CephFS CG protection to be considered enabled.
 func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader) bool {
 	return IsCRDInstalled(ctx, apiReader, VGSCRDName) || IsCRDInstalled(ctx, apiReader, VGSCRDPrivateName)
+}
+
+func IsSubmarinerEnabled(annotations map[string]string) bool {
+	return annotations[IsSubmarinerEnabledAnnotation] != "false"
 }
 
 // IsCRDInstalled checks whether a specific CustomResourceDefinition (CRD) is installed on the cluster.
