@@ -151,52 +151,33 @@ func (v *VRGInstance) reconcileVolSyncAsPrimary(finalSyncPrepared *bool) (requeu
 //nolint:gocognit,funlen,cyclop,gocyclo,nestif
 func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeClaim, finalSyncPrepared *bool,
 ) (requeue bool) {
-	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
-		Name:               pvc.Name,
-		Namespace:          pvc.Namespace,
-		ProtectedByVolSync: true,
-		StorageClassName:   pvc.Spec.StorageClassName,
-		Annotations:        protectedPVCAnnotations(pvc),
-		Labels:             pvc.Labels,
-		AccessModes:        pvc.Spec.AccessModes,
-		Resources:          pvc.Spec.Resources,
-		VolumeMode:         pvc.Spec.VolumeMode,
+	var rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec
+
+	protectedPVC, requeue := v.buildProtectedPVCForPVC(pvc)
+	if requeue {
+		return true
 	}
 
-	if v.pvcUnprotectVolSyncIfDeleted(pvc, v.log) {
-		return false
-	}
+	if util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
+		rsSpec = ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			ProtectedPVC: *protectedPVC,
+		}
+	} else {
+		rsSpecInfo, err := v.getRSSpecForPVC(pvc)
+		if err != nil {
+			v.log.Info(fmt.Sprintf("Failed to find VolSyncReplicationSourceSpec for PVC %s/%s: %v",
+				pvc.Namespace, pvc.Name, err))
 
-	err := util.NewResourceUpdater(&pvc).
-		AddFinalizer(volsync.PVCFinalizerProtected).
-		AddLabel(util.LabelOwnerNamespaceName, v.instance.Namespace).
-		AddLabel(util.LabelOwnerName, v.instance.Name).
-		Update(v.ctx, v.reconciler.Client)
-	if err != nil {
-		v.log.Info(fmt.Sprintf("Unable to add finalizer for PVC. We'll retry later. %v", err))
+			return true
+		}
 
-		return true // requeue
-	}
-
-	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
-	if protectedPVC == nil {
-		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *newProtectedPVC)
-		protectedPVC = &v.instance.Status.ProtectedPVCs[len(v.instance.Status.ProtectedPVCs)-1]
-	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
-		newProtectedPVC.Conditions = protectedPVC.Conditions
-		newProtectedPVC.DeepCopyInto(protectedPVC)
-	}
-
-	// Not much need for VolSyncReplicationSourceSpec anymore - but keeping it around in case we want
-	// to add anything to it later to control anything in the ReplicationSource
-	rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-		ProtectedPVC: *protectedPVC,
+		rsSpec = *rsSpecInfo
 	}
 
 	cg, ok := pvc.Labels[ConsistencyGroupLabel]
 	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
 
-	err = v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
+	err := v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
 		isCGEnabled,
 		v.volSyncHandler.IsCopyMethodDirect(),
 		v.instance.Spec.PrepareForFinalSync,
@@ -260,6 +241,60 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	return v.instance.Spec.RunFinalSync && !finalSyncComplete
+}
+
+func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) (*ramendrv1alpha1.ProtectedPVC, bool) {
+	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
+		Name:               pvc.Name,
+		Namespace:          pvc.Namespace,
+		ProtectedByVolSync: true,
+		StorageClassName:   pvc.Spec.StorageClassName,
+		Annotations:        protectedPVCAnnotations(pvc),
+		Labels:             pvc.Labels,
+		AccessModes:        pvc.Spec.AccessModes,
+		Resources:          pvc.Spec.Resources,
+		VolumeMode:         pvc.Spec.VolumeMode,
+	}
+
+	if v.pvcUnprotectVolSyncIfDeleted(pvc, v.log) {
+		return nil, false
+	}
+
+	err := util.NewResourceUpdater(&pvc).
+		AddFinalizer(volsync.PVCFinalizerProtected).
+		AddLabel(util.LabelOwnerNamespaceName, v.instance.Namespace).
+		AddLabel(util.LabelOwnerName, v.instance.Name).
+		Update(v.ctx, v.reconciler.Client)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Unable to add finalizer for PVC. We'll retry later. %v", err))
+
+		return nil, true // requeue
+	}
+
+	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
+	if protectedPVC == nil {
+		v.instance.Status.ProtectedPVCs = append(v.instance.Status.ProtectedPVCs, *newProtectedPVC)
+		protectedPVC = &v.instance.Status.ProtectedPVCs[len(v.instance.Status.ProtectedPVCs)-1]
+	} else if !reflect.DeepEqual(protectedPVC, newProtectedPVC) {
+		newProtectedPVC.Conditions = protectedPVC.Conditions
+		newProtectedPVC.DeepCopyInto(protectedPVC)
+	}
+
+	return protectedPVC, false
+}
+
+// getRSSpecForPVC searches the VRG spec for a VolSyncReplicationSourceSpec matching the given PVC.
+// If found, it returns the matching RSSpec (e.g., with existing RsyncTLS configuration); otherwise, returns an error.
+func (v *VRGInstance) getRSSpecForPVC(pvc corev1.PersistentVolumeClaim,
+) (*ramendrv1alpha1.VolSyncReplicationSourceSpec, error) {
+	for _, rsSpec := range v.instance.Spec.VolSync.RSSpec {
+		if rsSpec.ProtectedPVC.Name == pvc.Name &&
+			rsSpec.ProtectedPVC.Namespace == pvc.Namespace {
+			return &rsSpec, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no VolSyncReplicationSourceSpec found for PVC %s/%s", pvc.Namespace, pvc.Name)
 }
 
 func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {

@@ -485,7 +485,24 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 
 	// Remote service address created for the ReplicationDestination on the secondary
 	// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
-	remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	var remoteAddress string
+
+	if util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		// Remote service address created for the ReplicationDestination on the secondary
+		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
+		remoteAddress = getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		l.Info("Using Submariner remote address", "remoteAddress", remoteAddress)
+	} else {
+		if rsSpec.RsyncTLS == nil {
+			err := fmt.Errorf("rsSpec.RsyncTLS is nil for PVC %s", rsSpec.ProtectedPVC.Name)
+			l.Error(err, "Missing TLS address; cannot continue")
+
+			return nil, err
+		}
+
+		remoteAddress = rsSpec.RsyncTLS.Address
+		l.Info("Using direct TLS remote address", "remoteAddress", remoteAddress)
+	}
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
