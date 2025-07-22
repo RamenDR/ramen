@@ -41,8 +41,29 @@ var _ = Describe("Replicationgroupsource", func() {
 			},
 		}
 
+		vrg := &ramendrv1alpha1.VolumeReplicationGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vrgName,
+				Namespace: "default",
+			},
+			Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+				VolSync: ramendrv1alpha1.VolSyncSpec{
+					RSSpec: []ramendrv1alpha1.VolSyncReplicationSourceSpec{
+						{
+							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+								Name: "mypvc",
+							},
+							RsyncTLS: &ramendrv1alpha1.RsyncTLSConfig{
+								Address: "dummy-address.default.svc",
+							},
+						},
+					},
+				},
+			},
+		}
+
 		replicationGroupSourceMachine = cephfscg.NewRGSMachine(
-			k8sClient, rgs, volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
+			k8sClient, rgs, vrg, volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
 				&ramendrv1alpha1.VRGAsyncSpec{}, controllers.DefaultCephFSCSIDriverName,
 				controllers.DefaultVolSyncCopyMethod, false,
 			), fakeVolumeGroupSourceHandler, testLogger,
