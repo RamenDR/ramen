@@ -392,6 +392,7 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 
 	return requeue
 }
+
 func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error) {
 	groups := map[string][]ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
 
