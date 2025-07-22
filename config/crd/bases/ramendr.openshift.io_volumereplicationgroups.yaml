@@ -685,6 +685,245 @@ spec:
                           type: object
                       type: object
                     type: array
+                  rsSpec:
+                    description: rsSpec array contains VolSync source PVCs and how
+                      they securely connect to RDs via TLS.
+                    items:
+                      description: |-
+                        VolSyncReplicationSourceSpec defines the configuration for the VolSync
+                        protected PVC to be used by the source cluster (Primary)
+                      properties:
+                        protectedPVC:
+                          description: protectedPVC contains the information about
+                            the PVC to be protected by VolSync
+                          properties:
+                            accessModes:
+                              description: AccessModes set in the claim to be replicated
+                              items:
+                                type: string
+                              type: array
+                            annotations:
+                              additionalProperties:
+                                type: string
+                              description: Annotations for the PVC
+                              type: object
+                            conditions:
+                              description: Conditions for this protected pvc
+                              items:
+                                description: Condition contains details for one aspect
+                                  of the current state of this API Resource.
+                                properties:
+                                  lastTransitionTime:
+                                    description: |-
+                                      lastTransitionTime is the last time the condition transitioned from one status to another.
+                                      This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                    format: date-time
+                                    type: string
+                                  message:
+                                    description: |-
+                                      message is a human readable message indicating details about the transition.
+                                      This may be an empty string.
+                                    maxLength: 32768
+                                    type: string
+                                  observedGeneration:
+                                    description: |-
+                                      observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                      For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                      with respect to the current state of the instance.
+                                    format: int64
+                                    minimum: 0
+                                    type: integer
+                                  reason:
+                                    description: |-
+                                      reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                      Producers of specific condition types may define expected values and meanings for this field,
+                                      and whether the values are considered a guaranteed API.
+                                      The value should be a CamelCase string.
+                                      This field may not be empty.
+                                    maxLength: 1024
+                                    minLength: 1
+                                    pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                    type: string
+                                  status:
+                                    description: status of the condition, one of True,
+                                      False, Unknown.
+                                    enum:
+                                    - "True"
+                                    - "False"
+                                    - Unknown
+                                    type: string
+                                  type:
+                                    description: type of condition in CamelCase or
+                                      in foo.example.com/CamelCase.
+                                    maxLength: 316
+                                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                    type: string
+                                required:
+                                - lastTransitionTime
+                                - message
+                                - reason
+                                - status
+                                - type
+                                type: object
+                              type: array
+                            csiProvisioner:
+                              description: |-
+                                StorageProvisioners contains the provisioner name of the CSI driver used to provision this
+                                PVC (extracted from the storageClass that was used for provisioning)
+                              type: string
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels for the PVC
+                              type: object
+                            lastSyncBytes:
+                              description: Bytes transferred per sync, if protected
+                                in async mode only
+                              format: int64
+                              type: integer
+                            lastSyncDuration:
+                              description: |-
+                                Duration of recent synchronization for PVC, if
+                                protected in the async or volsync mode
+                              type: string
+                            lastSyncTime:
+                              description: |-
+                                Time of the most recent successful synchronization for the PVC, if
+                                protected in the async or volsync mode
+                              format: date-time
+                              type: string
+                            name:
+                              description: Name of the VolRep/PVC resource
+                              type: string
+                            namespace:
+                              description: Name of the namespace the PVC is in
+                              type: string
+                            protectedByVolSync:
+                              description: VolSyncPVC can be used to denote whether
+                                this PVC is protected by VolSync. Defaults to "false".
+                              type: boolean
+                            replicationID:
+                              description: |-
+                                ReplicationID contains the globally unique replication identifier, as reported by the storage backend
+                                on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationid", that
+                                identifies the storage backends across 2 (or more) storage instances where the volume is replicated
+                                It also contains any maintenance modes that the replication backend requires during vaious Ramen actions
+                              properties:
+                                id:
+                                  description: |-
+                                    ID contains the globally unique storage identifier that identifies
+                                    the storage or replication backend
+                                  type: string
+                                modes:
+                                  description: |-
+                                    Modes is a list of maintenance modes that need to be activated on the storage
+                                    backend, prior to various Ramen related orchestration. This is read from the label
+                                    "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                                    the value for which is a comma separated list of maintenance modes.
+                                  items:
+                                    description: |-
+                                      MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                                      in progress for one or more workloads whose PVCs use the specific storage provisioner
+                                    enum:
+                                    - Failover
+                                    type: string
+                                  type: array
+                              required:
+                              - id
+                              type: object
+                            resources:
+                              description: Resources set in the claim to be replicated
+                              properties:
+                                limits:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Limits describes the maximum amount of compute resources allowed.
+                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                  type: object
+                                requests:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Requests describes the minimum amount of compute resources required.
+                                    If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                    otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                    More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                  type: object
+                              type: object
+                            storageClassName:
+                              description: Name of the StorageClass required by the
+                                claim.
+                              type: string
+                            storageID:
+                              description: |-
+                                StorageID contains the globally unique storage identifier, as reported by the storage backend
+                                on the StorageClass as the value for the label "ramendr.openshift.io/storageid", that identifies
+                                the storage backend that was used to provision the volume. It is used to label different StorageClasses
+                                across different kubernetes clusters, that potentially share the same storage backend.
+                                It also contains any maintenance modes that the storage backend requires during vaious Ramen actions
+                              properties:
+                                id:
+                                  description: |-
+                                    ID contains the globally unique storage identifier that identifies
+                                    the storage or replication backend
+                                  type: string
+                                modes:
+                                  description: |-
+                                    Modes is a list of maintenance modes that need to be activated on the storage
+                                    backend, prior to various Ramen related orchestration. This is read from the label
+                                    "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                                    the value for which is a comma separated list of maintenance modes.
+                                  items:
+                                    description: |-
+                                      MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                                      in progress for one or more workloads whose PVCs use the specific storage provisioner
+                                    enum:
+                                    - Failover
+                                    type: string
+                                  type: array
+                              required:
+                              - id
+                              type: object
+                            volumeMode:
+                              description: VolumeMode describes how a volume is intended
+                                to be consumed, either Block or Filesystem.
+                              type: string
+                          type: object
+                        rsyncTLS:
+                          description: |-
+                            RsyncTLS specifies how TLS configuration used to securely connect from the source
+                            to the replication destination (RD).
+                          properties:
+                            address:
+                              description: Address to expose the TLS server (RD)
+                              type: string
+                            tlsSecretRef:
+                              description: Name of the Kubernetes secret containing
+                                TLS certs
+                              properties:
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                              type: object
+                              x-kubernetes-map-type: atomic
+                          type: object
+                      type: object
+                    type: array
                 type: object
             required:
             - pvcSelector
@@ -1015,6 +1254,245 @@ spec:
                       items:
                         type: string
                       type: array
+                  type: object
+                type: array
+              rdInfo:
+                description: Info about the created RDs (should only be filled out
+                  if using VolSync and VRG ReplicationState is secondary)
+                items:
+                  description: |-
+                    VolSyncReplicationDestinationInfo defines the configuration details for a PVC
+                    that has been set up on the destination (secondary) cluster for replication
+                    using VolSync.
+                  properties:
+                    protectedPVC:
+                      description: protectedPVC contains the information about the
+                        PVC to be replicated by VolSync
+                      properties:
+                        accessModes:
+                          description: AccessModes set in the claim to be replicated
+                          items:
+                            type: string
+                          type: array
+                        annotations:
+                          additionalProperties:
+                            type: string
+                          description: Annotations for the PVC
+                          type: object
+                        conditions:
+                          description: Conditions for this protected pvc
+                          items:
+                            description: Condition contains details for one aspect
+                              of the current state of this API Resource.
+                            properties:
+                              lastTransitionTime:
+                                description: |-
+                                  lastTransitionTime is the last time the condition transitioned from one status to another.
+                                  This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                format: date-time
+                                type: string
+                              message:
+                                description: |-
+                                  message is a human readable message indicating details about the transition.
+                                  This may be an empty string.
+                                maxLength: 32768
+                                type: string
+                              observedGeneration:
+                                description: |-
+                                  observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                  For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                  with respect to the current state of the instance.
+                                format: int64
+                                minimum: 0
+                                type: integer
+                              reason:
+                                description: |-
+                                  reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                  Producers of specific condition types may define expected values and meanings for this field,
+                                  and whether the values are considered a guaranteed API.
+                                  The value should be a CamelCase string.
+                                  This field may not be empty.
+                                maxLength: 1024
+                                minLength: 1
+                                pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                type: string
+                              status:
+                                description: status of the condition, one of True,
+                                  False, Unknown.
+                                enum:
+                                - "True"
+                                - "False"
+                                - Unknown
+                                type: string
+                              type:
+                                description: type of condition in CamelCase or in
+                                  foo.example.com/CamelCase.
+                                maxLength: 316
+                                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                type: string
+                            required:
+                            - lastTransitionTime
+                            - message
+                            - reason
+                            - status
+                            - type
+                            type: object
+                          type: array
+                        csiProvisioner:
+                          description: |-
+                            StorageProvisioners contains the provisioner name of the CSI driver used to provision this
+                            PVC (extracted from the storageClass that was used for provisioning)
+                          type: string
+                        labels:
+                          additionalProperties:
+                            type: string
+                          description: Labels for the PVC
+                          type: object
+                        lastSyncBytes:
+                          description: Bytes transferred per sync, if protected in
+                            async mode only
+                          format: int64
+                          type: integer
+                        lastSyncDuration:
+                          description: |-
+                            Duration of recent synchronization for PVC, if
+                            protected in the async or volsync mode
+                          type: string
+                        lastSyncTime:
+                          description: |-
+                            Time of the most recent successful synchronization for the PVC, if
+                            protected in the async or volsync mode
+                          format: date-time
+                          type: string
+                        name:
+                          description: Name of the VolRep/PVC resource
+                          type: string
+                        namespace:
+                          description: Name of the namespace the PVC is in
+                          type: string
+                        protectedByVolSync:
+                          description: VolSyncPVC can be used to denote whether this
+                            PVC is protected by VolSync. Defaults to "false".
+                          type: boolean
+                        replicationID:
+                          description: |-
+                            ReplicationID contains the globally unique replication identifier, as reported by the storage backend
+                            on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationid", that
+                            identifies the storage backends across 2 (or more) storage instances where the volume is replicated
+                            It also contains any maintenance modes that the replication backend requires during vaious Ramen actions
+                          properties:
+                            id:
+                              description: |-
+                                ID contains the globally unique storage identifier that identifies
+                                the storage or replication backend
+                              type: string
+                            modes:
+                              description: |-
+                                Modes is a list of maintenance modes that need to be activated on the storage
+                                backend, prior to various Ramen related orchestration. This is read from the label
+                                "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                                the value for which is a comma separated list of maintenance modes.
+                              items:
+                                description: |-
+                                  MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                                  in progress for one or more workloads whose PVCs use the specific storage provisioner
+                                enum:
+                                - Failover
+                                type: string
+                              type: array
+                          required:
+                          - id
+                          type: object
+                        resources:
+                          description: Resources set in the claim to be replicated
+                          properties:
+                            limits:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Limits describes the maximum amount of compute resources allowed.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                            requests:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Requests describes the minimum amount of compute resources required.
+                                If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                          type: object
+                        storageClassName:
+                          description: Name of the StorageClass required by the claim.
+                          type: string
+                        storageID:
+                          description: |-
+                            StorageID contains the globally unique storage identifier, as reported by the storage backend
+                            on the StorageClass as the value for the label "ramendr.openshift.io/storageid", that identifies
+                            the storage backend that was used to provision the volume. It is used to label different StorageClasses
+                            across different kubernetes clusters, that potentially share the same storage backend.
+                            It also contains any maintenance modes that the storage backend requires during vaious Ramen actions
+                          properties:
+                            id:
+                              description: |-
+                                ID contains the globally unique storage identifier that identifies
+                                the storage or replication backend
+                              type: string
+                            modes:
+                              description: |-
+                                Modes is a list of maintenance modes that need to be activated on the storage
+                                backend, prior to various Ramen related orchestration. This is read from the label
+                                "ramendr.openshift.io/maintenancemodes" on the StorageClass or VolumeReplicationClass,
+                                the value for which is a comma separated list of maintenance modes.
+                              items:
+                                description: |-
+                                  MMode defines a maintenance mode, that a storage backend may be requested to act on, based on the DR orchestration
+                                  in progress for one or more workloads whose PVCs use the specific storage provisioner
+                                enum:
+                                - Failover
+                                type: string
+                              type: array
+                          required:
+                          - id
+                          type: object
+                        volumeMode:
+                          description: VolumeMode describes how a volume is intended
+                            to be consumed, either Block or Filesystem.
+                          type: string
+                      type: object
+                    rsyncTLS:
+                      description: |-
+                        RsyncTLS specifies how TLS configuration used to securely connect from the source
+                        to the replication destination (RD).
+                      properties:
+                        address:
+                          description: Address to expose the TLS server (RD)
+                          type: string
+                        tlsSecretRef:
+                          description: Name of the Kubernetes secret containing TLS
+                            certs
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
                   type: object
                 type: array
               state:
