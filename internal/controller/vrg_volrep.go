@@ -607,7 +607,8 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 		return false
 	}
 
-	if pvc.Annotations[pvcVRAnnotationArchivedKey] != v.generateArchiveAnnotation(pvc.Generation) {
+	newHashValue := rmnutil.HashPVC(pvc)
+	if pvc.Annotations[pvcVRAnnotationArchivedKey] != newHashValue {
 		return false
 	}
 
@@ -618,6 +619,10 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 	return true
 }
 
+func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bool {
+	return pvc.Spec.Resources.Requests["storage"] == pvc.Status.Capacity["storage"]
+}
+
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
 	if v.isArchivedAlready(pvc, log) {
@@ -626,6 +631,13 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 			VRGConditionReasonUploaded, msg)
 
 		return nil
+	}
+
+	// If the result of above check is false, it symbolizes change in hash. To ensure PVC resize is complete,
+	// IOW underlying PV is also resized, pvc spec is compared with pvc status and wait till it is achieved
+	// and then upload to S3.
+	if !v.isPVCResizeCompleted(pvc) {
+		return fmt.Errorf("resize is in progress for pvc %s", pvc.Name)
 	}
 
 	// Error out if VRG has no S3 profiles
@@ -2054,9 +2066,7 @@ func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeC
 }
 
 func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
-	value := v.generateArchiveAnnotation(pvc.Generation)
-
-	err := v.addAnnotationForResource(pvc, "PersistentVolumeClaim", pvcVRAnnotationArchivedKey, value, log)
+	err := v.addAnnotationForResource(pvc, "PersistentVolumeClaim", pvcVRAnnotationArchivedKey, rmnutil.HashPVC(pvc), log)
 	if err != nil {
 		return err
 	}
@@ -2067,7 +2077,7 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 			pv.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
-	value = v.generateArchiveAnnotation(pv.Generation)
+	value := v.generateArchiveAnnotation(pv.Generation)
 
 	return v.addAnnotationForResource(&pv, "PersistentVolume", pvcVRAnnotationArchivedKey, value, log)
 }
