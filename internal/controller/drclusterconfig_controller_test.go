@@ -10,6 +10,7 @@ import (
 	"slices"
 	"time"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
@@ -39,6 +40,7 @@ type Classes struct {
 	VolumeReplicationClasses      []string
 	VolumeGroupReplicationClasses []string
 	VolumeGroupSnapshotClasses    []string
+	NetworkFenceClasses           []string
 }
 
 func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig, classes Classes,
@@ -55,6 +57,7 @@ func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig
 		g.Expect(drClusterConfig.Status.VolumeReplicationClasses).To(ConsistOf(classes.VolumeReplicationClasses))
 		g.Expect(drClusterConfig.Status.VolumeGroupReplicationClasses).To(ConsistOf(classes.VolumeGroupReplicationClasses))
 		g.Expect(drClusterConfig.Status.VolumeGroupSnapshotClasses).To(ConsistOf(classes.VolumeGroupSnapshotClasses))
+		g.Expect(drClusterConfig.Status.NetworkFenceClasses).To(ConsistOf(classes.NetworkFenceClasses))
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -72,6 +75,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		baseVRC, vrc1, vrc2    *volrep.VolumeReplicationClass
 		baseVGRC, vgrc1, vgrc2 *volrep.VolumeGroupReplicationClass
 		baseVGSC, vgsc1, vgsc2 *groupsnapv1beta1.VolumeGroupSnapshotClass
+		baseNFC, nfc1, nfc2    *csiaddonsv1alpha1.NetworkFenceClass
 		classes                Classes
 	)
 
@@ -219,6 +223,22 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 			},
 			Driver:         "fake.ramen.com",
 			DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
+		}
+		baseNFC = &csiaddonsv1alpha1.NetworkFenceClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "networkfenceclass-fake",
+				Annotations: map[string]string{
+					ramencontrollers.StorageIDLabel: "fake",
+				},
+			},
+			Spec: csiaddonsv1alpha1.NetworkFenceClassSpec{
+				Parameters: map[string]string{
+					"clusterID": "rook-ceph",
+					"csiaddons.openshift.io/networkfence-secret-name":      "rook-csi-rbd-provisioner",
+					"csiaddons.openshift.io/networkfence-secret-namespace": "rook-ceph",
+				},
+				Provisioner: "fake.ramen.com",
+			},
 		}
 	})
 
@@ -679,6 +699,91 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				Expect(k8sClient.Update(context.TODO(), vgsc2)).To(Succeed())
 
 				classes.VolumeGroupSnapshotClasses = []string{vgsc1.Name}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("there is a NetwrokFenceClass created", func() {
+			It("updates DRClusterConfig Status", func() {
+				By("creating a NetworkFenceClass")
+
+				nfc1 = baseNFC.DeepCopy()
+				nfc1.Name = "nfc1"
+				Expect(k8sClient.Create(context.TODO(), nfc1)).To(Succeed())
+
+				classes.NetworkFenceClasses = []string{nfc1.Name}
+				slices.Sort(classes.NetworkFenceClasses)
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("a NetworkFenceClass is deleted", func() {
+			It("removes the associated NetworkFenceClass from DRClusterConfig Status", func() {
+				By("deleting a NetworkFenceClass")
+
+				Expect(k8sClient.Delete(context.TODO(), nfc1)).To(Succeed())
+
+				classes.NetworkFenceClasses = []string{}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("there are multiple NetworkFenceClasses created", func() {
+			It("updates DRClusterConfig Status", func() {
+				By("creating a NetworkFenceClasses")
+
+				nfc1 = baseNFC.DeepCopy()
+				nfc1.Name = "nfc1"
+				Expect(k8sClient.Create(context.TODO(), nfc1)).To(Succeed())
+
+				nfc2 = baseNFC.DeepCopy()
+				nfc2.Name = "nfc2"
+				Expect(k8sClient.Create(context.TODO(), nfc2)).To(Succeed())
+
+				classes.NetworkFenceClasses = []string{nfc1.Name, nfc2.Name}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("a NetworkFenceClass is deleted", func() {
+			It("removes the associated NetworkFenceClass from DRClusterConfig Status", func() {
+				By("deleting a NetworkFenceClass")
+
+				Expect(k8sClient.Delete(context.TODO(), nfc2)).To(Succeed())
+
+				classes.NetworkFenceClasses = []string{nfc1.Name}
 
 				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
