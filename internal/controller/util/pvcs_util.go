@@ -5,7 +5,11 @@ package util
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/exp/slices"
@@ -278,4 +282,62 @@ func DeletePVC(ctx context.Context,
 	}
 
 	return nil
+}
+
+func HashPVC(pvc *corev1.PersistentVolumeClaim) string {
+	pvcCopy := pvc.DeepCopy()
+
+	minimal := map[string]interface{}{
+		"spec": pvcCopy.Spec,
+	}
+
+	canonicalJSON, err := toCanonicalJSON(minimal)
+	if err != nil {
+		return ""
+	}
+
+	sha256Sum := sha256.Sum256(canonicalJSON)
+
+	return hex.EncodeToString(sha256Sum[:])
+}
+
+func toCanonicalJSON(obj map[string]interface{}) ([]byte, error) {
+	jsonBytes, err := json.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+
+	var generic interface{}
+	if err := json.Unmarshal(jsonBytes, &generic); err != nil {
+		return nil, err
+	}
+
+	sorted := sortJSON(generic)
+
+	return json.Marshal(sorted)
+}
+
+func sortJSON(v interface{}) interface{} {
+	switch v := v.(type) {
+	case map[string]interface{}:
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		sorted := make(map[string]interface{}, len(v))
+		for _, k := range keys {
+			sorted[k] = sortJSON(v[k])
+		}
+
+		return sorted
+	case []interface{}:
+		for i := range v {
+			v[i] = sortJSON(v[i])
+		}
+	}
+
+	return v
 }
