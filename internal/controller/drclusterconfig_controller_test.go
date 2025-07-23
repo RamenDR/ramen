@@ -33,8 +33,15 @@ import (
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
 )
 
-func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig,
-	scs, vscs, vrcs, vgrcs, vgscs []string,
+type Classes struct {
+	StorageClasses                []string
+	VolumeSnapshotClasses         []string
+	VolumeReplicationClasses      []string
+	VolumeGroupReplicationClasses []string
+	VolumeGroupSnapshotClasses    []string
+}
+
+func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig, classes Classes,
 ) {
 	Eventually(func(g Gomega) {
 		drClusterConfig := &ramen.DRClusterConfig{}
@@ -43,29 +50,29 @@ func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig
 			Name: drCConfig.Name,
 		}, drClusterConfig)).To(Succeed())
 
-		g.Expect(drClusterConfig.Status.StorageClasses).To(ConsistOf(scs))
-		g.Expect(drClusterConfig.Status.VolumeSnapshotClasses).To(ConsistOf(vscs))
-		g.Expect(drClusterConfig.Status.VolumeReplicationClasses).To(ConsistOf(vrcs))
-		g.Expect(drClusterConfig.Status.VolumeGroupReplicationClasses).To(ConsistOf(vgrcs))
-		g.Expect(drClusterConfig.Status.VolumeGroupSnapshotClasses).To(ConsistOf(vgscs))
+		g.Expect(drClusterConfig.Status.StorageClasses).To(ConsistOf(classes.StorageClasses))
+		g.Expect(drClusterConfig.Status.VolumeSnapshotClasses).To(ConsistOf(classes.VolumeSnapshotClasses))
+		g.Expect(drClusterConfig.Status.VolumeReplicationClasses).To(ConsistOf(classes.VolumeReplicationClasses))
+		g.Expect(drClusterConfig.Status.VolumeGroupReplicationClasses).To(ConsistOf(classes.VolumeGroupReplicationClasses))
+		g.Expect(drClusterConfig.Status.VolumeGroupSnapshotClasses).To(ConsistOf(classes.VolumeGroupSnapshotClasses))
 	}, timeout, interval).Should(Succeed())
 }
 
 var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 	var (
-		ctx                           context.Context
-		cancel                        context.CancelFunc
-		cfg                           *rest.Config
-		testEnv                       *envtest.Environment
-		k8sClient                     client.Client
-		apiReader                     client.Reader
-		drCConfig                     *ramen.DRClusterConfig
-		baseSC, sc1, sc2              *storagev1.StorageClass
-		baseVSC, vsc1, vsc2           *snapv1.VolumeSnapshotClass
-		baseVRC, vrc1, vrc2           *volrep.VolumeReplicationClass
-		baseVGRC, vgrc1, vgrc2        *volrep.VolumeGroupReplicationClass
-		baseVGSC, vgsc1, vgsc2        *groupsnapv1beta1.VolumeGroupSnapshotClass
-		scs, vscs, vrcs, vgrcs, vgscs []string
+		ctx                    context.Context
+		cancel                 context.CancelFunc
+		cfg                    *rest.Config
+		testEnv                *envtest.Environment
+		k8sClient              client.Client
+		apiReader              client.Reader
+		drCConfig              *ramen.DRClusterConfig
+		baseSC, sc1, sc2       *storagev1.StorageClass
+		baseVSC, vsc1, vsc2    *snapv1.VolumeSnapshotClass
+		baseVRC, vrc1, vrc2    *volrep.VolumeReplicationClass
+		baseVGRC, vgrc1, vgrc2 *volrep.VolumeGroupReplicationClass
+		baseVGSC, vgsc1, vgsc2 *groupsnapv1beta1.VolumeGroupSnapshotClass
+		classes                Classes
 	)
 
 	BeforeAll(func() {
@@ -261,10 +268,10 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 					sc1.Name = "sc1"
 					Expect(k8sClient.Create(context.TODO(), sc1)).To(Succeed())
 
-					scs = append(scs, "sc1")
-					slices.Sort(scs)
+					classes.StorageClasses = []string{sc1.Name}
+					slices.Sort(classes.StorageClasses)
 
-					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+					ensureClassStatus(apiReader, drCConfig, classes)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -281,9 +288,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 					Expect(k8sClient.Delete(context.TODO(), sc1)).To(Succeed())
 
-					scs = []string{}
+					classes.StorageClasses = []string{}
 
-					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+					ensureClassStatus(apiReader, drCConfig, classes)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -306,11 +313,10 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 					sc2.Name = "sc2"
 					Expect(k8sClient.Create(context.TODO(), sc2)).To(Succeed())
 
-					scs = append(scs, "sc1")
-					scs = append(scs, "sc2")
-					slices.Sort(scs)
+					classes.StorageClasses = []string{sc1.Name, sc2.Name}
+					slices.Sort(classes.StorageClasses)
 
-					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+					ensureClassStatus(apiReader, drCConfig, classes)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -328,9 +334,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 					sc1.Labels = map[string]string{}
 					Expect(k8sClient.Update(context.TODO(), sc1)).To(Succeed())
 
-					scs = []string{"sc2"}
+					classes.StorageClasses = []string{sc2.Name}
 
-					ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+					ensureClassStatus(apiReader, drCConfig, classes)
 					objectConditionExpectEventually(
 						apiReader,
 						drCConfig,
@@ -350,10 +356,10 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vsc1.Name = "vsc1"
 				Expect(k8sClient.Create(context.TODO(), vsc1)).To(Succeed())
 
-				vscs = append(vscs, "vsc1")
-				slices.Sort(vscs)
+				classes.VolumeSnapshotClasses = []string{vsc1.Name}
+				slices.Sort(classes.VolumeSnapshotClasses)
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -370,9 +376,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vsc1)).To(Succeed())
 
-				vscs = []string{}
+				classes.VolumeGroupSnapshotClasses = []string{}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -395,10 +401,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vsc2.Name = "vsc2"
 				Expect(k8sClient.Create(context.TODO(), vsc2)).To(Succeed())
 
-				vscs = append(vscs, "vsc1")
-				vscs = append(vscs, "vsc2")
+				classes.VolumeSnapshotClasses = []string{vsc1.Name, vsc2.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -416,9 +421,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vsc2.Labels = map[string]string{}
 				Expect(k8sClient.Update(context.TODO(), vsc2)).To(Succeed())
 
-				vscs = []string{"vsc1"}
+				classes.VolumeSnapshotClasses = []string{vsc1.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -437,10 +442,10 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vrc1.Name = "vrc1"
 				Expect(k8sClient.Create(context.TODO(), vrc1)).To(Succeed())
 
-				vrcs = append(vrcs, "vrc1")
-				slices.Sort(vrcs)
+				classes.VolumeReplicationClasses = []string{vrc1.Name}
+				slices.Sort(classes.VolumeReplicationClasses)
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -457,9 +462,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vrc1)).To(Succeed())
 
-				vrcs = []string{}
+				classes.VolumeReplicationClasses = []string{}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -482,10 +487,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vrc2.Name = "vrc2"
 				Expect(k8sClient.Create(context.TODO(), vrc2)).To(Succeed())
 
-				vrcs = append(vrcs, "vrc1")
-				vrcs = append(vrcs, "vrc2")
+				classes.VolumeReplicationClasses = []string{vrc1.Name, vrc2.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -503,9 +507,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vrc2.Labels = map[string]string{}
 				Expect(k8sClient.Update(context.TODO(), vrc2)).To(Succeed())
 
-				vrcs = []string{"vrc1"}
+				classes.VolumeReplicationClasses = []string{vrc1.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -524,10 +528,10 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vgrc1.Name = "vgrc1"
 				Expect(k8sClient.Create(context.TODO(), vgrc1)).To(Succeed())
 
-				vgrcs = append(vgrcs, "vgrc1")
-				slices.Sort(vgrcs)
+				classes.VolumeGroupReplicationClasses = []string{vgrc1.Name}
+				slices.Sort(classes.VolumeGroupReplicationClasses)
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -544,9 +548,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vgrc1)).To(Succeed())
 
-				vgrcs = []string{}
+				classes.VolumeGroupReplicationClasses = []string{}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -569,10 +573,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vgrc2.Name = "vgrc2"
 				Expect(k8sClient.Create(context.TODO(), vgrc2)).To(Succeed())
 
-				vgrcs = append(vgrcs, "vgrc1")
-				vgrcs = append(vgrcs, "vgrc2")
+				classes.VolumeGroupReplicationClasses = []string{vgrc1.Name, vgrc2.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -590,9 +593,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vgrc2.Labels = map[string]string{}
 				Expect(k8sClient.Update(context.TODO(), vgrc2)).To(Succeed())
 
-				vgrcs = []string{"vgrc1"}
+				classes.VolumeGroupReplicationClasses = []string{vgrc1.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -611,10 +614,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vgsc1.Name = "vgsc1"
 				Expect(k8sClient.Create(context.TODO(), vgsc1)).To(Succeed())
 
-				vgscs = append(vgscs, "vgsc1")
-				slices.Sort(vgscs)
+				classes.VolumeGroupSnapshotClasses = []string{vgsc1.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -631,9 +633,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vgsc1)).To(Succeed())
 
-				vgscs = []string{}
+				classes.VolumeGroupSnapshotClasses = []string{}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -656,10 +658,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vgsc2.Name = "vgsc2"
 				Expect(k8sClient.Create(context.TODO(), vgsc2)).To(Succeed())
 
-				vgscs = append(vgscs, "vgsc1")
-				vgscs = append(vgscs, "vgsc2")
+				classes.VolumeGroupSnapshotClasses = []string{vgsc1.Name, vgsc2.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
@@ -677,9 +678,9 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				vgsc2.Labels = map[string]string{}
 				Expect(k8sClient.Update(context.TODO(), vgsc2)).To(Succeed())
 
-				vgscs = []string{"vgsc1"}
+				classes.VolumeGroupSnapshotClasses = []string{vgsc1.Name}
 
-				ensureClassStatus(apiReader, drCConfig, scs, vscs, vrcs, vgrcs, vgscs)
+				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(
 					apiReader,
 					drCConfig,
