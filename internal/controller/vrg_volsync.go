@@ -501,6 +501,13 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 			return true, err
 		}
 
+		if !util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
+			err := v.updateRDInfoFromReplicationDestinations(groupVal)
+			if err != nil {
+				return true, err
+			}
+		}
+
 		ready, err := util.IsReplicationGroupDestinationReady(v.ctx, v.reconciler.Client, replicationGroupDestination)
 		if err != nil {
 			v.log.Error(err, "Failed to check if ReplicationGroupDestination if ready")
@@ -515,13 +522,6 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 			requeue = true
 
 			continue
-		}
-
-		if !util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
-			err := v.updateRDInfoFromReplicationDestinations(groupVal)
-			if err != nil {
-				return true, err
-			}
 		}
 	}
 
