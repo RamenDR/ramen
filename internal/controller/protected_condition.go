@@ -33,23 +33,12 @@ func updateDRPCProtectedCondition(
 		return
 	}
 
-	switch vrg.Spec.ReplicationState {
-	case rmn.Primary:
-		if updateVRGDataReadyAsPrimary(drpc, vrg, clusterName) {
-			return
-		}
+	if updateDRPCProtectedForReplicationState(drpc, vrg, clusterName) {
+		return
+	}
 
-		if updateVRGDataProtectedAsPrimary(drpc, vrg, clusterName) {
-			return
-		}
-	case rmn.Secondary:
-		if updateVRGDataReadyAsSecondary(drpc, vrg, clusterName) {
-			return
-		}
-
-		if updateVRGDataProtectedAsSecondary(drpc, vrg, clusterName) {
-			return
-		}
+	if updateVRGNoClusterDataConflict(drpc, vrg, clusterName) {
+		return
 	}
 
 	if updateMiscVRGStatus(drpc, vrg, clusterName) {
@@ -67,6 +56,25 @@ func updateDRPCProtectedCondition(
 		rmn.ReasonProtected,
 		fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s is protecting required resources and data",
 			vrg.GetNamespace(), vrg.GetName(), clusterName))
+}
+
+// updateDRPCProtectedForReplicationState sets the Protected condition based on the replication state,
+// evaluating DataReady and DataProtected statuses.
+func updateDRPCProtectedForReplicationState(
+	drpc *rmn.DRPlacementControl,
+	vrg *rmn.VolumeReplicationGroup,
+	clusterName string,
+) bool {
+	switch vrg.Spec.ReplicationState {
+	case rmn.Primary:
+		return updateVRGDataReadyAsPrimary(drpc, vrg, clusterName) ||
+			updateVRGDataProtectedAsPrimary(drpc, vrg, clusterName)
+	case rmn.Secondary:
+		return updateVRGDataReadyAsSecondary(drpc, vrg, clusterName) ||
+			updateVRGDataProtectedAsSecondary(drpc, vrg, clusterName)
+	}
+
+	return false
 }
 
 // updateVRGClusterDataReady is a helper function to process VRG ClusterDataReady condition and update DRPC
@@ -169,6 +177,18 @@ func updateVRGDataProtectedAsPrimary(drpc *rmn.DRPlacementControl,
 
 	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeDataProtected,
 		"workload data protection", "protecting workload data", "protecting workload data")
+}
+
+// updateVRGNoClusterDataConflict is a helper function to process VRG NoClusterDataConflict condition
+// and update DRPC
+// Protected condition
+//   - Returns a bool that is true if status was updated, and false otherwise
+func updateVRGNoClusterDataConflict(drpc *rmn.DRPlacementControl,
+	vrg *rmn.VolumeReplicationGroup,
+	clusterName string,
+) bool {
+	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeNoClusterDataConflict,
+		"workload data protection", "checking for workload data conflict", "conflicting workload data")
 }
 
 // updateVRGDataProtectedAsSecondary is a helper function to process VRG DataProtected when VRG is Secondary and update
