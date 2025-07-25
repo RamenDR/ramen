@@ -13,10 +13,14 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-type DiscoveredApp struct{}
+type DiscoveredApp struct {
+	DeployerSpec config.Deployer
+}
 
 func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
-	return &DiscoveredApp{}
+	return &DiscoveredApp{
+		DeployerSpec: deployer,
+	}
 }
 
 func (d DiscoveredApp) GetName() string {
