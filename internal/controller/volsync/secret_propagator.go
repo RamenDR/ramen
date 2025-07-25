@@ -217,8 +217,8 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 			"name":      sp.DestSecretName,
 			"namespace": sp.DestSecretNamespace,
 		},
-		"type": "Opaque",
-		"data": secretData,
+		"type":       "Opaque",
+		"stringData": secretData,
 	}
 
 	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)
