@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"strings"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -14,6 +15,7 @@ import (
 	controllers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,13 +24,73 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+var NFClassAvailable bool
+
 var baseNF = &csiaddonsv1alpha1.NetworkFence{
 	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
-	ObjectMeta: metav1.ObjectMeta{Name: "network-fence-drc-cluster0"},
+	ObjectMeta: metav1.ObjectMeta{Name: strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0"}, "-")},
 	Spec: csiaddonsv1alpha1.NetworkFenceSpec{
 		Cidrs:      []string{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"},
 		FenceState: csiaddonsv1alpha1.Fenced,
 	},
+}
+
+var baseSC = &storagev1.StorageClass{
+	TypeMeta: metav1.TypeMeta{Kind: "StorageClass", APIVersion: "storage.k8s.io/v1"},
+	ObjectMeta: metav1.ObjectMeta{
+		Name: "baseSC",
+		Labels: map[string]string{
+			controllers.StorageIDLabel: "fake",
+		},
+	},
+	Provisioner: "fake.ramen.com",
+}
+
+var baseNFClass = csiaddonsv1alpha1.NetworkFenceClass{
+	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFenceClass", APIVersion: "csiaddons.openshift.io/v1alpha1"},
+	ObjectMeta: metav1.ObjectMeta{Name: "networkfenceclass-fake"},
+	Spec: csiaddonsv1alpha1.NetworkFenceClassSpec{
+		Parameters: map[string]string{
+			"clusterID": "rook-ceph",
+			"csiaddons.openshift.io/networkfence-secret-name":      "rook-csi-rbd-provisioner",
+			"csiaddons.openshift.io/networkfence-secret-namespace": "rook-ceph",
+		},
+		Provisioner: "fake.ramen.com",
+	},
+}
+
+var baseDRCConfig = &ramen.DRClusterConfig{
+	ObjectMeta: metav1.ObjectMeta{Name: "drcc-local"},
+	Spec:       ramen.DRClusterConfigSpec{ClusterID: "drcc-local-cid"},
+}
+
+func generateDRCC() *ramen.DRClusterConfig {
+	drcc := baseDRCConfig.DeepCopy()
+	drcc.Status.StorageClasses = []string{"sc1"}
+	drcc.Status.NetworkFenceClasses = []string{"nfc1"}
+
+	return drcc
+}
+
+func generateSC() *storagev1.StorageClass {
+	sc := baseSC.DeepCopy()
+	sc.Name = "sc1"
+	sid := "sc1" + "-sid"
+	sc.Labels = map[string]string{
+		controllers.StorageIDLabel: sid,
+	}
+
+	return sc
+}
+
+func generateNFC() *csiaddonsv1alpha1.NetworkFenceClass {
+	nfc := baseNFClass.DeepCopy()
+	nfc.Name = "nfc1"
+	nfc.Annotations = map[string]string{
+		controllers.StorageIDLabel: "sc1-sid",
+	}
+
+	return nfc
 }
 
 func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
@@ -52,7 +114,47 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, 
 
 	nf.Generation = 1
 
+	if NFClassAvailable {
+		nf.Name = strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0", "nfc1"}, "-")
+		nf.Spec.NetworkFenceClassName = "nfc1"
+	}
+
 	return nf, nil
+}
+
+func (f FakeMCVGetter) GetNFClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+) (*csiaddonsv1alpha1.NetworkFenceClass, error) {
+	// Guard against test interference: Only return populated NetworkFenceClass when
+	// NFClass is being tested to maintain test isolation for other test suites.
+	if NFClassAvailable {
+		return generateNFC(), nil
+	}
+
+	return nil, nil
+}
+
+func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
+	resourceName string,
+	annotations map[string]string,
+) (*ramen.DRClusterConfig, error) {
+	// Guard against test interference: Only return populated DRClusterConfig when
+	// NFClass is being tested to maintain test isolation for other test suites.
+	if NFClassAvailable {
+		return generateDRCC(), nil
+	}
+
+	return &ramen.DRClusterConfig{}, nil
+}
+
+func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
+) (*storagev1.StorageClass, error) {
+	// Guard against test interference: Only return populated StorageClass when
+	// NFClass is being tested to maintain test isolation for other test suites.
+	if NFClassAvailable {
+		return generateSC(), nil
+	}
+
+	return nil, nil
 }
 
 func (f FakeMCVGetter) DeleteNFManagedClusterView(
@@ -611,7 +713,6 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
-
 		When("provided Fencing value is Unfenced", func() {
 			It("reports Unfenced false with status fenced as false", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
@@ -858,4 +959,87 @@ var _ = Describe("DRClusterController", func() {
 	})
 
 	// TODO s3Secret missing/failing/deleted/recreated
+
+	// nfclases tests
+	Context("NFClass Tests", func() {
+		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
+			createOtherDRClusters()
+			drcluster = drclusters[0].DeepCopy()
+		})
+
+		When("provided Fencing value is Fenced where NFClass is available", func() {
+			It("should update NetworkFence correctly with NetworkFenceClass Name", func() {
+				NFClassAvailable = true
+				defer func() { NFClassAvailable = false }()
+
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+			})
+		})
+
+		When("provided Fencing value is Unfenced where NFClass is available", func() {
+			It("reports validated with status fencing as Unfenced", func() {
+				NFClassAvailable = true
+				defer func() { NFClassAvailable = false }()
+
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
+						controllers.DRClusterConditionReasonClean),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+			})
+		})
+		When("provided Fencing value is empty", func() {
+			It("reports validated with status fencing as Unfenced", func() {
+				drcluster.Spec.ClusterFence = ""
+				drcluster = updateDRClusterParameters(drcluster)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(controllers.DRClusterConditionReasonClean),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+			})
+		})
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+			})
+		})
+
+		Specify("Delete other DRClusters", func() {
+			deleteOtherDRClusters()
+		})
+
+		Specify("Delete namespaces named the same as DRClusters", func() {
+			deleteDRClusterNamespaces()
+		})
+	})
 })
