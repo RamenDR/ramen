@@ -90,7 +90,7 @@ type PeerClass struct {
 
 	// StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
 	// StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
-	// and distict if storage instances are different.
+	// and distinct if storage instances are different.
 	//+optional
 	StorageID []string `json:"storageID,omitempty"`
 
@@ -107,6 +107,14 @@ type PeerClass struct {
 	// supported across the clusters in the ClusterIDs list.
 	//+optional
 	Grouping bool `json:"grouping,omitempty"`
+
+	// Offloaded reflects if replication management for PVCs that use the StorageClassName across both clusters in the
+	// ClusterIDs list is offloaded and not managed by the VolumeReplicationGroup resource. It is set to true if the
+	// StorageClass on both clusters is labeled with "ramendr.openshift.io/offloaded". An typical offloaded case
+	// would be to use other storage specific APIs or native interfaces to enable storage replication for PVCs that
+	// need protection.
+	//+optional
+	Offloaded bool `json:"offloaded,omitempty"`
 }
 
 const (
