@@ -1936,7 +1936,9 @@ func isVRGReasonError(condition *metav1.Condition) bool {
 	return condition.Reason == VRGConditionReasonError ||
 		condition.Reason == VRGConditionReasonErrorUnknown ||
 		condition.Reason == VRGConditionReasonUploadError ||
-		condition.Reason == VRGConditionReasonClusterDataAnnotationFailed
+		condition.Reason == VRGConditionReasonClusterDataAnnotationFailed ||
+		condition.Reason == VRGConditionReasonDataConflictPrimary ||
+		condition.Reason == VRGConditionReasonDataConflictSecondary
 }
 
 func (v *VRGInstance) s3StoreAccessorsGet() {
@@ -2155,6 +2157,8 @@ func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
 		labelSelector,
 		vmNamespace,
 	); err != nil {
+		v.log.Error(err, "Failed to list VMs by label-selector on primary cluster")
+
 		return err
 	}
 
@@ -2162,7 +2166,12 @@ func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
 	protectedVMsSet := sets.NewString(vmList...)
 
 	if !(foundVMsSet.Equal(protectedVMsSet)) {
-		return fmt.Errorf("protected  VMs list is not matching the VMs matching label selector")
+		v.log.Info(fmt.Sprintf("VMs found matching label selector are : %v"+
+			" and the list of VMs being protected are: %v "+
+			". This may impact failover or recovery operations.", foundVMsSet, protectedVMsSet))
+
+		return fmt.Errorf("mismatch between VMs in the protection spec and those matched by the " +
+			"label selector, potentially affecting failover or recovery")
 	}
 
 	return nil
@@ -2188,7 +2197,8 @@ func (v *VRGInstance) CheckForVMConflictOnSecondary() error {
 			return err
 		}
 
-		return fmt.Errorf("conflicting VMs found on secondary cluster")
+		return fmt.Errorf("protected VMs on the primary cluster match labeled VMs on the secondary site," +
+			" potentially impacting failover or recovery")
 	}
 
 	return nil
@@ -2207,7 +2217,10 @@ func (v *VRGInstance) CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList 
 		return nil
 	}
 
-	return fmt.Errorf("found conflicting VMs[%v] on secondary", foundVMs)
+	v.log.Info(fmt.Sprintf("found conflicting VM[%v] on secondary", foundVMs))
+
+	return fmt.Errorf("protected VMs on the primary cluster share names with VMs on " +
+		"the secondary site, which may impact failover or recovery")
 }
 
 func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condition {
@@ -2215,8 +2228,10 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 
 	if v.isVMRecipeProtection() {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
-			msg = fmt.Sprintf("Conflicting VMs validation failed for VM protection on %s cluster",
-				v.instance.Spec.ReplicationState)
+			v.log.Error(err, "this discrepancy indicates that the current label selector does not "+
+				"accurately reflect the intended set of protected VMs")
+			msg = fmt.Sprintf("VM protection validation failed on the %s cluster due to a %v",
+				v.instance.Spec.ReplicationState, err)
 
 			return v.clusterDataConflict(msg, metav1.ConditionFalse)
 		}
