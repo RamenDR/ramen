@@ -175,6 +175,7 @@ rules:
   - cluster.open-cluster-management.io
   resources:
   - placementdecisions
+  - placements
   verbs:
   - create
   - delete
@@ -191,15 +192,6 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - cluster.open-cluster-management.io
-  resources:
-  - placements
-  verbs:
-  - get
-  - list
-  - update
-  - watch
 - apiGroups:
   - cluster.open-cluster-management.io
   resources:
