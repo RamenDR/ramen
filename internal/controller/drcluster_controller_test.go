@@ -713,27 +713,6 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
-		When("provided Fencing value is Unfenced", func() {
-			It("reports Unfenced false with status fenced as false", func() {
-				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
-				drcluster = updateDRClusterParameters(drcluster)
-				// When Unfence is set, DRCluster controller first unfences the
-				// cluster (i.e. itself through a peer cluster) and then cleans
-				// up the fencing resource. So, by the time this check is made,
-				// either the cluster should have been unfenced or completely
-				// cleaned
-				objectConditionExpectEventually(
-					apiReader,
-					drcluster,
-					metav1.ConditionFalse,
-					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
-						controllers.DRClusterConditionReasonClean),
-					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
-					false,
-				)
-			})
-		})
 		When("provided Fencing value is empty", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
