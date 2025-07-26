@@ -15,7 +15,6 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 
-	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,23 +32,15 @@ type FakeMCVGetter struct {
 	apiReader client.Reader
 }
 
-func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
-	resourceName string,
-	annotations map[string]string,
-) (*rmn.DRClusterConfig, error) {
-	return &rmn.DRClusterConfig{}, nil
-}
-
 func (f FakeMCVGetter) DeleteDRClusterConfigManagedClusterView(clusterName string) error {
 	return nil
 }
 
-func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
-) (*storagev1.StorageClass, error) {
-	return nil, nil
+func (f FakeMCVGetter) ListSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+	return &viewv1beta1.ManagedClusterViewList{}, nil
 }
 
-func (f FakeMCVGetter) ListSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
+func (f FakeMCVGetter) ListNFClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return &viewv1beta1.ManagedClusterViewList{}, nil
 }
 

@@ -126,6 +126,13 @@ spec:
                   - type
                   type: object
                 type: array
+              networkFenceClass:
+                description: |-
+                  NetworkFenceClas lists all the classes that match the provioner on the cluster that can be used for fencing
+                  operations
+                items:
+                  type: string
+                type: array
               storageClasses:
                 description: StorageClasses lists the detected storage classes on
                   the cluster that carry the ramen storageid label
