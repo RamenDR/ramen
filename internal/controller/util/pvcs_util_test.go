@@ -5,10 +5,12 @@ package util_test
 
 import (
 	"context"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/ramendr/ramen/internal/controller/util"
 
@@ -228,10 +230,15 @@ var _ = Describe("PVCS_Util", func() {
 })
 
 func createTestPVC(ctx context.Context, namespace string, labels map[string]string) *corev1.PersistentVolumeClaim {
-	pvcCapacity := resource.MustParse("1Gi")
+	pvc := getTestPVC(namespace, labels)
+	Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
 
+	return pvc
+}
+
+func getTestPVC(namespace string, labels map[string]string) *corev1.PersistentVolumeClaim {
 	// Create dummy PVC with the desired labels
-	pvc := &corev1.PersistentVolumeClaim{
+	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "test-pvc-",
 			Namespace:    namespace,
@@ -241,15 +248,11 @@ func createTestPVC(ctx context.Context, namespace string, labels map[string]stri
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: pvcCapacity,
+					corev1.ResourceStorage: resource.MustParse("1Gi"),
 				},
 			},
 		},
 	}
-
-	Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
-
-	return pvc
 }
 
 // HavePVCName returns a matcher that expects the PVC to have the given name.
@@ -257,4 +260,15 @@ func HavePVCName(name string) gomegatypes.GomegaMatcher {
 	return WithTransform(func(pvc corev1.PersistentVolumeClaim) string {
 		return pvc.GetName()
 	}, Equal(name))
+}
+
+func TestPVCHashChangeForResize(t *testing.T) {
+	labels := map[string]string{
+		"test-label": "test",
+	}
+	pvc := getTestPVC("testns", labels)
+	oldHash := util.HashPVC(pvc)
+	pvc.Spec.Resources.Requests["capacity"] = resource.MustParse("2Gi")
+	newHash := util.HashPVC(pvc)
+	assert.NotEqual(t, oldHash, newHash)
 }
