@@ -1940,9 +1940,10 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	var volSyncDataProtected, volSyncClusterDataProtected *metav1.Condition
+	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
 	if v.instance.Spec.Sync == nil {
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
+		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
 	}
 
 	v.updateVRGDataReadyCondition()
@@ -1957,6 +1958,7 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.kubeObjectsProtected,
 	)
 	v.logAndSetConditions(VRGConditionTypeNoClusterDataConflict,
+		volSyncClusterDataConflict,
 		v.aggregateVRGNoClusterDataConflictCondition(),
 	)
 	v.updateVRGLastGroupSyncTime()
@@ -2063,8 +2065,8 @@ func isVRGReasonError(condition *metav1.Condition) bool {
 		condition.Reason == VRGConditionReasonErrorUnknown ||
 		condition.Reason == VRGConditionReasonUploadError ||
 		condition.Reason == VRGConditionReasonClusterDataAnnotationFailed ||
-		condition.Reason == VRGConditionReasonDataConflictPrimary ||
-		condition.Reason == VRGConditionReasonDataConflictSecondary
+		condition.Reason == VRGConditionReasonClusterDataConflictPrimary ||
+		condition.Reason == VRGConditionReasonClusterDataConflictSecondary
 }
 
 func (v *VRGInstance) s3StoreAccessorsGet() {
@@ -2296,6 +2298,10 @@ func (r *VolumeReplicationGroupReconciler) addKubeObjectsOwnsAndWatches(ctrlBuil
 }
 
 func (v *VRGInstance) validateVMsForStandaloneProtection() error {
+	if v.IsDRActionInProgress() {
+		return nil
+	}
+
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		return v.CheckForVMConflictOnSecondary()
 	}
@@ -2305,6 +2311,24 @@ func (v *VRGInstance) validateVMsForStandaloneProtection() error {
 	}
 
 	return nil
+}
+
+func (v *VRGInstance) IsDRActionInProgress() bool {
+	spec := v.instance.Spec
+	status := v.instance.Status
+	isRepStateSecondary := spec.ReplicationState == ramendrv1alpha1.Secondary
+	switchedToSecondary := status.State == ramendrv1alpha1.SecondaryState
+
+	isRepStatePrimary := spec.ReplicationState == ramendrv1alpha1.Primary
+	switchedToPrimary := status.State == ramendrv1alpha1.PrimaryState
+
+	if (isRepStateSecondary && !switchedToSecondary) ||
+		(isRepStatePrimary && !switchedToPrimary) ||
+		v.instance.Generation != status.ObservedGeneration {
+		return true
+	}
+
+	return false
 }
 
 func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
@@ -2386,6 +2410,59 @@ func (v *VRGInstance) CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList 
 }
 
 func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condition {
+	var vmResourceConflict, pvcResourceConflict bool
+
+	vmResourceConflict = false
+	pvcResourceConflict = false
+
+	vmConflictCondition := v.aggregateVMNoClusterDataConflictCondition()
+	if vmConflictCondition != nil {
+		if vmConflictCondition.Status == metav1.ConditionFalse {
+			vmResourceConflict = true
+		}
+	}
+
+	pvcConflictCondition := v.aggregateVolRepClusterDataConflictCondition()
+	if pvcConflictCondition != nil {
+		if pvcConflictCondition.Status == metav1.ConditionFalse {
+			pvcResourceConflict = true
+		}
+	}
+
+	if !vmResourceConflict && !pvcResourceConflict {
+		return vmConflictCondition
+	}
+
+	// Priortize the resource conflict condition on Primary cluster
+	if vmResourceConflict && pvcResourceConflict {
+		return v.PriortizePrimaryClusterDataConflictCondition(vmConflictCondition, pvcConflictCondition)
+	}
+
+	if vmResourceConflict {
+		return vmConflictCondition
+	}
+
+	return pvcConflictCondition
+}
+
+func (v *VRGInstance) PriortizePrimaryClusterDataConflictCondition(
+	vmConflictCondition, pvcConflictCondition *metav1.Condition,
+) *metav1.Condition {
+	if vmConflictCondition.Reason == pvcConflictCondition.Reason {
+		vmConflictCondition.Message = fmt.Sprintf("Both VM and PVC resource conflicting on %s cluster",
+			v.instance.Spec.ReplicationState)
+
+		return vmConflictCondition
+	}
+
+	if vmConflictCondition.Reason == VRGConditionReasonClusterDataConflictPrimary {
+		return vmConflictCondition
+	}
+
+	return pvcConflictCondition
+}
+
+func (v *VRGInstance) aggregateVMNoClusterDataConflictCondition() *metav1.Condition {
 	var msg string
 
 	if v.isVMRecipeProtection() {
@@ -2407,11 +2484,11 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 func (v *VRGInstance) clusterDataConflict(msg string, status metav1.ConditionStatus) *metav1.Condition {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		return updateVRGNoClusterDataConflictCondition(
-			v.instance.Generation, status, VRGConditionReasonDataConflictPrimary,
+			v.instance.Generation, status, VRGConditionReasonClusterDataConflictPrimary,
 			msg)
 	} else if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
 		return updateVRGNoClusterDataConflictCondition(
-			v.instance.Generation, status, VRGConditionReasonDataConflictSecondary,
+			v.instance.Generation, status, VRGConditionReasonClusterDataConflictSecondary,
 			msg)
 	}
 
@@ -2426,4 +2503,50 @@ func (v *VRGInstance) isVMRecipeProtection() bool {
 	}
 
 	return false
+}
+
+func (v *VRGInstance) aggregateVolRepClusterDataConflictCondition() *metav1.Condition {
+	noClusterDataConflictCondition := &metav1.Condition{
+		Status:             metav1.ConditionTrue,
+		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             VRGConditionReasonNoConflictDetected,
+		ObservedGeneration: v.instance.Generation,
+		Message:            "No PVC conflict detected for VolumeReplication scheme",
+	}
+
+	if conflictCondition := v.validateSecondaryPVCConflictForVolRep(); conflictCondition != nil {
+		return conflictCondition
+	}
+
+	return noClusterDataConflictCondition
+}
+
+func (v *VRGInstance) IsSecondaryVRG() bool {
+	spec := v.instance.Spec
+	status := v.instance.Status
+
+	isRepStateSecondary := spec.ReplicationState == ramendrv1alpha1.Secondary
+	switchedToSecondary := status.State == ramendrv1alpha1.SecondaryState
+
+	return isRepStateSecondary &&
+		switchedToSecondary
+}
+
+func (v *VRGInstance) isSecondaryWithVolRepProtectedPVCs() bool {
+	return v.IsSecondaryVRG() && len(v.volRepPVCs) > 0
+}
+
+func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition {
+	if v.IsDRActionInProgress() {
+		return nil
+	}
+
+	if v.isSecondaryWithVolRepProtectedPVCs() {
+		return updateVRGNoClusterDataConflictCondition(
+			v.instance.Generation, metav1.ConditionFalse, VRGConditionReasonClusterDataConflictSecondary,
+			"No PVC on the secondary should match the label selector",
+		)
+	}
+
+	return nil
 }
