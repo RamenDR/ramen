@@ -817,14 +817,15 @@ func getNFClassesFromCluster(
 	return nfClasses, pruneNFClassViews(m, u.log, clusterName, nfClassNames)
 }
 
-// findMatchingNFClasses returns NetworkFenceClass resources that match the given StorageClasses
+// findMatchingNFClasses returns NetworkFenceClass names that match the given StorageClasses
 // based on provisioner and storage ID annotations. NetworkFenceClasses are returned only if:
 // 1. NetworkFenceClass provisioner matches StorageClass provisioner
 // 2. NetworkFenceClass storage ID annotation contains the StorageClass storage ID
+// If no matching NetworkFenceClasses are found, returns a slice with an empty string for generic fencing
 func (u *drclusterInstance) findMatchingNFClasses(
 	networkFenceClasses []*csiaddonsv1alpha1.NetworkFenceClass, storageClasses []*storagev1.StorageClass,
-) []*csiaddonsv1alpha1.NetworkFenceClass {
-	nfClasses := []*csiaddonsv1alpha1.NetworkFenceClass{}
+) []string {
+	nfClasses := []string{}
 
 	for _, nfc := range networkFenceClasses {
 		for _, sc := range storageClasses {
@@ -837,9 +838,13 @@ func (u *drclusterInstance) findMatchingNFClasses(
 
 			if sc.Provisioner == nfc.Spec.Provisioner &&
 				slices.Contains(strings.Split(nfClassAnnoations, ","), storageID) {
-				nfClasses = append(nfClasses, nfc)
+				nfClasses = append(nfClasses, nfc.GetName())
 			}
 		}
+	}
+
+	if len(nfClasses) == 0 {
+		nfClasses = append(nfClasses, "")
 	}
 
 	return nfClasses
@@ -848,18 +853,18 @@ func (u *drclusterInstance) findMatchingNFClasses(
 // getNFClassesFromDRClusterConfig retrieves the DRClusterConfig for the given DRCluster
 // and extracts StorageClasses and NetworkFenceClass resources to process network fencing
 func (u *drclusterInstance) getNFClassesFromDRClusterConfig(cluster *ramen.DRCluster,
-) ([]*csiaddonsv1alpha1.NetworkFenceClass, error) {
+) ([]string, error) {
 	annotations := make(map[string]string)
 	annotations[AllDRPolicyAnnotation] = cluster.GetName()
 
 	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(cluster.GetName(), annotations)
 	if err != nil {
-		return []*csiaddonsv1alpha1.NetworkFenceClass{}, err
+		return nil, err
 	}
 
 	nfClasses, err := getNFClassesFromCluster(u, u.reconciler.MCVGetter, drcConfig, cluster.GetName())
 	if err != nil {
-		return nfClasses, err
+		return nil, err
 	}
 
 	storageClasses, err := GetSClassesFromCluster(u.log, u.reconciler.MCVGetter, drcConfig, cluster.GetName())
@@ -896,17 +901,11 @@ func (u *drclusterInstance) clusterFence() (bool, error) {
 		return true, fmt.Errorf("faled to get NetworkFenceClasses: %w", err)
 	}
 
-	// Create fence resources using available NetworkFenceClasses, or fallback to generic fencing
-	// if no specific NetworkFenceClasses are available
 	for _, nfClass := range nfClasses {
-		reque, err := u.fenceClusterOnCluster(&peerCluster, nfClass.GetName())
+		reque, err := u.fenceClusterOnCluster(&peerCluster, nfClass)
 		if err != nil {
 			return reque, err
 		}
-	}
-
-	if len(nfClasses) == 0 {
-		return u.fenceClusterOnCluster(&peerCluster, "")
 	}
 
 	return false, nil
@@ -956,15 +955,8 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 		return true, fmt.Errorf("faled to get NetworkFenceClasses: %w", err)
 	}
 
-	if len(nfClasses) == 0 {
-		requeue, err := processUnfence("")
-		if requeue || err != nil {
-			return requeue, err
-		}
-	}
-
 	for _, nfClass := range nfClasses {
-		requeue, err := processUnfence(nfClass.GetName())
+		requeue, err := processUnfence(nfClass)
 		if requeue || err != nil {
 			return requeue, err
 		}
@@ -1596,11 +1588,6 @@ func generateNF(targetCluster *ramen.DRCluster, networkFenceClassName string) (c
 	resourceName := strings.Join([]string{NetworkFencePrefix, targetCluster.Name}, "-")
 
 	nf := csiaddonsv1alpha1.NetworkFence{
-		// TODO: There is no way currently to get the information such as
-		// the storage CSI driver, secrets and storage specific parameters
-		// until DRCluster is capable of exporting such information in its
-		// status based on its reconciliation. Until then, the fencing CR
-		// would be incomplete and incapable of performing fencing operation.
 		TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 		ObjectMeta: metav1.ObjectMeta{Name: resourceName},
 		Spec: csiaddonsv1alpha1.NetworkFenceSpec{
