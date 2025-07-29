@@ -47,7 +47,7 @@ type Deployer interface {
 	GetName() string
 	// GetNamespace return the namespace for the ramen resources, or empty string if not using a special namespace.
 	GetNamespace(TestContext) string
-	// Return true for OCM discovered application, false for OCM managed applications.
+	// IsDiscovered returns true for OCM discovered application, false for OCM managed applications.
 	IsDiscovered() bool
 
 	// DeleteResources removes all resources that were deployed as part of the workload

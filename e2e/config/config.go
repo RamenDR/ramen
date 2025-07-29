@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -70,9 +71,18 @@ type Deployer struct {
 	// Available types: appset, subscr, and disapp.
 	Type string `json:"type"`
 	// Description is a human-readable description of the deployer.
-	Description string `json:"description"`
+	Description string  `json:"description"`
+	Recipe      *Recipe `json:"recipe,omitempty"`
 }
 
+type Recipe struct {
+	// Type is the name of the recipe to use.
+	// If Type is "generate", a recipe is generated to match the workload.
+	// If Type is "vm", ramen internal recipe for the vm will be used.
+	Type      string `json:"mode"`
+	CheckHook bool   `json:"checkHook,omitempty"`
+	ExecHook  bool   `json:"execHook,omitempty"`
+}
 type Cluster struct {
 	Kubeconfig string `json:"kubeconfig"`
 }
@@ -386,18 +396,29 @@ func validateDuplicateDeployerNames(deployers []Deployer) error {
 
 // validateDuplicateDeployerContent ensures no two deployers have the same type and content
 func validateDuplicateDeployerContent(deployers []Deployer) error {
-	seen := make(map[Deployer]Deployer)
+	type LocalDeployer struct {
+		Type   string  `json:"type"`
+		Recipe *Recipe `json:"recipe,omitempty"`
+	}
+
+	seen := make(map[string]LocalDeployer)
 
 	for _, deployer := range deployers {
-		key := Deployer{
-			Type: deployer.Type,
+		value := LocalDeployer{
+			Type:   deployer.Type,
+			Recipe: deployer.Recipe,
 		}
 
-		if duplicate, exists := seen[key]; exists {
-			return fmt.Errorf("duplicate deployer content found:\n	%+v\n	%+v", duplicate, deployer)
+		for existingDeployerName, existingDeployer := range seen {
+			if reflect.DeepEqual(value, existingDeployer) {
+				return fmt.Errorf("duplicate deployer content found: "+
+					"%v is same as %v\n	"+
+					"%+v\n	%+v",
+					existingDeployerName, deployer.Name, existingDeployer, value)
+			}
 		}
 
-		seen[key] = deployer
+		seen[deployer.Name] = value
 	}
 
 	return nil
