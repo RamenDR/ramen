@@ -9,4 +9,6 @@ import (
 
 var DefaultRsyncServiceType corev1.ServiceType = corev1.ServiceTypeClusterIP
 
+var LoadBalancerRsyncServiceType corev1.ServiceType = corev1.ServiceTypeLoadBalancer
+
 var DefaultScheduleCronSpec = "*/10 * * * *" // Every 10 mins
