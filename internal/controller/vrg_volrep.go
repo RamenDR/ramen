@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/go-logr/logr"
 
@@ -1576,6 +1578,42 @@ func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep
 	}
 }
 
+// processReplicationState inspects the replication-specific condition in a
+// VolumeReplication (or VRG) object. If there is a "ReplicationState"
+// condition, it maps that to a "ReplicationHealthy" status in the VRG’s
+// savedInstanceStatus.Conditions. If the replication condition is explicitly
+// False, processing halts by returning true (signal to exit early).
+//
+// Otherwise, if the condition is True or Unknown, the function records it
+// and returns false (workflow may continue). If the condition is absent,
+// nothing is changed and reconciliation continues.
+//
+// This separation of concern reduces cognitive complexity in validateVRStatus
+// by isolating replication-specific branching into a focused helper.
+func (v *VRGInstance) processReplicationState(replicationStatus *volrep.VolumeReplicationStatus) bool {
+	cond := meta.FindStatusCondition(replicationStatus.Conditions, "ReplicationState")
+	if cond == nil {
+		return false
+	}
+
+	status := metav1.ConditionUnknown
+	if cond.Status == metav1.ConditionTrue {
+		status = metav1.ConditionTrue
+	} else if cond.Status == metav1.ConditionFalse {
+		status = metav1.ConditionFalse
+	}
+
+	meta.SetStatusCondition(&v.savedInstanceStatus.Conditions, metav1.Condition{
+		Type:               "ReplicationHealthy",
+		Status:             status,
+		Reason:             cond.Reason,
+		Message:            cond.Message,
+		LastTransitionTime: metav1.Now(),
+	})
+
+	return status == metav1.ConditionFalse
+}
+
 // validateVRStatus validates if the VolumeReplication resource has the desired status for the
 // current generation, deletion status, and repliaction state.
 //
@@ -1623,6 +1661,10 @@ func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, vol
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
 		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, status)
+	}
+
+	if exitOnUnhealthyVR := v.processReplicationState(status); exitOnUnhealthyVR {
+		return false
 	}
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),

@@ -48,6 +48,9 @@ const (
 	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
+
+	// VRGConditionTypeReplicationHealthy used to reflect new condition from underlying VR/VRG
+	VRGConditionTypeReplicationHealthy = "ReplicationHealthy"
 )
 
 // VRG condition reasons
