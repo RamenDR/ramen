@@ -69,20 +69,11 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 		return
 	}
 
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
-		func() {},
-	)
+	v.kubeObjectsProtect(result)
 }
-
-type (
-	captureStartConditionally     func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
-	captureInProgressStatusUpdate func()
-)
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
 		return
@@ -109,16 +100,12 @@ func (v *VRGInstance) kubeObjectsProtect(
 	}
 
 	v.kubeObjectsCaptureStartOrResumeOrDelay(result,
-		captureStartConditionally,
-		captureInProgressStatusUpdate,
 		captureToRecoverFrom,
 	)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
 ) {
 	veleroNamespaceName := v.veleroNamespaceName()
@@ -141,51 +128,40 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	captureStartOrResume := func(generation int64, startOrResume string) {
-		log.Info("Kube objects capture "+startOrResume, "generation", generation)
-		v.kubeObjectsCaptureStartOrResume(result,
-			captureStartConditionally,
-			captureInProgressStatusUpdate,
-			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval,
-			generation,
-			kubeobjects.RequestsMapKeyedByName(requests),
-			log,
-		)
-	}
-
 	if count := requests.Count(); count > 0 {
-		captureStartOrResume(requests.Get(0).Object().GetGeneration(), "resume")
+		generation := requests.Get(0).Object().GetGeneration()
+
+		log.Info("Kube objects capture resume", "generation", generation)
+
+		v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName, namePrefix, veleroNamespaceName,
+			interval, generation, kubeobjects.RequestsMapKeyedByName(requests), log)
 
 		return
 	}
 
-	captureStartConditionally(
-		v, result, captureToRecoverFrom.StartGeneration, time.Since(captureToRecoverFrom.StartTime.Time), interval,
-		func() {
-			if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
-				return
-			}
-
-			captureStartOrResume(vrg.GetGeneration(), "start")
-		},
-	)
-}
-
-func kubeObjectsCaptureStartConditionallyPrimary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
-	captureStart func(),
-) {
-	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
+	// requeue with a delay if the time for the next capture has not yet arrived
+	if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
 		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
-			"interval", captureStartInterval)
+			"interval", interval)
 		delaySetIfLess(result, delay, v.log)
 		v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 		return
 	}
 
-	captureStart()
+	// before starting a new capture, delete the previous one with the same number
+	if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
+		return
+	}
+
+	// start the capture
+	generation := vrg.GetGeneration()
+
+	log.Info("Kube objects capture start", "generation", generation)
+
+	v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName,
+		namePrefix, veleroNamespaceName, interval, generation,
+		kubeobjects.RequestsMapKeyedByName(requests), log)
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
@@ -218,8 +194,6 @@ const (
 // nolint: funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureNumber int64,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	interval time.Duration,
@@ -240,7 +214,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	}
 
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
-		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
+		veleroNamespaceName, annotations, requests, log)
 	if err != nil {
 		rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
 		if !ok {
@@ -284,7 +258,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 	v.kubeObjectsCaptureComplete(
 		result,
-		captureStartConditionally,
 		captureNumber,
 		veleroNamespaceName,
 		interval,
@@ -296,7 +269,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
-	veleroNamespaceName string, captureInProgressStatusUpdate captureInProgressStatusUpdate,
+	veleroNamespaceName string,
 	annotations map[string]string, requests map[string]kubeobjects.Request, log logr.Logger,
 ) (bool, error) {
 	captureSteps := v.recipeElements.CaptureWorkflow
@@ -337,7 +310,6 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			isEssentialStep = cg.GroupEssential != nil && *cg.GroupEssential
 			loopCount, err = v.kubeObjectsGroupCapture(
 				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
-				captureInProgressStatusUpdate,
 				labels, annotations, requests, log,
 			)
 			requestsCompletedCount += loopCount
@@ -382,7 +354,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 	result *ctrl.Result,
 	captureGroup kubeobjects.CaptureSpec,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	labels, annotations map[string]string, requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) (requestsCompletedCount int, reqErr error) {
@@ -407,7 +378,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				continue
 			}
 
-			captureInProgressStatusUpdate()
 			log1.Info("Kube objects group capture request submitted")
 		} else {
 			err := request.Status(v.log)
@@ -458,7 +428,6 @@ func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureNumber int64, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, startTime metav1.Time, annotations map[string]string,
 ) {
@@ -485,7 +454,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		func() {
 			v.kubeObjectsCaptureIdentifierUpdateComplete(
 				result,
-				captureStartConditionally,
 				*captureToRecoverFromIdentifier,
 				veleroNamespaceName,
 				interval,
@@ -500,7 +468,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	veleroNamespaceName string,
 	interval time.Duration,
@@ -524,13 +491,16 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
 		"duration", captureStartTimeSince)
-	captureStartConditionally(
-		v, result, captureToRecoverFromIdentifier.StartGeneration, captureStartTimeSince, interval,
-		func() {
-			v.log.Info("Kube objects capture schedule to run immediately")
-			delaySetMinimum(result)
-		},
-	)
+
+	// schedule next kube objects capture
+	delay := interval - captureStartTimeSince
+
+	if delay > 0 {
+		delaySetIfLess(result, delay, v.log)
+	} else {
+		delaySetMinimum(result)
+		v.log.Info("Kube objects capture schedule to run immediately")
+	}
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
