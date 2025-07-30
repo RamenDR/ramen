@@ -3,7 +3,7 @@
 
 ---
 repo: https://github.com/ramendr/ocm-ramen-samples.git
-path: subscription/deployment-k8s-regional-rbd
+path: applicationset/deployment-k8s-regional-rbd
 branch: main
 name: deployment-rbd
 namespace: deployment-rbd
