@@ -19,10 +19,10 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	placementv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -89,7 +89,7 @@ var _ = BeforeSuite(func() {
 	Expect(cfg).NotTo(BeNil())
 
 	By("Setting up required schemes in envtest")
-	err = plrv1.AddToScheme(scheme.Scheme)
+	err = placementv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = cpcv1.AddToScheme(scheme.Scheme)
