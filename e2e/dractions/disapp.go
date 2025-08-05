@@ -13,8 +13,11 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
+// nolint:errcheck
 func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	w := ctx.Workload()
+	d := ctx.Deployer()
+
 	name := ctx.Name()
 	log := ctx.Logger()
 	config := ctx.Config()
@@ -25,6 +28,13 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	appname := w.GetAppName()
 	placementName := name
 	drpcName := name
+
+	var recipeRef *ramen.RecipeRef
+
+	disapp, _ := d.(*deployers.DiscoveredApp)
+	if disapp.DeployerSpec.Recipe != nil {
+		recipeRef = getRecipeRef(disapp.DeployerSpec.Recipe.Type, name, appNamespace, managementNamespace)
+	}
 
 	cluster, err := findProtectCluster(ctx)
 	if err != nil {
@@ -39,7 +49,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	}
 
 	drpc := generateDRPCDiscoveredApps(
-		name, managementNamespace, cluster.Name, drPolicyName, placementName, appname, appNamespace)
+		ctx, cluster.Name, drPolicyName, appname, recipeRef)
 	if err := createDRPC(ctx, drpc); err != nil {
 		return err
 	}
@@ -60,6 +70,25 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	log.Info("Workload protected")
 
 	return nil
+}
+
+func getRecipeRef(recipeType, name, appNS, mgmtNS string) *ramen.RecipeRef {
+	var recipeRef *ramen.RecipeRef
+
+	switch recipeType {
+	case "generate", "workload":
+		recipeRef = &ramen.RecipeRef{
+			Name:      name + "-recipe",
+			Namespace: appNS,
+		}
+	case "vm":
+		recipeRef = &ramen.RecipeRef{
+			Name:      "vm-recipe",
+			Namespace: mgmtNS,
+		}
+	}
+
+	return recipeRef
 }
 
 // nolint:funlen,cyclop
