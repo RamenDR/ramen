@@ -11,10 +11,14 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
-type ApplicationSet struct{}
+type ApplicationSet struct {
+	DeployerSpec config.Deployer
+}
 
 func NewApplicationSet(deployer config.Deployer) types.Deployer {
-	return &ApplicationSet{}
+	return &ApplicationSet{
+		DeployerSpec: deployer,
+	}
 }
 
 // Deploy creates an ApplicationSet on the hub cluster, creating the workload on one of the managed clusters.
