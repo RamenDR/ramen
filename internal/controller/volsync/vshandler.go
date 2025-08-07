@@ -114,6 +114,10 @@ func (v *VSHandler) GetWorkloadStatus() string {
 	return v.workloadStatus
 }
 
+func (v *VSHandler) GetOwner() metav1.Object {
+	return v.owner
+}
+
 func (v *VSHandler) SetWorkloadStatus(status string) {
 	v.workloadStatus = status
 }

@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -120,6 +121,12 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	util.AddLabel(rgd, util.CreatedByRamenLabel, "true")
 
 	_, err := ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgd, func() error {
+		if c.VSHandler != nil && !c.VSHandler.IsVRGInAdminNamespace() {
+			if err := ctrl.SetControllerReference(c.VSHandler.GetOwner(), rgd, c.Client.Scheme()); err != nil {
+				return fmt.Errorf("unable to set controller reference %w", err)
+			}
+		}
+
 		util.AddLabel(rgd, volsync.VRGOwnerNameLabel, c.instance.GetName())
 		util.AddLabel(rgd, volsync.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, c.instance.GetName())
@@ -209,6 +216,12 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	util.AddLabel(rgs, util.CreatedByRamenLabel, "true")
 
 	_, err = ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgs, func() error {
+		if c.VSHandler != nil && !c.VSHandler.IsVRGInAdminNamespace() {
+			if err := ctrl.SetControllerReference(c.VSHandler.GetOwner(), rgs, c.Client.Scheme()); err != nil {
+				return fmt.Errorf("unable to set controller reference %w", err)
+			}
+		}
+
 		util.AddLabel(rgs, volsync.VRGOwnerNameLabel, c.instance.GetName())
 		util.AddLabel(rgs, volsync.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, c.instance.GetName())
