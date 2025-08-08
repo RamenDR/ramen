@@ -2204,6 +2204,34 @@ func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj cl
 		log.WithValues("rs", types.NamespacedName{Name: rs.Name, Namespace: rs.Namespace}))
 }
 
+func (r *VolumeReplicationGroupReconciler) RGDMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("rgdmap").WithName("VolumeReplicationGroup")
+
+	rgd, ok := obj.(*ramendrv1alpha1.ReplicationGroupDestination)
+	if !ok {
+		log.Info("map function received not a replication group destination resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("rgd", types.NamespacedName{Name: rgd.Name, Namespace: rgd.Namespace}))
+}
+
+func (r *VolumeReplicationGroupReconciler) RGSMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
+	log := ctrl.Log.WithName("rgsmap").WithName("VolumeReplicationGroup")
+
+	rgs, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
+	if !ok {
+		log.Info("map function received not a replication group source resource")
+
+		return []reconcile.Request{}
+	}
+
+	return filterVRGDependentObjects(r.Client, obj,
+		log.WithValues("rgs", types.NamespacedName{Name: rgs.Name, Namespace: rgs.Namespace}))
+}
+
 func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder *builder.Builder) *builder.Builder {
 	ctrlBuilder.Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
@@ -2215,6 +2243,14 @@ func (r *VolumeReplicationGroupReconciler) addVolsyncOwnsAndWatches(ctrlBuilder 
 		).
 		Watches(&volsyncv1alpha1.ReplicationSource{},
 			handler.EnqueueRequestsFromMapFunc(r.RSMapFunc),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
+		Watches(&ramendrv1alpha1.ReplicationGroupDestination{},
+			handler.EnqueueRequestsFromMapFunc(r.RGDMapFunc),
+			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
+		).
+		Watches(&ramendrv1alpha1.ReplicationGroupSource{},
+			handler.EnqueueRequestsFromMapFunc(r.RGSMapFunc),
 			builder.WithPredicates(util.CreateOrDeleteOrResourceVersionUpdatePredicate{}),
 		)
 
