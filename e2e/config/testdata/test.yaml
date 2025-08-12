@@ -24,10 +24,13 @@ pvcspecs:
 deployers:
   - name: appset
     type: appset
+    description: ApplicationSet based deployer
   - name: subscr
     type: subscr
+    description: OCM Subscription based deployer
   - name: disapp
     type: disapp
+    description: Discovered application deployer
 tests:
   - deployer: appset
     workload: deploy
