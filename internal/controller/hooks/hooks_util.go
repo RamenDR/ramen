@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -77,6 +78,10 @@ func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 	objs := make([]client.Object, 0)
 
 	switch v := objList.(type) {
+	case *unstructured.UnstructuredList:
+		for _, uObj := range v.Items {
+			objs = append(objs, &uObj)
+		}
 	case *corev1.PodList:
 		for _, pod := range v.Items {
 			objs = append(objs, &pod)
@@ -104,6 +109,8 @@ func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, nameSelector strin
 	}
 
 	switch v := objList.(type) {
+	case *unstructured.UnstructuredList:
+		objs = getMatchingUnstructedObjs(v, re)
 	case *corev1.PodList:
 		objs = getMatchingPods(v, re)
 	case *appsv1.DeploymentList:
@@ -185,4 +192,52 @@ func getOpHookTimeoutValue(hook *kubeobjects.HookSpec) int {
 	}
 	// 300s is the default value for timeout
 	return defaultTimeoutValue
+}
+
+func getMatchingUnstructedObjs(uList *unstructured.UnstructuredList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, uObj := range uList.Items {
+		if re.MatchString(uObj.GetName()) {
+			objs = append(objs, &uObj)
+		}
+	}
+
+	return objs
+}
+
+func getMatchingPods(pList *corev1.PodList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, pod := range pList.Items {
+		if re.MatchString(pod.Name) {
+			objs = append(objs, &pod)
+		}
+	}
+
+	return objs
+}
+
+func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, pod := range dList.Items {
+		if re.MatchString(pod.Name) {
+			objs = append(objs, &pod)
+		}
+	}
+
+	return objs
+}
+
+func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0)
+
+	for _, pod := range ssList.Items {
+		if re.MatchString(pod.Name) {
+			objs = append(objs, &pod)
+		}
+	}
+
+	return objs
 }
