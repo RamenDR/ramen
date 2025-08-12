@@ -74,7 +74,16 @@ type Deployer struct {
 	Recipe      *Recipe `json:"recipe,omitempty"`
 }
 
-func DeployerConfigEqual(a, b Deployer) bool {
+// Equal returns true if deployer is equal to another deployer.
+func (a *Deployer) Equal(b *Deployer) bool {
+	if a == b {
+		return true
+	}
+
+	if b == nil {
+		return false
+	}
+
 	if a.Name != b.Name {
 		return false
 	}
@@ -87,14 +96,12 @@ func DeployerConfigEqual(a, b Deployer) bool {
 		return false
 	}
 
-	if (a.Recipe == nil) != (b.Recipe == nil) {
-		return false
-	}
-
 	if a.Recipe != nil && b.Recipe != nil {
 		if *a.Recipe != *b.Recipe {
 			return false
 		}
+	} else if a.Recipe != b.Recipe {
+		return false
 	}
 
 	return true
@@ -499,7 +506,9 @@ func (c *Config) Equal(o *Config) bool {
 		return false
 	}
 
-	if !slices.EqualFunc(c.Deployers, o.Deployers, DeployerConfigEqual) {
+	if !slices.EqualFunc(c.Deployers, o.Deployers, func(a, b Deployer) bool {
+		return a.Equal(&b)
+	}) {
 		return false
 	}
 
