@@ -5,6 +5,8 @@ package config
 
 import (
 	"testing"
+
+	"sigs.k8s.io/yaml"
 )
 
 func TestReadConfig(t *testing.T) {
@@ -54,7 +56,7 @@ func TestReadConfig(t *testing.T) {
 		},
 	}
 	if !c.Equal(expected) {
-		t.Fatalf("expected %+v, got %+v", expected, c)
+		t.Fatalf("expected\n%s\ngot\n%s", marshal(t, expected), marshal(t, c))
 	}
 }
 
@@ -351,4 +353,15 @@ func TestValidateDeployers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func marshal(t *testing.T, obj any) []byte {
+	t.Helper()
+
+	b, err := yaml.Marshal(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return b
 }
