@@ -37,14 +37,9 @@ func TestReadConfig(t *testing.T) {
 			{Name: "cephfs", StorageClassName: "rook-cephfs-fs1", AccessModes: "ReadWriteMany"},
 		},
 		Deployers: []Deployer{
-			{Name: "appset", Type: "appset", Description: "ApplicationSet deployer for ArgoCD"},
-			{Name: "subscr", Type: "subscr", Description: "Subscription deployer for OCM subscriptions"},
-			{Name: "disapp", Type: "disapp", Description: "Discovered Application deployer for discovered applications"},
-			{
-				Name:        "disapp-recipe",
-				Type:        "disapp",
-				Description: "Discovered Application deployer for discovered applications with recipe",
-			},
+			{Name: "appset", Type: "appset", Description: "ApplicationSet based deployer"},
+			{Name: "subscr", Type: "subscr", Description: "OCM Subscription based deployer"},
+			{Name: "disapp", Type: "disapp", Description: "Discovered application deployer"},
 		},
 		Tests: []Test{
 			{Workload: "deploy", Deployer: "appset", PVCSpec: "rbd"},
