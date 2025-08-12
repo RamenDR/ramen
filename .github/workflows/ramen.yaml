@@ -111,6 +111,22 @@ jobs:
       - name: Run unit tests
         run: make test
 
+  e2e-test:
+    name: E2E unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run unit tests
+        working-directory: e2e
+        run: make test
+
   build-image:
     name: Build image
     runs-on: ubuntu-24.04
