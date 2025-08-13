@@ -21,8 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const three = 3
-
 type CheckHook struct {
 	Hook   *kubeobjects.HookSpec
 	Reader client.Reader
@@ -181,6 +179,8 @@ func getResourcesList(k8sReader client.Reader, hook *kubeobjects.HookSpec, log l
 }
 
 func validateAndGetUnstructedListBasedOnType(resourceType string) (*unstructured.UnstructuredList, error) {
+	const three = 3
+
 	resourceParts := strings.Split(resourceType, "/")
 	if len(resourceParts) != 1 && len(resourceParts) != three {
 		return nil, fmt.Errorf("invalid resource type, supported resource types are pod/deployment/statefulset," +
