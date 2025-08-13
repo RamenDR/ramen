@@ -2113,6 +2113,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, erro
 
 func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
 	NoS3 := false
+
 	var savedError error
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
