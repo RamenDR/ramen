@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/fields"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,9 +50,6 @@ func getObjectsUsingValidK8sName(r client.Reader, hook *kubeobjects.HookSpec,
 ) ([]client.Object, error) {
 	listOps := &client.ListOptions{
 		Namespace: hook.Namespace,
-		FieldSelector: fields.SelectorFromSet(fields.Set{
-			"metadata.name": hook.NameSelector, // needs exact matching with the name
-		}),
 	}
 
 	err := r.List(context.Background(), objList, listOps)
@@ -61,7 +57,53 @@ func getObjectsUsingValidK8sName(r client.Reader, hook *kubeobjects.HookSpec,
 		return nil, fmt.Errorf("error listing resources using nameSelector: %w", err)
 	}
 
-	return getObjectsBasedOnType(objList), err
+	return getFilteredObjectsBasedOnTypeAndNameSelector(objList, hook.NameSelector), err
+}
+
+// Based on the type of resource, slice of objects is returned.
+func getFilteredObjectsBasedOnTypeAndNameSelector(objList client.ObjectList, nameSelector string) []client.Object {
+	objs := make([]client.Object, 0)
+
+	switch v := objList.(type) {
+	case *unstructured.UnstructuredList:
+		objs = filterUnstructuredObjects(v.Items, nameSelector)
+	case *corev1.PodList:
+		objs = filterPods(v.Items, nameSelector)
+	case *appsv1.DeploymentList:
+		objs = filterDeployments(v.Items, nameSelector)
+	case *appsv1.StatefulSetList:
+		objs = filterStatefulSets(v.Items, nameSelector)
+	}
+
+	return objs
+}
+
+func filterStatefulSets(objs []appsv1.StatefulSet, nameSelector string) []client.Object {
+	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
+}
+
+func filterDeployments(objs []appsv1.Deployment, nameSelector string) []client.Object {
+	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
+}
+
+func filterPods(objs []corev1.Pod, nameSelector string) []client.Object {
+	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
+}
+
+func filterUnstructuredObjects(objs []unstructured.Unstructured, nameSelector string) []client.Object {
+	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
+}
+
+func filterObjectsSameAsNameSelector[T client.Object](objs []T, nameSelector string) []client.Object {
+	filteredObjs := make([]client.Object, 0, len(objs))
+
+	for _, obj := range objs {
+		if obj.GetName() == nameSelector {
+			filteredObjs = append(filteredObjs, obj)
+		}
+	}
+
+	return filteredObjs
 }
 
 // Based on the type of resource, slice of objects is returned.
@@ -186,49 +228,39 @@ func getOpHookTimeoutValue(hook *kubeobjects.HookSpec) int {
 }
 
 func getMatchingUnstructedObjs(uList *unstructured.UnstructuredList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, uObj := range uList.Items {
-		if re.MatchString(uObj.GetName()) {
-			objs = append(objs, &uObj)
-		}
-	}
-
-	return objs
+	return getRegexMatchingObjects(toPointerSlice(uList.Items), re)
 }
 
 func getMatchingPods(pList *corev1.PodList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range pList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
-	}
-
-	return objs
+	return getRegexMatchingObjects(toPointerSlice(pList.Items), re)
 }
 
 func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
+	return getRegexMatchingObjects(toPointerSlice(dList.Items), re)
+}
 
-	for _, pod := range dList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
+func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
+	return getRegexMatchingObjects(toPointerSlice(ssList.Items), re)
+}
+
+func getRegexMatchingObjects[T client.Object](items []T, re *regexp.Regexp) []client.Object {
+	objs := make([]client.Object, 0, len(items))
+
+	for _, item := range items {
+		if re.MatchString(item.GetName()) {
+			obj := item
+			objs = append(objs, obj)
 		}
 	}
 
 	return objs
 }
 
-func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range ssList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
+func toPointerSlice[T any](items []T) []*T {
+	ptrs := make([]*T, len(items))
+	for i := range items {
+		ptrs[i] = &items[i]
 	}
 
-	return objs
+	return ptrs
 }
