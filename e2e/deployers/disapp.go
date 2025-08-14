@@ -8,11 +8,12 @@ import (
 	"os"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/recipes"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-	"go.uber.org/zap"
 )
 
 type DiscoveredApp struct {
@@ -26,7 +27,7 @@ func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
 }
 
 func (d DiscoveredApp) GetName() string {
-	return "disapp"
+	return d.DeployerSpec.Name
 }
 
 func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {
@@ -97,8 +98,6 @@ func deployDiscoveredApp(ctx types.TestContext, log *zap.SugaredLogger) error {
 		return err
 	}
 
-	log.Info("Workload deployed")
-
 	return nil
 }
 
@@ -142,8 +141,6 @@ func (d DiscoveredApp) undeployDiscoveredApp(ctx types.TestContext, log *zap.Sug
 	if err := d.WaitForResourcesDelete(ctx); err != nil {
 		return err
 	}
-
-	log.Info("Workload undeployed")
 
 	return nil
 }
