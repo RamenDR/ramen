@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/recipes"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
+	"go.uber.org/zap"
 )
 
 type DiscoveredApp struct {
@@ -34,6 +36,26 @@ func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {
 // Deploy creates a workload on the first managed cluster.
 func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 	log := ctx.Logger()
+
+	if err := deployDiscoveredApp(ctx, log); err != nil {
+		return fmt.Errorf("failed to deploy discovered app \"%s/%s\": %w",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+	}
+
+	if d.isRecipeTypeGenerate() {
+		err := recipes.Create(ctx, d.DeployerSpec.Recipe)
+		if err != nil {
+			return fmt.Errorf("failed to create recipe for discovered app \"%s/%s\": %w",
+				ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+		}
+	}
+
+	log.Info("Workload deployed")
+
+	return nil
+}
+
+func deployDiscoveredApp(ctx types.TestContext, log *zap.SugaredLogger) error {
 	appNamespace := ctx.AppNamespace()
 
 	cluster, err := chooseDeployCluster(ctx)
@@ -83,6 +105,31 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 // Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	log := ctx.Logger()
+
+	if err := d.undeployDiscoveredApp(ctx, log); err != nil {
+		return err
+	}
+
+	if d.isRecipeTypeGenerate() {
+		if err := recipes.Delete(ctx); err != nil {
+			return fmt.Errorf("failed to delete recipe for discovered app \"%s/%s\": %w",
+				ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+		}
+
+		log.Infof("Recipe %s-recipe deleted for discovered app \"%s/%s\"",
+			ctx.Name(), ctx.AppNamespace(), ctx.Workload().GetAppName())
+	}
+
+	log.Info("Workload undeployed")
+
+	return nil
+}
+
+func (d DiscoveredApp) isRecipeTypeGenerate() bool {
+	return d.DeployerSpec.Recipe != nil && d.DeployerSpec.Recipe.Type == "generate"
+}
+
+func (d DiscoveredApp) undeployDiscoveredApp(ctx types.TestContext, log *zap.SugaredLogger) error {
 	appNamespace := ctx.AppNamespace()
 
 	log.Infof("Undeploying discovered app \"%s/%s\" in clusters %q and %q",
