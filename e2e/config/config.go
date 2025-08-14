@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -428,27 +429,29 @@ func validateDuplicateDeployerNames(deployers []Deployer) error {
 
 // validateDuplicateDeployerContent ensures no two deployers have the same type and content
 func validateDuplicateDeployerContent(deployers []Deployer) error {
-	type content struct {
-		Type   string
-		Recipe Recipe
+	type LocalDeployer struct {
+		Type   string  `json:"type"`
+		Recipe *Recipe `json:"recipe,omitempty"`
 	}
 
-	seen := make(map[content]Deployer)
+	seen := make(map[string]LocalDeployer)
 
 	for _, deployer := range deployers {
-		key := content{
-			Type: deployer.Type,
+		value := LocalDeployer{
+			Type:   deployer.Type,
+			Recipe: deployer.Recipe,
 		}
 
-		if deployer.Recipe != nil {
-			key.Recipe = *deployer.Recipe
+		for existingDeployerName, existingDeployer := range seen {
+			if reflect.DeepEqual(value, existingDeployer) {
+				return fmt.Errorf("duplicate deployer content found: "+
+					"%v is same as %v\n	"+
+					"%+v\n	%+v",
+					existingDeployerName, deployer.Name, existingDeployer, value)
+			}
 		}
 
-		if duplicate, exists := seen[key]; exists {
-			return fmt.Errorf("duplicate deployer content found:\n	%+v\n	%+v", duplicate, deployer)
-		}
-
-		seen[key] = deployer
+		seen[deployer.Name] = value
 	}
 
 	return nil
