@@ -10,6 +10,8 @@ import (
 	"slices"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -70,6 +72,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,resourceNames=kube-system,verbs=get;list;watch
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
@@ -137,6 +140,21 @@ func (r *DRClusterConfigReconciler) statusUpdate(ctx context.Context, obj *ramen
 	}
 
 	return nil
+}
+
+// getK8sClusterID getClusterID returns the cluster ID of the k8s Cluster
+func (r *DRClusterConfigReconciler) getK8sClusterID() string {
+	kubeSystemNamespace := &corev1.Namespace{}
+	if err := r.Client.Get(context.TODO(), types.NamespacedName{
+		Name:      "kube-system",
+		Namespace: "",
+	}, kubeSystemNamespace); err != nil {
+		r.Log.Error(err, "Failed to get the namespace kube-system")
+
+		return ""
+	}
+
+	return fmt.Sprint(kubeSystemNamespace.GetObjectMeta().GetUID())
 }
 
 func setDRClusterConfigInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
@@ -243,6 +261,12 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	log logr.Logger,
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
+	// validate cluster ID
+	if drCConfig.Spec.ClusterID != r.getK8sClusterID() {
+		return ctrl.Result{}, fmt.Errorf("cluster ID claim value %v differs from that of the k8s cluster",
+			drCConfig.Spec.ClusterID)
+	}
+
 	if err := util.NewResourceUpdater(drCConfig).
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
