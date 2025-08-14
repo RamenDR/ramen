@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/pointer"
+	virtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -271,7 +273,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("populates the S3 store with PVs/PVCs and start vrg as primary to check that the PVs/PVCs are restored", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			numPVs := 3
-			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
+			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false, "", "primary", nil)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
 			vtest.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
@@ -315,7 +317,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("populates the S3 store with PVs and starts vrg as primary", func() {
 			restoreTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			numPVs := pvcCount
-			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
+			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false, "", "primary", nil)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
 			vrgTestBoundPV.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
@@ -574,7 +576,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail ObjectStore get)", func() {
 			vrgS3storeGetTemplate.s3Profiles = []string{s3Profiles[bucketInvalidS3ProfileNumber2].S3ProfileName}
-			vrgS3StoreGetTestCase = newVRGTestCaseCreateAndStart(2, vrgS3storeGetTemplate, true, false, true)
+			vrgS3StoreGetTestCase = newVRGTestCaseCreateAndStart(2, vrgS3storeGetTemplate, true, false, true, "", "primary", nil)
 		})
 		It("waits for VRG status to match", func() {
 			vrgS3StoreGetTestCase.verifyVRGStatusCondition(vrgController.VRGConditionTypeClusterDataReady, false)
@@ -605,7 +607,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			vrgsS3UploadTestTemplate.s3Profiles = []string{s3Profiles[uploadErrorS3ProfileNumber].S3ProfileName}
-			vrgS3UploadTestCase = newVRGTestCaseCreateAndStart(3, vrgsS3UploadTestTemplate, true, false, true)
+			vrgS3UploadTestCase = newVRGTestCaseCreateAndStart(3, vrgsS3UploadTestTemplate, true, false, true,
+				"", "primary", nil)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgS3UploadTestCase.pvcNames)
@@ -643,7 +646,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			vrgVRDeleteEnsureTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgVRDeleteEnsureTestCase = newVRGTestCaseCreateAndStart(1, vrgVRDeleteEnsureTestTemplate, true, false, true)
+			vrgVRDeleteEnsureTestCase = newVRGTestCaseCreateAndStart(1, vrgVRDeleteEnsureTestTemplate, true, false, true,
+				"", "primary", nil)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgVRDeleteEnsureTestCase.pvcNames)
@@ -711,7 +715,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgDeleteFailedVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false, true)
+			vrgDeleteFailedVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false, true, "", "primary", nil)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgDeleteFailedVR.pvcNames)
@@ -773,7 +777,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgDeleteIncompleteVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false, true)
+			vrgDeleteIncompleteVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false, true, "", "primary", nil)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgDeleteFailedVR.pvcNames)
@@ -831,7 +835,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgDeleteCompletedVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false, true)
+			vrgDeleteCompletedVR = newVRGTestCaseCreateAndStart(1, createTestTemplate, true, false, true, "", "primary", nil)
 		})
 		It("waits for VRG to create a VR for each PVC", func() {
 			expectedVRCount := len(vrgDeleteFailedVR.pvcNames)
@@ -879,7 +883,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs (with s3 stores that fail uploads)", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgVGRDeleteEnsureTestCase = newVRGTestCaseCreate(1, createTestTemplate, true, false)
+			vrgVGRDeleteEnsureTestCase = newVRGTestCaseCreate(1, createTestTemplate, true, false, "", "primary", nil)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
 			vrgVGRDeleteEnsureTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
@@ -953,7 +957,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgCreateVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, true, false)
+			vrgCreateVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, true, false, "", "primary", nil)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
 			vrgCreateVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
@@ -998,7 +1002,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		}
 		It("sets up PVCs, PVs and VRGs", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
-			vrgPVCnotBoundVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, false, false)
+			vrgPVCnotBoundVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, false, false, "", "primary", nil)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
 			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
 			vrgPVCnotBoundVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
@@ -1049,7 +1053,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrcLabels := genVRCLabels(replicationIDs[c], storageID, "ramen")
 				createTestTemplate.storageIDLabels = storageIDLabel
 				createTestTemplate.replicationClassLabels = vrcLabels
-				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false, true)
+				v := newVRGTestCaseCreateAndStart(c, createTestTemplate, true, false, true, "", "primary", nil)
 				vrgTestCases = append(vrgTestCases, v)
 			}
 		})
@@ -1081,6 +1085,419 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	var vrgTestCase *vrgTest
+	Context("Create VRG and validate VM status", func() {
+		BeforeEach(func() {
+			ramenConfig.RamenOpsNamespace = "ramen-ops"
+			configMapUpdate()
+		})
+
+		storageIDLabel := genStorageIDLabel(storageIDs[0])
+		storageID := storageIDLabel[vrgController.StorageIDLabel]
+		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+		vrgEmptySCTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			storageIDLabels:        storageIDLabel,
+			replicationClassLabels: vrcLabels,
+		}
+
+		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
+			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+		})
+
+		// Scenarios when VM is not there
+		It("creates VRG in non-admin namespace for primary", func() {
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true, "", "primary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(false, "")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "DataReady")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("Error"))
+			Expect(condition.Message).To(Equal("VolumeReplicationGroup is not in the admin namespace: " +
+				"VolumeReplicationGroup is not allowed to protect namespaces"))
+		})
+
+		It("creates VRG in admin namespace for primary", func() {
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "primary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictPrimary"))
+		})
+
+		It("creates VRG in non-admin namespace for secondary", func() {
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true, "", "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(false, "")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "DataReady")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("Error"))
+			Expect(condition.Message).To(Equal("VolumeReplicationGroup is not in the admin namespace: " +
+				"VolumeReplicationGroup is not allowed to protect namespaces"))
+		})
+
+		It("creates VRG in admin namespace for secondary", func() {
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+		})
+
+		// Scenarios where a dummy VM is created
+		It("VM has protection label and is in protected vms list of primary vrg", func() {
+			createVM("vm-1-test")
+			protectedVMs := []string{"vm-1-test"}
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+			protectVM(vm)
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "primary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictPrimary"))
+		})
+
+		It("VM do not have the protection label, but is in protected vms list of primary vrg", func() {
+			createVM("vm-1-test")
+			protectedVMs := []string{"vm-1-test"}
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "primary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictPrimary"))
+		})
+
+		It("VM has protection label and is in protected vms list of secondary vrg", func() {
+			createVM("vm-1-test")
+			protectedVMs := []string{"vm-1-test"}
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+			protectVM(vm)
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+		})
+
+		It("VM do not have the protection label, but is in protected vms list of secondary vrg", func() {
+			createVM("vm-1-test")
+			protectedVMs := []string{"vm-1-test"}
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+		})
+
+		It("VM does not exist, but is in protected vms list of secondary vrg", func() {
+			protectedVMs := []string{"vm-1-test"}
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+		})
+
+		It("Primary vrg is created with a name conflict", func() {
+			createVM("vm-1-test")
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			createVM("vm-22-test")
+			vmNamespacedName2 := types.NamespacedName{
+				Name:      "vm-22-test",
+				Namespace: "default",
+			}
+			vm2 := getVM(vmNamespacedName2)
+			DeferCleanup(deleteVM, vm2, vmNamespacedName2)
+
+			protectVM(vm1)
+			protectVM(vm2)
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "primary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictPrimary"))
+		})
+
+		It("validate VM label conflict on Primary cluster", func() {
+			createVM("vm-1-test")
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			createVM("vm-2-test")
+			vmNamespacedName2 := types.NamespacedName{
+				Name:      "vm-2-test",
+				Namespace: "default",
+			}
+			vm2 := getVM(vmNamespacedName2)
+			DeferCleanup(deleteVM, vm2, vmNamespacedName2)
+
+			protectVM(vm1)
+			protectVM(vm2)
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "primary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictPrimary"))
+
+			unprotectVM(vm1)
+			unprotectVM(vm2)
+
+			Eventually(func() bool {
+				return (meta.FindStatusCondition((vrgTestCase.getVRG()).Status.Conditions,
+					"NoClusterDataConflict")).Status == metav1.ConditionFalse
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG FALSE condition %s", vrgTestCase.vrgName)
+		})
+
+		It("secondary vrg shows status True after vm deletion", func() {
+			createVM("vm-1-test")
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			createVM("vm-2-test")
+			vmNamespacedName2 := types.NamespacedName{
+				Name:      "vm-2-test",
+				Namespace: "default",
+			}
+			vm2 := getVM(vmNamespacedName2)
+			DeferCleanup(deleteVM, vm2, vmNamespacedName2)
+
+			protectVM(vm1)
+			protectVM(vm2)
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+
+			unprotectVM(vm1)
+			unprotectVM(vm2)
+
+			// Even after removing the protection label, the condition should be False
+			// because the protected VMs in the vrg Spec still exists
+			vrg = vrgTestCase.getVRG()
+			condition = meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+
+			deleteVM(vm1, vmNamespacedName1)
+			deleteVM(vm2, vmNamespacedName2)
+
+			// After deleting the VMs, the condition should be True
+			Eventually(func() bool {
+				return (meta.FindStatusCondition((vrgTestCase.getVRG()).Status.Conditions,
+					"NoClusterDataConflict")).Status == metav1.ConditionTrue
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG TRUE condition on secondary %s",
+				vrgTestCase.vrgName)
+		})
+
+		It("validates VM name conflict on secondary vrg", func() {
+			createVM("vm-11-test")
+			vmNamespacedName := types.NamespacedName{
+				Name:      "vm-11-test",
+				Namespace: "default",
+			}
+			vm := getVM(vmNamespacedName)
+			DeferCleanup(deleteVM, vm, vmNamespacedName)
+
+			protectVM(vm)
+			protectedVMs := []string{"vm-1-test"}
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(vrgTestCase.cleanupVRG)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+
+			unprotectVM(vm)
+
+			// After removing the label from VM, the condition should be True
+			// It will not be able to identify VM by name due to name conflict
+			Eventually(func() bool {
+				return (meta.FindStatusCondition((vrgTestCase.getVRG()).Status.Conditions,
+					"NoClusterDataConflict")).Status == metav1.ConditionTrue
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG TRUE condition on secondary %s",
+				vrgTestCase.vrgName)
+		})
+
+		It("primary vrg status is False and secondary vrg is true after vm deletion", func() {
+			createVM("vm-1-test")
+			vmNamespacedName1 := types.NamespacedName{
+				Name:      "vm-1-test",
+				Namespace: "default",
+			}
+			vm1 := getVM(vmNamespacedName1)
+			DeferCleanup(deleteVM, vm1, vmNamespacedName1)
+
+			createVM("vm-2-test")
+			vmNamespacedName2 := types.NamespacedName{
+				Name:      "vm-2-test",
+				Namespace: "default",
+			}
+			vm2 := getVM(vmNamespacedName2)
+			DeferCleanup(deleteVM, vm2, vmNamespacedName2)
+
+			protectVM(vm1)
+			protectVM(vm2)
+			protectedVMs := []string{"vm-1-test", "vm-2-test"}
+
+			vrgTestCase = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "primary", protectedVMs)
+			vrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg := vrgTestCase.getVRG()
+
+			condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictPrimary"))
+
+			unprotectVM(vm1)
+			unprotectVM(vm2)
+
+			Eventually(func() bool {
+				return (meta.FindStatusCondition((vrgTestCase.getVRG()).Status.Conditions,
+					"NoClusterDataConflict")).Status == metav1.ConditionFalse
+			}, vrgtimeout, vrginterval).Should(BeTrue(), "while waiting for VRG FALSE condition on primary %s",
+				vrgTestCase.vrgName)
+
+			deleteVM(vm1, vmNamespacedName1)
+			deleteVM(vm2, vmNamespacedName2)
+
+			// After deleting the VMs, secondary vrg condition should be True
+			secondaryVrgTestCase := newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true,
+				ramenConfig.RamenOpsNamespace, "secondary", protectedVMs)
+			DeferCleanup(secondaryVrgTestCase.cleanupVRG)
+			secondaryVrgTestCase.verifyVRGStatusExpectation(true, "Unused")
+			vrg = secondaryVrgTestCase.getVRG()
+
+			condition = meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("ClusterDataConflictSecondary"))
+		})
+
+		It("cleans up after testing", func() {
+			vrgTestCase.cleanupStatusAbsent()
+		})
+	})
+
 	// Ensure PVCs with no SCName results in errors
 	var vrgEmptySC *vrgTest
 	Context("in primary state with no SCName", func() {
@@ -1100,7 +1517,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
 			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgEmptySCTemplate.volsyncEnabled = true
-			vrgEmptySC = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true)
+			vrgEmptySC = newVRGTestCaseCreateAndStart(1, vrgEmptySCTemplate, true, false, true, "", "primary", nil)
 		})
 		It("waits for VRG status to match", func() {
 			vrgEmptySC.verifyVRGStatusExpectation(false, "")
@@ -1132,7 +1549,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgMissingSCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgMissingSCTemplate.volsyncEnabled = true
 			vrgMissingSCTemplate.scDisabled = true
-			vrgMissingSC = newVRGTestCaseCreateAndStart(1, vrgMissingSCTemplate, true, false, true)
+			vrgMissingSC = newVRGTestCaseCreateAndStart(1, vrgMissingSCTemplate, true, false, true, "", "primary", nil)
 		})
 		It("waits for VRG status to match", func() {
 			vrgMissingSC.verifyVRGStatusExpectation(false, "")
@@ -1171,7 +1588,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrgTestTemplate.replicationClassLabels = vrcLabels
 				// Test the scenario where the pvc is not bound yet
 				// and expect no VRs to be created.
-				v := newVRGTestCaseCreateAndStart(c, vrgTestTemplate, false, false, true)
+				v := newVRGTestCaseCreateAndStart(c, vrgTestTemplate, false, false, true, "", "primary", nil)
 				vrgTests = append(vrgTests, v)
 			}
 		})
@@ -1235,7 +1652,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgTestTemplateVSEnabled.storageIDLabels = storageIDLabel
 			vrgTestTemplateVSEnabled.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
-			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplateVSEnabled, false, false, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTestTemplateVSEnabled, false, false, true, "", "primary", nil)
 			vrgStatusTests = append(vrgStatusTests, v)
 		})
 		var v *vrgTest
@@ -1281,7 +1698,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgTest2Template.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgTest2Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTest2Template, true, true, true, "", "primary", nil)
 			vrgStatus2Tests = append(vrgStatus2Tests, v)
 		})
 		It("waits for VRG to create a VR for each PVC bind and checks status", func() {
@@ -1323,7 +1740,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgTest3Template.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgTest3Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgTest3Template, false, true, true, "", "primary", nil)
 			vrgStatus3Tests = append(vrgStatus3Tests, v)
 		})
 		var v *vrgTest
@@ -1370,7 +1787,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgScheduleTestTemplate.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgScheduleTestTemplate.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTestTemplate, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTestTemplate, true, true, true, "", "primary", nil)
 			vrgScheduleTests = append(vrgScheduleTests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -1407,7 +1824,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
 			vrgScheduleTest2Template.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest2Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest2Template, true, true, true, "", "primary", nil)
 			vrgSchedule2Tests = append(vrgSchedule2Tests, v)
 		})
 		It("expect no VR to be created as PVC not bound and check status", func() {
@@ -1443,7 +1860,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest3Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
 			vrgScheduleTest3Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest3Template, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest3Template, true, true, true, "", "primary", nil)
 			vrgSchedule3Tests = append(vrgSchedule3Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -1489,7 +1906,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest4Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest4Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest4Template, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest4Template, true, true, true, "", "primary", nil)
 			vrgSchedule4Tests = append(vrgSchedule4Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -1534,7 +1951,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest5Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest5Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest5Template, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest5Template, true, true, true, "", "primary", nil)
 			vrgSchedule5Tests = append(vrgSchedule5Tests, v)
 		})
 		It("expect 4 VRs to be created and check status", func() {
@@ -1592,7 +2009,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest6Template.additionalVRCInfoList[1].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest6Template.storageIDLabels = storageIDLabel
-			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest6Template, true, true, true)
+			v := newVRGTestCaseCreateAndStart(4, vrgScheduleTest6Template, true, true, true, "", "primary", nil)
 			vrgSchedule6Tests = append(vrgSchedule6Tests, v)
 		})
 		It("expect no VR to be created as VR not created and check status", func() {
@@ -1628,7 +2045,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
 			vrgNoPeerClassesTemplate.storageIDLabels = storageIDLabel
 			vrgNoPeerClassesTemplate.replicationClassLabels = vrcLabels
-			v := newVRGTestCaseCreateAndStart(2, vrgNoPeerClassesTemplate, true, false, false)
+			v := newVRGTestCaseCreateAndStart(2, vrgNoPeerClassesTemplate, true, false, false, "", "primary", nil)
 			vrgNoPeerClasses = append(vrgNoPeerClasses, v)
 		})
 		It("expect VR to be created and check status", func() {
@@ -1667,7 +2084,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrcLabels := genVRCLabels("", storageID, "ramen")
 			vrgNoPeerClassesAndReplicationIDTemplate.storageIDLabels = storageIDLabel
 			vrgNoPeerClassesAndReplicationIDTemplate.replicationClassLabels = vrcLabels
-			v := newVRGTestCaseCreateAndStart(2, vrgNoPeerClassesAndReplicationIDTemplate, true, false, false)
+			v := newVRGTestCaseCreateAndStart(2, vrgNoPeerClassesAndReplicationIDTemplate, true, false, false, "",
+				"primary", nil)
 			vrgNoPeerClassesAndReplicationID = append(vrgNoPeerClassesAndReplicationID, v)
 		})
 		It("expect VR to be created and check status", func() {
@@ -1703,6 +2121,8 @@ type vrgTest struct {
 	skipCreationPVandPVC bool
 	checkBind            bool
 	vrgFirst             bool
+	replicationState     string
+	protectedVMs         []string
 	asyncPeerClasses     []ramendrv1alpha1.PeerClass
 	template             *template
 }
@@ -1742,7 +2162,9 @@ func newRandomNamespaceSuffix() string {
 	return string(randomSuffix)
 }
 
-func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFirst bool) *vrgTest {
+func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind,
+	vrgFirst bool, ns, replicationState string, protectedVms []string,
+) *vrgTest {
 	objectNameSuffix := newRandomNamespaceSuffix()
 	appendSuffix := func(name string) string {
 		return fmt.Sprintf("%s.%s", name, objectNameSuffix)
@@ -1756,7 +2178,6 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 
 	v := &vrgTest{
 		uniqueID:         objectNameSuffix,
-		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
 		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
 		storageClass:     testTemplate.storageClassName,
 		replicationClass: testTemplate.replicationClassName,
@@ -1765,6 +2186,20 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 		checkBind:        checkBind,
 		vrgFirst:         vrgFirst,
 		template:         testTemplate,
+	}
+
+	if ns != "" {
+		v.namespace = ns
+	} else {
+		v.namespace = fmt.Sprintf("envtest-ns-%v", objectNameSuffix)
+	}
+
+	if replicationState != "" {
+		v.replicationState = replicationState
+	}
+
+	if protectedVms != nil {
+		v.protectedVMs = protectedVms
 	}
 
 	if pvcCount > 0 {
@@ -1781,8 +2216,13 @@ func (v *vrgTest) VRGTestCaseStart() {
 	v.createSC(v.template)
 	v.createVRC(v.template)
 
+	//nolint:nestif
 	if v.vrgFirst {
-		v.createVRG()
+		if v.protectedVMs != nil {
+			v.createVRGwithVMProtection()
+		} else {
+			v.createVRG()
+		}
 
 		if !v.skipCreationPVandPVC {
 			v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
@@ -1792,7 +2232,11 @@ func (v *vrgTest) VRGTestCaseStart() {
 			v.createPVCandPV(v.template.ClaimBindInfo, v.template.VolumeBindInfo)
 		}
 
-		v.createVRG()
+		if v.protectedVMs != nil {
+			v.createVRGwithVMProtection()
+		} else {
+			v.createVRG()
+		}
 	}
 
 	// If checkBind is true, then check whether PVCs and PVs are
@@ -1802,18 +2246,169 @@ func (v *vrgTest) VRGTestCaseStart() {
 	}
 }
 
+func createVM(vmName string) {
+	By("creating VM " + vmName)
+
+	claimName := "root-disk"
+	namespace := "default"
+	vm := generateVM(vmName, claimName, namespace)
+
+	err := k8sClient.Create(context.TODO(), vm)
+	expectedErr := k8serrors.NewAlreadyExists(
+		schema.GroupResource{Resource: "virtualmachines"}, vmName)
+	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
+		"failed to create VM %s", vmName)
+}
+
+func getVM(vmNamespacedName types.NamespacedName) *virtv1.VirtualMachine {
+	By("getting VM " + vmNamespacedName.Name)
+
+	vm := &virtv1.VirtualMachine{}
+	Eventually(func() error {
+		return k8sClient.Get(context.TODO(), vmNamespacedName, vm)
+	}, vrgtimeout, vrginterval).Should(Succeed(), "VM %s was not created", vm.Name)
+
+	return vm
+}
+
+func deleteVM(vm *virtv1.VirtualMachine, vmNamespacedName types.NamespacedName) {
+	By("deleting VM " + vm.Name)
+
+	err := k8sClient.Delete(context.TODO(), vm)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		Expect(err).To(BeNil(), "failed to delete VM %s", vm.Name)
+	}
+
+	Eventually(func() error {
+		return k8sClient.Get(context.TODO(), vmNamespacedName, vm)
+	}, vrgtimeout, vrginterval).Should(MatchError(k8serrors.NewNotFound(schema.GroupResource{
+		Group:    virtv1.SchemeGroupVersion.Group,
+		Resource: "VirtualMachine",
+	}, vm.Name)), "VM %s was not deleted", vm.Name)
+}
+
+func generateVM(vmName, claimName, namespace string) *virtv1.VirtualMachine {
+	return vm(vmName, claimName, namespace)
+}
+
+// Add protected-by-ramendr label to VM
+func protectVM(vm *virtv1.VirtualMachine) {
+	labels := vm.GetLabels()
+	labels["ramendr.openshift.io/k8s-resource-selector"] = "protected-by-ramendr"
+	vm.SetLabels(labels)
+	err := k8sClient.Update(context.TODO(), vm)
+	Expect(err).To(BeNil(), "failed to update VM %s", vm.Name)
+}
+
+// Remove protected-by-ramendr label from VM
+func unprotectVM(vm *virtv1.VirtualMachine) {
+	labels := vm.GetLabels()
+	delete(labels, "ramendr.openshift.io/k8s-resource-selector")
+	vm.SetLabels(labels)
+	err := k8sClient.Update(context.TODO(), vm)
+	Expect(err).To(BeNil(), "failed to update VM %s", vm.Name)
+}
+
+// nolint:funlen
+func vm(vmName, claimName, vmNamespaceName string) *virtv1.VirtualMachine {
+	vmTemplate := &virtv1.VirtualMachine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kubevirt.io/v1",
+			Kind:       "VirtualMachine",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vmName,
+			Namespace: vmNamespaceName,
+			Labels: map[string]string{
+				"app": vmName,
+			},
+		},
+		Spec: virtv1.VirtualMachineSpec{
+			Running: pointer.BoolPtr(true),
+			Template: &virtv1.VirtualMachineInstanceTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"kubevirt.io/domain": "vm",
+						"kubevirt.io/size":   "small",
+					},
+				},
+				Spec: virtv1.VirtualMachineInstanceSpec{
+					Domain: virtv1.DomainSpec{
+						Resources: virtv1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("256Mi"),
+							},
+						},
+						Devices: virtv1.Devices{
+							Disks: []virtv1.Disk{
+								{
+									Name: "root-disk",
+									DiskDevice: virtv1.DiskDevice{
+										Disk: &virtv1.DiskTarget{
+											Bus: "virtio",
+										},
+									},
+								},
+								{
+									Name: "cloud-init",
+									DiskDevice: virtv1.DiskDevice{
+										Disk: &virtv1.DiskTarget{
+											Bus: "virtio",
+										},
+									},
+								},
+							},
+							Interfaces: []virtv1.Interface{
+								{
+									Name:  "default",
+									Model: "virtio",
+								},
+							},
+						},
+					},
+					Networks: []virtv1.Network{
+						{
+							Name: "default",
+						},
+					},
+					Volumes: []virtv1.Volume{
+						{
+							Name: "root-disk",
+							VolumeSource: virtv1.VolumeSource{
+								PersistentVolumeClaim: &virtv1.PersistentVolumeClaimVolumeSource{},
+							},
+						},
+						{
+							Name: "cloud-init",
+							VolumeSource: virtv1.VolumeSource{
+								CloudInitConfigDrive: &virtv1.CloudInitConfigDriveSource{
+									UserData: `#!/bin/sh
+										echo "Running user-data script"`,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	vmTemplate.Spec.Template.Spec.Volumes[0].VolumeSource.PersistentVolumeClaim.ClaimName = claimName
+
+	return vmTemplate
+}
+
 // newVRGTestCaseCreateAndStart creates a new namespace, zero or more PVCs (equal
-// to the input pvcCount), a PV for each PVC, and a VRG in primary state,
-// with label selector that points to the PVCs created. Each PVC is created
+// to the input pvcCount), a PV for each PVC, maybe a VM and a VRG resource,
+// with label selector that points to the PVCs/VMs created. Each PVC is created
 // with Status.Phase set to ClaimPending instead of ClaimBound. Expectation
 // is that, until pvc is not bound, VolRep resources should not be created
 // by VRG.
 func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBind,
-	vrgFirst, includePeerClasses bool,
+	vrgFirst, includePeerClasses bool, ns, replicationState string, protectedVMs []string,
 ) *vrgTest {
 	var replicationID string
 
-	v := newVRGTestCaseCreate(pvcCount, testTemplate, checkBind, vrgFirst)
+	v := newVRGTestCaseCreate(pvcCount, testTemplate, checkBind, vrgFirst, ns, replicationState, protectedVMs)
 
 	if len(testTemplate.replicationClassLabels) == 0 {
 		replicationID = replicationIDs[0]
@@ -2123,6 +2718,61 @@ func (v *vrgTest) createVRG() {
 		"failed to create VRG %s in %s", v.vrgName, v.namespace)
 }
 
+func (v *vrgTest) createVRGwithVMProtection() {
+	By("creating VRG " + v.vrgName)
+
+	schedulingInterval := "1h"
+	replicationClassLabels := map[string]string{"protection": "ramen"}
+
+	vrg := &ramendrv1alpha1.VolumeReplicationGroup{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: ramendrv1alpha1.GroupVersion.String(),
+			Kind:       "VolumeReplicationGroup",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      v.vrgName,
+			Namespace: v.namespace,
+		},
+		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+			PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},
+			ReplicationState: ramendrv1alpha1.ReplicationState(v.replicationState),
+			Async: &ramendrv1alpha1.VRGAsyncSpec{
+				SchedulingInterval:       schedulingInterval,
+				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
+				PeerClasses:              v.asyncPeerClasses,
+			},
+			VolSync: ramendrv1alpha1.VolSyncSpec{
+				Disabled: !v.template.volsyncEnabled,
+			},
+			KubeObjectProtection: &ramendrv1alpha1.KubeObjectProtectionSpec{
+				CaptureInterval: &metav1.Duration{Duration: 5 * time.Minute},
+				RecipeParameters: map[string][]string{
+					"K8S_RESOURCE_SELECTOR": {"protected-by-ramendr"},
+					"PROTECTED_VMS":         v.protectedVMs,
+					"PVC_RESOURCE_SELECTOR": {"protected-by-ramendr"},
+					"VM_NAMESPACE":          {"default"},
+				},
+				RecipeRef: &ramendrv1alpha1.RecipeRef{
+					Name:      "vm-recipe",
+					Namespace: "ramen-ops",
+				},
+			},
+			S3Profiles:          v.template.s3Profiles,
+			ProtectedNamespaces: &[]string{"default"},
+		},
+	}
+
+	err := k8sClient.Create(context.TODO(), vrg)
+	expectedErr := k8serrors.NewAlreadyExists(
+		schema.GroupResource{
+			Group:    "ramendr.openshift.io",
+			Resource: "volumereplicationgroups",
+		},
+		v.vrgName)
+	Expect(err).To(SatisfyAny(BeNil(), MatchError(expectedErr)),
+		"failed to create VRG %s in %s", v.vrgName, v.namespace)
+}
+
 func (v *vrgTest) vrgS3ProfilesSet(names []string) {
 	vrg := v.getVRG()
 	vrg.Spec.S3Profiles = names
@@ -2312,6 +2962,7 @@ func updateVRG(desired *ramendrv1alpha1.VolumeReplicationGroup) {
 		current := vrgGet(client.ObjectKeyFromObject(desired))
 
 		current.Spec = desired.Spec
+		current.ObjectMeta = desired.ObjectMeta
 
 		return k8sClient.Update(context.TODO(), current)
 	})
