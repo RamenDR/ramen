@@ -37,6 +37,33 @@ deployers:
   - name: disapp
     type: disapp
     description: "Discovered Application deployer for discovered applications"
+  - name: disapp-recipe
+    type: disapp
+    recipe:
+      type: generate
+    description: "Discovered Application deployer using a generated recipe"
+  - name: disapp-recipe-check
+    type: disapp
+    recipe:
+      type: generate
+      checkHook: true
+    description: "Discovered Application deployer using a generated recipe
+    with check hooks"
+  - name: disapp-recipe-exec
+    type: disapp
+    recipe:
+      type: generate
+      execHook: true
+    description: "Discovered Application deployer using a generated recipe
+    with exec hooks"
+  - name: disapp-recipe-check-exec
+    type: disapp
+    recipe:
+      type: generate
+      checkHook: true
+      execHook: true
+    description: "Discovered Application deployer using a generated recipe
+    with check and exec hooks"
 
 # List to tests to run.
 # Available workloads: deploy
@@ -59,6 +86,12 @@ tests:
     workload: deploy
     pvcspec: rbd
   - deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - deployer: disapp-recipe-check-exec
+    workload: deploy
+    pvcspec: rbd
+  - deployer: disapp-recipe-check-exec
     workload: deploy
     pvcspec: cephfs
 
