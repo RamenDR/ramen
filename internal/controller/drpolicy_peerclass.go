@@ -287,7 +287,7 @@ func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, 
 }
 
 // getAsyncVGRClassPeer inspects if there is a common replicationID among the vgrClasses in the passed in classLists,
-// that relate to the corresponding storageIDs and schedule, and returns the replicationID or "" if there was no match
+// that relate to the corresponding storageIDs and schedule, and returns the replicationID or "" if there was no match.
 func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule string) string {
 	for vgrcAidx := range clA.vgrClasses {
 		ridA := getVGRID(scName, clA, vgrcAidx, sIDA, schedule)
@@ -315,8 +315,14 @@ func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string,
 
 // getAsyncPeers determines if scName in the first classList has asynchronous peers in the remaining classLists.
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
-// the desired asynchronous schedule that requires to be matched
-// nolint:gocognit,cyclop
+// the desired asynchronous schedule that requires to be matched.
+// Grouping logic:
+//   - Offloaded storage: Uses VGRC only, grouping = true when VGRC with ReplicationID exists
+//   - Non-offloaded storage: Uses VRC and VGRC, grouping = true when both exist with ReplicationID,
+//     not necessarily requiring them to have identical ReplicationIDs.
+//   - Snapshots: Uses VGSC and VSC, grouping = true when VGSC exists on both clusters for the same storageClass
+//
+// nolint:gocognit,cyclop,ineffassign,funlen
 func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLists, schedule string) []peerInfo {
 	peers := []peerInfo{}
 
@@ -343,12 +349,19 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 				continue
 			}
 
-			rID := vgrcID
-			if !offloaded {
-				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
-				grouping = rID != "" && rID == vgrcID
-			} else {
+			rID := ""
+
+			switch offloaded {
+			case true:
+				rID = vgrcID
 				grouping = true
+			case false:
+				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+				grouping = rID != "" && vgrcID != ""
+
+				if grouping {
+					rID = vgrcID
+				}
 			}
 
 			if rID == "" {
