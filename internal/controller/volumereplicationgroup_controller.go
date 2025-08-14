@@ -1748,15 +1748,32 @@ func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Resu
 func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	v.log.Info("Updating VRG status")
 
+	var pvcGroups []ramendrv1alpha1.Groups
+
 	if util.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader) {
-		if err := v.updateProtectedCGs(); err != nil {
-			v.log.Info(fmt.Sprintf("Failed to update protected PVC groups (%v/%s)",
+		if err := v.updateProtectedCGsForVolRep(&pvcGroups); err != nil {
+			v.log.Info(fmt.Sprintf("Failed to update protected by VolRep PVC groups (%v/%s)",
 				err, v.instance.Name))
 
 			result.Requeue = true
 
 			return result
 		}
+	}
+
+	if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
+		if err := v.updateProtectedCGsForVolSync(&pvcGroups); err != nil {
+			v.log.Info(fmt.Sprintf("Failed to update protected by VolSync PVC groups (%v/%s)",
+				err, v.instance.Name))
+
+			result.Requeue = true
+
+			return result
+		}
+	}
+
+	if len(pvcGroups) > 0 {
+		v.instance.Status.PVCGroups = pvcGroups
 	}
 
 	v.updateStatusState()
@@ -1866,7 +1883,43 @@ func getStatusStateFromSpecState(state ramendrv1alpha1.ReplicationState) ramendr
 	}
 }
 
-func (v *VRGInstance) updateProtectedCGs() error {
+// nolint: dupl
+func (v *VRGInstance) updateProtectedCGsForVolSync(pvcGroups *[]ramendrv1alpha1.Groups) error {
+	var rgss ramendrv1alpha1.ReplicationGroupSourceList
+
+	matchLabels := map[string]string{
+		volsync.VRGOwnerNameLabel:      v.instance.Name,
+		volsync.VRGOwnerNamespaceLabel: v.instance.Namespace,
+	}
+
+	listOptions := []client.ListOption{
+		client.MatchingLabels(matchLabels),
+	}
+
+	if err := v.reconciler.List(v.ctx, &rgss, listOptions...); err != nil {
+		return fmt.Errorf("failed to list Replication Group Sources, %w", err)
+	}
+
+	for idx := range rgss.Items {
+		rgs := &rgss.Items[idx]
+		group := ramendrv1alpha1.Groups{Grouped: []string{}}
+
+		for _, rs := range rgs.Status.ReplicationSources {
+			if rs.Name != "" {
+				group.Grouped = append(group.Grouped, rs.Name)
+			}
+		}
+
+		if len(group.Grouped) > 0 {
+			*pvcGroups = append(*pvcGroups, group)
+		}
+	}
+
+	return nil
+}
+
+// nolint: dupl
+func (v *VRGInstance) updateProtectedCGsForVolRep(pvcGroups *[]ramendrv1alpha1.Groups) error {
 	var vgrs volrep.VolumeGroupReplicationList
 
 	listOptions := []client.ListOption{
@@ -1876,8 +1929,6 @@ func (v *VRGInstance) updateProtectedCGs() error {
 	if err := v.reconciler.List(v.ctx, &vgrs, listOptions...); err != nil {
 		return fmt.Errorf("failed to list Volume Group Replications, %w", err)
 	}
-
-	var pvcGroups []ramendrv1alpha1.Groups
 
 	for idx := range vgrs.Items {
 		vgr := &vgrs.Items[idx]
@@ -1891,11 +1942,9 @@ func (v *VRGInstance) updateProtectedCGs() error {
 		}
 
 		if len(group.Grouped) > 0 {
-			pvcGroups = append(pvcGroups, group)
+			*pvcGroups = append(*pvcGroups, group)
 		}
 	}
-
-	v.instance.Status.PVCGroups = pvcGroups
 
 	return nil
 }
