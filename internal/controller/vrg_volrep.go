@@ -2112,9 +2112,8 @@ func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, erro
 }
 
 func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
+	savedError := errors.New("s3Profiles empty")
 	NoS3 := false
-
-	var savedError error
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
 		if s3ProfileName == NoS3StoreAvailable {
@@ -2130,6 +2129,8 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		if err != nil {
 			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
 
+			savedError = err
+
 			continue
 		}
 
@@ -2138,7 +2139,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// Restore all PVs found in the s3 store. If any failure, the next profile will be retried
 		pvCount, err = v.restorePVsFromObjectStore(objectStore, s3ProfileName)
 		if err != nil {
-			savedError = errors.New("No PVs found")
+			savedError = err
 
 			continue
 		}
@@ -2148,6 +2149,8 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// Missing PVCs can still be created later when the application is deployed.
 		if v.instance.Spec.Action != "" && pvCount == 0 {
 			v.log.Info(fmt.Sprintf("No PVs found in profile %s.", s3ProfileName))
+
+			savedError = errors.New("No PVs found")
 
 			continue
 		}
@@ -2163,6 +2166,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		if err != nil || pvCount != pvcCount {
 			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
 				pvCount, pvcCount, err))
+			savedError = err
 
 			continue
 		}
