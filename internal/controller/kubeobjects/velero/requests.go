@@ -36,14 +36,51 @@ type (
 	RestoreRequest struct{ restore *velero.Restore }
 )
 
-func (r BackupRequest) Object() client.Object         { return r.backup }
-func (r RestoreRequest) Object() client.Object        { return r.restore }
-func (r BackupRequest) Name() string                  { return r.backup.Name }
-func (r RestoreRequest) Name() string                 { return r.restore.Name }
-func (r BackupRequest) StartTime() metav1.Time        { return *r.backup.Status.StartTimestamp }
-func (r RestoreRequest) StartTime() metav1.Time       { return *r.restore.Status.StartTimestamp }
-func (r BackupRequest) EndTime() metav1.Time          { return *r.backup.Status.CompletionTimestamp }
-func (r RestoreRequest) EndTime() metav1.Time         { return *r.restore.Status.CompletionTimestamp }
+func (r BackupRequest) Object() client.Object  { return r.backup }
+func (r RestoreRequest) Object() client.Object { return r.restore }
+func (r BackupRequest) Name() string           { return r.backup.Name }
+func (r RestoreRequest) Name() string          { return r.restore.Name }
+
+func (r BackupRequest) StartTime() metav1.Time {
+	if r.backup.Status.StartTimestamp != nil {
+		return *r.backup.Status.StartTimestamp
+	}
+
+	if r.backup.Status.CompletionTimestamp != nil {
+		return *r.backup.Status.CompletionTimestamp
+	}
+
+	return metav1.Now()
+}
+
+func (r RestoreRequest) StartTime() metav1.Time {
+	if r.restore.Status.StartTimestamp != nil {
+		return *r.restore.Status.StartTimestamp
+	}
+
+	if r.restore.Status.CompletionTimestamp != nil {
+		return *r.restore.Status.CompletionTimestamp
+	}
+
+	return metav1.Now()
+}
+
+func (r BackupRequest) EndTime() metav1.Time {
+	if r.backup.Status.CompletionTimestamp != nil {
+		return *r.backup.Status.CompletionTimestamp
+	}
+
+	return metav1.Now()
+}
+
+func (r RestoreRequest) EndTime() metav1.Time {
+	if r.restore.Status.CompletionTimestamp != nil {
+		return *r.restore.Status.CompletionTimestamp
+	}
+
+	return metav1.Now()
+}
+
 func (r BackupRequest) Status(log logr.Logger) error  { return backupRealStatusProcess(r.backup, log) }
 func (r RestoreRequest) Status(log logr.Logger) error { return restoreStatusProcess(r.restore, log) }
 
