@@ -7,4 +7,4 @@ ramen-e2e:
 	go test -c -o $@
 
 test:
-	go test -v ./config
+	go test -v ./config ./recipes

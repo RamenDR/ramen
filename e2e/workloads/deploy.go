@@ -74,6 +74,10 @@ func (w Deployment) GetChecks(namespace string) []*recipe.Check {
 			Name:      "check-replicas",
 			Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
 		},
+		{
+			Name:      "check-available",
+			Condition: "{$.spec.replicas} == {$.status.availableReplicas}",
+		},
 	}
 }
 
@@ -82,6 +86,10 @@ func (w Deployment) GetOperations(namespace string) []*recipe.Operation {
 		{
 			Name:    "ls",
 			Command: "/bin/sh -c ls",
+		},
+		{
+			Name:    "echo",
+			Command: "/bin/sh -c echo 'Hello'",
 		},
 	}
 }
