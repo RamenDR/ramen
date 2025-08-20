@@ -1268,7 +1268,7 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 			}
 
 			// Delete the ReplicationDestination, log errors with cleanup but continue on
-			if err := v.client.Delete(v.ctx, &rd); err != nil {
+			if err := v.DeleteRD(rd.GetName(), rd.GetNamespace()); err != nil {
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
 			} else {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
