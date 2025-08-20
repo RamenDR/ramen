@@ -52,6 +52,14 @@ func (w *VM) GetBranch() string {
 	return w.Branch
 }
 
+func (w *VM) GetResourceType() string {
+	return "kubevirt.io/v1/virtualmachines"
+}
+
+func (w *VM) GetLabelName() string {
+	return "appname"
+}
+
 func (w *VM) Kustomize() string {
 	patch := `{
 				"patches": [{
