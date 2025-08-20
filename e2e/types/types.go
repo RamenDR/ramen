@@ -64,6 +64,7 @@ type Workload interface {
 	GetAppName() string
 	GetPath() string
 	GetBranch() string
+	GetResourceType() string
 	Health(ctx TestContext, cluster *Cluster) error
 	Status(ctx TestContext) ([]WorkloadStatus, error)
 }

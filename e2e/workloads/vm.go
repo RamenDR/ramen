@@ -52,6 +52,10 @@ func (w *VM) GetBranch() string {
 	return w.Branch
 }
 
+func (w *VM) GetResourceType() string {
+	return "vm"
+}
+
 func (w *VM) Kustomize() string {
 	patch := `{
 				"patches": [{
