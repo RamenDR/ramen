@@ -11,6 +11,7 @@ require (
 	github.com/ramendr/ramen/api v0.0.0-20250313143647-8dd671566929
 	github.com/ramendr/recipe v0.0.0-20250507125257-0295a01da567
 	github.com/spf13/viper v1.19.0
+	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	k8s.io/api v0.33.2
 	k8s.io/apimachinery v0.33.2
@@ -50,6 +51,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/openshift/custom-resource-status v1.1.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
