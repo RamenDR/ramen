@@ -154,9 +154,9 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
 	replicationGroupSourceName = c.cgName
 
-	log := c.logger.WithName("CreateOrUpdateReplicationGroupSource").
-		WithValues("ReplicationGroupSourceName", replicationGroupSourceName,
-			"ReplicationGroupSourceNamespace", replicationGroupSourceNamespace,
+	log := c.logger.WithName("CreateOrUpdateRGS").
+		WithValues("RGSName", replicationGroupSourceName,
+			"RGSNamespace", replicationGroupSourceNamespace,
 			"runFinalSync", runFinalSync)
 
 	log.Info("Get RDs which are owned by RGD", "RGD", replicationGroupSourceName)
@@ -264,6 +264,16 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	// For final sync only - check status to make sure the final sync is complete
 	// and also run cleanup (removes PVC we just ran the final sync from)
 	//
+	// if runFinalSync && isFinalSyncComplete(rgs) {
+	// 	log.Info("ReplicationGroupSource complete final sync")
+
+	// 	err := c.VSHandler.UndoAfterFinalSync(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	// 	if err != nil {
+	// 		return rgs, false, err
+	// 	}
+
+	// 	return rgs, true, c.VSHandler.cleanupAfterRSFinalSync(rsSpec)
+	// }
 	if runFinalSync && isFinalSyncComplete(rgs) {
 		log.Info("ReplicationGroupSource complete final sync")
 

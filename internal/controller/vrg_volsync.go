@@ -195,7 +195,9 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	cg, ok := pvc.Labels[ConsistencyGroupLabel]
 	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
 
-	err = v.volSyncHandler.PreparePVC(util.ProtectedPVCNamespacedName(*protectedPVC),
+	pvcNamespacedName := util.ProtectedPVCNamespacedName(*protectedPVC)
+
+	err = v.volSyncHandler.PreparePVC(pvcNamespacedName, cg,
 		isCGEnabled,
 		v.volSyncHandler.IsCopyMethodDirect(),
 		v.instance.Spec.PrepareForFinalSync,
@@ -210,6 +212,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	*finalSyncPrepared = true
 
 	if isCGEnabled {
+		if v.instance.Spec.PrepareForFinalSync {
+			v.log.Info("PrepareForFinalSync is true, so we will not run final sync for CG PVCs", "CG", cg)
+
+			return true // requeue
+		}
+
 		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
