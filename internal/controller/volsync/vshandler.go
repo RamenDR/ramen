@@ -30,6 +30,7 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
+	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 )
 
 const (
@@ -381,7 +382,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	// and also run cleanup (removes PVC we just ran the final sync from)
 	//
 	if runFinalSync && isFinalSyncComplete(replicationSource, l) {
-		err := v.undoAfterFinalSync(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		err := v.UndoAfterFinalSync(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 		if err != nil {
 			return false, replicationSource, err
 		}
@@ -772,7 +773,7 @@ func (v *VSHandler) configureReplicationSourceSpec(rs *volsyncv1alpha1.Replicati
 	return nil
 }
 
-func (v *VSHandler) undoAfterFinalSync(pvcName, pvcNamespace string) error {
+func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 	v.log.V(1).Info("Undo after final sync", "pvcName", pvcName)
 	// Remove claimRef and reset the original PVC claimRef (without uid)
 	tmpPVC, err := v.getPVC(types.NamespacedName{
@@ -833,11 +834,16 @@ func (v *VSHandler) undoAfterFinalSync(pvcName, pvcNamespace string) error {
 }
 
 func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
+	cgLabelVal string,
 	isCGEnabled,
 	copyMethodDirect,
 	prepFinalSync,
 	runFinalSync bool,
 ) error {
+	v.log.V(1).Info("Prepare PVC", "pvc", pvcNamespacedName, "cgLabelVal", cgLabelVal,
+		"isCGEnabled", isCGEnabled, "copyMethodDirect", copyMethodDirect,
+		"prepFinalSync", prepFinalSync, "runFinalSync", runFinalSync)
+
 	if copyMethodDirect && !prepFinalSync && !runFinalSync {
 		taken, err := v.TakePVCOwnership(pvcNamespacedName)
 		if err != nil || !taken {
@@ -846,14 +852,20 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 		}
 	}
 
-	if prepFinalSync && !isCGEnabled {
-		err := v.prepareForFinalSync(pvcNamespacedName)
-		if err != nil {
-			return err
-		}
+	if !prepFinalSync {
+		return nil
 	}
 
-	return nil
+	if isCGEnabled {
+		rgsNamespacedName := types.NamespacedName{
+			Namespace: pvcNamespacedName.Namespace,
+			Name:      cgLabelVal, // rgs name is the same as the cg label value
+		}
+
+		return v.prepareForCGFinalSync(rgsNamespacedName, pvcNamespacedName)
+	}
+
+	return v.prepareForFinalSync(pvcNamespacedName)
 }
 
 // TakePVCOwnership adds do-not-delete annotation to indicate that ACM should not delete/cleanup this pvc
@@ -876,6 +888,82 @@ func (v *VSHandler) TakePVCOwnership(pvcNamespacedName types.NamespacedName) (bo
 		l.Error(err, "Error updating annotations on PVC to break appsub ownership")
 
 		return false, fmt.Errorf("error updating annotations on PVC to break appsub ownership (%w)", err)
+	}
+
+	return true, nil
+}
+
+func (v *VSHandler) prepareForCGFinalSync(rgsNamespacedName, pvcNamespacedName types.NamespacedName) error {
+	log := v.log.WithValues("rgs", rgsNamespacedName)
+
+	log.V(1).Info("Prepare for CG final sync")
+
+	err := v.stopRGSScheduling(rgsNamespacedName, log)
+	if err != nil {
+		return fmt.Errorf("failed to pause PVC snapshotting: %w", err)
+	}
+
+	result, err := v.waitForVGSCompletion(rgsNamespacedName, log)
+	if err != nil {
+		return fmt.Errorf("failed to delete VolSync PVC: %w", err)
+	}
+
+	if result {
+		return fmt.Errorf("waiting for the active VGS to complete")
+	}
+
+	return v.doPrepFinalSync(pvcNamespacedName)
+}
+
+func (v *VSHandler) stopRGSScheduling(rgsNamespacedName types.NamespacedName, log logr.Logger) error {
+	log.V(1).Info("Stop scheduling ReplicationGroupSource")
+
+	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
+
+	if err := v.client.Get(v.ctx, rgsNamespacedName, rgs); err != nil {
+		if !errors.IsNotFound(err) {
+			log.Error(err, "Failed to get ReplicationGroupSource")
+		}
+
+		return client.IgnoreNotFound(err)
+	}
+
+	if rgs.Spec.Trigger != nil && rgs.Spec.Trigger.Manual == PrepareForFinalSyncTriggerString {
+		return nil
+	}
+
+	rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
+		Manual: PrepareForFinalSyncTriggerString,
+	}
+
+	return v.updateResource(rgs)
+}
+
+func (v *VSHandler) waitForVGSCompletion(rgsNamespacedName types.NamespacedName, log logr.Logger) (bool, error) {
+	log.V(1).Info("Check for active VGS")
+
+	result, err := v.IsActiveVGSPresent(rgsNamespacedName) // vgs and rgs names are the same
+	if err != nil {
+		log.Error(err, "Failed to check for active VGS")
+
+		return false, fmt.Errorf("failed to check for active VGS (%w)", err)
+	}
+
+	return result, nil
+}
+
+func (v *VSHandler) IsActiveVGSPresent(vgsNamespacedName types.NamespacedName) (bool, error) {
+	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
+	if err := v.client.Get(v.ctx, types.NamespacedName{
+		Name: vgsNamespacedName.Name, Namespace: vgsNamespacedName.Namespace,
+	}, vgs); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+
+		v.log.Error(err, "Failed to get volume group snapshot")
+
+		return false, err
 	}
 
 	return true, nil

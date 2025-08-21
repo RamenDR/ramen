@@ -1591,7 +1591,7 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 			"PVC deselection skipped",
 			"replicationstate",
 			v.instance.Spec.ReplicationState,
-			"finalsync",
+			"Prepare or run final sync",
 			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
 		)
 
