@@ -186,10 +186,20 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		newProtectedPVC.DeepCopyInto(protectedPVC)
 	}
 
+	moverSecurityContext := &corev1.PodSecurityContext{}
+
+	var moverServiceAccount string
+
+	if len(v.instance.Spec.VolSync.RDSpec) > 0 {
+		moverSecurityContext = v.instance.Spec.VolSync.RDSpec[0].MoverSecurityContext
+		moverServiceAccount = *v.instance.Spec.VolSync.RDSpec[0].MoverServiceAccount
+	}
 	// Not much need for VolSyncReplicationSourceSpec anymore - but keeping it around in case we want
 	// to add anything to it later to control anything in the ReplicationSource
 	rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
-		ProtectedPVC: *protectedPVC,
+		ProtectedPVC:         *protectedPVC,
+		MoverSecurityContext: moverSecurityContext,
+		MoverServiceAccount:  &moverServiceAccount,
 	}
 
 	cg, ok := pvc.Labels[ConsistencyGroupLabel]

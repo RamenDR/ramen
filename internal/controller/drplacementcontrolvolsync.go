@@ -6,6 +6,8 @@ package controllers
 import (
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
@@ -188,12 +190,27 @@ func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*
 		dstVRG.Spec.Sync.PeerClasses = srcVRG.Spec.Sync.PeerClasses
 	}
 
+	if d.instance.Spec.VolSyncSpec != nil &&
+		len(d.instance.Spec.VolSyncSpec.RDSpec) > 0 {
+		rdSpec := d.instance.Spec.VolSyncSpec.RDSpec[0]
+		dstVRG.Spec.VolSync.RDSpec = append(dstVRG.Spec.VolSync.RDSpec, rdSpec)
+	}
+
 	return &dstVRG, nil
 }
 
 func (d *DRPCInstance) resetRDSpec(srcVRG, dstVRG *rmn.VolumeReplicationGroup,
 ) {
 	dstVRG.Spec.VolSync.RDSpec = nil
+
+	moverSecurityContext := &corev1.PodSecurityContext{}
+
+	var moverServiceAccount string
+
+	if d.instance.Spec.VolSyncSpec != nil && len(d.instance.Spec.VolSyncSpec.RDSpec) > 0 {
+		moverSecurityContext = d.instance.Spec.VolSyncSpec.RDSpec[0].MoverSecurityContext
+		moverServiceAccount = *d.instance.Spec.VolSyncSpec.RDSpec[0].MoverServiceAccount
+	}
 
 	for _, protectedPVC := range srcVRG.Status.ProtectedPVCs {
 		if !protectedPVC.ProtectedByVolSync {
@@ -205,9 +222,19 @@ func (d *DRPCInstance) resetRDSpec(srcVRG, dstVRG *rmn.VolumeReplicationGroup,
 		protectedPVC.LastSyncDuration = nil
 		protectedPVC.Conditions = nil
 
-		rdSpec := rmn.VolSyncReplicationDestinationSpec{
-			ProtectedPVC: protectedPVC,
+		var rdSpec rmn.VolSyncReplicationDestinationSpec
+		if d.instance.Spec.VolSyncSpec == nil {
+			rdSpec = rmn.VolSyncReplicationDestinationSpec{
+				ProtectedPVC: protectedPVC,
+			}
+		} else {
+			rdSpec = rmn.VolSyncReplicationDestinationSpec{
+				ProtectedPVC:         protectedPVC,
+				MoverSecurityContext: moverSecurityContext,
+				MoverServiceAccount:  &moverServiceAccount,
+			}
 		}
+
 		dstVRG.Spec.VolSync.RDSpec = append(dstVRG.Spec.VolSync.RDSpec, rdSpec)
 	}
 }
