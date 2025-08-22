@@ -235,8 +235,9 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		return v.instance.Spec.RunFinalSync && !finalSyncComplete
 	}
 
+	moverConfig := v.GetVRGMoverConfig(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 	// reconcile RS and if runFinalSync is true, then one final sync will be run
-	finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync)
+	finalSyncComplete, rs, err := v.volSyncHandler.ReconcileRS(rsSpec, v.instance.Spec.RunFinalSync, moverConfig)
 	if err != nil {
 		v.log.Info(fmt.Sprintf("Failed to reconcile VolSync Replication Source for rsSpec %v. Error %v",
 			rsSpec, err))
@@ -355,7 +356,9 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 			continue
 		}
 
-		rd, err := v.volSyncHandler.ReconcileRD(rdSpec)
+		moverConfig := v.GetVRGMoverConfig(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+
+		rd, err := v.volSyncHandler.ReconcileRD(rdSpec, moverConfig)
 		if err != nil {
 			v.log.Error(err, "Failed to reconcile VolSync Replication Destination")
 
@@ -377,6 +380,19 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 	}
 
 	return requeue
+}
+
+func (v *VRGInstance) GetVRGMoverConfig(name, namespace string) *ramendrv1alpha1.MoverConfig {
+	if len(v.instance.Spec.VolSync.MoverConfig) > 0 {
+		for _, moverConfig := range v.instance.Spec.VolSync.MoverConfig {
+			if moverConfig.PVCName == name &&
+				moverConfig.PVCNameSpace == namespace {
+				return &moverConfig
+			}
+		}
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error) {

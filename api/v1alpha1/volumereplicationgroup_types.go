@@ -104,6 +104,33 @@ type VolSyncSpec struct {
 
 	// disabled when set, all the VolSync code is bypassed. Default is 'false'
 	Disabled bool `json:"disabled,omitempty"`
+
+	//+optional
+	MoverConfig []MoverConfig `json:"moverConfig,omitempty"`
+}
+
+type MoverConfig struct {
+	// MoverSecurityContext allows specifying the PodSecurityContext that will
+	// be used by the data mover
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
+	// Labels that should be added to data mover pods
+	// These will be in addition to any labels that VolSync may add
+
+	// PVCName is a required field and must not be empty
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	PVCName string `json:"pvcName,omitempty"`
+
+	// PVCNameSpace is a required field and must not be empty
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	PVCNameSpace string `json:"pvcNamespace,omitempty"`
 }
 
 // VRGAction which will be either a Failover or Relocate
