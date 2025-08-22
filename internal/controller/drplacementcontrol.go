@@ -1831,6 +1831,23 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 	} else {
 		d.updateVRGDRTypeSpec(vrgFromView, vrg)
 	}
+
+	// Workaround for cephfs issue: FIXME:
+	// VolSync's DataMover requires the PodSecurityContext to be configured in order to successfully synchronize
+	// data for workloads that have complex Security Context Constraints (SCC) settings.
+	// Populate ReplicationSource and ReplicationDestination specs with MoverSecurityContext and MoverServiceAccount
+	if d.instance.Spec.VolSyncSpec != nil && d.drType == DRTypeAsync {
+		d.updateMoverConfig(vrg)
+	}
+}
+
+// Checks if MoverConfig exists in the spec
+func (d *DRPCInstance) updateMoverConfig(vrg *rmn.VolumeReplicationGroup) {
+	if len(d.instance.Spec.VolSyncSpec.MoverConfig) == 0 {
+		return
+	}
+
+	vrg.Spec.VolSync.MoverConfig = append([]rmn.MoverConfig(nil), d.instance.Spec.VolSyncSpec.MoverConfig...)
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {
