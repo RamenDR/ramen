@@ -2112,7 +2112,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, erro
 }
 
 func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
-	err := errors.New("s3Profiles empty")
+	savedError := errors.New("s3Profiles empty")
 	NoS3 := false
 
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
@@ -2124,12 +2124,12 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 			continue
 		}
 
-		var objectStore ObjectStorer
-
-		objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
+		objectStore, _, err := v.reconciler.ObjStoreGetter.ObjectStore(
 			v.ctx, v.reconciler.APIReader, s3ProfileName, v.namespacedName, v.log)
 		if err != nil {
 			v.log.Error(err, "Kube objects recovery object store inaccessible", "profile", s3ProfileName)
+
+			savedError = err
 
 			continue
 		}
@@ -2139,6 +2139,19 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		// Restore all PVs found in the s3 store. If any failure, the next profile will be retried
 		pvCount, err = v.restorePVsFromObjectStore(objectStore, s3ProfileName)
 		if err != nil {
+			savedError = err
+
+			continue
+		}
+
+		// If no PVs are found in the S3 store, the next profile will be retried.
+		// Ideally, we'd do the same for PVCs (see below), but PVs are the main concern.
+		// Missing PVCs can still be created later when the application is deployed.
+		if v.instance.Spec.Action != "" && pvCount == 0 {
+			v.log.Info(fmt.Sprintf("No PVs found in profile %s.", s3ProfileName))
+
+			savedError = errors.New("No PVs found")
+
 			continue
 		}
 
@@ -2153,6 +2166,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		if err != nil || pvCount != pvcCount {
 			v.log.Info(fmt.Sprintf("Warning: Mismatch in PV/PVC count %d/%d (%v)",
 				pvCount, pvcCount, err))
+			savedError = err
 
 			continue
 		}
@@ -2168,7 +2182,7 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 
 	result.Requeue = true
 
-	return 0, err
+	return 0, savedError
 }
 
 func (v *VRGInstance) restorePVsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
