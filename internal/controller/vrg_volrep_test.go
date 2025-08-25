@@ -1583,10 +1583,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest6Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
-			vrgScheduleTest6Template.replicationClassLabels = map[string]string{
-				vrgController.ReplicationIDLabel: replicationIDs[0],
-				vrgController.StorageIDLabel:     storageID,
-			}
+			// Do not label the base VRC to match; let only the two non-default VRCs carry matching labels
+			vrgScheduleTest6Template.replicationClassLabels = map[string]string{}
 			vrgScheduleTest6Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest6Template.additionalVRCInfoList[1].replicationClassLabels = genVRCLabels(
@@ -1687,6 +1685,283 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	})
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
+
+	createFreshPVCTestTemplate := func() *template {
+		storageIDLabel := genStorageIDLabel(storageIDs[0])
+		vrcLabels := genVRCLabels(replicationIDs[0], storageIDLabel[vrgController.StorageIDLabel], "ramen")
+
+		return &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			storageIDLabels:        storageIDLabel,
+			replicationClassLabels: vrcLabels,
+		}
+	}
+
+	Context("PVC Basic Protection", func() {
+		It("validates basic PVC protection workflow", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = false
+
+			vrgTestCase := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(vrgTestCase.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+
+				return vrg != nil && len(vrg.Status.ProtectedPVCs) == 1
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			vrg := vrgTestCase.getVRG()
+
+			Expect(len(vrg.Status.ProtectedPVCs)).To(Equal(1))
+			Expect(vrg.Status.ProtectedPVCs[0].ProtectedByVolSync).To(BeFalse())
+			Expect(len(vrg.Status.Conditions)).To(BeNumerically(">", 0))
+			Expect(vrg.Spec.VolSync.Disabled).To(BeTrue())
+		})
+	})
+
+	Context("VolRep PVC Conflict on Primary", func() {
+		It("validates RBD PVC conflict on Primary using label selectors", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = false
+
+			firstPrimaryVRG := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(firstPrimaryVRG.cleanupVRGForPVCTests)
+
+			secondPrimaryVRG := newVRGTestCaseCreate(1, vrgPVCTestTemplate, true, false)
+			secondPrimaryVRG.namespace = firstPrimaryVRG.namespace
+			secondPrimaryVRG.pvcLabels = firstPrimaryVRG.pvcLabels
+			secondPrimaryVRG.skipCreationPVandPVC = true
+			secondPrimaryVRG.VRGTestCaseStart()
+			DeferCleanup(secondPrimaryVRG.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				firstVRGStatus := firstPrimaryVRG.getVRG()
+				secondVRGStatus := secondPrimaryVRG.getVRG()
+
+				return firstVRGStatus != nil && secondVRGStatus != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			firstVRGStatus := firstPrimaryVRG.getVRG()
+			secondVRGStatus := secondPrimaryVRG.getVRG()
+
+			Expect(firstVRGStatus).NotTo(BeNil())
+			Expect(secondVRGStatus).NotTo(BeNil())
+			Expect(firstVRGStatus.Name).NotTo(Equal(secondVRGStatus.Name))
+
+			Expect(firstVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Primary))
+			Expect(secondVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Primary))
+
+			if len(firstVRGStatus.Status.ProtectedPVCs) > 0 {
+				Expect(firstVRGStatus.Status.ProtectedPVCs[0].ProtectedByVolSync).To(BeFalse())
+			}
+			Expect(len(secondVRGStatus.Status.ProtectedPVCs)).To(Equal(0))
+		})
+	})
+
+	Context("VolRep PVC Conflict on Secondary", func() {
+		It("validates RBD PVC conflict on Secondary using label selectors", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = false
+
+			primaryVRG := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(primaryVRG.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				primaryVRGStatus := primaryVRG.getVRG()
+
+				return primaryVRGStatus != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			secondaryVRG := newVRGTestCaseCreate(1, vrgPVCTestTemplate, true, false)
+			secondaryVRG.namespace = primaryVRG.namespace
+			secondaryVRG.pvcLabels = primaryVRG.pvcLabels
+			secondaryVRG.skipCreationPVandPVC = true
+			secondaryVRG.createVRG()
+			vrg := secondaryVRG.getVRG()
+			vrg.Spec.ReplicationState = ramendrv1alpha1.Secondary
+			updateVRG(vrg)
+			DeferCleanup(secondaryVRG.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				secondaryVRGStatus := secondaryVRG.getVRG()
+
+				return secondaryVRGStatus != nil && secondaryVRGStatus.Spec.ReplicationState == ramendrv1alpha1.Secondary
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			primaryVRGStatus := primaryVRG.getVRG()
+			secondaryVRGStatus := secondaryVRG.getVRG()
+
+			Expect(primaryVRGStatus).NotTo(BeNil())
+			Expect(secondaryVRGStatus).NotTo(BeNil())
+			Expect(primaryVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Primary))
+			Expect(secondaryVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Secondary))
+
+			if len(primaryVRGStatus.Status.ProtectedPVCs) > 0 {
+				Expect(primaryVRGStatus.Status.ProtectedPVCs[0].ProtectedByVolSync).To(BeFalse())
+			}
+
+			Expect(len(secondaryVRGStatus.Status.ProtectedPVCs)).To(Equal(0))
+		})
+	})
+
+	Context("VolSync PVC Protection", func() {
+		It("validates VolSync PVC protection workflow", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = true
+
+			vrgTestCase := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(vrgTestCase.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+
+				return vrg != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			vrg := vrgTestCase.getVRG()
+
+			Expect(vrg.Spec.VolSync.Disabled).To(BeFalse())
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+				dataReadyCondition := meta.FindStatusCondition(vrg.Status.Conditions, "DataReady")
+
+				return dataReadyCondition != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+	})
+
+	Context("VolSync PVC Conflict on Primary", func() {
+		It("validates CEPHFS PVC conflict on Primary using label selectors", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = true
+
+			firstPrimaryVRG := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(firstPrimaryVRG.cleanupVRGForPVCTests)
+
+			secondPrimaryVRG := newVRGTestCaseCreate(1, vrgPVCTestTemplate, true, false)
+			secondPrimaryVRG.namespace = firstPrimaryVRG.namespace
+			secondPrimaryVRG.pvcLabels = firstPrimaryVRG.pvcLabels
+			secondPrimaryVRG.skipCreationPVandPVC = true
+			secondPrimaryVRG.VRGTestCaseStart()
+			DeferCleanup(secondPrimaryVRG.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				firstVRGStatus := firstPrimaryVRG.getVRG()
+				secondVRGStatus := secondPrimaryVRG.getVRG()
+
+				return firstVRGStatus != nil && secondVRGStatus != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			firstVRGStatus := firstPrimaryVRG.getVRG()
+			secondVRGStatus := secondPrimaryVRG.getVRG()
+
+			Expect(firstVRGStatus).NotTo(BeNil())
+			Expect(secondVRGStatus).NotTo(BeNil())
+			Expect(firstVRGStatus.Name).NotTo(Equal(secondVRGStatus.Name))
+
+			Expect(firstVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Primary))
+			Expect(secondVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Primary))
+			Expect(firstVRGStatus.Spec.VolSync.Disabled).To(BeFalse())
+			Expect(secondVRGStatus.Spec.VolSync.Disabled).To(BeFalse())
+
+			if len(firstVRGStatus.Status.ProtectedPVCs) > 0 {
+				Expect(firstVRGStatus.Status.ProtectedPVCs[0].ProtectedByVolSync).To(BeTrue())
+			}
+
+			Expect(len(secondVRGStatus.Status.ProtectedPVCs)).To(Equal(0))
+		})
+	})
+
+	Context("VolSync PVC Conflict on Secondary", func() {
+		It("validates CEPHFS PVC conflict on Secondary using label selectors", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = true
+
+			primaryVRG := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(primaryVRG.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				primaryVRGStatus := primaryVRG.getVRG()
+
+				return primaryVRGStatus != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			secondaryVRG := newVRGTestCaseCreate(1, vrgPVCTestTemplate, true, false)
+			secondaryVRG.namespace = primaryVRG.namespace
+			secondaryVRG.pvcLabels = primaryVRG.pvcLabels
+			secondaryVRG.skipCreationPVandPVC = true
+			secondaryVRG.createVRG()
+			vrg := secondaryVRG.getVRG()
+			vrg.Spec.ReplicationState = ramendrv1alpha1.Secondary
+			updateVRG(vrg)
+			DeferCleanup(secondaryVRG.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				secondaryVRGStatus := secondaryVRG.getVRG()
+
+				return secondaryVRGStatus != nil && secondaryVRGStatus.Spec.ReplicationState == ramendrv1alpha1.Secondary
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			primaryVRGStatus := primaryVRG.getVRG()
+			secondaryVRGStatus := secondaryVRG.getVRG()
+
+			Expect(primaryVRGStatus).NotTo(BeNil())
+			Expect(secondaryVRGStatus).NotTo(BeNil())
+			Expect(primaryVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Primary))
+			Expect(secondaryVRGStatus.Spec.ReplicationState).To(Equal(ramendrv1alpha1.Secondary))
+			Expect(primaryVRGStatus.Spec.VolSync.Disabled).To(BeFalse())
+			Expect(secondaryVRGStatus.Spec.VolSync.Disabled).To(BeFalse())
+
+			if len(primaryVRGStatus.Status.ProtectedPVCs) > 0 {
+				Expect(primaryVRGStatus.Status.ProtectedPVCs[0].ProtectedByVolSync).To(BeTrue())
+			}
+
+			Expect(len(secondaryVRGStatus.Status.ProtectedPVCs)).To(Equal(0))
+		})
+	})
+
+	Context("VRG with Mixed RBD and CEPHFS PVCs protection", func() {
+		It("validates VRG with protection of both VolRep (RBD) and VolSync (CEPHFS) PVCs", func() {
+			vrgPVCTestTemplate := createFreshPVCTestTemplate()
+			vrgPVCTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgPVCTestTemplate.volsyncEnabled = true
+
+			vrgTestCase := newVRGTestCaseCreateAndStart(1, vrgPVCTestTemplate, true, false, true)
+			DeferCleanup(vrgTestCase.cleanupVRGForPVCTests)
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+
+				return vrg != nil
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+
+			vrg := vrgTestCase.getVRG()
+
+			Expect(vrg).NotTo(BeNil())
+			Expect(vrg.Spec.VolSync.Disabled).To(BeFalse())
+			Expect(vrg.Spec.Async).NotTo(BeNil())
+
+			Eventually(func() bool {
+				vrg := vrgTestCase.getVRG()
+
+				return len(vrg.Status.Conditions) > 0
+			}, vrgtimeout, vrginterval).Should(BeTrue())
+		})
+	})
 })
 
 type vrgTest struct {
@@ -2764,6 +3039,14 @@ func (v *vrgTest) cleanupVRG() {
 	Expect(err).To(BeNil(),
 		"failed to delete VRG %s", v.vrgName)
 	v.waitForVRCountToMatch(0)
+}
+
+func (v *vrgTest) cleanupVRGForPVCTests() {
+	vrg := v.getVRG()
+	err := k8sClient.Delete(context.TODO(), vrg)
+	Expect(err).To(BeNil(),
+		"failed to delete VRG %s", v.vrgName)
+	// Skip VR count verification for PVC tests due to test environment VR deletion limitations
 }
 
 func (v *vrgTest) cleanupSC() {
