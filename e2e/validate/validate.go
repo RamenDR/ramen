@@ -134,7 +134,7 @@ func clustersInDRPolicy(ctx types.Context) error {
 		return fmt.Errorf("failed to get DRPolicy %q: %w", config.DRPolicy, err)
 	}
 
-	clusters := []*types.Cluster{env.C1, env.C2}
+	clusters := env.ManagedClusters()
 	for _, cluster := range clusters {
 		if !slices.Contains(drpolicy.Spec.DRClusters, cluster.Name) {
 			return fmt.Errorf("cluster %q is not defined in drpolicy %q, clusters in drpolicy: %q",
@@ -164,7 +164,7 @@ func clustersInClusterSet(ctx types.Context) error {
 		return err
 	}
 
-	clusters := []*types.Cluster{env.C1, env.C2}
+	clusters := env.ManagedClusters()
 	for _, cluster := range clusters {
 		if !slices.Contains(clusterNames, cluster.Name) {
 			return fmt.Errorf("cluster %q is not defined in ClusterSet %q, clusters in ClusterSet: %q",

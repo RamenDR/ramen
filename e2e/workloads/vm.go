@@ -111,9 +111,7 @@ func (w *VM) Health(ctx types.TestContext, cluster *types.Cluster) error {
 func (w *VM) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) {
 	var statuses []types.WorkloadStatus
 
-	clusters := []*types.Cluster{ctx.Env().C1, ctx.Env().C2}
-
-	for _, cluster := range clusters {
+	for _, cluster := range ctx.Env().ManagedClusters() {
 		status, err := w.statusForCluster(ctx, cluster)
 		if err != nil {
 			return nil, fmt.Errorf("error checking application \"%s/%s\" on cluster %q: %w",
