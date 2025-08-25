@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ramendr/ramen/internal/controller/util"
+	"k8s.io/apimachinery/pkg/api/validation"
 )
 
 var _ = Describe("misc", func() {
@@ -35,4 +36,11 @@ var _ = Describe("misc", func() {
 
 	Expect(util.GenerateCombinedName(pvcNamespace5, storageID2)).
 		Should(Equal("ce2e9aed-5b7c8892"))
+
+	longResourceName := "54a5f0ff705e7f7d94338c65839890abapp-busybox-rbd-1-cg-placement---------------..--"
+
+	validResourceName := util.TrimToK8sResourceNameLength(longResourceName)
+	errs := validation.NameIsDNSSubdomain(validResourceName, false)
+
+	Expect(errs).To(BeEmpty(), "expected a valid DNS subdomain name, got errors: %v", errs)
 })

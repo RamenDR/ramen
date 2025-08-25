@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"reflect"
+	"strings"
 
 	"github.com/google/uuid"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -386,7 +387,7 @@ func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 func TrimToK8sResourceNameLength(name string) string {
 	const maxLength = 63
 	if len(name) > maxLength {
-		return name[:maxLength]
+		return strings.TrimRight(name[:maxLength], "-.")
 	}
 
 	return name
