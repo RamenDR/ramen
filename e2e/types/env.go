@@ -19,3 +19,8 @@ func (e *Env) GetCluster(clusterName string) (*Cluster, error) {
 		return nil, fmt.Errorf("cluster %q not found in environment", clusterName)
 	}
 }
+
+// ManagedClusters returns the list of managed clusters from the env.
+func (e *Env) ManagedClusters() []*Cluster {
+	return []*Cluster{e.C1, e.C2}
+}
