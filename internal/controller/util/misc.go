@@ -386,7 +386,18 @@ func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 func TrimToK8sResourceNameLength(name string) string {
 	const maxLength = 63
 	if len(name) > maxLength {
-		return name[:maxLength]
+		name = name[:maxLength]
+	}
+
+	// Ensure last char is alphanumeric
+	for len(name) > 0 {
+		last := name[len(name)-1]
+		if (last >= 'a' && last <= 'z') ||
+			(last >= '0' && last <= '9') {
+			break
+		}
+		// trim off trailing non-alphanumeric
+		name = name[:len(name)-1]
 	}
 
 	return name
