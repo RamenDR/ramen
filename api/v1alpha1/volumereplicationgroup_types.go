@@ -85,6 +85,18 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	// moverSecurityContext encapsulates pod-level security configurations and shared container settings
+	// that are applied to the VolSync data mover for consistent and secure operation.
+	//+optional
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -93,6 +105,18 @@ type VolSyncReplicationSourceSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	// moverSecurityContext encapsulates pod-level security configurations and shared container settings
+	// that are applied to the VolSync data mover for consistent and secure operation.
+	//+optional
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or

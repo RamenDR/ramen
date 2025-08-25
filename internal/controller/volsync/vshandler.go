@@ -248,6 +248,11 @@ func (v *VSHandler) createOrUpdateRD(
 		util.AddAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
+		moverConfig := volsyncv1alpha1.MoverConfig{
+			MoverSecurityContext: rdSpec.MoverSecurityContext,
+			MoverServiceAccount:  rdSpec.MoverServiceAccount,
+		}
+
 		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: v.getRsyncServiceType(),
 			KeySecret:   &pskSecretName,
@@ -260,6 +265,7 @@ func (v *VSHandler) createOrUpdateRD(
 				VolumeSnapshotClassName: &volumeSnapshotClassName,
 				DestinationPVC:          dstPVC,
 			},
+			MoverConfig: moverConfig,
 		}
 
 		return nil
@@ -486,6 +492,10 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			return err
 		}
 
+		moverConfig := volsyncv1alpha1.MoverConfig{
+			MoverSecurityContext: rsSpec.MoverSecurityContext,
+			MoverServiceAccount:  rsSpec.MoverServiceAccount,
+		}
 		rs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 			KeySecret: &pskSecretName,
 			Address:   &remoteAddress,
@@ -498,6 +508,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 				StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
 				AccessModes:             rsSpec.ProtectedPVC.AccessModes,
 			},
+			MoverConfig: moverConfig,
 		}
 
 		return nil
