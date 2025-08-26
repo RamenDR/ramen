@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"reflect"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -654,7 +654,7 @@ func requiresRegionalFailoverPrerequisites(
 			continue
 		}
 
-		if !hasMode(protectedPVC.StorageIdentifiers.ReplicationID.Modes, rmn.MModeFailover) {
+		if !slices.Contains(protectedPVC.StorageIdentifiers.ReplicationID.Modes, rmn.MModeFailover) {
 			continue
 		}
 
@@ -744,17 +744,6 @@ func GetLastKnownVRGPrimaryFromS3(
 	}
 
 	return latestVrg
-}
-
-// hasMode is a helper routine that checks if a list of modes has the passed in mode
-func hasMode(modes []rmn.MMode, mode rmn.MMode) bool {
-	for _, modeInList := range modes {
-		if modeInList == mode {
-			return true
-		}
-	}
-
-	return false
 }
 
 // checkFailoverMaintenanceActivations checks if all required storage backend maintenance activations are met

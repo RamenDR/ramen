@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -115,11 +116,5 @@ func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
 }
 
 func DrpolicyContainsDrcluster(drpolicy *rmn.DRPolicy, drcluster string) bool {
-	for _, managedCluster := range DRPolicyClusterNames(drpolicy) {
-		if managedCluster == drcluster {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(DRPolicyClusterNames(drpolicy), drcluster)
 }
