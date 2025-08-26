@@ -1466,15 +1466,16 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 		return matchingReplicationClassList[0], nil
 	}
 
-	return v.filterDefaultVRC(matchingReplicationClassList)
+	return v.filterDefaultVRC(matchingReplicationClassList, objType)
 }
 
 // filterDefaultVRC filters the VRC list to return VRCs with default annotation
 // if the list contains more than one VRC.
 func (v *VRGInstance) filterDefaultVRC(
 	replicationClassList []client.Object,
+	objType string,
 ) (client.Object, error) {
-	v.log.Info("Found multiple matching VolumeReplicationClasses, filtering with default annotation")
+	v.log.Info(fmt.Sprintf("Found multiple matching %s, filtering with default annotation", objType))
 
 	filteredVRCs := []client.Object{}
 
@@ -1488,17 +1489,17 @@ func (v *VRGInstance) filterDefaultVRC(
 
 	switch len(filteredVRCs) {
 	case 0:
-		v.log.Info(fmt.Sprintf("Multiple VolumeReplicationClass found, with no default annotation (%s)",
-			defaultVRCAnnotationKey))
+		v.log.Info(fmt.Sprintf("Multiple %s found, with no default annotation (%s)",
+			objType, defaultVRCAnnotationKey))
 
-		return nil, fmt.Errorf("multiple VolumeReplicationClass found, with no default annotation, %s",
-			defaultVRCAnnotationKey)
+		return nil, fmt.Errorf("multiple %s found, with no default annotation, %s",
+			objType, defaultVRCAnnotationKey)
 	case 1:
 		return filteredVRCs[0], nil
 	}
 
-	return nil, fmt.Errorf("multiple VolumeReplicationClass found with default annotation, %s",
-		defaultVRCAnnotationKey)
+	return nil, fmt.Errorf("multiple %s found with default annotation, %s",
+		objType, defaultVRCAnnotationKey)
 }
 
 func (v *VRGInstance) getStorageClassFromSCName(scName *string) (*storagev1.StorageClass, error) {
