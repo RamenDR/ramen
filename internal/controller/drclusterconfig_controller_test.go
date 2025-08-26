@@ -5,12 +5,15 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"time"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
+	v1 "k8s.io/api/core/v1"
+
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
@@ -154,9 +157,17 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		By("Creating a DClusterConfig")
 
+		ns := &v1.Namespace{}
+		Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
+			Namespace: "",
+			Name:      "kube-system",
+		}, ns)).To(Succeed())
+
 		drCConfig = &ramen.DRClusterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "local"},
-			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
+			Spec: ramen.DRClusterConfigSpec{
+				ClusterID: fmt.Sprint(ns.ObjectMeta.UID),
+			},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
 		objectConditionExpectEventually(
