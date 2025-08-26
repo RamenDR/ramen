@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -147,7 +148,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		log := logWithPvcName(v.log, pvc)
 
 		// Potentially for PVCs that are not deleted, e.g Failover of STS without required auto delete options
-		if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) {
+		if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
 			log.Info("pvc does not contain VR protection finalizer. Skipping it")
 
 			v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
@@ -483,7 +484,7 @@ func skipPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) 
 
 func isPVCDeletedAndNotProtected(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (bool, string) {
 	// If PVC deleted but not yet protected with a finalizer, skip it!
-	if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) && rmnutil.ResourceIsDeleted(pvc) {
+	if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) && rmnutil.ResourceIsDeleted(pvc) {
 		log.Info("Skipping PVC, as it is marked for deletion and not yet protected")
 
 		msg := "Skipping pvc marked for deletion"
@@ -882,7 +883,7 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 		//    the VR protection finalizer has been successfully removed. No need to process.
 		// If not all PVCs are processed during deletion,
 		// requeue the deletion request, as related events are not guaranteed
-		if !containsString(pvc.Finalizers, PvcVRFinalizerProtected) {
+		if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
 			log.Info("pvc does not contain VR protection finalizer. Skipping it")
 
 			continue

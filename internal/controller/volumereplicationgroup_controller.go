@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
-	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
@@ -1264,7 +1264,7 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return ctrl.Result{Requeue: true}
 	}
 
-	if !containsString(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
+	if !slices.Contains(v.instance.ObjectMeta.Finalizers, vrgFinalizerName) {
 		v.log.Info("Finalizer missing from resource", "finalizer", vrgFinalizerName)
 
 		return ctrl.Result{}
@@ -1315,7 +1315,7 @@ func (v *VRGInstance) deleteVRGHandleMode() {
 
 // addFinalizer adds a finalizer to VRG, to act as deletion protection
 func (v *VRGInstance) addFinalizer(finalizer string) error {
-	if containsString(v.instance.ObjectMeta.Finalizers, finalizer) {
+	if slices.Contains(v.instance.ObjectMeta.Finalizers, finalizer) {
 		return nil
 	}
 
@@ -2129,18 +2129,6 @@ func (v *VRGInstance) s3StoreAccessorsGet() {
 		},
 		v.log,
 	)
-}
-
-// It might be better move the helper functions like these to a separate
-// package or a separate go file?
-func containsString(values []string, s string) bool {
-	for _, item := range values {
-		if item == s {
-			return true
-		}
-	}
-
-	return false
 }
 
 func removeString(values []string, s string) []string {
