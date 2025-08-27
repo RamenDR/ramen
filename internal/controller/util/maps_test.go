@@ -4,10 +4,11 @@
 package util_test
 
 import (
+	"maps"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ramendr/ramen/internal/controller/util"
-	"golang.org/x/exp/maps" // TODO replace with "maps" in Go 1.21+
 )
 
 var _ = Describe("Maps", func() {
