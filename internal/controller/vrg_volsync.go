@@ -38,7 +38,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 		// as this would result in incorrect information.
 		rdSpec.ProtectedPVC.Conditions = nil
 
-		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
+		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
 		if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 			v.log.Info("The CG label from the primary cluster found in RDSpec", "Label", cgLabelVal)
 			// Get the CG label value for this cluster
@@ -47,7 +47,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 			if err == nil {
 				cephfsCGHandler := cephfscg.NewVSCGHandler(
 					v.ctx, v.reconciler.Client, v.instance,
-					&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cgLabelVal}},
+					&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: cgLabelVal}},
 					v.volSyncHandler, cgLabelVal, v.log,
 				)
 				err = cephfsCGHandler.EnsurePVCfromRGD(rdSpec, failoverAction)
@@ -192,7 +192,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		ProtectedPVC: *protectedPVC,
 	}
 
-	cg, ok := pvc.Labels[ConsistencyGroupLabel]
+	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
 
 	pvcNamespacedName := util.ProtectedPVCNamespacedName(*protectedPVC)
@@ -221,7 +221,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
-			&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: cg}},
+			&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: cg}},
 			v.volSyncHandler, cg, v.log,
 		)
 
@@ -409,7 +409,7 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 	rdSpecsUsingCG := make(map[string]struct{})
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[ConsistencyGroupLabel]
+		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
 		if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 			v.log.Info("RDSpec contains the CG label from the primary cluster", "Label", cgLabelVal)
 			// Get the CG label value for this cluster
@@ -441,7 +441,7 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 	for groupKey, groupVal := range groups {
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
-			&metav1.LabelSelector{MatchLabels: map[string]string{ConsistencyGroupLabel: groupKey}},
+			&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: groupKey}},
 			v.volSyncHandler, groupKey, v.log,
 		)
 
@@ -751,7 +751,7 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		return
 	}
 
-	_, ok := pvc.Labels[ConsistencyGroupLabel]
+	_, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 		// At this moment, we don't support unprotecting CG PVCs.
 		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
