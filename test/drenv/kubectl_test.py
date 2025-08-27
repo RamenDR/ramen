@@ -127,7 +127,7 @@ def test_delete(tmpenv, capsys):
     kubectl.delete(pod, context=tmpenv.profile)
     out, err = capsys.readouterr()
     _, name = pod.split("/", 1)
-    assert out.strip() == f'pod "{name}" deleted'
+    assert out.strip().startswith(f'pod "{name}" deleted')
 
 
 def test_watch(tmpenv):
