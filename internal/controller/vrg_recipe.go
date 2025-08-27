@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -16,7 +17,6 @@ import (
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
-	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/builder"

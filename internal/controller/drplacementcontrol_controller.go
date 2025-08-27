@@ -8,9 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/go-logr/logr"
 	core "github.com/ramendr/ramen/internal/controller/core"
