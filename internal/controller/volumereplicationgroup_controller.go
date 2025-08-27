@@ -533,10 +533,7 @@ const (
 	// StorageClass offloaded label
 	StorageOffloadedLabel = "ramendr.openshift.io/offloaded"
 
-	// Consistency group label
-	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
-
-	// VolumeReplicationClass label
+	// VolumeReplicationClass and VolumeGroupReplicationClass label
 	ReplicationIDLabel = "ramendr.openshift.io/replicationid"
 
 	// VolumeGroupReplicationClass label
@@ -883,7 +880,7 @@ func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolum
 
 	// Add label for PVC, showing that this PVC is part of consistency group
 	return util.NewResourceUpdater(pvc).
-		AddLabel(ConsistencyGroupLabel, groupReplicationID).
+		AddLabel(util.ConsistencyGroupLabel, groupReplicationID).
 		Update(v.ctx, v.reconciler.Client)
 }
 
@@ -895,7 +892,7 @@ func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim
 
 	// Add a CG label to indicate that this PVC belongs to a consistency group.
 	return util.NewResourceUpdater(pvc).
-		AddLabel(ConsistencyGroupLabel, cgLabelVal).
+		AddLabel(util.ConsistencyGroupLabel, cgLabelVal).
 		Update(v.ctx, v.reconciler.Client)
 }
 

@@ -554,7 +554,7 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	delete(pvc.Annotations, pvcVRAnnotationProtectedKey)
 	delete(pvc.Annotations, pvcVRAnnotationArchivedKey)
 
-	delete(pvc.Labels, ConsistencyGroupLabel)
+	delete(pvc.Labels, rmnutil.ConsistencyGroupLabel)
 
 	log1 := log.WithValues("owner removed", ownerRemoved, "finalizer removed", finalizerRemoved)
 

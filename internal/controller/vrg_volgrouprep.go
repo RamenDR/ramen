@@ -403,7 +403,7 @@ func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool
 		return reset, nil
 	}
 
-	err := rmnutil.NewResourceUpdater(pvc).AddLabel(ConsistencyGroupLabel, "").Update(v.ctx, v.reconciler.Client)
+	err := rmnutil.NewResourceUpdater(pvc).AddLabel(rmnutil.ConsistencyGroupLabel, "").Update(v.ctx, v.reconciler.Client)
 	if err != nil {
 		return !reset, fmt.Errorf("error (%s) updating PVC labels", err)
 	}
@@ -624,7 +624,7 @@ func (v *VRGInstance) reconcileMissingVGR(vrNamespacedName types.NamespacedName,
 }
 
 func (v *VRGInstance) isCGEnabled(pvc *corev1.PersistentVolumeClaim) (string, bool) {
-	cg, ok := pvc.GetLabels()[ConsistencyGroupLabel]
+	cg, ok := pvc.GetLabels()[rmnutil.ConsistencyGroupLabel]
 
 	return cg, ok && rmnutil.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader)
 }
@@ -786,13 +786,13 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 		volumeReplicationClassName = volumeReplicationClass.GetName()
 	}
 
-	cg, ok := pvcs[0].GetLabels()[ConsistencyGroupLabel]
+	cg, ok := pvcs[0].GetLabels()[rmnutil.ConsistencyGroupLabel]
 	if !ok {
 		return fmt.Errorf("failed to create VolumeGroupReplication (%s/%s) %w",
 			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
 	}
 
-	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, ConsistencyGroupLabel, cg)
+	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, rmnutil.ConsistencyGroupLabel, cg)
 
 	volRep := &volrep.VolumeGroupReplication{
 		ObjectMeta: metav1.ObjectMeta{
