@@ -4,7 +4,7 @@
 package util
 
 import (
-	"golang.org/x/exp/maps" // TODO "maps" in go1.21+
+	"maps"
 )
 
 // Copies src's key-value pairs into dst.
