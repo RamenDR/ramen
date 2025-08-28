@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -30,7 +29,6 @@ import (
 
 const (
 	DrClusterManifestWorkName = "ramen-dr-cluster"
-	ClusterRoleAggregateLabel = "open-cluster-management.io/aggregate-to-work"
 
 	// ManifestWorkNameFormat is a formated a string used to generate the manifest name
 	// The format is name-namespace-type-mw where:
@@ -446,17 +444,9 @@ func (mwu *MWUtil) GetDrClusterManifestWork(clusterName string) (*ocmworkv1.Mani
 
 func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 	clusterName string,
-	objectsToAppend []interface{}, annotations map[string]string,
+	objects []interface{},
+	annotations map[string]string,
 ) error {
-	objects := append(
-		[]interface{}{
-			vrgClusterRole,
-			mModeClusterRole,
-			drClusterConfigRole,
-		},
-		objectsToAppend...,
-	)
-
 	manifests := make([]ocmworkv1.Manifest, len(objects))
 
 	for i, object := range objects {
@@ -482,59 +472,6 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 
 	return err
 }
-
-var (
-	vrgClusterRole = &rbacv1.ClusterRole{
-		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
-			Labels: map[string]string{
-				ClusterRoleAggregateLabel: "true",
-			},
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"ramendr.openshift.io"},
-				Resources: []string{"volumereplicationgroups"},
-				Verbs:     []string{"create", "get", "list", "update", "delete"},
-			},
-		},
-	}
-
-	mModeClusterRole = &rbacv1.ClusterRole{
-		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
-			Labels: map[string]string{
-				ClusterRoleAggregateLabel: "true",
-			},
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"ramendr.openshift.io"},
-				Resources: []string{"maintenancemodes"},
-				Verbs:     []string{"create", "get", "list", "update", "delete"},
-			},
-		},
-	}
-
-	drClusterConfigRole = &rbacv1.ClusterRole{
-		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
-			Labels: map[string]string{
-				ClusterRoleAggregateLabel: "true",
-			},
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"ramendr.openshift.io"},
-				Resources: []string{"drclusterconfigs"},
-				Verbs:     []string{"create", "get", "list", "update", "delete"},
-			},
-		},
-	}
-)
 
 func (mwu *MWUtil) GenerateManifest(obj interface{}) (*ocmworkv1.Manifest, error) {
 	objJSON, err := json.Marshal(obj)
