@@ -1076,7 +1076,7 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 	}
 
 	// label VolSync PVCs if peerClass.grouping is enabled
-	if peerClass.Grouping {
+	if peerClass.Grouping && !v.instance.Spec.RunFinalSync {
 		if err := v.addConsistencyGroupLabel(pvc); err != nil {
 			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 				pvc.GetNamespace(), pvc.GetName(), err)
