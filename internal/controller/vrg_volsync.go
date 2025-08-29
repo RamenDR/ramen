@@ -193,7 +193,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
-	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
+	isCGEnabled := (ok || v.instance.Spec.RunFinalSync) && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
 
 	pvcNamespacedName := util.ProtectedPVCNamespacedName(*protectedPVC)
 
@@ -218,6 +218,24 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 			return true // requeue
 		}
 
+		if v.instance.Spec.RunFinalSync && cg == "" {
+			v.log.Info("RunFinalSync is true, but CG label is missing on the PVC. Getting it from the final sync PVC")
+
+			finalSyncPVC, err := util.GetPVC(v.ctx, v.reconciler.Client, types.NamespacedName{Name: pvc.Name + "-for-finalsync", Namespace: pvc.Namespace})
+			if err != nil {
+				v.log.Error(err, "Failed to get final sync PVC to get CG label")
+
+				return true // requeue
+			}
+
+			cg, ok = finalSyncPVC.Labels[util.ConsistencyGroupLabel]
+			if !ok || cg == "" {
+				v.log.Info("CG label is still missing on the final sync PVC. Cannot proceed with final sync")
+
+				return true // requeue
+			}
+		}
+
 		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
@@ -229,6 +247,8 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 			v.instance.Name, pvc.Namespace, v.instance.Spec.RunFinalSync,
 		)
 		if err != nil {
+			v.log.Info("Failed to CreateOrUpdateReplicationGroupSource", "err", err)
+
 			setVRGConditionTypeVolSyncRepSourceSetupError(&protectedPVC.Conditions, v.instance.Generation,
 				"VolSync setup failed")
 
