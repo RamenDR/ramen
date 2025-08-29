@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
@@ -463,15 +464,17 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		restoredPVC := tmpRestoredPVC
 		logger.Info("Create replication source for restored PVC", "RestoredPVC", restoredPVC.RestoredPVCName)
 
+		pvcName := strings.TrimSuffix(restoredPVC.SourcePVCName, "-for-finalsync")
+
 		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      restoredPVC.SourcePVCName,
+				Name:      pvcName,
 				Namespace: replicationSourceNamepspace,
 			},
 		}
 
-		rdService := getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, replicationSourceNamepspace)
+		rdService := getRemoteServiceNameForRDFromPVCName(pvcName, replicationSourceNamepspace)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
 			if err := ctrl.SetControllerReference(owner, replicationSource, h.Client.Scheme()); err != nil {

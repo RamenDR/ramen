@@ -6,6 +6,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
@@ -92,6 +93,29 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	logger.Info("Get ramen config from configmap")
+
+	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
+	if err != nil {
+		logger.Error(err, "Failed to get ramen config")
+
+		return ctrl.Result{}, err
+	}
+
+	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+
+	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger)
+	
+	if rgs.Spec.Trigger != nil && rgs.Spec.Trigger.Manual == volsync.PrepareForFinalSyncTriggerString {
+		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
+
+		err := vgsHandler.CleanVolumeGroupSnapshot(ctx)
+
+		const retryDelay = 5 * time.Second
+
+		return ctrl.Result{RequeueAfter: retryDelay}, err
+	}
+
 	logger.Info("Get vrg from ReplicationGroupSource")
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
@@ -102,18 +126,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Get ramen config from configmap")
-
-	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
-	if err != nil {
-		logger.Error(err, "Failed to get ramen config")
-
-		return ctrl.Result{}, err
-	}
-
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
-
-	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
 	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 	result, err := statemachine.Run(
@@ -123,7 +136,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 				&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
 				volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
 			),
-			cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger),
+			vgsHandler,
 			logger,
 		),
 		logger,

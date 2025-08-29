@@ -207,6 +207,24 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		return nil, false, err
 	}
 
+	if runFinalSync {
+		log.Info("Running final sync for ReplicationGroupSource")
+		// Handle final sync for each PVC by retaining its PV and creating a temporary PVC
+		// used exclusively for the final synchronization process.
+		requeue, err := c.ensureFinalSyncSetup(replicationGroupSourceName, replicationGroupSourceNamespace, log)
+		if err != nil {
+			log.Error(err, "Failed to process temporary PVCs for final sync")
+
+			return nil, false, err
+		}
+
+		if requeue {
+			log.Info("Requeuing to allow temporary PVCs for final sync to be setup")
+
+			return nil, false, nil
+		}
+	}
+
 	rgs := &ramendrv1alpha1.ReplicationGroupSource{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      replicationGroupSourceName,
@@ -277,7 +295,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	if runFinalSync && isFinalSyncComplete(rgs) {
 		log.Info("ReplicationGroupSource complete final sync")
 
-		return rgs, true, nil
+		return rgs, true, c.ensureFinalSyncCleanup(rgs, log)
 	}
 
 	return rgs, false, nil
@@ -527,4 +545,94 @@ func ToPointerSlice[T any](items []T) []*T {
 	}
 
 	return out
+}
+
+// ensureFinalSyncSetup ensures that all prerequisites for a final sync are met.
+// It verifies that each application PVC belonging to the given ReplicationGroupSource
+// is in Terminating state, and if the ReplicationGroupSource is triggered for final sync,
+// it creates (or ensures readiness of) a temporary PVC used exclusively for the final sync.
+//
+// The function returns (true, err) when reconciliation should be requeued
+// It returns (false, nil) when final sync setup is complete and no requeue is needed.
+func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.Logger) (bool, error) {
+	const requeue = true
+
+	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
+	if err := c.Client.Get(c.ctx,
+		types.NamespacedName{Name: rgsName, Namespace: rgsNamespace},
+		rgs); err != nil {
+		log.Error(err, "Failed to retrieve RGS", "RGS", rgsName)
+
+		return requeue, err
+	}
+
+	for _, rs := range rgs.Status.ReplicationSources {
+		// Step 1: Get the application PVC
+		appPVC, err := util.GetPVC(c.ctx, c.Client, types.NamespacedName{Namespace: rs.Namespace, Name: rs.Name})
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				log.Info("Application PVC not found, checking the next one",
+					"namespace", rs.Namespace, "name", rs.Name)
+
+				continue
+			}
+
+			log.Error(err, "Failed to retrieve application PVC", "pvcName", rs.Name)
+
+			return requeue, err
+		}
+
+		// Step 2: Ensure application PVC is deleted
+		if !util.ResourceIsDeleted(appPVC) {
+			log.Info("Final sync will not run until application PVC is deleted",
+				"namespace", appPVC.Namespace, "name", appPVC.Name)
+
+			return requeue, nil
+		}
+
+		// Step 3: If triggered, create/ensure temporary PVC for final sync
+		if rgs.Spec.Trigger != nil && rgs.Spec.Trigger.Manual == volsync.PrepareForFinalSyncTriggerString {
+			result, err := c.VSHandler.SetupTmpPVCForFinalSync(appPVC)
+			if err != nil {
+				log.Error(err, "Failed to set up temporary PVC for final sync")
+
+				return requeue, err
+			}
+
+			if result == requeue {
+				log.Info("Waiting for temporary PVC readiness before final sync")
+
+				return requeue, nil
+			}
+
+			// Ensure the util.ConsistencyGroupLabel is removed from the main PVC
+			if err := util.NewResourceUpdater(appPVC).
+				DeleteLabel(util.ConsistencyGroupLabel).
+				Update(c.ctx, c.Client); err != nil {
+				log.Error(err, "Failed to remove util.ConsistencyGroupLabel from main PVC",
+					"pvcName", appPVC.Name)
+
+				return requeue, err
+			}
+		}
+	}
+
+	// All replication sources are ready, no need to requeue
+	return !requeue, nil
+}
+
+func (c *cgHandler) ensureFinalSyncCleanup(rgs *ramendrv1alpha1.ReplicationGroupSource, log logr.Logger) error {
+	for _, rs := range rgs.Status.ReplicationSources {
+		err := c.VSHandler.UndoAfterFinalSync(rs.Name, rs.Namespace)
+		if err != nil {
+			return err
+		}
+
+		err = c.VSHandler.CleanupAfterRSFinalSync(rs.Name, rs.Namespace)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -387,7 +387,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 			return false, replicationSource, err
 		}
 
-		return true, replicationSource, v.cleanupAfterRSFinalSync(rsSpec)
+		return true, replicationSource, v.CleanupAfterRSFinalSync(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 	}
 
 	l.V(1).Info("ReplicationSource Reconcile Complete")
@@ -429,17 +429,17 @@ func isFinalSyncComplete(replicationSource *volsyncv1alpha1.ReplicationSource, l
 	return true
 }
 
-func (v *VSHandler) cleanupAfterRSFinalSync(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec) error {
+func (v *VSHandler) CleanupAfterRSFinalSync(pvcName, pvcNamespace string) error {
 	// Final sync is done, make sure PVC is cleaned up, Skip if we are using CopyMethodDirect
 	if v.IsCopyMethodDirect() {
-		v.log.Info("Preserving PVC to use for CopyMethodDirect", "pvcName", rsSpec.ProtectedPVC.Name)
+		v.log.Info("Preserving PVC to use for CopyMethodDirect", "pvcName", pvcName)
 
 		return nil
 	}
 
-	v.log.Info("Cleanup after final sync", "pvcName", rsSpec.ProtectedPVC.Name)
+	v.log.Info("Cleanup after final sync", "pvcName", pvcName)
 
-	return util.DeletePVC(v.ctx, v.client, rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace, v.log)
+	return util.DeletePVC(v.ctx, v.client, pvcName, pvcNamespace, v.log)
 }
 
 //nolint:funlen
@@ -597,6 +597,10 @@ func (v *VSHandler) setupForFinalSync(rsSpec *ramendrv1alpha1.VolSyncReplication
 	return proceed
 }
 
+func (v *VSHandler) SetupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
+	return v.setupTmpPVCForFinalSync(pvc)
+}
+
 // Handles the creation and management of the tmpPVC for final sync
 func (v *VSHandler) setupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
 	tmpPVC, err := v.getPVC(types.NamespacedName{
@@ -715,10 +719,14 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		tmpPVC.Name = getTmpPVCNameForFinalSync(pvc.Name)
 		tmpPVC.ResourceVersion = ""
 		tmpPVC.UID = ""
-		tmpPVC.ObjectMeta.Labels = map[string]string{} // don't include it in the next reconciliation
 		tmpPVC.Finalizers = nil
 		tmpPVC.Annotations = map[string]string{} // {"ramendr/tmp-pvc-created": "yes"}
 		util.AddLabel(tmpPVC, util.CreatedByRamenLabel, "true")
+		if cgVal, ok := pvc.GetLabels()[util.ConsistencyGroupLabel]; ok {
+			tmpPVC.ObjectMeta.Labels = map[string]string{
+				util.ConsistencyGroupLabel: cgVal, // include only CG label if exists
+			}
+		}
 	} else {
 		v.log.V(1).Info("Found tmp PVC", "tmpPVC", tmpPVC.Name)
 
@@ -798,7 +806,11 @@ func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 	// reset the original PVC claimRef (without uid)
 	originalPVC, err := v.getPVC(types.NamespacedName{Namespace: pvcNamespace, Name: pvcName})
 	if err != nil {
-		return err
+		if !errors.IsNotFound(err) {
+			return fmt.Errorf("wait for tmp PVC '%s' to go away", tmpPVC.GetName())
+		}
+
+		return nil // PVC is gone, nothing more to do
 	}
 
 	pv := &corev1.PersistentVolume{}
@@ -828,7 +840,7 @@ func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 		return err
 	}
 
-	v.log.V(1).Info("Undo after final sync complete", "pvcName", pvcName)
+	v.log.V(1).Info("UndoAfterFinalSync completed", "pvcName", pvcName)
 
 	return nil
 }
@@ -1651,11 +1663,16 @@ func (v *VSHandler) ValidateSnapshotAndEnsurePVC(rdSpec ramendrv1alpha1.VolSyncR
 		return err
 	}
 
+	v.log.V(1).Info(fmt.Sprintf("Finally add back OCM annotations for rdSpec '%+v'", rdSpec))
 	// Once the PVC is restored/rolled back, need to re-add the annotations from old Primary
 	err = v.addBackOCMAnnotationsAndUpdate(pvc, rdSpec.ProtectedPVC.Annotations)
 	if err != nil {
+		v.log.V(1).Info(fmt.Sprintf("Failed to add back OCM annotations for rdSpec '%v'", rdSpec))
+
 		return err
 	}
+
+	v.log.V(1).Info(fmt.Sprintf("Added back ocm annotations '%+v'", pvc.Annotations))
 
 	return nil
 }
