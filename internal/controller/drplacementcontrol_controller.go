@@ -773,7 +773,7 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 			}
 
 			if err := r.ensureDoNotDeletePVCAnnotation(mwu, drpc, vrg, cluster, r.Log); err != nil {
-				return fmt.Errorf("wait for annotation to propagate to the VRG. Error: %w", err)
+				return fmt.Errorf("wait for annotation to propagate to the VRG. Msg: %w", err)
 			}
 
 			if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), cluster); err != nil {
@@ -2907,7 +2907,9 @@ func (r *DRPlacementControlReconciler) ensureDoNotDeletePVCAnnotation(
 
 	if drpc.GetAnnotations()[DoNotDeletePVCAnnotation] == DoNotDeletePVCAnnotationVal &&
 		vrg.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		return propagateAnnotationToVRG(mwu, cluster, DoNotDeletePVCAnnotation, DoNotDeletePVCAnnotationVal, log)
+		err := propagateAnnotationToVRG(mwu, cluster, DoNotDeletePVCAnnotation, DoNotDeletePVCAnnotationVal, log)
+
+		return fmt.Errorf("annotation hasn't been propagated to cluster %s (%w)", cluster, err)
 	}
 
 	return nil
