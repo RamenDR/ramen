@@ -29,6 +29,7 @@ def run(args):
         create_ramen_s3_secrets(env["hub"], s3_secrets)
 
         create_ramen_config_map(env["hub"], hub_cm)
+        create_ramen_system_binding(env["hub"])
         create_hub_dr_resources(env["hub"], env["clusters"], env["topology"])
 
         wait_for_secret_propagation(env["hub"], env["clusters"], args)
@@ -84,6 +85,14 @@ def create_ramen_config_map(cluster, yaml):
 def create_ramen_ops_binding(cluster):
     command.info("Creating ramen-ops managedclustersetbinding in cluster '%s'", cluster)
     resource = command.resource("ramen-ops-binding.yaml")
+    kubectl.apply(f"--filename={resource}", context=cluster, log=command.debug)
+
+
+def create_ramen_system_binding(cluster):
+    command.info(
+        "Creating ramen-system managedclustersetbinding in cluster '%s'", cluster
+    )
+    resource = command.resource("ramen-system-binding.yaml")
     kubectl.apply(f"--filename={resource}", context=cluster, log=command.debug)
 
 
