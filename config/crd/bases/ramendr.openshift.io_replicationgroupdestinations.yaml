@@ -55,6 +55,8 @@ spec:
             description: ReplicationGroupDestinationSpec defines the desired state
               of ReplicationGroupDestination
             properties:
+              paused:
+                type: boolean
               rdSpecs:
                 items:
                   description: |-

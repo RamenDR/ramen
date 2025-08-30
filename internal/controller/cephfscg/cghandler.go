@@ -65,7 +65,7 @@ type VSCGHandler interface {
 	) (*ramendrv1alpha1.ReplicationGroupSource, bool, error)
 
 	GetLatestImageFromRGD(
-		ctx context.Context, pvcName, pvcNamespace string,
+		rgd *ramendrv1alpha1.ReplicationGroupDestination, pvcName string,
 	) (*corev1.TypedLocalObjectReference, error)
 
 	EnsurePVCfromRGD(
@@ -301,34 +301,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	return rgs, false, nil
 }
 
-func (c *cgHandler) GetLatestImageFromRGD(
-	ctx context.Context, pvcName, pvcNamespace string,
+func (c *cgHandler) GetLatestImageFromRGD(rgd *ramendrv1alpha1.ReplicationGroupDestination, pvcName string,
 ) (*corev1.TypedLocalObjectReference, error) {
-	log := c.logger.WithName("GetLatestImageFromRGD").
-		WithValues("PVCName", pvcName, "PVCNamespace", pvcNamespace)
-
-	log.Info("Get ReplicationDestination for the pvc")
-
-	rd := &volsyncv1alpha1.ReplicationDestination{}
-	if err := c.Client.Get(ctx,
-		types.NamespacedName{Name: getReplicationDestinationName(pvcName), Namespace: pvcNamespace},
-		rd); err != nil {
-		log.Error(err, "Failed to get ReplicationDestination")
-
-		return nil, err
-	}
-
-	log.Info("Get ReplicationGroupDestination which manages the ReplicationDestination")
-
-	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
-	if err := c.Client.Get(ctx,
-		types.NamespacedName{Name: rd.Labels[util.RGDOwnerLabel], Namespace: rd.Namespace},
-		rgd); err != nil {
-		log.Error(err, "Failed to get ReplicationGroupDestination")
-
-		return nil, err
-	}
-
 	latestImage := rgd.Status.LatestImages[pvcName]
 	if latestImage != nil {
 		c.logger.Info("Get latest image from RGD for PVC", "LatestImage", *latestImage)
@@ -336,9 +310,9 @@ func (c *cgHandler) GetLatestImageFromRGD(
 
 	if !isLatestImageReady(latestImage) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationGroupDestination %s",
-			rd.Labels[util.RGDOwnerLabel])
+			rgd.Name)
 		c.logger.Error(noSnapErr, "No latestImage",
-			"ReplicationDestination", pvcName, "ReplicationGroupDestination", rd.Labels[util.RGDOwnerLabel])
+			"ReplicationDestination", pvcName, "ReplicationGroupDestination", rgd.Name)
 
 		return nil, noSnapErr
 	}
@@ -351,7 +325,18 @@ func (c *cgHandler) EnsurePVCfromRGD(
 ) error {
 	log := c.logger.WithName("EnsurePVCfromRGD")
 
-	latestImage, err := c.GetLatestImageFromRGD(c.ctx, rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+	rd, err := volsync.GetRD(c.ctx, c.Client,
+		rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace, log)
+	if err != nil {
+		return err
+	}
+
+	rgd, err := GetRGD(c.ctx, c.Client, rd.Labels[util.RGDOwnerLabel], rd.Namespace, log)
+	if err != nil {
+		return err
+	}
+
+	latestImage, err := c.GetLatestImageFromRGD(rgd, rdSpec.ProtectedPVC.Name)
 	if err != nil {
 		log.Error(err, "Failed to get latest image from RGD")
 
@@ -367,12 +352,25 @@ func (c *cgHandler) EnsurePVCfromRGD(
 
 	c.logger.Info("Latest Image for ReplicationDestination", "latestImage", vsImageRef.Name)
 
+	// time to pause RD
+	err = PauseRGD(c.ctx, c.Client, rgd, log)
+	if err != nil {
+		log.Error(err, "Failed to pause RGD")
+
+		return err
+	}
+
 	return c.VSHandler.ValidateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
 //nolint:gocognit
 func (c *cgHandler) DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error {
-	latestRDImage, err := c.GetLatestImageFromRGD(c.ctx, rd.Name, rd.Namespace)
+	rgd, err := GetRGD(c.ctx, c.Client, rd.Labels[util.RGDOwnerLabel], rd.Namespace, c.logger)
+	if err != nil {
+		return err
+	}
+
+	latestRDImage, err := c.GetLatestImageFromRGD(rgd, rd.Name)
 	if err != nil {
 		return err
 	}
@@ -636,3 +634,42 @@ func (c *cgHandler) ensureFinalSyncCleanup(rgs *ramendrv1alpha1.ReplicationGroup
 
 	return nil
 }
+
+func GetRGD(ctx context.Context,
+	k8sClient client.Client,
+	name, namespace string,
+	log logr.Logger,
+) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
+	log.Info("Get ReplicationGroupDestination which manages the ReplicationDestination")
+
+	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
+	if err := k8sClient.Get(ctx,
+		types.NamespacedName{Name: name, Namespace: namespace},
+		rgd); err != nil {
+		log.Error(err, "Failed to get ReplicationGroupDestination")
+		return nil, err
+	}
+	return rgd, nil
+}
+
+func PauseRGD(ctx context.Context,
+	k8sClient client.Client,
+	rgd *ramendrv1alpha1.ReplicationGroupDestination,
+	log logr.Logger,
+) error {
+	if rgd.Spec.Paused {
+		log.Info("RGD is already paused", "RGD", rgd.Name)
+
+		return nil
+	}
+
+	log.Info("Pausing RGD", "RGD", rgd.Name)
+
+	rgd.Spec.Paused = true
+
+	if err := k8sClient.Update(ctx, rgd); err != nil {
+		return fmt.Errorf("failed to update RGD %s (%w)", rgd.Name, err)
+	}
+
+	return nil
+}	

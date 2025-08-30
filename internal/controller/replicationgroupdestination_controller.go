@@ -52,6 +52,12 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if rgd.Spec.Paused {
+		logger.Info("ReplicationGroupDestination is paused, skipping reconciliation")
+		
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Get vrg from ReplicationGroupDestination")
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
