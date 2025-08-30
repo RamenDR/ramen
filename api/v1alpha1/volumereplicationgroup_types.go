@@ -85,6 +85,18 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	// moverSecurityContext encapsulates pod-level security configurations and shared container settings
+	// that are applied to the VolSync data mover for consistent and secure operation.
+	//+optional
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -93,6 +105,18 @@ type VolSyncReplicationSourceSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	// moverSecurityContext encapsulates pod-level security configurations and shared container settings
+	// that are applied to the VolSync data mover for consistent and secure operation.
+	//+optional
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
@@ -104,6 +128,27 @@ type VolSyncSpec struct {
 
 	// disabled when set, all the VolSync code is bypassed. Default is 'false'
 	Disabled bool `json:"disabled,omitempty"`
+
+	//+optional
+	MoverConfig []MoverConfig `json:"moverConfig,omitempty"`
+}
+
+type MoverConfig struct {
+	// MoverSecurityContext allows specifying the PodSecurityContext that will
+	// be used by the data mover
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
+	// Labels that should be added to data mover pods
+	// These will be in addition to any labels that VolSync may add
+	//+optional
+	PVCName *string `json:"pvcName,omitempty"`
+	//+optional
+	PVCNameSpace *string `json:"pvcNamespace,omitempty"`
 }
 
 // VRGAction which will be either a Failover or Relocate

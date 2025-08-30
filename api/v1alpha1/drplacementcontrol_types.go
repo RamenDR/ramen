@@ -159,6 +159,9 @@ type DRPlacementControlSpec struct {
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// +optional
+	VolSyncSpec *VolSyncSpec `json:"volSyncSpec,omitempty"`
 }
 
 // PlacementDecision defines the decision made by controller

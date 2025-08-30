@@ -1831,6 +1831,49 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 	} else {
 		d.updateVRGDRTypeSpec(vrgFromView, vrg)
 	}
+
+	if d.instance.Spec.VolSyncSpec == nil {
+		return
+	}
+	// Workaround for cephfs issue: FIXME:
+	// VolSync's DataMover requires the PodSecurityContext to be configured in order to successfully synchronize
+	// data for workloads that have complex Security Context Constraints (SCC) settings.
+	// Populate ReplicationSource and ReplicationDestination specs with MoverSecurityContext and MoverServiceAccount
+
+	// Ensure MoverConfig is initialized
+	if d.isMoverConfigUpdateRequired(vrg) {
+		vrg.Spec.VolSync.MoverConfig = make([]rmn.MoverConfig, len(d.instance.Spec.VolSyncSpec.MoverConfig))
+
+		// Populate RSSpec with MoverSecurityContext and MoverServiceAccount
+		for i := range vrg.Spec.VolSync.MoverConfig {
+			drpcMoverConfig := d.instance.Spec.VolSyncSpec.MoverConfig[i]
+			vrg.Spec.VolSync.MoverConfig[i].MoverSecurityContext = (drpcMoverConfig.MoverSecurityContext)
+			vrg.Spec.VolSync.MoverConfig[i].MoverServiceAccount = (drpcMoverConfig.MoverServiceAccount)
+			vrg.Spec.VolSync.MoverConfig[i].PVCName = (drpcMoverConfig.PVCName)
+			vrg.Spec.VolSync.MoverConfig[i].PVCNameSpace = (drpcMoverConfig.PVCNameSpace)
+		}
+	}
+}
+
+// Checks if MoverConfig exists in the spec
+func (d *DRPCInstance) isMoverConfigUpdateRequired(vrg *rmn.VolumeReplicationGroup) bool {
+	if len(vrg.Spec.VolSync.MoverConfig) < len(d.instance.Spec.VolSyncSpec.MoverConfig) {
+		return true
+	}
+
+	for _, drpcMoverConfig := range d.instance.Spec.VolSyncSpec.MoverConfig {
+		for _, vrgMoverConfig := range vrg.Spec.VolSync.MoverConfig {
+			if *vrgMoverConfig.PVCName == *drpcMoverConfig.PVCName &&
+				*vrgMoverConfig.PVCNameSpace == *drpcMoverConfig.PVCNameSpace &&
+				!reflect.DeepEqual(vrgMoverConfig, drpcMoverConfig) {
+				d.log.Info("MoverConfig update required.")
+
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {

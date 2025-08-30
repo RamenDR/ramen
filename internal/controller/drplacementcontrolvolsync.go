@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"fmt"
+	"reflect"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
@@ -208,8 +209,56 @@ func (d *DRPCInstance) resetRDSpec(srcVRG, dstVRG *rmn.VolumeReplicationGroup,
 		rdSpec := rmn.VolSyncReplicationDestinationSpec{
 			ProtectedPVC: protectedPVC,
 		}
+
+		if d.instance.Spec.VolSyncSpec != nil {
+			d.updateVolSyncSpec(dstVRG, protectedPVC.Name, protectedPVC.Namespace)
+		}
+
 		dstVRG.Spec.VolSync.RDSpec = append(dstVRG.Spec.VolSync.RDSpec, rdSpec)
 	}
+}
+
+func (d *DRPCInstance) updateVolSyncSpec(dstVRG *rmn.VolumeReplicationGroup, pvcName, pvcNamespace string) {
+	moverConfig := d.GetDRPCMoverConfig(pvcName, pvcNamespace)
+	if moverConfig != nil { // Found moverConfig for PVC in DRPC Spec
+		found, mc := d.findMoverConfigInVRG(dstVRG, pvcName, pvcNamespace)
+		if found {
+			if !reflect.DeepEqual(moverConfig, mc) {
+				moverConfig.DeepCopyInto(mc)
+			}
+		} else {
+			dstVRG.Spec.VolSync.MoverConfig = append(dstVRG.Spec.VolSync.MoverConfig, *moverConfig)
+		}
+	}
+}
+
+func (d *DRPCInstance) findMoverConfigInVRG(dstVRG *rmn.VolumeReplicationGroup,
+	pvcName, pvcNamespace string,
+) (bool, *rmn.MoverConfig) {
+	found := false
+
+	if len(dstVRG.Spec.VolSync.MoverConfig) > 0 {
+		for _, mc := range dstVRG.Spec.VolSync.MoverConfig {
+			if *mc.PVCName == pvcName && *mc.PVCNameSpace == pvcNamespace {
+				return true, &mc
+			}
+		}
+	}
+
+	return found, nil
+}
+
+func (d *DRPCInstance) GetDRPCMoverConfig(name, namespace string) *rmn.MoverConfig {
+	if len(d.instance.Spec.VolSyncSpec.MoverConfig) > 0 {
+		for _, moverConfig := range d.instance.Spec.VolSyncSpec.MoverConfig {
+			if *moverConfig.PVCName == name &&
+				*moverConfig.PVCNameSpace == namespace {
+				return &moverConfig
+			}
+		}
+	}
+
+	return nil
 }
 
 func (d *DRPCInstance) ResetVolSyncRDOnPrimary(clusterName string) error {
