@@ -1695,7 +1695,8 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 		return err
 	}
 
-	lrd, err := v.getRD(getLocalReplicationName(rdSpec.ProtectedPVC.Name), rdSpec.ProtectedPVC.Namespace)
+	lrd, err := GetRD(v.ctx, v.client,
+		getLocalReplicationName(rdSpec.ProtectedPVC.Name), rdSpec.ProtectedPVC.Namespace, v.log)
 	if err != nil {
 		return err
 	}
@@ -2123,7 +2124,7 @@ func isRSLastSyncTimeReady(rsStatus *volsyncv1alpha1.ReplicationSourceStatus) bo
 }
 
 func (v *VSHandler) getRDLatestImage(pvcName, pvcNamespace string) (*corev1.TypedLocalObjectReference, error) {
-	rd, err := v.getRD(pvcName, pvcNamespace)
+	rd, err := GetRD(v.ctx, v.client, pvcName, pvcNamespace, v.log)
 	if err != nil || rd == nil {
 		return nil, err
 	}
@@ -2616,16 +2617,20 @@ func (v *VSHandler) deleteSnapshot(ctx context.Context,
 	return nil
 }
 
-func (v *VSHandler) getRD(pvcName, pvcNamespace string) (*volsyncv1alpha1.ReplicationDestination, error) {
-	l := v.log.WithValues("pvcName", pvcName)
+func GetRD(ctx context.Context,
+	k8sClient client.Client,
+	name, namespace string,
+	log logr.Logger,
+) (*volsyncv1alpha1.ReplicationDestination, error) {
+	l := log.WithValues("rdName", name)
 
 	// Get RD instance
 	rdInst := &volsyncv1alpha1.ReplicationDestination{}
 
-	err := v.client.Get(v.ctx,
+	err := k8sClient.Get(ctx,
 		types.NamespacedName{
-			Name:      getReplicationDestinationName(pvcName),
-			Namespace: pvcNamespace,
+			Name:      getReplicationDestinationName(name),
+			Namespace: namespace,
 		}, rdInst)
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -2643,7 +2648,7 @@ func (v *VSHandler) getRD(pvcName, pvcNamespace string) (*volsyncv1alpha1.Replic
 }
 
 func (v *VSHandler) pauseRD(rdName, rdNamespace string) (*volsyncv1alpha1.ReplicationDestination, error) {
-	rd, err := v.getRD(rdName, rdNamespace)
+	rd, err := GetRD(v.ctx, v.client, rdName, rdNamespace, v.log)
 	if err != nil || rd == nil {
 		return nil, err
 	}
