@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	errorswrapper "github.com/pkg/errors"
+	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -791,7 +792,12 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
 	}
 
-	return sutil.updatePolicyResources(placement, secret, clusterName, namespace, format, true)
+	err = sutil.updatePolicyResources(placement, secret, clusterName, namespace, format, true)
+	if err != nil {
+		return err
+	}
+
+	return sutil.garbageCollectPlacementRule(secretName, namespace, format)
 }
 
 // RemoveSecretFromCluster removes the secret (secretName) in namespace, from clusterName in the format requested.
@@ -829,5 +835,51 @@ func (sutil *SecretsUtil) RemoveSecretFromCluster(
 		return sutil.deletePolicyResources(secret, namespace, format)
 	}
 
-	return sutil.updatePolicyResources(placement, secret, clusterName, namespace, format, false)
+	err = sutil.updatePolicyResources(placement, secret, clusterName, namespace, format, false)
+	if err != nil {
+		return err
+	}
+
+	return sutil.garbageCollectPlacementRule(secretName, namespace, format)
+}
+
+// garbageCollectPlacementRule removes any leftover PlacementRule resources that were created
+// before the migration to Placement. This is called after successful Placement creation operations
+// to clean up stale plRule resources in upgrade scenarios.
+func (sutil *SecretsUtil) garbageCollectPlacementRule(secretName, namespace string, format TargetSecretFormat) error {
+	placementRuleName := generatePolicyPlacementName(secretName, format)
+
+	placementRule := &plrulev1.PlacementRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      placementRuleName,
+			Namespace: namespace,
+		},
+	}
+
+	err := sutil.APIReader.Get(sutil.Ctx, types.NamespacedName{
+		Name:      placementRuleName,
+		Namespace: namespace,
+	}, placementRule)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to check for PlacementRule %s: %w", placementRuleName, err)
+	}
+
+	sutil.Log.Info("Garbage collecting PlacementRule",
+		"placementRule", placementRuleName, "namespace", namespace, "secret", secretName)
+
+	if err := sutil.Client.Delete(sutil.Ctx, placementRule); err != nil && !k8serrors.IsNotFound(err) {
+		sutil.Log.Error(err, "Failed to garbage collect PlacementRule",
+			"placementRule", placementRuleName, "secret", secretName)
+
+		return fmt.Errorf("failed to delete PlacementRule %s: %w", placementRuleName, err)
+	}
+
+	sutil.Log.Info("Successfully garbage collected PlacementRule",
+		"placementRule", placementRuleName, "namespace", namespace, "secret", secretName)
+
+	return nil
 }
