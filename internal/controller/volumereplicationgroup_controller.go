@@ -2440,10 +2440,14 @@ func (v *VRGInstance) CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList 
 		return nil
 	}
 
-	v.log.Info(fmt.Sprintf("found conflicting VM[%v] on secondary", foundVMs))
+	if len(foundVMs) > 0 {
+		v.log.Info(fmt.Sprintf("found conflicting VM[%v] on secondary", foundVMs))
 
-	return fmt.Errorf("protected VMs on the primary cluster share names with VMs on " +
-		"the secondary site, which may impact failover or recovery")
+		return fmt.Errorf("protected VMs on the primary cluster share names with VMs on " +
+			"the secondary site, which may impact failover or recovery")
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condition {
