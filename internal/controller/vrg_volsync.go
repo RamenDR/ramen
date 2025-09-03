@@ -221,7 +221,11 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		if v.instance.Spec.RunFinalSync && cg == "" {
 			v.log.Info("RunFinalSync is true, but CG label is missing on the PVC. Getting it from the final sync PVC")
 
-			finalSyncPVC, err := util.GetPVC(v.ctx, v.reconciler.Client, types.NamespacedName{Name: pvc.Name + "-for-finalsync", Namespace: pvc.Namespace})
+			finalSyncPVC, err := util.GetPVC(v.ctx, v.reconciler.Client,
+				types.NamespacedName{
+					Name:      pvc.Name + util.SuffixForFinalsyncPVC,
+					Namespace: pvc.Namespace,
+				})
 			if err != nil {
 				v.log.Error(err, "Failed to get final sync PVC to get CG label")
 

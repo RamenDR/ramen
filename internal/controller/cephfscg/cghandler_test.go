@@ -208,7 +208,7 @@ var _ = Describe("Cghandler", func() {
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, &metav1.LabelSelector{}, nil, "0", testLogger)
-			image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "notexist", "default")
+			image, err := vsCGHandler.GetLatestImageFromRGD(nil, "default")
 			Expect(err).NotTo(BeNil())
 			Expect(image).To(BeNil())
 		})
@@ -237,21 +237,6 @@ var _ = Describe("Cghandler", func() {
 
 					return client.IgnoreNotFound(err)
 				}, timeout, interval).Should(BeNil())
-			})
-			It("Should be failed", func() {
-				vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "default",
-						Name:      vrgName,
-						UID:       "123",
-					},
-					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-						Async: &ramendrv1alpha1.VRGAsyncSpec{},
-					},
-				}, &metav1.LabelSelector{}, nil, "0", testLogger)
-				image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
-				Expect(err).NotTo(BeNil())
-				Expect(image).To(BeNil())
 			})
 			Context("rd,rgd exist", func() {
 				BeforeEach(func() {
@@ -310,7 +295,10 @@ var _ = Describe("Cghandler", func() {
 							Async: &ramendrv1alpha1.VRGAsyncSpec{},
 						},
 					}, &metav1.LabelSelector{}, nil, "0", testLogger)
-					image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
+					rgd, err := cephfscg.GetRGD(Ctx, k8sClient, rgdName, "default", testLogger)
+					Expect(err).To(BeNil())
+
+					image, err := vsCGHandler.GetLatestImageFromRGD(rgd, "pvc1")
 					Expect(err).To(BeNil())
 					Expect(image.Name).To(Equal("image1"))
 				})
@@ -383,12 +371,9 @@ var _ = Describe("Cghandler", func() {
 								}, &ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 								"Direct", false,
 							), "0", testLogger)
-						err := vsCGHandler.DeleteLocalRDAndRS(&volsyncv1alpha1.ReplicationDestination{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "pvc1",
-								Namespace: "default",
-							},
-						})
+						rd, err := volsync.GetRD(Ctx, k8sClient, "pvc1", "default", testLogger)
+						Expect(err).To(BeNil())
+						err = vsCGHandler.DeleteLocalRDAndRS(rd)
 						Expect(err).To(BeNil())
 					})
 				})

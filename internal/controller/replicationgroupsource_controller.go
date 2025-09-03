@@ -105,8 +105,8 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
 	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger)
-	
-	if rgs.Spec.Trigger != nil && rgs.Spec.Trigger.Manual == volsync.PrepareForFinalSyncTriggerString {
+
+	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
 		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
 
 		err := vgsHandler.CleanVolumeGroupSnapshot(ctx)
