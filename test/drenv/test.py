@@ -146,6 +146,7 @@ def enable_dr():
     placement_name = placement.split("/")[1]
     consistency_groups = env["features"].get("consistency_groups", False)
     cg_enabled = "true" if consistency_groups else "false"
+    do_not_delete_pvc = "true"
 
     drpc = f"""
 apiVersion: ramendr.openshift.io/v1alpha1
@@ -155,6 +156,7 @@ metadata:
   namespace: {config['namespace']}
   annotations:
     drplacementcontrol.ramendr.openshift.io/is-cg-enabled: '{cg_enabled}'
+    drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc: '{do_not_delete_pvc}'
   labels:
     app: {config['name']}
 spec:
