@@ -280,22 +280,11 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	}
 	//
 	// For final sync only - check status to make sure the final sync is complete
-	// and also run cleanup (removes PVC we just ran the final sync from)
-	//
-	// if runFinalSync && isFinalSyncComplete(rgs) {
-	// 	log.Info("ReplicationGroupSource complete final sync")
-
-	// 	err := c.VSHandler.UndoAfterFinalSync(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
-	// 	if err != nil {
-	// 		return rgs, false, err
-	// 	}
-
-	// 	return rgs, true, c.VSHandler.cleanupAfterRSFinalSync(rsSpec)
-	// }
+	// and also run cleanup of temporary resources
 	if runFinalSync && isFinalSyncComplete(rgs) {
 		log.Info("ReplicationGroupSource complete final sync")
 
-		return rgs, true, c.ensureFinalSyncCleanup(rgs, log)
+		return rgs, true, c.ensureFinalSyncCleanup(rgs)
 	}
 
 	return rgs, false, nil
@@ -303,6 +292,10 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 func (c *cgHandler) GetLatestImageFromRGD(rgd *ramendrv1alpha1.ReplicationGroupDestination, pvcName string,
 ) (*corev1.TypedLocalObjectReference, error) {
+	if rgd == nil {
+		return nil, fmt.Errorf("rgd is nil")
+	}
+
 	latestImage := rgd.Status.LatestImages[pvcName]
 	if latestImage != nil {
 		c.logger.Info("Get latest image from RGD for PVC", "LatestImage", *latestImage)
@@ -555,18 +548,13 @@ func ToPointerSlice[T any](items []T) []*T {
 func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.Logger) (bool, error) {
 	const requeue = true
 
-	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
-	if err := c.Client.Get(c.ctx,
-		types.NamespacedName{Name: rgsName, Namespace: rgsNamespace},
-		rgs); err != nil {
-		log.Error(err, "Failed to retrieve RGS", "RGS", rgsName)
-
+	rgs, err := GetRGS(c.ctx, c.Client, rgsName, rgsNamespace, log)
+	if err != nil {
 		return requeue, err
 	}
 
 	for _, rs := range rgs.Status.ReplicationSources {
-		// Step 1: Get the application PVC
-		appPVC, err := util.GetPVC(c.ctx, c.Client, types.NamespacedName{Namespace: rs.Namespace, Name: rs.Name})
+		srcPVC, err := util.GetPVC(c.ctx, c.Client, types.NamespacedName{Namespace: rs.Namespace, Name: rs.Name})
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				log.Info("Application PVC not found, checking the next one",
@@ -580,38 +568,15 @@ func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.
 			return requeue, err
 		}
 
-		// Step 2: Ensure application PVC is deleted
-		if !util.ResourceIsDeleted(appPVC) {
+		if !util.ResourceIsDeleted(srcPVC) {
 			log.Info("Final sync will not run until application PVC is deleted",
-				"namespace", appPVC.Namespace, "name", appPVC.Name)
+				"namespace", srcPVC.Namespace, "name", srcPVC.Name)
 
 			return requeue, nil
 		}
 
-		// Step 3: If triggered, create/ensure temporary PVC for final sync
-		if rgs.Spec.Trigger != nil && rgs.Spec.Trigger.Manual == volsync.PrepareForFinalSyncTriggerString {
-			result, err := c.VSHandler.SetupTmpPVCForFinalSync(appPVC)
-			if err != nil {
-				log.Error(err, "Failed to set up temporary PVC for final sync")
-
-				return requeue, err
-			}
-
-			if result == requeue {
-				log.Info("Waiting for temporary PVC readiness before final sync")
-
-				return requeue, nil
-			}
-
-			// Ensure the util.ConsistencyGroupLabel is removed from the main PVC
-			if err := util.NewResourceUpdater(appPVC).
-				DeleteLabel(util.ConsistencyGroupLabel).
-				Update(c.ctx, c.Client); err != nil {
-				log.Error(err, "Failed to remove util.ConsistencyGroupLabel from main PVC",
-					"pvcName", appPVC.Name)
-
-				return requeue, err
-			}
+		if IsPrepareForFinalSyncTriggered(rgs) {
+			return c.ensureTmpPVCForFinalSync(srcPVC, log)
 		}
 	}
 
@@ -619,7 +584,36 @@ func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.
 	return !requeue, nil
 }
 
-func (c *cgHandler) ensureFinalSyncCleanup(rgs *ramendrv1alpha1.ReplicationGroupSource, log logr.Logger) error {
+func (c *cgHandler) ensureTmpPVCForFinalSync(srcPVC *corev1.PersistentVolumeClaim, log logr.Logger) (bool, error) {
+	const requeue = true
+
+	result, err := c.VSHandler.SetupTmpPVCForFinalSync(srcPVC)
+	if err != nil {
+		log.Error(err, "Failed to set up temporary PVC for final sync")
+
+		return requeue, err
+	}
+
+	if result == requeue {
+		log.Info("Waiting for temporary PVC readiness before final sync")
+
+		return requeue, nil
+	}
+
+	// Ensure the util.ConsistencyGroupLabel is removed from the main PVC
+	if err := util.NewResourceUpdater(srcPVC).
+		DeleteLabel(util.ConsistencyGroupLabel).
+		Update(c.ctx, c.Client); err != nil {
+		log.Error(err, "Failed to remove util.ConsistencyGroupLabel from main PVC",
+			"pvcName", srcPVC.Name)
+
+		return requeue, err
+	}
+
+	return !requeue, nil
+}
+
+func (c *cgHandler) ensureFinalSyncCleanup(rgs *ramendrv1alpha1.ReplicationGroupSource) error {
 	for _, rs := range rgs.Status.ReplicationSources {
 		err := c.VSHandler.UndoAfterFinalSync(rs.Name, rs.Namespace)
 		if err != nil {
@@ -635,20 +629,37 @@ func (c *cgHandler) ensureFinalSyncCleanup(rgs *ramendrv1alpha1.ReplicationGroup
 	return nil
 }
 
+func GetRGS(ctx context.Context,
+	k8sClient client.Client,
+	name, namespace string,
+	log logr.Logger,
+) (*ramendrv1alpha1.ReplicationGroupSource, error) {
+	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
+	if err := k8sClient.Get(ctx,
+		types.NamespacedName{Name: name, Namespace: namespace},
+		rgs); err != nil {
+		log.Error(err, "Failed to retrieve RGS", "name", name, "namespace", namespace)
+
+		return nil, err
+	}
+
+	return rgs, nil
+}
+
 func GetRGD(ctx context.Context,
 	k8sClient client.Client,
 	name, namespace string,
 	log logr.Logger,
 ) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
-	log.Info("Get ReplicationGroupDestination which manages the ReplicationDestination")
-
 	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
 	if err := k8sClient.Get(ctx,
 		types.NamespacedName{Name: name, Namespace: namespace},
 		rgd); err != nil {
-		log.Error(err, "Failed to get ReplicationGroupDestination")
+		log.Error(err, "Failed to get RGD", "name", name, "namespace", namespace)
+
 		return nil, err
 	}
+
 	return rgd, nil
 }
 
@@ -672,4 +683,9 @@ func PauseRGD(ctx context.Context,
 	}
 
 	return nil
-}	
+}
+
+func IsPrepareForFinalSyncTriggered(rgs *ramendrv1alpha1.ReplicationGroupSource) bool {
+	return rgs.Spec.Trigger != nil &&
+		rgs.Spec.Trigger.Manual == volsync.PrepareForFinalSyncTriggerString
+}

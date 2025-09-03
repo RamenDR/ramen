@@ -2832,7 +2832,7 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 }
 
 func getTmpPVCNameForFinalSync(pvcName string) string {
-	return fmt.Sprintf("%s-for-finalsync", pvcName)
+	return fmt.Sprintf("%s%s", pvcName, util.SuffixForFinalsyncPVC)
 }
 
 func updateClaimRef(pv *corev1.PersistentVolume, name, namespace string) {
