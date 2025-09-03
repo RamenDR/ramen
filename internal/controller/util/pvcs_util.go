@@ -32,6 +32,8 @@ const (
 
 	// Consistency group label
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
+
+	SuffixForFinalsyncPVC = "-for-finalsync"
 )
 
 // nolint:funlen

@@ -464,7 +464,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		restoredPVC := tmpRestoredPVC
 		logger.Info("Create replication source for restored PVC", "RestoredPVC", restoredPVC.RestoredPVCName)
 
-		pvcName := strings.TrimSuffix(restoredPVC.SourcePVCName, "-for-finalsync")
+		pvcName := strings.TrimSuffix(restoredPVC.SourcePVCName, util.SuffixForFinalsyncPVC)
 
 		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
