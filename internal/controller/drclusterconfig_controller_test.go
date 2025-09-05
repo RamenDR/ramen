@@ -10,6 +10,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ramendr/ramen/internal/controller/util"
+
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -154,9 +156,16 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		By("Creating a DClusterConfig")
 
+		mc, err := util.NewManagedClusterInstance(ctx, k8sManager.GetClient(), drCConfig.Name)
+		Expect(err).NotTo(HaveOccurred())
+
+		clusterID, err := mc.ClusterID()
+		Expect(err).NotTo(HaveOccurred())
 		drCConfig = &ramen.DRClusterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "local"},
-			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
+			Spec: ramen.DRClusterConfigSpec{
+				ClusterID: clusterID,
+			},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
 		objectConditionExpectEventually(
