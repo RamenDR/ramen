@@ -79,6 +79,14 @@ func (u *ResourceUpdater) DeleteLabel(key string) *ResourceUpdater {
 	return u
 }
 
+func (u *ResourceUpdater) AddAnnotation(key, value string) *ResourceUpdater {
+	added := AddAnnotation(u.obj, key, value)
+
+	u.objModified = u.objModified || added
+
+	return u
+}
+
 func (u *ResourceUpdater) DeleteAnnotation(key string) *ResourceUpdater {
 	annotations := u.obj.GetAnnotations()
 
