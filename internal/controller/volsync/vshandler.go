@@ -605,7 +605,7 @@ func (v *VSHandler) SetupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (
 func (v *VSHandler) setupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvc.Namespace,
-		Name:      getTmpPVCNameForFinalSync(pvc.Name),
+		Name:      util.GetTmpPVCNameForFinalSync(pvc.Name),
 	})
 	if err != nil && errors.IsNotFound(err) {
 		tmpPVC, err = v.retainPVAndCreateTmpPVC(pvc)
@@ -682,7 +682,7 @@ func (v *VSHandler) retainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
 		pv.Spec.ClaimRef = &corev1.ObjectReference{}
 	}
 
-	tmpPVCName := getTmpPVCNameForFinalSync(pvc.Name)
+	tmpPVCName := util.GetTmpPVCNameForFinalSync(pvc.Name)
 
 	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain &&
 		pv.Spec.ClaimRef.Name == tmpPVCName && pv.Spec.ClaimRef.Namespace == pvc.Namespace {
@@ -703,7 +703,7 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 ) (*corev1.PersistentVolumeClaim, ctrlutil.OperationResult, error) {
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvcNamespacedName.Namespace,
-		Name:      getTmpPVCNameForFinalSync(pvcNamespacedName.Name),
+		Name:      util.GetTmpPVCNameForFinalSync(pvcNamespacedName.Name),
 	})
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -716,7 +716,7 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		}
 
 		tmpPVC = pvc.DeepCopy()
-		tmpPVC.Name = getTmpPVCNameForFinalSync(pvc.Name)
+		tmpPVC.Name = util.GetTmpPVCNameForFinalSync(pvc.Name)
 		tmpPVC.ResourceVersion = ""
 		tmpPVC.UID = ""
 		tmpPVC.Finalizers = nil
@@ -758,7 +758,7 @@ func (v *VSHandler) configureReplicationSourceSpec(rs *volsyncv1alpha1.Replicati
 		v.log.V(1).Info("ReplicationSource - final sync")
 
 		rs.Spec.Paused = false
-		rs.Spec.SourcePVC = getTmpPVCNameForFinalSync(rsSpec.ProtectedPVC.Name)
+		rs.Spec.SourcePVC = util.GetTmpPVCNameForFinalSync(rsSpec.ProtectedPVC.Name)
 
 		// Set trigger for final sync
 		rs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
@@ -786,7 +786,7 @@ func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 	// Remove claimRef and reset the original PVC claimRef (without uid)
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvcNamespace,
-		Name:      getTmpPVCNameForFinalSync(pvcName),
+		Name:      util.GetTmpPVCNameForFinalSync(pvcName),
 	})
 	if err == nil {
 		err2 := v.client.Delete(v.ctx, tmpPVC)
@@ -915,12 +915,12 @@ func (v *VSHandler) prepareForCGFinalSync(rgsNamespacedName, pvcNamespacedName t
 		return fmt.Errorf("failed to pause PVC snapshotting: %w", err)
 	}
 
-	result, err := v.waitForVGSCompletion(rgsNamespacedName, log)
+	wait, err := v.waitForVGSCompletion(rgsNamespacedName, log)
 	if err != nil {
 		return fmt.Errorf("failed to delete VolSync PVC: %w", err)
 	}
 
-	if result {
+	if wait {
 		return fmt.Errorf("waiting for the active VGS to complete")
 	}
 
@@ -977,6 +977,8 @@ func (v *VSHandler) IsActiveVGSPresent(vgsNamespacedName types.NamespacedName) (
 
 		return false, err
 	}
+
+	v.log.V(1).Info("Found volume group snapshot", "vgsName", vgs.Name, "vgsNamespace", vgs.Namespace)
 
 	return true, nil
 }
@@ -2700,9 +2702,18 @@ func (v *VSHandler) updateResource(obj client.Object) error {
 	objKindAndName := getKindAndName(v.client.Scheme(), obj)
 
 	if err := v.client.Update(v.ctx, obj); err != nil {
-		v.log.Error(err, "Failed to update object", "obj", objKindAndName)
+		if errors.IsConflict(err) {
+			v.log.Info("Conflict updating resource, will retry", "KindAndName", objKindAndName)
+			// refetch the resource and try again
+			// we could do a retry loop here, but for now just try once more
+			// since this should be a rare occurrence and even if we return an error
+			// the controller will retry
+			if err := v.client.Get(v.ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+				return fmt.Errorf("failed to get resource %s/%s. Error %v", obj.GetNamespace(), obj.GetName(), err)
+			}
 
-		return fmt.Errorf("failed to update object %s (%w)", objKindAndName, err)
+			return v.client.Update(v.ctx, obj)
+		}
 	}
 
 	v.log.Info("Updated object", "obj", objKindAndName)
@@ -2829,10 +2840,6 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		RemoveFinalizer(PVCFinalizerProtected).
 		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
-}
-
-func getTmpPVCNameForFinalSync(pvcName string) string {
-	return fmt.Sprintf("%s%s", pvcName, util.SuffixForFinalsyncPVC)
 }
 
 func updateClaimRef(pv *corev1.PersistentVolume, name, namespace string) {

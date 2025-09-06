@@ -192,6 +192,8 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		ProtectedPVC: *protectedPVC,
 	}
 
+	v.log.Info("PVC has CG label", "name", pvc.Name, "Labels", pvc.Labels)
+
 	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	isCGEnabled := (ok || v.instance.Spec.RunFinalSync) && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
 
@@ -218,29 +220,29 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 			return true // requeue
 		}
 
+		// In CG workloads, once we enter final sync, the CG label is intentionally removed
+		// from the src PVC. At this stage, the label should be found as an annotation
+		// is the annotation saved earlier. Therefore, we look up the label in the PVC’s
+		// annotations and use it from there. If the annotation is missing, we cannot safely
+		// proceed with the final sync.
 		if v.instance.Spec.RunFinalSync && cg == "" {
-			v.log.Info("RunFinalSync is true, but CG label is missing on the PVC. Getting it from the final sync PVC")
+			v.log.Info("CG label not found on PVC, retrieving from annotation (RunFinalSync=true)")
 
-			finalSyncPVC, err := util.GetPVC(v.ctx, v.reconciler.Client,
-				types.NamespacedName{
-					Name:      pvc.Name + util.SuffixForFinalsyncPVC,
-					Namespace: pvc.Namespace,
-				})
-			if err != nil {
-				v.log.Error(err, "Failed to get final sync PVC to get CG label")
+			const msg = "CG label from annotation not found on src PVC; final sync cannot continue"
+			if pvc.GetAnnotations() == nil {
+				v.log.Info(msg)
 
 				return true // requeue
 			}
 
-			cg, ok = finalSyncPVC.Labels[util.ConsistencyGroupLabel]
+			cg, ok = pvc.GetAnnotations()[util.ConsistencyGroupLabel]
 			if !ok || cg == "" {
-				v.log.Info("CG label is still missing on the final sync PVC. Cannot proceed with final sync")
+				v.log.Info(msg)
 
 				return true // requeue
 			}
 		}
 
-		v.log.Info("PVC has CG label", "Labels", pvc.Labels)
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
 			v.ctx, v.reconciler.Client, v.instance,
 			&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: cg}},
@@ -248,7 +250,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		)
 
 		rgs, finalSyncComplete, err := cephfsCGHandler.CreateOrUpdateReplicationGroupSource(
-			v.instance.Name, pvc.Namespace, v.instance.Spec.RunFinalSync,
+			pvc.Namespace, v.instance.Spec.RunFinalSync,
 		)
 		if err != nil {
 			v.log.Info("Failed to CreateOrUpdateReplicationGroupSource", "err", err)

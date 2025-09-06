@@ -180,7 +180,7 @@ var _ = Describe("Cghandler", func() {
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, &metav1.LabelSelector{}, nil, rgsName, testLogger)
-			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource(rgsName, "default", false)
+			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource("default", false)
 			Expect(err).To(BeNil())
 			Expect(finalSync).To(BeFalse())
 			Expect(rgs.Spec.Trigger.Schedule).NotTo(BeNil())
