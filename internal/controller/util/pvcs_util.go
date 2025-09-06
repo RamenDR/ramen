@@ -104,6 +104,8 @@ func ListPVCsByPVCSelector(
 		}
 	}
 
+	logger.Info(fmt.Sprintf("Returning %d PVCs in namespace(s) %v", len(pvcs), namespaces))
+
 	pvcList.Items = pvcs
 
 	return pvcList, nil
@@ -391,4 +393,8 @@ func sortJSON(v interface{}) interface{} {
 	}
 
 	return v
+}
+
+func GetTmpPVCNameForFinalSync(pvcName string) string {
+	return fmt.Sprintf("%s%s", pvcName, SuffixForFinalsyncPVC)
 }
