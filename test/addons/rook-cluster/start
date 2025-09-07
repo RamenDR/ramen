@@ -48,7 +48,7 @@ CSIADDONS_NODES = [
 
 def deploy(cluster):
     print("Deploying rook ceph cluster")
-    path = cache.get(".", "addons/rook-cluster-1.18.yaml")
+    path = cache.get(".", "addons/rook-cluster-1.18-1.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
 
