@@ -7,4 +7,5 @@ import os
 from drenv import cache
 
 os.chdir(os.path.dirname(__file__))
-cache.refresh("crds", "addons/odf-external-snapshotter-8.2.yaml")
+cache.refresh("crds", "addons/odf-external-snapshotter-crds-8.2.yaml")
+cache.refresh("controller", "addons/odf-external-snapshotter-controller-8.2.yaml")
