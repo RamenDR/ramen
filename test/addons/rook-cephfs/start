@@ -34,6 +34,14 @@ def deploy(cluster):
     yaml = template.substitute(cluster=cluster, scname=storage_class_name)
     kubectl.apply("--filename=-", input=yaml, context=cluster)
 
+    print("Creating SnapshotGroupClass")
+    template = drenv.template("snapshot-group-class.yaml")
+    storage_class_name = STORAGE_CLASS_NAME_PREFIX + FILE_SYSTEMS[0]
+    yaml = template.substitute(
+        cluster=cluster, scname=storage_class_name, fsname=FILE_SYSTEMS[0]
+    )
+    kubectl.apply("--filename=-", input=yaml, context=cluster)
+
 
 def wait(cluster):
     print("Waiting until Ceph File Systems are ready")
