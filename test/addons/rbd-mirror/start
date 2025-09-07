@@ -115,6 +115,12 @@ def configure_rbd_mirroring(cluster, peer_info):
         )
         kubectl.apply("--filename=-", input=yaml, context=cluster)
 
+    template = drenv.template("start-data/vgrc-sample.yaml")
+    yaml = template.substitute(
+        cluster=cluster, pool=POOL_NAME, scname="rook-ceph-block"
+    )
+    kubectl.apply("--filename=-", input=yaml, context=cluster)
+
     print(f"Apply rbd mirror to cluster '{cluster}'")
     kubectl.apply("--kustomize=start-data", context=cluster)
 
