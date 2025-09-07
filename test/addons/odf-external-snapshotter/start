@@ -12,11 +12,28 @@ from drenv import cache
 
 def deploy(cluster):
     print("Deploying crds")
-    path = cache.get("crds", "addons/odf-external-snapshotter-8.2.yaml")
+    path = cache.get("crds", "addons/odf-external-snapshotter-crds-8.2.yaml")
     kubectl.apply("--filename", path, context=cluster)
 
     print("Waiting until crds are established")
     kubectl.wait("--for=condition=established", "--filename", path, context=cluster)
+
+    print("Deploying snapshot-controller")
+    path = cache.get(
+        "controller", "addons/odf-external-snapshotter-controller-8.2.yaml"
+    )
+    kubectl.apply("--filename", path, context=cluster)
+
+
+def wait(cluster):
+    print("Waiting until snapshot-controller is rolled out")
+    kubectl.rollout(
+        "status",
+        "deploy/odf-external-snapshotter-operator",
+        "--namespace=kube-system",
+        "--timeout=300s",
+        context=cluster,
+    )
 
 
 if len(sys.argv) != 2:
@@ -27,3 +44,4 @@ os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
 deploy(cluster)
+wait(cluster)
