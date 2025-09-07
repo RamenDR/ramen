@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: groupsnapshot.storage.openshift.io/v1beta1
+deletionPolicy: Delete
+driver: rook-ceph.cephfs.csi.ceph.com
+kind: VolumeGroupSnapshotClass
+metadata:
+  name: csi-cephfsplugin-groupsnapclass
+  labels:
+    ramendr.openshift.io/storageid: $scname-$cluster-1
+parameters:
+  clusterID: rook-ceph
+  fsName: $fsname
+  csi.storage.k8s.io/group-snapshotter-secret-name: rook-csi-cephfs-provisioner
+  csi.storage.k8s.io/group-snapshotter-secret-namespace: rook-ceph
