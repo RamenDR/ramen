@@ -29,3 +29,12 @@ patches:
           enabled: true
           periodicity: daily
           maxLogSize: 50M
+
+  - target:
+      kind: CephCluster
+      name: my-cluster
+      namespace: rook-ceph
+    patch: |-
+      - op: replace
+        path: /spec/cephVersion/image
+        value: quay.ceph.io/ceph-ci/ceph:wip-rbd-cgsm-base
