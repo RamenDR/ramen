@@ -936,7 +936,10 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 		return err
 	}
 
-	if err := v.volSyncHandler.DeleteRD(name, namespace); err != nil {
+	// Here, we don't remove the RD as an owner of the PVC as the RD is being deleted because the workload is being
+	// deleted. Instead, we want garbage collection to clean up the PVC as part of that RD deletion (because it is on
+	// the secondary.)
+	if err := v.volSyncHandler.DeleteRD(name, namespace, true); err != nil {
 		return err
 	}
 
