@@ -71,6 +71,9 @@ const (
 	PVAnnotationRetentionValue = "retained"
 
 	PVCFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-volsync-protection"
+
+	PVCLabelOwnerName          = "ramendr.openshift.io/owner-name"
+	PVCLabelOwnerNamespaceName = "ramendr.openshift.io/owner-namespace-name"
 )
 
 type VSHandler struct {
@@ -1123,6 +1126,73 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 	return nil
 }
 
+// shouldDeletePVC returns true if the VRG (v.owner) is being deleted.
+func (v *VSHandler) shouldDeletePVC() bool {
+	return v.owner.GetDeletionTimestamp() != nil
+}
+
+// tryDeleteLabeledPVC deletes the PVC if it's labeled as owned by the VRG.
+func (v *VSHandler) tryDeleteLabeledPVC(pvcName, pvcNamespace, vrgName, vrgNamespace string) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := client.ObjectKey{Name: pvcName, Namespace: pvcNamespace}
+
+	if err := v.client.Get(v.ctx, key, pvc); err != nil {
+		v.log.Error(err, "Unable to fetch PVC for deletion", "pvcName", pvcName, "pvcNamespace", pvcNamespace)
+
+		return
+	}
+
+	if pvcOwnedByVRG(pvc, vrgName, vrgNamespace) {
+		if err := v.client.Delete(v.ctx, pvc); err != nil {
+			v.log.Error(err, "Error deleting orphaned PVC", "pvcName", pvcName, "pvcNamespace", pvcNamespace)
+		} else {
+			v.log.Info("Deleted labeled orphaned PVC during VRG finalization", "pvcName", pvcName, "pvcNamespace", pvcNamespace)
+		}
+	} else {
+		v.log.Info("PVC not deleted; ownership labels did not match VRG",
+			"pvcName", pvcName, "pvcNamespace", pvcNamespace,
+			"expected-owner-name", vrgName,
+			"expected-owner-namespace-name", vrgNamespace)
+	}
+}
+
+// pvcOwnedByVRG checks if the PVC has labels matching the VRG name/namespace.
+func pvcOwnedByVRG(pvc *corev1.PersistentVolumeClaim, vrgName, vrgNamespace string) bool {
+	labels := pvc.GetLabels()
+
+	return labels[PVCLabelOwnerName] == vrgName &&
+		labels[PVCLabelOwnerNamespaceName] == vrgNamespace
+}
+
+// handleRDDeletion Conditionally delete the PVC and RD
+func (v *VSHandler) handleRDDeletion(
+	rd *volsyncv1alpha1.ReplicationDestination,
+	pvcName, pvcNamespace string,
+	shouldDeletePVC bool,
+	vrgName, vrgNamespace string,
+) error {
+	if shouldDeletePVC {
+		v.tryDeleteLabeledPVC(pvcName, pvcNamespace, vrgName, vrgNamespace)
+	}
+
+	if v.IsCopyMethodDirect() {
+		if err := v.deleteLocalRDAndRS(rd); err != nil {
+			return err
+		}
+	}
+
+	if err := v.client.Delete(v.ctx, rd); err != nil {
+		v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
+	} else {
+		v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+	}
+
+	return nil
+}
+
+// DeleteRD deletes a ReplicationDestination named after the PVC and deletes the PVC
+// if it's labeled as owned by the VRG and the VRG is being deleted.
+//
 //nolint:nestif
 func (v *VSHandler) DeleteRD(pvcName string, pvcNamespace string) error {
 	// Remove a ReplicationDestination by name that is owned (by parent vrg owner)
@@ -1131,21 +1201,16 @@ func (v *VSHandler) DeleteRD(pvcName string, pvcNamespace string) error {
 		return err
 	}
 
+	vrgName := v.owner.GetName()
+	vrgNamespace := v.owner.GetNamespace()
+	shouldDeletePVC := v.shouldDeletePVC()
+
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
 
 		if rd.GetName() == getReplicationDestinationName(pvcName) {
-			if v.IsCopyMethodDirect() {
-				err := v.deleteLocalRDAndRS(&rd)
-				if err != nil {
-					return err
-				}
-			}
-			// Delete the ReplicationDestination, log errors with cleanup but continue on
-			if err := v.client.Delete(v.ctx, &rd); err != nil {
-				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
-			} else {
-				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+			if err := v.handleRDDeletion(&rd, pvcName, pvcNamespace, shouldDeletePVC, vrgName, vrgNamespace); err != nil {
+				return err
 			}
 		}
 	}
