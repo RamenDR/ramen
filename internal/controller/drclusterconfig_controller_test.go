@@ -10,6 +10,8 @@ import (
 	"slices"
 	"time"
 
+	"open-cluster-management.io/api/cluster/v1alpha1"
+
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -154,9 +156,19 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		By("Creating a DClusterConfig")
 
+		clusterClaimClusterID := &v1alpha1.ClusterClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "id.k8s.io",
+			},
+			Spec: v1alpha1.ClusterClaimSpec{Value: "cid"},
+		}
+		Expect(k8sClient.Create(context.TODO(), clusterClaimClusterID)).To(Succeed())
+
 		drCConfig = &ramen.DRClusterConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "local"},
-			Spec:       ramen.DRClusterConfigSpec{ClusterID: "local-cid"},
+			Spec: ramen.DRClusterConfigSpec{
+				ClusterID: "cid",
+			},
 		}
 		Expect(k8sClient.Create(context.TODO(), drCConfig)).To(Succeed())
 		objectConditionExpectEventually(
