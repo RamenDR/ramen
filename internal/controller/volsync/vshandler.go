@@ -717,6 +717,7 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		tmpPVC.ObjectMeta.Labels = map[string]string{} // don't include it in the next reconciliation
 		tmpPVC.Finalizers = nil
 		tmpPVC.Annotations = map[string]string{} // {"ramendr/tmp-pvc-created": "yes"}
+		util.AddLabel(tmpPVC, util.CreatedByRamenLabel, "true")
 	} else {
 		v.log.V(1).Info("Found tmp PVC", "tmpPVC", tmpPVC.Name)
 
@@ -1457,8 +1458,6 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 			Namespace: rdSpec.ProtectedPVC.Namespace,
 		},
 	}
-
-	util.AddLabel(pvc, util.CreatedByRamenLabel, "true")
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
 		if !v.vrgInAdminNamespace {

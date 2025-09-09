@@ -31,6 +31,7 @@ const (
 	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
 )
 
+// nolint:funlen
 func ListPVCsByPVCSelector(
 	ctx context.Context,
 	k8sClient client.Client,
@@ -60,6 +61,17 @@ func ListPVCsByPVCSelector(
 		}
 
 		updatedPVCSelector = pvcSelector.Add(*notCreatedByVolsyncReq)
+
+		// Update the label selector to filter out PVCs created by ramen
+		notCreatedByRamen, err := labels.NewRequirement(
+			CreatedByRamenLabel, selection.NotIn, []string{"true"})
+		if err != nil {
+			logger.Error(err, "error updating PVC label selector for created by ramen label")
+
+			return nil, fmt.Errorf("error updating PVC label selector for created by ramen label, %w", err)
+		}
+
+		updatedPVCSelector = updatedPVCSelector.Add(*notCreatedByRamen)
 	}
 
 	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", updatedPVCSelector)
