@@ -448,6 +448,18 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 		ObservedGeneration: vrg.Generation,
 	})
 
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeNoClusterDataConflict,
+		Reason:             controllers.VRGConditionReasonNoConflictDetected,
+		Status:             metav1.ConditionTrue,
+		Message:            "No resource conflict",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
+
+	t := metav1.Now()
+	vrg.Status.LastGroupSyncTime = &t
+
 	return vrg, nil
 }
 
@@ -1177,6 +1189,14 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	Expect(placementObj.GetAnnotations()[controllers.DRPCNamespaceAnnotation]).Should(Equal(namespace))
 }
 
+func waitForDRPCProtected(namespace string) {
+	Eventually(func() bool {
+		drpc := getLatestDRPC(namespace)
+		_, cond := getDRPCCondition(&drpc.Status, rmn.ConditionProtected)
+		return cond != nil && cond.Status == metav1.ConditionTrue
+	}, timeout, interval).Should(BeTrue())
+}
+
 func getPlacementDecision(plName, plNamespace string) *clrapiv1beta1.PlacementDecision {
 	plDecision := &clrapiv1beta1.PlacementDecision{}
 	plDecisionKey := types.NamespacedName{
@@ -1477,6 +1497,8 @@ func recoverToFailoverCluster(placementObj client.Object, fromCluster, toCluster
 	setDRPCSpecExpectationTo(placementObj.GetNamespace(), fromCluster, toCluster, rmn.ActionFailover)
 
 	updateManifestWorkStatus(toCluster, placementObj.GetNamespace(), "vrg", ocmworkv1.WorkApplied)
+
+	waitForDRPCProtected(placementObj.GetNamespace())
 
 	verifyUserPlacementRuleDecision(placementObj.GetName(), placementObj.GetNamespace(), toCluster)
 	verifyDRPCStatusPreferredClusterExpectation(placementObj.GetNamespace(), rmn.FailedOver)
