@@ -1193,6 +1193,7 @@ func waitForDRPCProtected(namespace string) {
 	Eventually(func() bool {
 		drpc := getLatestDRPC(namespace)
 		_, cond := getDRPCCondition(&drpc.Status, rmn.ConditionProtected)
+
 		return cond != nil && cond.Status == metav1.ConditionTrue
 	}, timeout, interval).Should(BeTrue())
 }
