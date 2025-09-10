@@ -193,9 +193,9 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	v.log.Info("PVC has CG label", "name", pvc.Name, "Labels", pvc.Labels)
+	cg, ok := v.getCGLablelFromPVC(&pvc, v.instance.Spec.RunFinalSync)
 
-	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
-	isCGEnabled := (ok || v.instance.Spec.RunFinalSync) && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
+	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
 
 	pvcNamespacedName := util.ProtectedPVCNamespacedName(*protectedPVC)
 
@@ -218,29 +218,6 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 			v.log.Info("PrepareForFinalSync is true, so we will not run final sync for CG PVCs", "CG", cg)
 
 			return true // requeue
-		}
-
-		// In CG workloads, once we enter final sync, the CG label is intentionally removed
-		// from the src PVC. At this stage, the label should be found as an annotation
-		// is the annotation saved earlier. Therefore, we look up the label in the PVC’s
-		// annotations and use it from there. If the annotation is missing, we cannot safely
-		// proceed with the final sync.
-		if v.instance.Spec.RunFinalSync && cg == "" {
-			v.log.Info("CG label not found on PVC, retrieving from annotation (RunFinalSync=true)")
-
-			const msg = "CG label from annotation not found on src PVC; final sync cannot continue"
-			if pvc.GetAnnotations() == nil {
-				v.log.Info(msg)
-
-				return true // requeue
-			}
-
-			cg, ok = pvc.GetAnnotations()[util.ConsistencyGroupLabel]
-			if !ok || cg == "" {
-				v.log.Info(msg)
-
-				return true // requeue
-			}
 		}
 
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
@@ -915,4 +892,32 @@ func (v *VRGInstance) aggregateVolSyncClusterDataConflictCondition() *metav1.Con
 	}
 
 	return noClusterDataConflictCondition
+}
+
+func (v *VRGInstance) getCGLablelFromPVC(pvc *corev1.PersistentVolumeClaim, finalSync bool) (string, bool) {
+	cgLabelVal, ok := pvc.Labels[util.ConsistencyGroupLabel]
+	if ok && cgLabelVal != "" {
+		return cgLabelVal, true
+	}
+	// In CG workloads, once we enter final sync, the CG label is intentionally removed
+	// from the src PVC. At this stage, the label should be found as an annotation
+	// is the annotation saved earlier. Therefore, we look up the label in the PVC’s
+	// annotations and use it from there. If the annotation is missing, we cannot safely
+	// proceed with the final sync.
+	if finalSync {
+		v.log.Info("The CG label is not found in the PVC's labels. Looking up in annotations", "PVC", pvc.Name)
+
+		if pvc.GetAnnotations() != nil {
+			cgLabelVal, ok = pvc.GetAnnotations()[util.ConsistencyGroupLabel]
+			if ok && cgLabelVal != "" {
+				v.log.Info("The CG label is found in the PVC's annotations", "Label", cgLabelVal)
+
+				return cgLabelVal, true
+			}
+		}
+	}
+
+	v.log.Info("The CG label is not found", "PVC", pvc.Name)
+
+	return "", false
 }
