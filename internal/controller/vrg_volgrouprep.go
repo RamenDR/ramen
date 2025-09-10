@@ -471,8 +471,8 @@ func (v *VRGInstance) deleteVGRIfUnused(vgr *volrep.VolumeGroupReplication) erro
 		return nil
 	}
 
-	err := v.reconciler.Delete(v.ctx, vgr)
-	if err != nil && !k8serrors.IsNotFound(err) {
+	vrNamespacedName := types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}
+	if err := v.deleteVGR(vrNamespacedName, v.log); err != nil {
 		return err
 	}
 	// TODO: Delete VGR from S3 store
