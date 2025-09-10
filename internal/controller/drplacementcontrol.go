@@ -392,12 +392,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 	// Use the DRPC Protected condition to check if it is true and then allow failover
 	if !d.isProtected() {
-		const msg = "waiting for workload protection before starting failover"
-		d.log.Info("Failover blocked", "reason", msg)
-
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
-
 		return !done, nil
 	}
 
@@ -408,10 +402,17 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 func (d *DRPCInstance) isProtected() bool {
 	for _, cond := range d.instance.Status.Conditions {
-		if cond.Type == rmn.ConditionProtected {
-			return cond.Status == metav1.ConditionTrue
+		if cond.Type == rmn.ConditionProtected && cond.Status == metav1.ConditionTrue {
+			return true
 		}
 	}
+
+	const msg = "waiting for workload protection before starting failover"
+	d.log.Info("Failover blocked", "reason", msg)
+
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
+
 	return false
 }
 
