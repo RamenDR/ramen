@@ -580,7 +580,7 @@ func (v *VSHandler) setupForFinalSync(rsSpec *ramendrv1alpha1.VolSyncReplication
 
 	// Proceed only if the ReplicationSource trigger is set for final sync
 	if rs.Spec.Trigger != nil && rs.Spec.Trigger.Manual == PrepareForFinalSyncTriggerString {
-		requeue, err := v.setupTmpPVCForFinalSync(pvc)
+		requeue, err := v.SetupTmpPVCForFinalSync(pvc)
 		if err != nil {
 			v.log.Error(err, "Failed to set up temporary PVC for final sync")
 
@@ -597,12 +597,8 @@ func (v *VSHandler) setupForFinalSync(rsSpec *ramendrv1alpha1.VolSyncReplication
 	return proceed
 }
 
-func (v *VSHandler) SetupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
-	return v.setupTmpPVCForFinalSync(pvc)
-}
-
 // Handles the creation and management of the tmpPVC for final sync
-func (v *VSHandler) setupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
+func (v *VSHandler) SetupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (bool, error) {
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvc.Namespace,
 		Name:      util.GetTmpPVCNameForFinalSync(pvc.Name),
@@ -721,11 +717,16 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		tmpPVC.UID = ""
 		tmpPVC.Finalizers = nil
 		tmpPVC.Annotations = map[string]string{} // {"ramendr/tmp-pvc-created": "yes"}
-		util.AddLabel(tmpPVC, util.CreatedByRamenLabel, "true")
+		// We don't need any labels by default, but if the original PVC has a CG label,
+		// include it on the tmpPVC so that if the CG is enabled the tmpPVC will be included
+		// in the same CG as the original PVC.
+		// Note: We are not copying the original PVC labels, they are not copied as we don't
+		// want the tmpPVC to be selected by any label selectors that may have been used
+		// to select the original PVC (e.g. VRG PVC label selector)
+		// We only need the CG label if it exists.
+		tmpPVC.ObjectMeta.Labels = map[string]string{util.CreatedByRamenLabel: "true"}
 		if cgVal, ok := pvc.GetLabels()[util.ConsistencyGroupLabel]; ok {
-			tmpPVC.ObjectMeta.Labels = map[string]string{
-				util.ConsistencyGroupLabel: cgVal, // include only CG label if exists
-			}
+			tmpPVC.ObjectMeta.Labels[util.ConsistencyGroupLabel] = cgVal
 		}
 	} else {
 		v.log.V(1).Info("Found tmp PVC", "tmpPVC", tmpPVC.Name)
