@@ -621,7 +621,10 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 }
 
 func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bool {
-	return pvc.Spec.Resources.Requests["storage"] == pvc.Status.Capacity["storage"]
+	requested := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	actual := pvc.Status.Capacity[corev1.ResourceStorage]
+
+	return requested.Cmp(actual) == 0
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
