@@ -119,6 +119,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 	}
 
 	util.AddLabel(rgd, util.CreatedByRamenLabel, "true")
+	util.AddLabel(rgd, util.ExcludeFromVeleroBackup, "true")
 
 	_, err := ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgd, func() error {
 		if c.VSHandler != nil && !c.VSHandler.IsVRGInAdminNamespace() {
@@ -214,6 +215,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	}
 
 	util.AddLabel(rgs, util.CreatedByRamenLabel, "true")
+	util.AddLabel(rgs, util.ExcludeFromVeleroBackup, "true")
 
 	_, err = ctrlutil.CreateOrUpdate(c.ctx, c.Client, rgs, func() error {
 		if c.VSHandler != nil && !c.VSHandler.IsVRGInAdminNamespace() {
