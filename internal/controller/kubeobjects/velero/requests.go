@@ -428,9 +428,13 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		IncludedNamespaces: objectsSpec.IncludedNamespaces,
 		IncludedResources:  objectsSpec.IncludedResources,
 		// exclude VRs from Backup so VRG can create them: see https://github.com/RamenDR/ramen/issues/884
+		// exclude EndpointSlices/Endpoints to prevent Submariner conflicts: see https://github.com/RamenDR/ramen/issues/1889
+		// exclude VolumeSnapshots and VolumeGroupSnapshots from backup
 		ExcludedResources: append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io",
-			"replicationsources.volsync.backube", "replicationdestinations.volsync.backube",
-			"PersistentVolumeClaims", "PersistentVolumes"),
+			"volumegroupreplications.replication.storage.openshift.io", "replicationsources.volsync.backube",
+			"replicationdestinations.volsync.backube", "PersistentVolumeClaims", "PersistentVolumes",
+			"endpointslices.discovery.k8s.io", "endpoints", "volumesnapshots.snapshot.storage.k8s.io",
+			"volumegroupsnapshots.groupsnapshot.storage.k8s.io"),
 		LabelSelector:           newLabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
