@@ -36,7 +36,7 @@ type FakeVolumeGroupSourceHandler struct {
 	cleanVolumeGroupSnapshotReturnsOnCall map[int]struct {
 		result1 error
 	}
-	CreateOrUpdateReplicationSourceForRestoredPVCsStub        func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, error)
+	CreateOrUpdateReplicationSourceForRestoredPVCsStub        func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, bool, error)
 	createOrUpdateReplicationSourceForRestoredPVCsMutex       sync.RWMutex
 	createOrUpdateReplicationSourceForRestoredPVCsArgsForCall []struct {
 		arg1 context.Context
@@ -52,7 +52,7 @@ type FakeVolumeGroupSourceHandler struct {
 		result1 []*v1.ObjectReference
 		result2 error
 	}
-	CreateOrUpdateVolumeGroupSnapshotStub        func(context.Context, v1a.Object) error
+	CreateOrUpdateVolumeGroupSnapshotStub        func(context.Context, v1a.Object) (bool, error)
 	createOrUpdateVolumeGroupSnapshotMutex       sync.RWMutex
 	createOrUpdateVolumeGroupSnapshotArgsForCall []struct {
 		arg1 context.Context
@@ -213,7 +213,7 @@ func (fake *FakeVolumeGroupSourceHandler) CleanVolumeGroupSnapshotReturnsOnCall(
 	}{result1}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(arg1 context.Context, arg2 string, arg3 []cephfscg.RestoredPVC, arg4 v1a.Object) ([]*v1.ObjectReference, error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(arg1 context.Context, arg2 string, arg3 []cephfscg.RestoredPVC, arg4 v1a.Object) ([]*v1.ObjectReference, bool, error) {
 	var arg3Copy []cephfscg.RestoredPVC
 	if arg3 != nil {
 		arg3Copy = make([]cephfscg.RestoredPVC, len(arg3))
@@ -235,9 +235,9 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 		return stub(arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1, false, ret.result2
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1, false, fakeReturns.result2
 }
 
 func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCallCount() int {
@@ -246,7 +246,7 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 	return len(fake.createOrUpdateReplicationSourceForRestoredPVCsArgsForCall)
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCalls(stub func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, error)) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCalls(stub func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, bool, error)) {
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Lock()
 	defer fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub = stub
@@ -285,7 +285,7 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 	}{result1, result2}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(arg1 context.Context, arg2 v1a.Object) error {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(arg1 context.Context, arg2 v1a.Object) (bool, error) {
 	fake.createOrUpdateVolumeGroupSnapshotMutex.Lock()
 	ret, specificReturn := fake.createOrUpdateVolumeGroupSnapshotReturnsOnCall[len(fake.createOrUpdateVolumeGroupSnapshotArgsForCall)]
 	fake.createOrUpdateVolumeGroupSnapshotArgsForCall = append(fake.createOrUpdateVolumeGroupSnapshotArgsForCall, struct {
@@ -300,9 +300,9 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(arg1
 		return stub(arg1, arg2)
 	}
 	if specificReturn {
-		return ret.result1
+		return false, ret.result1
 	}
-	return fakeReturns.result1
+	return false, fakeReturns.result1
 }
 
 func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCallCount() int {
@@ -311,7 +311,7 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCallC
 	return len(fake.createOrUpdateVolumeGroupSnapshotArgsForCall)
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCalls(stub func(context.Context, v1a.Object) error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCalls(stub func(context.Context, v1a.Object) (bool, error)) {
 	fake.createOrUpdateVolumeGroupSnapshotMutex.Lock()
 	defer fake.createOrUpdateVolumeGroupSnapshotMutex.Unlock()
 	fake.CreateOrUpdateVolumeGroupSnapshotStub = stub
