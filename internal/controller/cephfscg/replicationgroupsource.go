@@ -105,12 +105,19 @@ func (m *replicationGroupSourceMachine) Conditions() *[]metav1.Condition {
 func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Create volume group snapshot")
 
-	if err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
+	createdOrUpdatedVGS, err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
 		ctx, m.ReplicationGroupSource,
-	); err != nil {
+	)
+	if err != nil {
 		m.Logger.Error(err, "Failed to create volume group snapshot")
 
 		return mover.InProgress(), err
+	}
+
+	if createdOrUpdatedVGS {
+		m.Logger.Info("VolumeGroupSnapshot was created or updated, need to wait until it's ready to be used")
+
+		return mover.InProgress(), nil
 	}
 
 	m.Logger.Info("Create ReplicationSource for each Restored PVC")
@@ -151,12 +158,18 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		return mover.InProgress(), err
 	}
 
-	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
+	replicationSources, srcCreatedOrUpdated, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource)
 	if err != nil {
 		m.Logger.Error(err, "Failed to create replication source")
 
 		return mover.InProgress(), err
+	}
+
+	if srcCreatedOrUpdated {
+		m.Logger.Info("Some replication sources were created or updated, need to wait until they are ready to be used")
+
+		return mover.InProgress(), nil
 	}
 
 	m.ReplicationGroupSource.Status.ReplicationSources = replicationSources

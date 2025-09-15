@@ -56,7 +56,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 	})
 	Describe("CreateOrUpdateVolumeGroupSnapshot", func() {
 		It("Should be successful", func() {
-			err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+			_, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 			Expect(err).To(BeNil())
 			Eventually(func() []string {
 				volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
@@ -88,7 +88,8 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		})
 		Context("Restored PVC exist", func() {
 			BeforeEach(func() {
-				err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+				createdOrUpdatedVGS, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+				Expect(createdOrUpdatedVGS).To(BeTrue())
 				Expect(err).To(BeNil())
 				UpdateVGS(rgs, vsName, appPVCName)
 
@@ -121,7 +122,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		})
 		Context("There is VolumeGroupSnapshot, but not ready", func() {
 			BeforeEach(func() {
-				err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+				_, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 				Expect(err).To(BeNil())
 			})
 			It("Should be failed", func() {
@@ -145,10 +146,11 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 	Describe("CreateOrUpdateReplicationSourceForRestoredPVCs", func() {
 		It("Should be successful", func() {
-			rsList, err := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
+			rsList, srcCreatedOrUpdated, err := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 				context.Background(), "maunal",
 				[]cephfscg.RestoredPVC{{SourcePVCName: "source", RestoredPVCName: "resource", VolumeSnapshotName: "vs"}}, rgs)
 			Expect(err).To(BeNil())
+			Expect(srcCreatedOrUpdated).To(BeTrue())
 			Expect(len(rsList)).To(Equal(1))
 		})
 	})
