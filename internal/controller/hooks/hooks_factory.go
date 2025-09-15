@@ -21,14 +21,16 @@ type HookExecutor interface {
 }
 
 // Based on the hook type, return the appropriate implementation of the hook.
-func GetHookExecutor(hook kubeobjects.HookSpec, reader client.Reader, scheme *runtime.Scheme,
+func GetHookExecutor(hook kubeobjects.HookSpec, client client.Client, scheme *runtime.Scheme,
 	recipeElements util.RecipeElements,
 ) (HookExecutor, error) {
 	switch hook.Type {
 	case "check":
-		return CheckHook{Hook: &hook, Reader: reader}, nil
+		return CheckHook{Hook: &hook, Reader: client}, nil
 	case "exec":
-		return ExecHook{Hook: &hook, Reader: reader, Scheme: scheme, RecipeElements: recipeElements}, nil
+		return ExecHook{Hook: &hook, Reader: client, Scheme: scheme, RecipeElements: recipeElements}, nil
+	case "scale":
+		return ScaleHook{Hook: &hook, Client: client}, nil
 	default:
 		return nil, fmt.Errorf("unsupported hook type")
 	}
