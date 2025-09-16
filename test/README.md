@@ -33,7 +33,7 @@ environment.
 1. Install minikube, for example on RHEL/CentOS/Fedora:
 
    ```
-   sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.36.0/minikube-1.36.0-0.x86_64.rpm
    ```
 
    Tested with version v1.36.0.
