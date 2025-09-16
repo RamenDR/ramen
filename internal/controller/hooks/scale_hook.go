@@ -11,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -18,17 +19,16 @@ const (
 	ScaleUp                 = "up"
 	ScaleDown               = "down"
 	ScaleSync               = "sync"
-	replicasCountAnnotation = "ramendr.io/replicas-count"
+	replicasCountAnnotation = "ramendr.io/scale-hook-replicas-count"
 )
 
 type ScaleResource interface {
-	GetReplicas() *int32
+	GetReplicasFromSpec() *int32
 	SetReplicas(*int32)
-	getActualReplicas() *int32
+	GetReplicasFromStatus() *int32
 	GetAnnotations() map[string]string
 	SetAnnotations(map[string]string)
-	GetName() string
-	GetNamespace() string
+	GetObjectMeta() metav1.Object
 	Update(ctx context.Context, writer client.Writer) error
 }
 
@@ -36,7 +36,7 @@ type DeploymentResource struct {
 	*appsv1.Deployment
 }
 
-func (d DeploymentResource) GetReplicas() *int32 {
+func (d DeploymentResource) GetReplicasFromSpec() *int32 {
 	return d.Deployment.Spec.Replicas
 }
 
@@ -44,7 +44,7 @@ func (d DeploymentResource) SetReplicas(replicas *int32) {
 	d.Deployment.Spec.Replicas = replicas
 }
 
-func (d DeploymentResource) getActualReplicas() *int32 {
+func (d DeploymentResource) GetReplicasFromStatus() *int32 {
 	return &d.Deployment.Status.ReadyReplicas
 }
 
@@ -56,12 +56,8 @@ func (d DeploymentResource) SetAnnotations(annotation map[string]string) {
 	d.Deployment.Annotations = annotation
 }
 
-func (d DeploymentResource) GetName() string {
-	return d.Deployment.Name
-}
-
-func (d DeploymentResource) GetNamespace() string {
-	return d.Deployment.Namespace
+func (d DeploymentResource) GetObjectMeta() metav1.Object {
+	return d.Deployment
 }
 
 func (d DeploymentResource) Update(ctx context.Context, w client.Writer) error {
@@ -72,7 +68,7 @@ type StatefulSetResource struct {
 	*appsv1.StatefulSet
 }
 
-func (s StatefulSetResource) GetReplicas() *int32 {
+func (s StatefulSetResource) GetReplicasFromSpec() *int32 {
 	return s.StatefulSet.Spec.Replicas
 }
 
@@ -80,7 +76,7 @@ func (s StatefulSetResource) SetReplicas(replicas *int32) {
 	s.StatefulSet.Spec.Replicas = replicas
 }
 
-func (s StatefulSetResource) getActualReplicas() *int32 {
+func (s StatefulSetResource) GetReplicasFromStatus() *int32 {
 	return &s.StatefulSet.Status.ReadyReplicas
 }
 
@@ -92,12 +88,8 @@ func (s StatefulSetResource) SetAnnotations(annotation map[string]string) {
 	s.StatefulSet.Annotations = annotation
 }
 
-func (s StatefulSetResource) GetName() string {
-	return s.StatefulSet.Name
-}
-
-func (s StatefulSetResource) GetNamespace() string {
-	return s.StatefulSet.Namespace
+func (s StatefulSetResource) GetObjectMeta() metav1.Object {
+	return s.StatefulSet
 }
 
 func (s StatefulSetResource) Update(ctx context.Context, w client.Writer) error {
@@ -106,16 +98,20 @@ func (s StatefulSetResource) Update(ctx context.Context, w client.Writer) error 
 
 type ScaleHook struct {
 	Hook   *kubeobjects.HookSpec
+	Reader client.Reader
 	Client client.Client
 }
 
 func (s ScaleHook) Execute(log logr.Logger) error {
+	log.Info("Inside scale hook execute")
+	log.Info("Hook details", "hook", s.Hook)
+
 	objList, err := getResourceListForType(s.Hook.SelectResource)
 	if err != nil {
 		return err
 	}
 
-	resources, err := selectResources(s.Client, s.Hook, objList)
+	resources, err := getResourcesBySelector(s.Client, s.Hook, objList)
 	if err != nil {
 		return err
 	}
@@ -161,13 +157,13 @@ func (s ScaleHook) scaleResource(resource ScaleResource, operation string, log l
 }
 
 func (s ScaleHook) scaleDownResource(resource ScaleResource, log logr.Logger) error {
-	if resource.GetReplicas() == nil || *resource.GetReplicas() == 0 {
-		log.Info("Already scaled down", "resource", resource.GetName())
+	if resource.GetReplicasFromSpec() == nil || *resource.GetReplicasFromSpec() == 0 {
+		log.Info("Already scaled down", "resource", resource.GetObjectMeta().GetName())
 
 		return nil
 	}
 
-	replicasCount := *resource.GetReplicas()
+	replicasCount := *resource.GetReplicasFromSpec()
 
 	annotations := resource.GetAnnotations()
 	if annotations == nil {
@@ -180,7 +176,8 @@ func (s ScaleHook) scaleDownResource(resource ScaleResource, log logr.Logger) er
 	zero := int32(0)
 	resource.SetReplicas(&zero)
 
-	log.Info("Scaling down with annotation", "resource", resource.GetName(), "replicas count", replicasCount)
+	log.Info("Scaling down with annotation", "resource", resource.GetObjectMeta().GetName(),
+		"replicas count", replicasCount)
 
 	return resource.Update(context.Background(), s.Client)
 }
@@ -188,28 +185,29 @@ func (s ScaleHook) scaleDownResource(resource ScaleResource, log logr.Logger) er
 func (s ScaleHook) scaleUpResource(resource ScaleResource, log logr.Logger) error {
 	annotations := resource.GetAnnotations()
 	if annotations == nil {
-		return fmt.Errorf("no annotations found to restore replicas for resource %s", resource.GetName())
+		return fmt.Errorf("no annotations found to restore replicas for resource %s", resource.GetObjectMeta().GetName())
 	}
 
 	origStr, ok := annotations[replicasCountAnnotation]
 	if !ok {
-		return fmt.Errorf("original replicas annotation not found for resource %s", resource.GetName())
+		return fmt.Errorf("original replicas annotation not found for resource %s", resource.GetObjectMeta().GetName())
 	}
 
-	replicaCount, err := strconv.Atoi(origStr)
+	replicaCount, err := strconv.ParseInt(origStr, 10, 32)
 	if err != nil {
 		return fmt.Errorf("invalid original replicas annotation value %s on resource %s in %s: %w",
-			origStr, resource.GetName(), resource.GetNamespace(), err)
+			origStr, resource.GetObjectMeta().GetName(), resource.GetObjectMeta().GetNamespace(), err)
 	}
 
 	if replicaCount < 0 || replicaCount > math.MaxInt32 {
 		return fmt.Errorf("original replicas annotation value %d out of int32 range on resource %s in %s",
-			replicaCount, resource.GetName(), resource.GetNamespace())
+			replicaCount, resource.GetObjectMeta().GetName(), resource.GetObjectMeta().GetNamespace())
 	}
+
 	replicaCount32 := int32(replicaCount)
 	resource.SetReplicas(&replicaCount32)
 
-	log.Info("Scaling up from annotation", "resource", resource.GetName(), "replicas", replicaCount32)
+	log.Info("Scaling up from annotation", "resource", resource.GetObjectMeta().GetName(), "replicas", replicaCount32)
 
 	delete(annotations, replicasCountAnnotation)
 	resource.SetAnnotations(annotations)
@@ -224,13 +222,14 @@ func (s ScaleHook) syncResource(resource ScaleResource, log logr.Logger) error {
 		pollInterval = 5   // seconds between polls
 	)
 
-	name := resource.GetName()
-	namespace := resource.GetNamespace()
+	name := resource.GetObjectMeta().GetName()
+	namespace := resource.GetObjectMeta().GetNamespace()
 
-	targetPtr := resource.GetReplicas()
+	targetPtr := resource.GetReplicasFromSpec()
 	if targetPtr == nil {
 		return fmt.Errorf("sync: .Spec.Replicas is nil for resource %s", name)
 	}
+
 	targetReplicas := *targetPtr
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
@@ -246,18 +245,20 @@ func (s ScaleHook) syncResource(resource ScaleResource, log logr.Logger) error {
 				name, targetReplicas, timeout)
 
 		case <-ticker.C:
-			refreshed, err := refreshResource(s.Client, resource, namespace, name)
+			refreshed, err := refreshResource(s.Reader, resource, namespace, name)
 			if err != nil {
 				log.Info("Error refreshing resource during sync", "resource", name, "error", err)
+
 				return err
 			}
 
 			resource = refreshed
 
-			actualReplicas := *resource.getActualReplicas()
+			actualReplicas := *resource.GetReplicasFromStatus()
 
 			if actualReplicas == targetReplicas {
 				log.Info("Sync: target replica count reached", "resource", name, "replicas", targetReplicas)
+
 				return nil
 			}
 
@@ -270,7 +271,11 @@ func (s ScaleHook) syncResource(resource ScaleResource, log logr.Logger) error {
 	}
 }
 
-func selectResources(r client.Reader, hook *kubeobjects.HookSpec, objList client.ObjectList) ([]client.Object, error) {
+func getResourcesBySelector(
+	r client.Reader,
+	hook *kubeobjects.HookSpec,
+	objList client.ObjectList,
+) ([]client.Object, error) {
 	var result []client.Object
 
 	if hook.NameSelector != "" {
@@ -308,12 +313,12 @@ func getResourceListForType(kind string) (client.ObjectList, error) {
 	}
 }
 
-func refreshResource(clnt client.Client, resource ScaleResource, namespace, name string) (ScaleResource, error) {
+func refreshResource(reader client.Reader, resource ScaleResource, namespace, name string) (ScaleResource, error) {
 	switch resource.(type) {
 	case DeploymentResource:
 		deployment := &appsv1.Deployment{}
 
-		err := clnt.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, deployment)
+		err := reader.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, deployment)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +327,7 @@ func refreshResource(clnt client.Client, resource ScaleResource, namespace, name
 	case StatefulSetResource:
 		statefulset := &appsv1.StatefulSet{}
 
-		err := clnt.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, statefulset)
+		err := reader.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, statefulset)
 		if err != nil {
 			return nil, err
 		}
