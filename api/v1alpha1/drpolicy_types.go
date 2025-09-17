@@ -88,6 +88,11 @@ type PeerClass struct {
 	//+optional
 	ReplicationID string `json:"replicationID,omitempty"`
 
+	// GroupReplicationID is the common value for the label "ramendr.openshift.io/groupreplicationID" on
+	// the corresponding VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+	//+optional
+	GroupReplicationID string `json:"groupreplicationID,omitempty"`
+
 	// StorageID is the collection of values for the label "ramendr.openshift.io/storageID" on the corresponding
 	// StorageClassName across the peers. It is singleton if the storage instance is shared across the peers,
 	// and distinct if storage instances are different.
