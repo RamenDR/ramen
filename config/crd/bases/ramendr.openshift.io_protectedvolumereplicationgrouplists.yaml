@@ -140,6 +140,11 @@ spec:
                                       if ReplicationID is empty, or via VolumeGroupReplicationClass otherwise. This is true only when grouping can be
                                       supported across the clusters in the ClusterIDs list.
                                     type: boolean
+                                  groupreplicationID:
+                                    description: |-
+                                      GroupReplicationID is the common value for the label "ramendr.openshift.io/groupreplicationID" on
+                                      the corresponding VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+                                    type: string
                                   offloaded:
                                     description: |-
                                       Offloaded reflects if replication management for PVCs that use the StorageClassName across both clusters in the
@@ -501,6 +506,11 @@ spec:
                                       if ReplicationID is empty, or via VolumeGroupReplicationClass otherwise. This is true only when grouping can be
                                       supported across the clusters in the ClusterIDs list.
                                     type: boolean
+                                  groupreplicationID:
+                                    description: |-
+                                      GroupReplicationID is the common value for the label "ramendr.openshift.io/groupreplicationID" on
+                                      the corresponding VolumeGroupReplicationClass on each peer for the matched StorageClassName.
+                                    type: string
                                   offloaded:
                                     description: |-
                                       Offloaded reflects if replication management for PVCs that use the StorageClassName across both clusters in the
