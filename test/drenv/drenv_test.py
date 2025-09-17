@@ -21,12 +21,12 @@ EXTERNAL_ENV = os.path.join("envs", "external.yaml")
 def test_start_unknown():
     # Cluster does not exists, so it should fail.
     with pytest.raises(commands.Error):
-        watch("drenv", "start", "--name-prefix", "unknown-", EXTERNAL_ENV, "--verbose")
+        watch("drenv", "start", "--name-prefix", "unknown-", EXTERNAL_ENV)
 
 
 @pytest.mark.cluster
 def test_start(tmpenv):
-    watch("drenv", "start", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV, "--verbose")
+    watch("drenv", "start", "--name-prefix", tmpenv.prefix, EXTERNAL_ENV)
     assert cluster.status(tmpenv.prefix + "cluster") == cluster.READY
 
 

@@ -121,7 +121,7 @@ def run(name, args):
     log = os.path.join(args.outdir, name + ".log")
 
     start = time.monotonic()
-    cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix, verbose=True)
+    cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix)
     elapsed = time.monotonic() - start
     passed = cp.returncode == 0
 
@@ -140,7 +140,6 @@ def run(name, args):
             args.envfile,
             log,
             name_prefix=args.name_prefix,
-            verbose=True,
             check=True,
         )
 
@@ -157,19 +156,15 @@ def drenv(
     log,
     name_prefix=None,
     directory=None,
-    verbose=False,
     check=False,
 ):
-    cmd = ["drenv", command]
+    cmd = ["drenv", command, "--logfile", log]
     if name_prefix:
         cmd.extend(("--name-prefix", name_prefix))
     if directory:
         cmd.extend(("--directory", directory))
-    if verbose:
-        cmd.append("--verbose")
     cmd.append(envfile)
-    with open(log, "a") as f:
-        return subprocess.run(cmd, stderr=f, check=check)
+    return subprocess.run(cmd, stderr=subprocess.DEVNULL, check=check)
 
 
 def git_info():
