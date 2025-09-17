@@ -26,17 +26,14 @@ from . import yaml
 from . import ssh
 
 ADDONS_DIR = "addons"
+LOGFILE = "drenv.log"
 
 executors = []
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-    )
-
+    configure_logging(args)
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:
@@ -133,7 +130,11 @@ def parse_args():
 
 def add_command(sp, name, func, help=None, envfile=True):
     parser = sp.add_parser(name, help=help)
-    parser.add_argument("-v", "--verbose", action="store_true", help="be more verbose")
+    parser.add_argument(
+        "--logfile",
+        default=LOGFILE,
+        help=f"path to logfile (default {LOGFILE!r})",
+    )
     parser.set_defaults(func=func)
     if envfile:
         parser.add_argument(
@@ -148,6 +149,27 @@ def add_command(sp, name, func, help=None, envfile=True):
 def load_env(args):
     with open(args.filename) as f:
         return envfile.load(f, name_prefix=args.name_prefix)
+
+
+def configure_logging(args):
+    """
+    Configure logging to log all message to the logfile, and INFO messages to
+    the console.
+    """
+    formatter = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s")
+
+    logfile = logging.FileHandler(args.logfile)
+    logfile.setFormatter(formatter)
+    logfile.setLevel(logging.DEBUG)
+
+    console = logging.StreamHandler(sys.stderr)
+    console.setFormatter(formatter)
+    console.setLevel(logging.INFO)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[console, logfile],
+    )
 
 
 def shutdown_executors():
@@ -291,7 +313,6 @@ def do_gather(args):
         directory=args.directory,
         namespaces=args.namespaces,
         name=env["name"],
-        verbose=args.verbose,
     )
     logging.info(
         "[%s] Environment gathered in %.2f seconds",
@@ -391,7 +412,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
     provider = providers.get(profile["provider"])
     existing = provider.exists(profile)
 
-    provider.start(profile, verbose=args.verbose, timeout=args.timeout)
+    provider.start(profile, verbose=True, timeout=args.timeout)
     provider.configure(profile, existing=existing)
 
     if existing:

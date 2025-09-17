@@ -545,13 +545,13 @@ $ drenv start envs/example.yaml
 2023-01-03 23:41:01,166 INFO    [example] Environment started in 35.71 seconds
 ```
 
-#### Using --verbose option
+#### The log file
 
-While debugging it is useful to use the `--verbose` option to see much
-more details:
+The console logs contains INFO level message. To see all log messages check the
+log file:
 
-```
-$ drenv start envs/example.yaml -v
+```console
+$ cat drenv.log
 2023-01-03 23:41:53,414 INFO    [example] Starting environment
 2023-01-03 23:41:53,416 INFO    [ex1] Starting cluster
 2023-01-03 23:41:53,539 DEBUG   [ex1] * [ex1] minikube v1.28.0 on Fedora 37

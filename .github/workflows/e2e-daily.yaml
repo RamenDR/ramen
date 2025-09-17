@@ -33,7 +33,7 @@ jobs:
           max_attempts: 10
           command: |
             cd test
-            drenv cache -v envs/regional-dr.yaml
+            drenv cache envs/regional-dr.yaml
 
   prune-images:
     runs-on: [self-hosted, e2e-rdr]
