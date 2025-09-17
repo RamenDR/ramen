@@ -89,10 +89,10 @@ enough resources:
 1. Install minikube - on Fedora you can use::
 
    ```
-   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.36.0/minikube-1.36.0-0.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
    ```
 
-   Tested with version v1.36.0.
+   Tested with version v1.37.0.
 
 1. Install the `kubectl` tool
 
@@ -104,7 +104,7 @@ enough resources:
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.33.2.
+   Tested with version v1.34.1.
 
 1. Validate the installation
 
