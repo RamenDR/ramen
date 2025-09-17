@@ -1,0 +1,38 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: busybox
+  name: busybox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: busybox
+  template:
+    metadata:
+      labels:
+        app: busybox
+    spec:
+      containers:
+      - image: quay.io/nirsof/busybox:stable
+        name: busybox
+        command:
+        - sh
+        - -c
+        - |
+          trap exit TERM
+          while true; do
+              echo $(date) | tee -a /mnt/test/log
+              sync
+              sleep 10 &
+              wait
+          done
+        volumeMounts:
+        - name: pvc1
+          mountPath: /mnt/test
+      volumes:
+      - name: pvc1
+        persistentVolumeClaim:
+          claimName: pvc1
