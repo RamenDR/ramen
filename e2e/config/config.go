@@ -23,15 +23,18 @@ const (
 	// ClusterSet
 	DefaultClusterSetName = "default"
 
-	// Channel
-	defaultChannelNamespace = "e2e-gitops"
-
 	// Git repository
 	defaultGitURL    = "https://github.com/RamenDR/ocm-ramen-samples.git"
 	defaultGitBranch = "main"
 
 	// DRPolicy
 	defaultDRPolicyName = "dr-policy"
+
+	// Make it easier to manage namespaces created by the tests.
+	defaultNamespacePrefix = "test-"
+
+	// Channel
+	defaultChannelNamespace = defaultNamespacePrefix + "gitops"
 )
 
 // Channel defines the name and namespace for the channel CR.
@@ -128,14 +131,15 @@ type Test struct {
 // Config keeps configuration for e2e tests.
 type Config struct {
 	// User configurable values.
-	Clusters   map[string]Cluster `json:"clusters"`
-	ClusterSet string             `json:"clusterSet"`
-	Distro     string             `json:"distro"`
-	Repo       Repo               `json:"repo"`
-	DRPolicy   string             `json:"drPolicy"`
-	PVCSpecs   []PVCSpec          `json:"pvcSpecs"`
-	Deployers  []Deployer         `json:"deployers"`
-	Tests      []Test             `json:"tests"`
+	Clusters        map[string]Cluster `json:"clusters"`
+	ClusterSet      string             `json:"clusterSet"`
+	Distro          string             `json:"distro"`
+	Repo            Repo               `json:"repo"`
+	DRPolicy        string             `json:"drPolicy"`
+	NamespacePrefix string             `json:"namespacePrefix"`
+	PVCSpecs        []PVCSpec          `json:"pvcSpecs"`
+	Deployers       []Deployer         `json:"deployers"`
+	Tests           []Test             `json:"tests"`
 
 	// Generated values
 	Channel    Channel    `json:"channel"`
@@ -204,6 +208,7 @@ func readConfig(configFile string, config *Config) error {
 	viper.SetDefault("Repo.Branch", defaultGitBranch)
 	viper.SetDefault("DRPolicy", defaultDRPolicyName)
 	viper.SetDefault("ClusterSet", DefaultClusterSetName)
+	viper.SetDefault("NamespacePrefix", defaultNamespacePrefix)
 
 	viper.SetConfigFile(configFile)
 
@@ -495,6 +500,10 @@ func (c *Config) Equal(o *Config) bool {
 	}
 
 	if c.ClusterSet != o.ClusterSet {
+		return false
+	}
+
+	if c.NamespacePrefix != o.NamespacePrefix {
 		return false
 	}
 

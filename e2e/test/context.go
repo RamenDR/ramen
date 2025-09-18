@@ -18,9 +18,6 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-// Make it easier to manage namespaces created by the tests.
-const appNamespacePrefix = "e2e-"
-
 type Context struct {
 	parent   types.Context
 	context  context.Context
@@ -68,7 +65,7 @@ func (c *Context) ManagementNamespace() string {
 }
 
 func (c *Context) AppNamespace() string {
-	return appNamespacePrefix + c.name
+	return c.Config().NamespacePrefix + c.name
 }
 
 func (c *Context) Logger() *zap.SugaredLogger {
