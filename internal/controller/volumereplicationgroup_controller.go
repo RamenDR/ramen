@@ -1258,6 +1258,10 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return ctrl.Result{Requeue: true}
 	}
 
+	if err := v.pvcsDeselectedUnprotect(); err != nil {
+		return ctrl.Result{Requeue: true}
+	}
+
 	if err := v.cleanupResources(); err != nil {
 		v.log.Info("Cleanup owned resources failed", "error", err)
 
