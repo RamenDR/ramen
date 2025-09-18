@@ -1661,7 +1661,8 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	// Clear the conditions only if there are no more work as secondary and the RDSpec is not empty.
 	// Note: When using VolSync, we preserve the secondary and we need the status of the VRG to be
 	// clean. In all other cases, the VRG will be deleted and we don't care about the its conditions.
-	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 {
+	// Exception: Don't clear conditions if VM recipe protection is enabled to preserve conflict detection.
+	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 && !v.isVMRecipeProtection() {
 		v.instance.Status.Conditions = []metav1.Condition{}
 	}
 
