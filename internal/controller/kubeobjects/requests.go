@@ -116,6 +116,12 @@ type HookSpec struct {
 	Op Operation `json:"operation,omitempty"`
 
 	Chk Check `json:"check,omitempty"`
+
+	Scale ScaleSpec `json:"scale,omitempty"`
+}
+
+type ScaleSpec struct {
+	Operation string `json:"operation,omitempty"`
 }
 
 type Check struct {
