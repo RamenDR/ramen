@@ -405,10 +405,11 @@ func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([
 	}
 
 	for i := range vgrClasses.Items {
-		if util.HasLabel(&vgrClasses.Items[i], ReplicationIDLabel) &&
-			util.HasLabel(&vgrClasses.Items[i], GroupReplicationIDLabel) {
-			vgrcs = append(vgrcs, vgrClasses.Items[i].Name)
+		if !util.HasLabel(&vgrClasses.Items[i], GroupReplicationIDLabel) {
+			continue
 		}
+
+		vgrcs = append(vgrcs, vgrClasses.Items[i].Name)
 	}
 
 	return vgrcs, nil

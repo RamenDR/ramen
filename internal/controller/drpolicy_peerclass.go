@@ -361,18 +361,19 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 
 			switch offloaded {
 			case true:
-				rID = grID
 				grouping = true
 			case false:
 				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 				grouping = rID != "" && grID != ""
-			}
 
-			if rID == "" {
-				if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
-					grouping = true
-				} else if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
-					continue
+				if rID == "" {
+					grID = ""
+
+					if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+						grouping = true
+					} else if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+						continue
+					}
 				}
 			}
 
