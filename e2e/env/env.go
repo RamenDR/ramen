@@ -51,23 +51,23 @@ func New(ctx context.Context, clusters map[string]config.Cluster, log *zap.Sugar
 
 	env.Hub, err = newCluster(ctx, "hub", clusters["hub"], log)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create env: %w", err)
+		return nil, err
 	}
 
 	env.C1, err = newCluster(ctx, "c1", clusters["c1"], log)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create env: %w", err)
+		return nil, err
 	}
 
 	env.C2, err = newCluster(ctx, "c2", clusters["c2"], log)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create env: %w", err)
+		return nil, err
 	}
 
 	if clusters["passive-hub"].Kubeconfig != "" {
 		env.PassiveHub, err = newCluster(ctx, "passive-hub", clusters["passive-hub"], log)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create env: %w", err)
+			return nil, err
 		}
 	}
 
