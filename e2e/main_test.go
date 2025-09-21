@@ -107,7 +107,7 @@ func testMain(m *testing.M) int {
 
 	Ctx.env, err = env.New(Ctx.Context(), Ctx.config.Clusters, Ctx.log)
 	if err != nil {
-		log.Errorf("Failed to create testing context: %s", err)
+		log.Errorf("Failed to create env: %s", err)
 
 		return 1
 	}
