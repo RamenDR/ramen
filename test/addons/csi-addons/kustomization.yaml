@@ -1,12 +1,17 @@
+# yamllint disable rule:line-length
+#
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
-
+#
+# Using commit ea75ddad8c2294e5686d97ccfedd071a25bea3a6 from kubernetes-csi-addons,
+# which was the latest commit at the time of writing.
+# The image digest sha256:527fad57b39117318de60021b8d74e48be2194850495db72083cf8bdd030f32e
+# corresponds to the latest quay.io/csiaddons/k8s-controller image at the same time.
 ---
 resources:
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.12.0/crds.yaml
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.12.0/rbac.yaml
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.12.0/setup-controller.yaml
-
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/ea75ddad8c2294e5686d97ccfedd071a25bea3a6/deploy/controller/crds.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/ea75ddad8c2294e5686d97ccfedd071a25bea3a6/deploy/controller/rbac.yaml
+  - https://raw.githubusercontent.com/csi-addons/kubernetes-csi-addons/ea75ddad8c2294e5686d97ccfedd071a25bea3a6/deploy/controller/setup-controller.yaml
 images:
   - name: quay.io/csiaddons/k8s-controller
-    newTag: v0.12.0
+    digest: sha256:527fad57b39117318de60021b8d74e48be2194850495db72083cf8bdd030f32e
