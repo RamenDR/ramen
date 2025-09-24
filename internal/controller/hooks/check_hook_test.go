@@ -258,6 +258,7 @@ func getHookSpec(resourceType, condition string) *kubeobjects.HookSpec {
 		Chk: kubeobjects.Check{
 			Name:      "test-check",
 			Condition: condition,
+			OnError:   "continue",
 		},
 	}
 }
@@ -400,6 +401,29 @@ func TestEvaluateCheckHookForObjects(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSkipHookIfNotPresentForStatefulset(t *testing.T) {
+	fakeClient := setupFakeClient(t)
+	assert.NotNil(t, fakeClient)
+
+	hook := getHookSpec("statefulset", "{$.spec.replicas} != {$.status.readyReplicas}")
+	hook.LabelSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"appname": "test",
+		},
+	}
+	hook.SkipHookIfNotPresent = true
+	hook.Timeout = 10
+
+	cHook := hooks.CheckHook{
+		Hook:   hook,
+		Reader: fakeClient,
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+	err := cHook.Execute(log)
+	assert.Nil(t, err)
 }
 
 func Test_isValidJsonPathExpression(t *testing.T) {
