@@ -1164,14 +1164,15 @@ func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 	for _, chk := range hook.Chks {
 		if chk.Name == suffix {
 			return kubeobjects.HookSpec{
-				Name:           hook.Name,
-				Namespace:      hook.Namespace,
-				Type:           hook.Type,
-				SelectResource: hook.SelectResource,
-				LabelSelector:  hook.LabelSelector,
-				NameSelector:   hook.NameSelector,
-				Timeout:        chk.Timeout,
-				OnError:        chk.OnError,
+				Name:                 hook.Name,
+				Namespace:            hook.Namespace,
+				Type:                 hook.Type,
+				SelectResource:       hook.SelectResource,
+				LabelSelector:        hook.LabelSelector,
+				NameSelector:         hook.NameSelector,
+				Timeout:              chk.Timeout,
+				OnError:              chk.OnError,
+				SkipHookIfNotPresent: hook.SkipHookIfNotPresent,
 				Chk: kubeobjects.Check{
 					Name:      suffix,
 					Condition: chk.Condition,
