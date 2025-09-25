@@ -105,6 +105,26 @@ func (m *replicationGroupSourceMachine) Conditions() *[]metav1.Condition {
 func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Create volume group snapshot")
 
+	wait, err := m.VolumeGroupHandler.WaitIfPVCTooNew(ctx)
+	if err != nil {
+		m.Logger.Error(err, "Failed to check if PVCs are in use before creating volume group snapshot")
+
+		return mover.InProgress(), err
+	}
+	// If any PVC is too new, wait and requeue
+	// Note: this is only a mitigation, not a full solution, to the problem of ROX PVCs
+	//	not being ready (with correct SELinux labels) in time
+	//	--- see note on VolumeGroupSourceHandler.WaitIfPVCTooNew() for details.
+	//  We could eliminate this by waiting for all PVCs to be used (mounted) before
+	//	creating the snapshot, but that would mean, we will not be able to protect unused
+	//	PVCs (e.g. those created but only mounted sometime in the future).
+	//
+	if wait {
+		m.Logger.Error(err, "Some PVCs are not old enough, cannot create volume group snapshot now")
+
+		return mover.InProgress(), nil
+	}
+
 	createdOrUpdatedVGS, err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
 		ctx, m.ReplicationGroupSource,
 	)

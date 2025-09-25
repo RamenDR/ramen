@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"time"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
@@ -56,6 +57,10 @@ type VolumeGroupSourceHandler interface {
 	CleanVolumeGroupSnapshot(
 		ctx context.Context,
 	) error
+
+	WaitIfPVCTooNew(
+		ctx context.Context,
+	) (bool, error)
 }
 
 type RestoredPVC struct {
@@ -567,6 +572,62 @@ func (h *volumeGroupSourceHandler) CheckReplicationSourceForRestoredPVCsComplete
 	logger.Info("All replication sources are successfully completed")
 
 	return true, nil
+}
+
+// WaitIfPVCTooNew checks the PVC creation timestamp and waits until it is at least 1 minute old.
+//
+// Rationale:
+//
+//	It is difficult to reliably determine when a newly created PVC has been mounted by one or more Pods.
+//	Without waiting, a VolumeGroupSnapshot (and its underlying VolumeSnapshots) could be created
+//	before the PVC is mounted. In that case, the PVC’s SELinux labels may not yet be fully applied,
+//	and the snapshots would preserve incorrect labels. This can later cause "access denied" errors
+//	when creating a ROX PVC from the snapshot.
+//
+// Note:
+//
+//	By enforcing a minimum one-minute wait after PVC creation, we improve the chances that the PVC
+//	has been mounted and the correct SELinux labels have been applied before taking a snapshot.
+//	This delay only reduces the likelihood of the issue; it does not fully resolve it. The problem
+//	is more likely to appear in the QE environment, where both application and DR protection are
+//	applied simultaneously, unlike in customer environments where the application is typically
+//	deployed first, verified to be working, and only then DR protected.
+func (h *volumeGroupSourceHandler) WaitIfPVCTooNew(
+	ctx context.Context,
+) (bool, error) {
+	h.Logger.Info("Checking if all PVCs in the group are old enough")
+
+	pvcList, err := util.ListPVCsByCGLabel(ctx, h.Client, h.VolumeGroupSnapshotNamespace,
+		h.VolumeGroupLabel.MatchLabels[util.ConsistencyGroupLabel], h.Logger)
+	if err != nil {
+		h.Logger.Error(err, "WaitIfPVCTooNew failed to list PVCs by CG label",
+			"CGLabel", h.VolumeGroupLabel.MatchLabels[util.ConsistencyGroupLabel],
+			"Namespace", h.VolumeGroupSnapshotNamespace)
+
+		return true, err
+	}
+
+	for _, pvc := range pvcList.Items {
+		if pvc.Status.Phase != corev1.ClaimBound {
+			h.Logger.Info("PVC is not yet bound", "PVCName", pvc.Name, "PVCNamespace", pvc.Namespace)
+
+			return true, nil
+		}
+
+		created := pvc.CreationTimestamp.Time
+		elapsed := time.Since(created)
+
+		if elapsed < time.Minute {
+			waitDuration := time.Minute - elapsed
+			h.Logger.Info(fmt.Sprintf("PVC created %v ago. Waiting %v before continuing...\n", elapsed, waitDuration))
+
+			return true, nil
+		}
+	}
+
+	h.Logger.Info("All PVCs in the group are old enough", "NumberOfPVCs", len(pvcList.Items))
+
+	return false, nil
 }
 
 func GetPVCfromStorageHandle(
