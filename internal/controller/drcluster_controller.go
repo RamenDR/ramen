@@ -66,6 +66,12 @@ const (
 	DRClusterConditionReasonErrorUnknown = "UnknownError"
 )
 
+// s3Error reasons
+const (
+	s3ConnectionFailed = "s3ConnectionFailed"
+	s3ListFailed       = "s3ListFailed"
+)
+
 //nolint:gosec
 const (
 	StorageAnnotationSecretName      = "drcluster.ramendr.openshift.io/storage-secret-name"
@@ -430,6 +436,8 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 
 	if reason, err := validateS3Profile(u.ctx, r.APIReader, r.ObjectStoreGetter, u.object, u.namespacedName.String(),
 		u.log); err != nil {
+		u.setDRClusterAvailableStatusMetric(err)
+
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
 	}
 
@@ -516,14 +524,20 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	objectStore, _, err := objectStoreGetter.ObjectStore(
 		ctx, apiReader, s3ProfileName, "drpolicy validation", log)
 	if err != nil {
-		return "s3ConnectionFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
+		return s3ConnectionFailed, fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
 	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
-		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
+		return s3ListFailed, fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
 	return "", nil
+}
+
+func (u *drclusterInstance) setDRClusterAvailableStatusMetric(err error) {
+	drClusterAvailableMetricLabels := DRClusterAvailableStatusLabels(u.object, err.Error())
+	drClusterAvailableMetric := NewDRClusterAvailableStatusMetric(drClusterAvailableMetricLabels)
+	drClusterAvailableMetric.DRClusterAvailableStatus.Set(0)
 }
 
 func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
