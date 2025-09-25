@@ -63,7 +63,10 @@ const (
 	DoNotDeletePVCAnnotationVal = "true"
 )
 
-var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
+var (
+	ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
+	isMainDrpcRetrieved                    = false
+)
 
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
@@ -159,10 +162,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	placementObj, err = getPlacementOrPlacementRule(ctx, r.Client, drpc, logger)
 	if err != nil && !(k8serrors.IsNotFound(err) && rmnutil.ResourceIsDeleted(drpc)) {
+		isMainDrpcRetrieved = false
+
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
 		return ctrl.Result{}, err
 	}
+
+	isMainDrpcRetrieved = true
 
 	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
@@ -2719,9 +2726,15 @@ func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacem
 		return *drpc.Spec.ProtectedNamespaces, nil
 	}
 
-	placementObj, err := getPlacementOrPlacementRule(context.TODO(), r.Client, drpc, log)
-	if err != nil {
-		return []string{}, err
+	var placementObj client.Object
+
+	var err error
+
+	if !isMainDrpcRetrieved {
+		placementObj, err = getPlacementOrPlacementRule(context.TODO(), r.Client, drpc, log)
+		if err != nil {
+			return []string{}, err
+		}
 	}
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
