@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 ---
-repo: https://github.com/ramendr/ocm-ramen-samples.git
+repo: https://github.com/elenager/ocm-ramen-samples.git
 path: subscription/deployment-k8s-regional-rbd
-branch: main
+branch: test
 name: deployment-rbd
 namespace: deployment-rbd
 dr_policy: dr-policy
