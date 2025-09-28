@@ -414,14 +414,14 @@ func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool
 // getVGRUsingSCLabel fetches the VGR that is protecting the PVC using the SC and VGRC labels, it is useful when the CG
 // label is present without a correlating value to construuct the VGR name
 func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*volrep.VolumeGroupReplication, error) {
-	rID, err := v.getVGRClassReplicationID(pvc)
+	grID, err := v.getVGRClassReplicationID(pvc)
 	if err != nil {
 		// Error is masked here, as caller expects k8serrors regarding vgr resource
 		return nil, fmt.Errorf("error determining replicationID")
 	}
 
 	vgrNamespacedName := types.NamespacedName{
-		Name:      rmnutil.TrimToK8sResourceNameLength(rID + v.instance.Name),
+		Name:      rmnutil.TrimToK8sResourceNameLength(grID + v.instance.Name),
 		Namespace: pvc.Namespace,
 	}
 
@@ -433,21 +433,21 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 
 // getVGRClassReplicationID is a utility function that fetches the replicationID for the PVC looking at the class labels
 func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim) (string, error) {
-	vgrClass, err := v.selectVolumeReplicationClass(pvc, true)
+	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
 	if err != nil {
 		return "", err
 	}
 
-	replicationID, ok := vgrClass.GetLabels()[ReplicationIDLabel]
+	groupReplicationID, ok := storageClass.GetLabels()[GroupReplicationIDLabel]
 	if !ok {
-		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
+		v.log.Info(fmt.Sprintf("StorageClass %s is missing groupReplicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
 
-		return "", fmt.Errorf("volumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName())
+		return "", fmt.Errorf("storageClass %s is missing groupReplicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName())
 	}
 
-	return replicationID, nil
+	return groupReplicationID, nil
 }
 
 // ensurePVCUnprotected returns true if the passed in PVC is not protected by the vgr
