@@ -876,14 +876,14 @@ func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolum
 		return nil
 	}
 
-	replicationID, err := v.getVGRClassReplicationID(pvc)
+	groupReplicationID, err := v.getVGRClassReplicationID(pvc)
 	if err != nil {
 		return err
 	}
 
 	// Add label for PVC, showing that this PVC is part of consistency group
 	return util.NewResourceUpdater(pvc).
-		AddLabel(ConsistencyGroupLabel, replicationID).
+		AddLabel(ConsistencyGroupLabel, groupReplicationID).
 		Update(v.ctx, v.reconciler.Client)
 }
 
@@ -1124,6 +1124,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 	return nil
 }
 
+//nolint:gocognit,cyclop
 func (v *VRGInstance) findReplicationClassUsingPeerClass(
 	peerClass *ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass,
@@ -1134,6 +1135,15 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 
 		matched := sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&
 			rIDFromReplicationClass == peerClass.ReplicationID &&
+			provisioner == storageClass.Provisioner
+
+		if matched {
+			return replicationClass
+		}
+
+		grIDFromReplicationClass := replicationClass.GetLabels()[GroupReplicationIDLabel]
+		matched = sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&
+			grIDFromReplicationClass == peerClass.GroupReplicationID &&
 			provisioner == storageClass.Provisioner
 
 		if matched {
