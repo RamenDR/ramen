@@ -428,21 +428,21 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 
 // getVGRClassReplicationID is a utility function that fetches the replicationID for the PVC looking at the class labels
 func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim) (string, error) {
-	vgrClass, err := v.selectVolumeReplicationClass(pvc, true)
+	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
 	if err != nil {
 		return "", err
 	}
 
-	replicationID, ok := vgrClass.GetLabels()[ReplicationIDLabel]
+	groupReplicationID, ok := storageClass.GetLabels()[GroupReplicationIDLabel]
 	if !ok {
-		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
+		v.log.Info(fmt.Sprintf("StorageClass %s is missing groupReplicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
 
-		return "", fmt.Errorf("volumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName())
+		return "", fmt.Errorf("storageClass %s is missing groupReplicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName())
 	}
 
-	return replicationID, nil
+	return groupReplicationID, nil
 }
 
 // ensurePVCUnprotected returns true if the passed in PVC is not protected by the vgr

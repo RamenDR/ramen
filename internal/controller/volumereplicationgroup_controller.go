@@ -1124,6 +1124,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 	return nil
 }
 
+//nolint:gocognit,cyclop
 func (v *VRGInstance) findReplicationClassUsingPeerClass(
 	peerClass *ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass,
@@ -1134,6 +1135,15 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 
 		matched := sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&
 			rIDFromReplicationClass == peerClass.ReplicationID &&
+			provisioner == storageClass.Provisioner
+
+		if matched {
+			return replicationClass
+		}
+
+		grIDFromReplicationClass := replicationClass.GetLabels()[GroupReplicationIDLabel]
+		matched = sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&
+			grIDFromReplicationClass == peerClass.GroupReplicationID &&
 			provisioner == storageClass.Provisioner
 
 		if matched {

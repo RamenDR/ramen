@@ -308,7 +308,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	_, selectVolumeGroup := v.isCGEnabled(pvc)
 
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
+	_, err = v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -326,16 +326,28 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 	protectedPVC.Resources = pvc.Spec.Resources
 	protectedPVC.VolumeMode = pvc.Spec.VolumeMode
 
-	setPVCStorageIdentifiers(protectedPVC, storageClass, volumeReplicationClass)
-
-	return nil
+	return v.setPVCStorageIdentifiers(protectedPVC, storageClass, pvc)
 }
 
-func setPVCStorageIdentifiers(
+func (v *VRGInstance) setPVCStorageIdentifiers(
 	protectedPVC *ramendrv1alpha1.ProtectedPVC,
 	storageClass *storagev1.StorageClass,
-	volumeReplicationClass client.Object,
-) {
+	pvc *corev1.PersistentVolumeClaim,
+) error {
+	// If SC is offloaded, do not proceed
+	offloaded := rmnutil.HasLabel(storageClass, StorageOffloadedLabel)
+	if offloaded {
+		return nil
+	}
+
+	// We should always take rID from VRClass and not grID, and for !offloaded
+	// VRC will be present (is a pre-requisite)
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
+	if err != nil {
+		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+			v.instance.Name, err)
+	}
+
 	protectedPVC.StorageIdentifiers.StorageProvisioner = storageClass.Provisioner
 
 	if value, ok := storageClass.Labels[StorageIDLabel]; ok {
@@ -351,6 +363,8 @@ func setPVCStorageIdentifiers(
 			protectedPVC.StorageIdentifiers.ReplicationID.Modes = MModesFromCSV(modes)
 		}
 	}
+
+	return nil
 }
 
 func MModesFromCSV(modes string) []ramendrv1alpha1.MMode {
@@ -1403,7 +1417,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	matchingReplicationClassList := []client.Object{}
 
 	filterMatchingReplicationClass := func(replicationClass client.Object, parameters map[string]string,
-		provisioner string,
+		provisioner string, rIDLabel string,
 	) {
 		schedulingInterval, found := parameters[ReplicationClassScheduleKey]
 
@@ -1432,6 +1446,15 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			if sIDFromReplicationClass != storageClass.GetLabels()[StorageIDLabel] {
 				return
 			}
+
+			rIDFromReplicationClass, exists := replicationClass.GetLabels()[rIDLabel]
+			if !exists {
+				return
+			}
+
+			if rIDFromReplicationClass != storageClass.GetLabels()[rIDLabel] {
+				return
+			}
 		}
 
 		matchingReplicationClassList = append(matchingReplicationClassList, replicationClass)
@@ -1445,7 +1468,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			replicationClass := &v.replClassList.Items[index]
 
 			filterMatchingReplicationClass(replicationClass, replicationClass.Spec.Parameters,
-				replicationClass.Spec.Provisioner)
+				replicationClass.Spec.Provisioner, ReplicationIDLabel)
 		}
 	} else {
 		for index := range v.grpReplClassList.Items {
@@ -1453,7 +1476,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			replicationClass := &v.grpReplClassList.Items[index]
 
 			filterMatchingReplicationClass(replicationClass, replicationClass.Spec.Parameters,
-				replicationClass.Spec.Provisioner)
+				replicationClass.Spec.Provisioner, GroupReplicationIDLabel)
 		}
 	}
 
