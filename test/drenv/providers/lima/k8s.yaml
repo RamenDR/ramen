@@ -172,7 +172,7 @@ probes:
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      if ! timeout 30s bash -c "until command -v kubeadm >/dev/null 2>&1; do sleep 3; done"; then
+      if ! timeout 30s bash -c "until command -v kubeadm >/dev/null 2>&1; do sleep 1; done"; then
         echo >&2 "kubeadm is not installed yet"
         exit 1
       fi
@@ -183,7 +183,7 @@ probes:
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      if ! timeout 300s bash -c "until test -f /etc/kubernetes/admin.conf; do sleep 3; done"; then
+      if ! timeout 300s bash -c "until test -f /etc/kubernetes/admin.conf; do sleep 1; done"; then
         echo >&2 "k8s is not running yet"
         exit 1
       fi
@@ -194,7 +194,7 @@ probes:
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      if ! timeout 300s bash -c "until kubectl get --raw /readyz >/dev/null 2>&1; do sleep 3; done"; then
+      if ! timeout 300s bash -c "until kubectl get --raw /readyz >/dev/null 2>&1; do sleep 1; done"; then
         echo >&2 "kubernetes cluster is not ready yet"
         exit 1
       fi
