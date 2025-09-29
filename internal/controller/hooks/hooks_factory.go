@@ -14,6 +14,14 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
+type HookContext struct {
+	Hook           kubeobjects.HookSpec
+	Client         client.Client
+	Reader         client.Reader
+	Scheme         *runtime.Scheme
+	RecipeElements util.RecipeElements
+}
+
 // Hook interface will help in executing the hooks based on the types.
 // Supported types are "check", "scale" and "exec". The implementor needs
 // return the result which would be boolean and error if any.
@@ -22,17 +30,30 @@ type HookExecutor interface {
 }
 
 // Based on the hook type, return the appropriate implementation of the hook.
-func GetHookExecutor(hook kubeobjects.HookSpec, client client.Client, reader client.Reader,
-	scheme *runtime.Scheme, recipeElements util.RecipeElements,
-) (HookExecutor, error) {
-	switch hook.Type {
+func GetHookExecutor(ctx HookContext) (HookExecutor, error) {
+	switch ctx.Hook.Type {
 	case "check":
-		return CheckHook{Hook: &hook, Reader: reader}, nil
+		return CheckHook{
+			Hook:   &ctx.Hook,
+			Reader: ctx.Reader,
+		}, nil
+
 	case "exec":
-		return ExecHook{Hook: &hook, Reader: reader, Scheme: scheme, RecipeElements: recipeElements}, nil
+		return ExecHook{
+			Hook:           &ctx.Hook,
+			Reader:         ctx.Reader,
+			Scheme:         ctx.Scheme,
+			RecipeElements: ctx.RecipeElements,
+		}, nil
+
 	case "scale":
-		return ScaleHook{Hook: &hook, Reader: reader, Client: client}, nil
+		return ScaleHook{
+			Hook:   &ctx.Hook,
+			Reader: ctx.Reader,
+			Client: ctx.Client,
+		}, nil
+
 	default:
-		return nil, fmt.Errorf("unsupported hook type")
+		return nil, fmt.Errorf("unsupported hook type: %s", ctx.Hook.Type)
 	}
 }
