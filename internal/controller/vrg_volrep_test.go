@@ -865,7 +865,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	Context("in primary state", func() {
 		storageIDLabel := genStorageIDLabel(storageIDs[0])
 		storageID := storageIDLabel[vrgController.StorageIDLabel]
-		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+		vrcLabels := genVGRCLabels(replicationIDs[0], storageID, "ramen")
 		createTestTemplate := &template{
 			ClaimBindInfo:          corev1.ClaimBound,
 			VolumeBindInfo:         corev1.VolumeBound,
@@ -939,7 +939,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	Context("in primary state", func() {
 		storageIDLabel := genStorageIDLabel(storageIDs[0])
 		storageID := storageIDLabel[vrgController.StorageIDLabel]
-		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+		vrcLabels := genVGRCLabels(replicationIDs[0], storageID, "ramen")
 		createTestTemplate := &template{
 			ClaimBindInfo:          corev1.ClaimBound,
 			VolumeBindInfo:         corev1.VolumeBound,
@@ -984,7 +984,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	Context("in primary state", func() {
 		storageIDLabel := genStorageIDLabel(storageIDs[0])
 		storageID := storageIDLabel[vrgController.StorageIDLabel]
-		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+		vrcLabels := genVGRCLabels(replicationIDs[0], storageID, "ramen")
 		createTestTemplate := &template{
 			ClaimBindInfo:          corev1.ClaimPending,
 			VolumeBindInfo:         corev1.VolumePending,
@@ -2248,7 +2248,7 @@ func createStorageClass(testTemplate *template) {
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   testTemplate.storageClassName,
-			Labels: testTemplate.storageIDLabels,
+			Labels: testTemplate.replicationClassLabels,
 		},
 		Provisioner: testTemplate.scProvisioner,
 	}
@@ -3408,12 +3408,18 @@ func genStorageIDLabel(storageID string) map[string]string {
 
 func genPeerClass(replicationID, storageClassName string, storageIDs []string, grouping bool,
 ) ramendrv1alpha1.PeerClass {
-	return ramendrv1alpha1.PeerClass{
+	pc := ramendrv1alpha1.PeerClass{
 		ReplicationID:    replicationID,
 		StorageID:        storageIDs,
 		StorageClassName: storageClassName,
 		Grouping:         grouping,
 	}
+
+	if grouping {
+		pc.GroupReplicationID = replicationID
+	}
+
+	return pc
 }
 
 //nolint:unparam
@@ -3425,6 +3431,21 @@ func genVRCLabels(replicationID, storageID, protectionKey string) map[string]str
 
 	if replicationID != "" {
 		vrcLabel[vrgController.ReplicationIDLabel] = replicationID
+	}
+
+	return vrcLabel
+}
+
+//nolint:unparam
+func genVGRCLabels(replicationID, storageID, protectionKey string) map[string]string {
+	vrcLabel := map[string]string{
+		vrgController.StorageIDLabel: storageID,
+		"protection":                 protectionKey,
+	}
+
+	if replicationID != "" {
+		vrcLabel[vrgController.ReplicationIDLabel] = replicationID
+		vrcLabel[vrgController.GroupReplicationIDLabel] = replicationID
 	}
 
 	return vrcLabel
