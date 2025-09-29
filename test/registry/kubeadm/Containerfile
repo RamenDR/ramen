@@ -1,0 +1,12 @@
+FROM alpine:latest AS builder
+RUN apk update
+RUN apk add curl
+WORKDIR /build
+COPY install.sh .
+RUN chmod +x install.sh
+RUN ./install.sh
+
+FROM alpine:latest
+COPY --from=builder /build/kubeadm /usr/bin/
+ENTRYPOINT ["kubeadm"]
+CMD []
