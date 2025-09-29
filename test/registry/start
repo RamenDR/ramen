@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+podman run --name registry \
+   --publish 5000:5000 \
+   --volume registry:/var/lib/registry:Z \
+   --detach \
+   --replace \
+   registry:2
