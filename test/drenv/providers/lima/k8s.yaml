@@ -8,7 +8,6 @@
 
 # yamllint disable rule:line-length
 ---
-
 # We use only stable ubuntu image for better stability.
 images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
@@ -30,8 +29,12 @@ portForwards:
     proto: any
     guestIP: "0.0.0.0"
 
-provision:
+param:
+  # If set, allow acess to local insecure registry and use it as image
+  # repository for kubeadm.
+  LOCAL_REGISTRY: ""
 
+provision:
   # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/>
   - mode: system
     script: |
@@ -97,6 +100,23 @@ provision:
                   runtime_type = "io.containerd.runc.v2"
                   [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
                     SystemdCgroup = true
+            [plugins."io.containerd.grpc.v1.cri".registry]
+              config_path = "/etc/containerd/certs.d"
+      EOF
+      systemctl restart containerd
+
+  # Configure local registry
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      test -z "{{.Param.LOCAL_REGISTRY}}" && exit 0
+      test -f "/etc/containerd/certs.d/{{.Param.LOCAL_REGISTRY}}/hosts.toml" && exit 0
+      mkdir -p "/etc/containerd/certs.d/{{.Param.LOCAL_REGISTRY}}"
+      cat << EOF > "/etc/containerd/certs.d/{{.Param.LOCAL_REGISTRY}}/hosts.toml"
+      server = "http://{{.Param.LOCAL_REGISTRY}}"
+      [host."http://{{.Param.LOCAL_REGISTRY}}"]
+        skip_verify = true
       EOF
       systemctl restart containerd
 
@@ -109,8 +129,12 @@ provision:
       export KUBECONFIG=/etc/kubernetes/admin.conf
       # Ramen: serve the addiontal shared network instead of the user network.
       export ADVERTISE_ADDRESS=$(ip -j -4 addr show dev lima0 | jq -r '.[0].addr_info[0].local')
-      kubeadm config images list
-      kubeadm config images pull --cri-socket=unix:///run/containerd/containerd.sock
+      # Ramen: Use local registry for k8s images
+      if [ -n "{{.Param.LOCAL_REGISTRY}}" ]; then
+        IMAGE_REPOSITORY="{{.Param.LOCAL_REGISTRY}}/k8s"
+      else
+        IMAGE_REPOSITORY=""
+      fi
       # Initializing your control-plane node
       cat <<EOF >kubeadm-config.yaml
       kind: InitConfiguration
@@ -128,6 +152,7 @@ provision:
       ---
       kind: ClusterConfiguration
       apiVersion: kubeadm.k8s.io/v1beta3
+      imageRepository: "$IMAGE_REPOSITORY"
       apiServer:
         certSANs: # --apiserver-cert-extra-sans
         - "127.0.0.1"
@@ -167,7 +192,6 @@ provision:
       chown -R {{.User}} {{.Home}}/.kube
 
 probes:
-
   - description: "kubeadm installed"
     script: |
       #!/bin/bash
