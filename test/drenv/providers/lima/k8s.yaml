@@ -97,6 +97,22 @@ provision:
                   runtime_type = "io.containerd.runc.v2"
                   [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
                     SystemdCgroup = true
+            [plugins."io.containerd.grpc.v1.cri".registry]
+              config_path = "/etc/containerd/certs.d"
+      EOF
+      systemctl restart containerd
+
+  # Configure local registry
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      test -f /etc/containerd/certs.d/host.lima.internal:5000/hosts.toml && exit 0
+      mkdir -p /etc/containerd/certs.d/host.lima.internal:5000
+      cat <<EOF >>/etc/containerd/certs.d/host.lima.internal:5000/hosts.toml
+      server = "http://host.lima.internal:5000"
+      [host."http://host.lima.internal:5000"]
+        skip_verify = true
       EOF
       systemctl restart containerd
 
