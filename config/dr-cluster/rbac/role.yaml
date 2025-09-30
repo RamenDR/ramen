@@ -286,6 +286,7 @@ rules:
   - delete
   - deletecollection
   - get
+  - list
   - patch
   - update
 - apiGroups:
