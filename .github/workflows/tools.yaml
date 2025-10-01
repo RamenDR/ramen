@@ -99,7 +99,7 @@ jobs:
       matrix:
         os:
           # arm64, 3 cpus (M1), 7 GiB RAM, no nested virtalization.
-          - macos-14
+          - macos-latest
         python-version:
           - "3.13"
     runs-on: ${{ matrix.os }}
