@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 podman run --name registry \
-   --publish 5000:5000 \
+   --publish 5050:5000 \
    --volume registry:/var/lib/registry:Z \
    --detach \
    --replace \

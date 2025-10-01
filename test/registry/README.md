@@ -107,7 +107,7 @@ local registry. You must run this before start the drenv with the
 ## Testing the registry
 
 ```
-$ curl host.minikube.internal:5000/v2/_catalog
+$ curl host.minikube.internal:5050/v2/_catalog
 {}
 ```
 
@@ -122,7 +122,7 @@ $ curl host.minikube.internal:5000/v2/_catalog
 1. Push to the local registry
 
    ```
-   podman push quay.io/nirsof/cirros:0.6.2-1 localhost:5000/nirsof/cirros:0.6.2-1
+   podman push quay.io/nirsof/cirros:0.6.2-1 localhost:5050/nirsof/cirros:0.6.2-1
    ```
 
 ## Using images from the local registry
@@ -138,11 +138,11 @@ metadata:
 spec:
   source:
     registry:
-      url: "docker://host.minikube.internal:5000/nirsof/cirros:0.6.2-1"
+      url: "docker://host.minikube.internal:5050/nirsof/cirros:0.6.2-1"
 ```
 
 > [!NOTE]
-> For macOS the registry address is `host.lima.internal:5000` instead of
+> For macOS the registry address is `host.lima.internal:5050` instead of
 > `host.minikube.internal`.
 
 ## Managing the registry container

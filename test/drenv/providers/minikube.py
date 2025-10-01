@@ -115,7 +115,7 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
         args.append("--alsologtostderr")
 
     if local_registry:
-        args.append("--insecure-registry=host.minikube.internal:5000")
+        args.append("--insecure-registry=host.minikube.internal:5050")
 
     # TODO: Use --interactive=false when the bug is fixed.
     # https://github.com/kubernetes/minikube/issues/19518

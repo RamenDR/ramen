@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 
-PORT = 5000
+PORT = 5050
 
 
 def main():

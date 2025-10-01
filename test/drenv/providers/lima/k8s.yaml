@@ -107,11 +107,11 @@ provision:
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      test -f /etc/containerd/certs.d/host.lima.internal:5000/hosts.toml && exit 0
-      mkdir -p /etc/containerd/certs.d/host.lima.internal:5000
-      cat <<EOF >>/etc/containerd/certs.d/host.lima.internal:5000/hosts.toml
-      server = "http://host.lima.internal:5000"
-      [host."http://host.lima.internal:5000"]
+      test -f /etc/containerd/certs.d/host.lima.internal:5050/hosts.toml && exit 0
+      mkdir -p /etc/containerd/certs.d/host.lima.internal:5050
+      cat <<EOF >>/etc/containerd/certs.d/host.lima.internal:5050/hosts.toml
+      server = "http://host.lima.internal:5050"
+      [host."http://host.lima.internal:5050"]
         skip_verify = true
       EOF
       systemctl restart containerd
@@ -127,7 +127,7 @@ provision:
       export ADVERTISE_ADDRESS=$(ip -j -4 addr show dev lima0 | jq -r '.[0].addr_info[0].local')
       # Ramen: Use local registry for k8s images
       if [ {{.Param.LOCAL_REGISTRY}} -eq 1 ]; then
-        IMAGE_REPOSITORY="host.lima.internal:5000/k8s"
+        IMAGE_REPOSITORY="host.lima.internal:5050/k8s"
       else
         IMAGE_REPOSITORY=""
       fi
