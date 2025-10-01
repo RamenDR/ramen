@@ -5,7 +5,7 @@ Description=Registry container
 Label=app=registry
 ContainerName=registry
 Image=quay.io/libpod/registry:2
-PublishPort=5000:5000
+PublishPort=5050:5000
 Volume=registry.volume:/var/lib/registry
 
 [Install]

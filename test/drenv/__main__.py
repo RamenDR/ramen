@@ -79,6 +79,15 @@ def parse_args():
         type=int,
         help="time in seconds to wait until clsuter is started",
     )
+    p.add_argument(
+        "--local-registry",
+        action="store_true",
+        help=(
+            "Use local registry. For lima provider the local registry must "
+            "have the k8s images for kubeadm. See registry/README.md for "
+            "more info."
+        ),
+    )
 
     p = add_command(sp, "stop", do_stop, help="stop an environment")
     p.add_argument(
@@ -412,7 +421,12 @@ def start_cluster(profile, hooks=(), args=None, **options):
     provider = providers.get(profile["provider"])
     existing = provider.exists(profile)
 
-    provider.start(profile, verbose=True, timeout=args.timeout)
+    provider.start(
+        profile,
+        verbose=True,
+        timeout=args.timeout,
+        local_registry=args.local_registry,
+    )
     provider.configure(profile, existing=existing)
 
     if existing:
