@@ -428,18 +428,18 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 
 // getVGRClassReplicationID is a utility function that fetches the replicationID for the PVC looking at the class labels
 func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim) (string, error) {
-	vgrClass, err := v.selectVolumeReplicationClass(pvc, true)
+	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
 	if err != nil {
 		return "", err
 	}
 
-	replicationID, ok := vgrClass.GetLabels()[ReplicationIDLabel]
+	replicationID, ok := storageClass.GetLabels()[ReplicationIDLabel]
 	if !ok {
-		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
+		v.log.Info(fmt.Sprintf("StorageClass %s is missing replicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
 
-		return "", fmt.Errorf("volumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName())
+		return "", fmt.Errorf("storageClass %s is missing replicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName())
 	}
 
 	return replicationID, nil
