@@ -4,7 +4,7 @@
 //nolint:lll
 // +kubebuilder:rbac:groups=velero.io,resources=backups,verbs=create;delete;deletecollection;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=velero.io,resources=backups/status,verbs=get
-// +kubebuilder:rbac:groups=velero.io,resources=backupstoragelocations,verbs=create;delete;deletecollection;get;patch;update
+// +kubebuilder:rbac:groups=velero.io,resources=backupstoragelocations,verbs=create;delete;deletecollection;get;list;patch;update
 // +kubebuilder:rbac:groups=velero.io,resources=restores,verbs=create;delete;deletecollection;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=velero.io,resources=restores/status,verbs=get
 
@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
@@ -530,6 +531,12 @@ func backupRequestCreate(
 		return backupLocation, nil, err
 	}
 
+	// Wait for BSL to become Available before creating backup
+	if err := w.waitForBSLToBeAvailable(backupLocation); err != nil {
+		return backupLocation, nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",
+			backupLocation.Namespace, backupLocation.Name, err)
+	}
+
 	backupSpec.StorageLocation = requestName
 	backupSpec.SnapshotVolumes = new(bool)
 	backupRequest := backupRequest(requestsNamespaceName, requestName, backupSpec, labels, annotations)
@@ -586,6 +593,97 @@ func (w objectWriter) objectDelete(o client.Object) error {
 	}
 
 	return nil
+}
+
+func IsBSLAvailable(bsl velero.BackupStorageLocation) bool {
+	return bsl.Status.Phase == velero.BackupStorageLocationPhaseAvailable
+}
+
+// checkBSLStatus checks if BSL is Available
+func (w objectWriter) checkBSLStatus(
+	reader client.Reader,
+	key client.ObjectKey,
+	currentBSL *velero.BackupStorageLocation,
+	bslName string,
+) (bool, error) {
+	if err := reader.Get(w.ctx, key, currentBSL); err != nil {
+		if k8serrors.IsNotFound(err) {
+			w.log.V(1).Info("BSL not found", "bsl", bslName, "error", err)
+		} else {
+			w.log.V(1).Info("Failed to get BSL", "bsl", bslName, "error", err)
+		}
+
+		return false, err
+	}
+
+	w.log.V(1).Info("BSL status check", "bsl", bslName, "phase", currentBSL.Status.Phase)
+
+	if IsBSLAvailable(*currentBSL) {
+		w.log.Info("BSL is now Available", "bsl", bslName)
+
+		return true, nil
+	}
+
+	w.log.V(1).Info("BSL still not Available, continuing to wait",
+		"bsl", bslName, "phase", currentBSL.Status.Phase, "message", currentBSL.Status.Message)
+
+	return false, nil
+}
+
+// waitForBSLToBeAvailable waits for BSL to become Available with timeout and polling
+func (w objectWriter) waitForBSLToBeAvailable(bsl *velero.BackupStorageLocation) error {
+	const (
+		timeout  = 30 * time.Second
+		interval = 5 * time.Second
+	)
+
+	w.log.Info("Waiting for BSL to become Available", "bsl", bsl.Name, "namespace", bsl.Namespace)
+
+	reader, ok := w.Writer.(client.Reader)
+	if !ok {
+		return fmt.Errorf("writer does not implement client.Reader interface")
+	}
+
+	key := client.ObjectKey{
+		Namespace: bsl.Namespace,
+		Name:      bsl.Name,
+	}
+
+	currentBSL := &velero.BackupStorageLocation{}
+
+	ctx, cancel := context.WithTimeout(w.ctx, timeout)
+	defer cancel()
+
+	available, err := w.checkBSLStatus(reader, key, currentBSL, bsl.Name)
+	if err != nil {
+		w.log.V(1).Info("Failed initial BSL status check, will retry", "bsl", bsl.Name, "error", err)
+	}
+
+	if available {
+		return nil
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed-out waiting for BSL %s/%s to become Available after %v",
+				bsl.Namespace, bsl.Name, timeout)
+		case <-ticker.C:
+			available, err := w.checkBSLStatus(reader, key, currentBSL, bsl.Name)
+			if err != nil {
+				w.log.V(1).Info("Failed to get BSL status, continuing to wait", "bsl", bsl.Name, "error", err)
+
+				continue
+			}
+
+			if available {
+				return nil
+			}
+		}
+	}
 }
 
 func veleroTypeMeta(kind string) metav1.TypeMeta {
