@@ -34,7 +34,7 @@ UNSUPPORTED_OPTIONS = (
     "service_cluster_ip_range",
 )
 
-LOCAL_REGISTRY = "host.lima.internal:5000"
+LOCAL_REGISTRY = "host.lima.internal:5050"
 
 # limactl delete is racy, trying to access lima.yaml in other clusters and
 # fails when the files are deleted by another limactl process. Until limactl is

@@ -23,7 +23,7 @@ EXTRA_CONFIG = [
     "kubelet.serialize-image-pulls=false"
 ]
 
-LOCAL_REGISTRY = "host.minikube.internal:5000"
+LOCAL_REGISTRY = "host.minikube.internal:5050"
 
 # Provider scope
 
