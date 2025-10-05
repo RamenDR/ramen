@@ -9,3 +9,6 @@ addopts = "--verbose -rsxX --durations 10"
 markers = [
     "cluster: marks tests requiring a test cluster (deselect with -m 'not cluster')"
 ]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
