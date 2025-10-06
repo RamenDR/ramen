@@ -16,31 +16,31 @@ func TestGetHookExecutor(t *testing.T) {
 	client := fake.NewFakeClient()
 	reader := fake.NewFakeClient()
 
-	executor, err := hooks.GetHookExecutor(getHookSpecForFactoryTest("check", client, reader))
+	executor, err := hooks.GetHookExecutor(getHookContextForFactoryTest("check", client, reader))
 	assert.Nil(t, err)
 
 	_, ok := executor.(hooks.CheckHook)
 	assert.True(t, ok)
 
-	executor, err = hooks.GetHookExecutor(getHookSpecForFactoryTest("exec", client, reader))
+	executor, err = hooks.GetHookExecutor(getHookContextForFactoryTest("exec", client, reader))
 	assert.Nil(t, err)
 
 	_, ok = executor.(hooks.ExecHook)
 	assert.True(t, ok)
 
-	executor, err = hooks.GetHookExecutor(getHookSpecForFactoryTest("scale", client, reader))
+	executor, err = hooks.GetHookExecutor(getHookContextForFactoryTest("scale", client, reader))
 	assert.Nil(t, err)
 
 	_, ok = executor.(hooks.ScaleHook)
 	assert.True(t, ok)
 
-	executor, err = hooks.GetHookExecutor(getHookSpecForFactoryTest("undefined", client, reader))
+	executor, err = hooks.GetHookExecutor(getHookContextForFactoryTest("undefined", client, reader))
 
 	assert.Nil(t, executor)
 	assert.EqualError(t, err, "unsupported hook type: undefined")
 }
 
-func getHookSpecForFactoryTest(hookType string, client client.WithWatch, reader client.WithWatch) hooks.HookContext {
+func getHookContextForFactoryTest(hookType string, client client.WithWatch, reader client.WithWatch) hooks.HookContext {
 	return hooks.HookContext{
 		Hook: kubeobjects.HookSpec{
 			Name:      "test",
