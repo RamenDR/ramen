@@ -1188,6 +1188,7 @@ func getScaleHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 		NameSelector:   hook.NameSelector,
 		Essential:      hook.Essential,
 		Timeout:        hook.Timeout,
+		OnError:        hook.OnError,
 		// suffix will be up, down, or sync
 		Scale: kubeobjects.ScaleSpec{
 			Operation: suffix,
