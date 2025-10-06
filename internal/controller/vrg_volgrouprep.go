@@ -416,7 +416,7 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 	}
 
 	vgrNamespacedName := types.NamespacedName{
-		Name:      rmnutil.TrimToK8sResourceNameLength(rID + v.instance.Name),
+		Name:      rmnutil.CreateVGRName(rID, v.instance.Name),
 		Namespace: pvc.Namespace,
 	}
 
