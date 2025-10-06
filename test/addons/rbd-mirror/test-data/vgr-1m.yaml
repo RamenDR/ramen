@@ -8,6 +8,7 @@ metadata:
   name: vgr-1m
 spec:
   volumeGroupReplicationClassName: vgrc-1m
+  volumeReplicationClassName: vrc-1m
   replicationState: primary
   source:
     selector:
