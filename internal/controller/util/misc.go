@@ -380,6 +380,10 @@ func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string
 	return true
 }
 
+func CreateVGRName(prefix string, suffix string) string {
+	return TrimToK8sResourceNameLength("vgr-" + prefix + "-" + suffix)
+}
+
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 	return annotations[UseVolSyncAnnotation] == "true"
 }
