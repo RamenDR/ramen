@@ -121,13 +121,6 @@ func (s ScaleHook) Execute(log logr.Logger) error {
 
 	scaleOp := s.Hook.Scale.Operation
 
-	log.Info("ScaleHook operation",
-		"hook", s.Hook.Name,
-		"namespace", s.Hook.Namespace,
-		"operation", scaleOp,
-		"selectResource", s.Hook.SelectResource,
-	)
-
 	return s.processResources(resources, scaleOp, log)
 }
 
