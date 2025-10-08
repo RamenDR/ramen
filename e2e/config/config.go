@@ -28,7 +28,7 @@ const (
 	defaultGitBranch = "main"
 
 	// DRPolicy
-	defaultDRPolicyName = "dr-policy"
+	defaultDRPolicyName = "dr-policy-1m"
 
 	// Make it easier to manage namespaces created by the tests.
 	defaultNamespacePrefix = "test-"
