@@ -67,7 +67,9 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     start = time.monotonic()
     logging.info("[%s] Starting lima cluster", profile["name"])
 
+    existing = True
     if not exists(profile):
+        existing = False
         _log_unsupported_options(profile)
         with tempfile.NamedTemporaryFile(
             prefix=f"drenv.lima.{profile['name']}.tmp",
@@ -84,7 +86,7 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     debug = partial(logging.debug, f"[{profile['name']}] %s")
     cluster.wait_until_ready(profile["name"], timeout=30, log=debug)
 
-    if vm["status"] == STOPPED:
+    if existing and vm["status"] == STOPPED:
         # We have random failures (e.g. ocm webooks) when starting a stopped
         # cluster. Until we find A better way, try to wait give the system
         # more time to become stable.
