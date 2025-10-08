@@ -536,11 +536,8 @@ const (
 	// Consistency group label
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
-	// VolumeReplicationClass label
+	// VolumeReplicationClass and VolumeGroupReplicationClass label
 	ReplicationIDLabel = "ramendr.openshift.io/replicationid"
-
-	// VolumeGroupReplicationClass label
-	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
