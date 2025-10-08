@@ -1333,8 +1333,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-vgrcID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1381,8 +1381,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-vgrcID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1399,13 +1399,12 @@ var _ = Describe("updatePeerClassesInternal", func() {
 			[]peerInfo{},
 			[]peerInfo{
 				{
-					replicationID:      "cl-1-2-rID",
-					groupReplicationID: "cl-1-2-grID",
-					storageIDs:         []string{"cl-1-sID1", "cl-2-sID1"},
-					storageClassName:   "sc1",
-					clusterIDs:         []string{"cl-1", "cl-2"},
-					grouping:           true,
-					offloaded:          false,
+					replicationID:    "cl-1-2-vgrcID",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         true,
+					offloaded:        false,
 				},
 			},
 		),
@@ -1542,8 +1541,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID2",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-1-sID2",
+									ReplicationIDLabel: "cl-1-2-vgrcID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1621,8 +1620,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgrc2",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID2",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-2-sID2",
+									ReplicationIDLabel: "cl-1-2-vgrcID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1647,13 +1646,12 @@ var _ = Describe("updatePeerClassesInternal", func() {
 					offloaded:        false,
 				},
 				{
-					replicationID:      "cl-1-2-rID",
-					groupReplicationID: "cl-1-2-grID",
-					storageIDs:         []string{"cl-1-sID2", "cl-2-sID2"},
-					storageClassName:   "sc2",
-					clusterIDs:         []string{"cl-1", "cl-2"},
-					grouping:           true,
-					offloaded:          false,
+					replicationID:    "cl-1-2-vgrcID",
+					storageIDs:       []string{"cl-1-sID2", "cl-2-sID2"},
+					storageClassName: "sc2",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					grouping:         true,
+					offloaded:        false,
 				},
 			},
 		),
@@ -1678,8 +1676,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1710,8 +1708,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1728,13 +1726,12 @@ var _ = Describe("updatePeerClassesInternal", func() {
 			[]peerInfo{},
 			[]peerInfo{
 				{
-					replicationID:      "",
-					groupReplicationID: "cl-1-2-grID",
-					storageIDs:         []string{"cl-1-sID1", "cl-2-sID1"},
-					storageClassName:   "sc1",
-					clusterIDs:         []string{"cl-1", "cl-2"},
-					offloaded:          true,
-					grouping:           true,
+					replicationID:    "cl-1-2-rID",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+					grouping:         true,
 				},
 			},
 		),
@@ -1759,8 +1756,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1791,8 +1788,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID1",
-									GroupReplicationIDLabel: "mismatch",
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "mismatch",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1840,8 +1837,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID1",
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-rID1",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1855,8 +1852,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc2",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID2",
-									GroupReplicationIDLabel: "cl-1-2-grID2",
+									StorageIDLabel:     "cl-1-sID2",
+									ReplicationIDLabel: "cl-1-2-rID2",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1897,8 +1894,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID1",
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-rID1",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1912,8 +1909,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc2",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID2",
-									GroupReplicationIDLabel: "cl-1-2-grID2",
+									StorageIDLabel:     "cl-2-sID2",
+									ReplicationIDLabel: "cl-1-2-rID2",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -1930,22 +1927,20 @@ var _ = Describe("updatePeerClassesInternal", func() {
 			[]peerInfo{},
 			[]peerInfo{
 				{
-					replicationID:      "",
-					groupReplicationID: "cl-1-2-grID1",
-					storageIDs:         []string{"cl-1-sID1", "cl-2-sID1"},
-					storageClassName:   "sc1",
-					clusterIDs:         []string{"cl-1", "cl-2"},
-					offloaded:          true,
-					grouping:           true,
+					replicationID:    "cl-1-2-rID1",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+					grouping:         true,
 				},
 				{
-					replicationID:      "",
-					groupReplicationID: "cl-1-2-grID2",
-					storageIDs:         []string{"cl-1-sID2", "cl-2-sID2"},
-					storageClassName:   "sc2",
-					clusterIDs:         []string{"cl-1", "cl-2"},
-					offloaded:          true,
-					grouping:           true,
+					replicationID:    "cl-1-2-rID2",
+					storageIDs:       []string{"cl-1-sID2", "cl-2-sID2"},
+					storageClassName: "sc2",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+					grouping:         true,
 				},
 			},
 		),
@@ -1994,7 +1989,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 			},
 			[]peerInfo{},
 		),
-		Entry("Offloaded async peer, single async peer with rID and grID, still reports offloaded peer",
+		Entry("Offloaded async peer, single async peer with rID, still reports offloaded peer",
 			[]classLists{
 				{
 					clusterID: "cl-1",
@@ -2032,8 +2027,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-1-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-1-sID1",
+									ReplicationIDLabel: "cl-1-2-vgrcID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -2081,8 +2076,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vrc1",
 								Labels: map[string]string{
-									StorageIDLabel:          "cl-2-sID1",
-									GroupReplicationIDLabel: "cl-1-2-grID",
+									StorageIDLabel:     "cl-2-sID1",
+									ReplicationIDLabel: "cl-1-2-vgrcID",
 								},
 							},
 							Spec: volrep.VolumeGroupReplicationClassSpec{
@@ -2099,13 +2094,12 @@ var _ = Describe("updatePeerClassesInternal", func() {
 			[]peerInfo{},
 			[]peerInfo{
 				{
-					replicationID:      "",
-					groupReplicationID: "cl-1-2-grID",
-					storageIDs:         []string{"cl-1-sID1", "cl-2-sID1"},
-					storageClassName:   "sc1",
-					clusterIDs:         []string{"cl-1", "cl-2"},
-					offloaded:          true,
-					grouping:           true,
+					replicationID:    "cl-1-2-vgrcID",
+					storageIDs:       []string{"cl-1-sID1", "cl-2-sID1"},
+					storageClassName: "sc1",
+					clusterIDs:       []string{"cl-1", "cl-2"},
+					offloaded:        true,
+					grouping:         true,
 				},
 			},
 		),
