@@ -31,6 +31,7 @@
 
 # Testing
 /test/                          @nirs @raghavendra-talur
+/ramendev/                      @nirs @raghavendra-talur
 /e2e/                           @nirs @raghavendra-talur
 /docs/testing.md                @nirs @raghavendra-talur
 /docs/devel-quick-start.md      @nirs @raghavendra-talur
