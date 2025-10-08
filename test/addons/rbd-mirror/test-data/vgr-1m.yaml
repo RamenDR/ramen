@@ -5,9 +5,9 @@
 apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeGroupReplication
 metadata:
-  name: vgr-sample
+  name: vgr-1m
 spec:
-  volumeGroupReplicationClassName: vgrc-sample
+  volumeGroupReplicationClassName: vgrc-1m
   replicationState: primary
   source:
     selector:
