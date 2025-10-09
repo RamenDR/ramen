@@ -57,6 +57,10 @@ func (w Deployment) GetBranch() string {
 	return w.Branch
 }
 
+func (w Deployment) GetResourceType() string {
+	return "deployment"
+}
+
 func (w Deployment) Kustomize() string {
 	if w.PVCSpec.StorageClassName == "" && w.PVCSpec.AccessModes == "" {
 		return ""

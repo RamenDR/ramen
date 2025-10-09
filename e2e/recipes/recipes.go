@@ -4,98 +4,40 @@
 package recipes
 
 import (
-	"fmt"
-
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/ramendr/ramen/e2e/config"
-	"github.com/ramendr/ramen/e2e/types"
 )
 
-func CreateRecipe(ctx types.TestContext, recipeConfig *config.Recipe) error {
-	log := ctx.Logger()
+const defaultTimeout = 300
 
-	recipe := prepareRecipe(ctx, recipeConfig)
-	if err := createRecipeOnClusters(ctx, recipe); err != nil {
-		return err
-	}
-
-	log.Debugf("Recipe %s-recipe created for discovered app \"%s/%s\"",
-		ctx.Name(), ctx.AppNamespace(), ctx.Workload().GetAppName())
-
-	return nil
+func Generate(ctxName, appNS, appName, resourceType string, recipeConfig *config.Recipe) *recipe.Recipe {
+	return prepareRecipe(ctxName, appNS, appName, resourceType, recipeConfig)
 }
 
-func DeleteRecipe(ctx types.TestContext) error {
-	key := k8stypes.NamespacedName{
-		Name:      ctx.Name() + "-recipe",
-		Namespace: ctx.AppNamespace(),
-	}
-
-	return deleteRecipeOnClusters(ctx, key)
-}
-
-func prepareRecipe(ctx types.TestContext, recipeConfig *config.Recipe) *recipe.Recipe {
-	recipe := prepareBaseRecipe(ctx)
-	ns := ctx.AppNamespace()
+func prepareRecipe(ctxName, appNS, appName, resourceType string, recipeConfig *config.Recipe) *recipe.Recipe {
+	recipe := prepareBaseRecipe(ctxName, appNS)
 
 	if recipeConfig.CheckHook || recipeConfig.ExecHook {
-		recipe.Spec.Hooks = prepareHooks(ns)
+		recipe.Spec.Hooks = prepareHooks(appNS, appName, resourceType, recipeConfig.CheckHook, recipeConfig.ExecHook)
 	}
 
-	recipe.Spec.Groups = prepareGroups(ns)
+	recipe.Spec.Groups = prepareGroups(appNS)
 	recipe.Spec.Workflows = prepareWorkflows(recipeConfig)
 
 	return recipe
 }
 
-func createRecipeOnClusters(ctx types.TestContext, recipe *recipe.Recipe) error {
-	rCopy := recipe.DeepCopy()
-	for _, cluster := range []*types.Cluster{ctx.Env().C1, ctx.Env().C2} {
-		if err := cluster.Client.Create(ctx.Context(), recipe); err != nil {
-			return fmt.Errorf("failed to create recipe \"%s/%s\" on cluster %q",
-				ctx.AppNamespace(), recipe.Name, cluster.Name)
-		}
-
-		recipe = rCopy
-	}
-
-	return nil
-}
-
-func deleteRecipeOnClusters(ctx types.TestContext, key k8stypes.NamespacedName) error {
-	for _, cluster := range []*types.Cluster{ctx.Env().C1, ctx.Env().C2} {
-		r := &recipe.Recipe{}
-
-		err := cluster.Client.Get(ctx.Context(), key, r)
-		if err != nil {
-			if !k8serrors.IsNotFound(err) {
-				return err
-			}
-
-			return nil
-		}
-
-		if err := cluster.Client.Delete(ctx.Context(), r); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func prepareBaseRecipe(ctx types.TestContext) *recipe.Recipe {
+func prepareBaseRecipe(ctxName, appNS string) *recipe.Recipe {
 	return &recipe.Recipe{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Recipe",
 			APIVersion: "recipe.ramendr.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctx.Name() + "-recipe",
-			Namespace: ctx.AppNamespace(),
+			Name:      ctxName,
+			Namespace: appNS,
 		},
 	}
 }
@@ -123,148 +65,78 @@ func prepareGroups(namespace string) []*recipe.Group {
 }
 
 // nolint:mnd
-func prepareHooks(namespace string) []*recipe.Hook {
-	return []*recipe.Hook{
-		{
-			Name:           "check-hook",
-			Type:           "check",
-			Namespace:      namespace,
-			NameSelector:   "busybox",
-			SelectResource: "deployment",
-			Timeout:        300,
-			Chks: []*recipe.Check{
-				{
-					Name:      "check-replicas",
-					Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
-				},
-			},
-		},
-		{
-			Name:           "exec-hook",
-			Type:           "exec",
-			Namespace:      namespace,
-			NameSelector:   "busybox",
-			SelectResource: "deployment",
-			Timeout:        300,
-			Ops: []*recipe.Operation{
-				{
-					Name:    "ls",
-					Command: "/bin/sh -c ls",
-				},
+func prepareHooks(namespace, appName, resourceType string, checkHook, execHook bool) []*recipe.Hook {
+	hooks := make([]*recipe.Hook, 0)
+
+	if checkHook {
+		cHook := prepareCheckHook(namespace, appName, resourceType)
+		hooks = append(hooks, cHook)
+	}
+
+	if execHook {
+		eHook := prepareExecHook(namespace, appName, resourceType)
+		hooks = append(hooks, eHook)
+	}
+
+	return hooks
+}
+
+func prepareCheckHook(namespace, appName, resourceType string) *recipe.Hook {
+	return &recipe.Hook{
+		Name:           "check-hook",
+		Type:           "check",
+		Namespace:      namespace,
+		NameSelector:   appName,
+		SelectResource: resourceType,
+		Timeout:        defaultTimeout,
+		Chks: []*recipe.Check{
+			{
+				Name:      "check-replicas",
+				Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
 			},
 		},
 	}
 }
 
-func prepareWorkflow(name string) *recipe.Workflow {
-	return &recipe.Workflow{
-		Name: name,
-		Sequence: []map[string]string{
+func prepareExecHook(namespace, appName, resourceType string) *recipe.Hook {
+	return &recipe.Hook{
+		Name:           "exec-hook",
+		Type:           "exec",
+		Namespace:      namespace,
+		NameSelector:   appName,
+		SelectResource: resourceType,
+		Timeout:        defaultTimeout,
+		Ops: []*recipe.Operation{
 			{
-				"group": "rg1",
+				Name:    "ls",
+				Command: "/bin/sh -c ls",
 			},
 		},
 	}
 }
 
 func prepareWorkflows(recipeSpec *config.Recipe) []*recipe.Workflow {
-	backup := prepareWorkflow("backup")
-	restore := prepareWorkflow("restore")
+	backup := &recipe.Workflow{Name: "backup"}
+	restore := &recipe.Workflow{Name: "restore"}
 
-	checkHook := map[string]string{
-		"hook": "check-hook/check-replicas",
+	checkHook := map[string]string{"hook": "check-hook/check-replicas"}
+	execHook := map[string]string{"hook": "exec-hook/ls"}
+	group := map[string]string{"group": "rg1"}
+
+	switch {
+	case recipeSpec.ExecHook && recipeSpec.CheckHook:
+		backup.Sequence = []map[string]string{checkHook, execHook, group}
+		restore.Sequence = []map[string]string{group, checkHook, execHook}
+	case !recipeSpec.ExecHook && recipeSpec.CheckHook:
+		backup.Sequence = []map[string]string{checkHook, group}
+		restore.Sequence = []map[string]string{group, checkHook}
+	case recipeSpec.ExecHook && !recipeSpec.CheckHook:
+		backup.Sequence = []map[string]string{execHook, group}
+		restore.Sequence = []map[string]string{group, execHook}
+	case !recipeSpec.ExecHook && !recipeSpec.CheckHook:
+		backup.Sequence = []map[string]string{group}
+		restore.Sequence = []map[string]string{group}
 	}
 
-	execHook := map[string]string{
-		"hook": "exec-hook/ls",
-	}
-
-	group := map[string]string{
-		"group": "rg1",
-	}
-
-	if recipeSpec.ExecHook && recipeSpec.CheckHook {
-		addCheckAndExecHooks(backup, checkHook, execHook, group)
-		addCheckAndExecHooks(restore, checkHook, execHook, group)
-
-		return []*recipe.Workflow{
-			backup,
-			restore,
-		}
-	}
-
-	if recipeSpec.CheckHook {
-		addCheckHooks(backup, checkHook, group)
-		addCheckHooks(restore, checkHook, group)
-
-		return []*recipe.Workflow{
-			backup,
-			restore,
-		}
-	}
-
-	if recipeSpec.ExecHook {
-		addExecHooks(backup, execHook, group)
-		addExecHooks(restore, execHook, group)
-	}
-
-	return []*recipe.Workflow{
-		backup,
-		restore,
-	}
-}
-
-// nolint:mnd
-func addCheckHooks(workflow *recipe.Workflow, checkHook, group map[string]string) {
-	seq := make([]map[string]string, 2)
-
-	if workflow.Name == "backup" {
-		seq[0] = checkHook
-
-		seq[1] = group
-	}
-
-	if workflow.Name == "restore" {
-		seq[0] = group
-
-		seq[1] = checkHook
-	}
-
-	workflow.Sequence = seq
-}
-
-// nolint:mnd
-func addExecHooks(workflow *recipe.Workflow, execHook, group map[string]string) {
-	seq := make([]map[string]string, 2)
-
-	if workflow.Name == "backup" {
-		seq[0] = execHook
-		seq[1] = group
-	}
-
-	if workflow.Name == "restore" {
-		seq[0] = group
-		seq[1] = execHook
-	}
-
-	workflow.Sequence = seq
-}
-
-// nolint:mnd
-func addCheckAndExecHooks(workflow *recipe.Workflow, checkHook, execHook, group map[string]string) {
-	seq := make([]map[string]string, 3)
-
-	if workflow.Name == "backup" {
-		seq[0] = checkHook
-		seq[1] = execHook
-		seq[2] = group
-	}
-
-	if workflow.Name == "restore" {
-		seq[0] = group
-		seq[1] = checkHook
-		seq[2] = execHook
-	}
-
-	workflow.Sequence = seq
+	return []*recipe.Workflow{backup, restore}
 }
