@@ -22,6 +22,11 @@ import (
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
+const (
+	groupReplicationSecretName      = "replication.storage.openshift.io/group-replication-secret-name"
+	groupReplicationSecretNamespace = "replication.storage.openshift.io/group-replication-secret-namespace"
+)
+
 //nolint:gocognit,cyclop,funlen
 func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
@@ -976,7 +981,7 @@ func (v *VRGInstance) restoreVGRCsFromObjectStore(objectStore ObjectStorer, s3Pr
 		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	return restoreClusterDataObjects(v, vgrcList, "VGRC", cleanupVGRCForRestore, v.validateExistingVGRC)
+	return restoreClusterDataObjects(v, vgrcList, "VGRC", v.cleanupVGRCForRestore, v.validateExistingVGRC)
 }
 
 func (v *VRGInstance) restoreVGRsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
@@ -1054,11 +1059,11 @@ func (v *VRGInstance) validateExistingVGR(vgr *volrep.VolumeGroupReplication) er
 	return nil
 }
 
-func cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+func (v *VRGInstance) cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
 	vgrc.ResourceVersion = ""
 	vgrc.Spec.VolumeGroupReplicationRef = nil
 
-	return nil
+	return v.processVGRCSecrets(vgrc)
 }
 
 func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) error {
@@ -1072,6 +1077,27 @@ func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) e
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				vgr.GetName(), vgr.GetNamespace(), err)
 		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) processVGRCSecrets(vgrc *volrep.VolumeGroupReplicationContent) error {
+	vgrclass := &volrep.VolumeGroupReplicationClass{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: vgrc.Spec.VolumeGroupReplicationClassName}, vgrclass)
+	if err != nil {
+		return err
+	}
+
+	secretName := vgrclass.Spec.Parameters[groupReplicationSecretName]
+	if secretName != "" {
+		rmnutil.AddAnnotation(vgrc, groupReplicationSecretName, secretName)
+	}
+
+	secretNamespace := vgrclass.Spec.Parameters[groupReplicationSecretNamespace]
+	if secretNamespace != "" {
+		rmnutil.AddAnnotation(vgrc, groupReplicationSecretNamespace, secretNamespace)
 	}
 
 	return nil
