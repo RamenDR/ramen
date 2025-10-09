@@ -52,6 +52,12 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if rgd.Spec.Paused {
+		logger.Info("ReplicationGroupDestination is paused, skipping reconciliation")
+
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Get vrg from ReplicationGroupDestination")
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
@@ -72,7 +78,6 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 	}
 
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
-
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
 	logger.Info("Run ReplicationGroupDestination state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
@@ -90,12 +95,9 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 	)
 	// Update instance status
 	statusErr := r.Client.Status().Update(ctx, rgd)
-
 	if err == nil { // Don't mask previous error
 		err = statusErr
-	}
-
-	if err != nil {
+	} else {
 		logger.Error(err, "Failed to reconcile ReplicationGroupDestination")
 	}
 
