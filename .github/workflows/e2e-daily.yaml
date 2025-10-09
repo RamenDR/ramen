@@ -15,9 +15,14 @@ on:
 
 jobs:
   refresh-cache:
-    runs-on: [self-hosted, e2e-rdr]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - e2e-rdr-2
+          - e2e-rdr-3
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
-
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -37,7 +42,13 @@ jobs:
             drenv cache envs/regional-dr.yaml
 
   prune-images:
-    runs-on: [self-hosted, e2e-rdr]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - e2e-rdr-2
+          - e2e-rdr-3
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
       - name: Prune images
