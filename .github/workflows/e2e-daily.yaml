@@ -22,8 +22,8 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Install drenv
-        run: pip install -e test
+      - name: Create virtual environment
+        run: hack/make-venv .venv
 
       - name: Refresh cache
         uses: nick-fields/retry@v3
@@ -33,6 +33,7 @@ jobs:
           max_attempts: 10
           command: |
             cd test
+            source ../venv
             drenv cache envs/regional-dr.yaml
 
   prune-images:
