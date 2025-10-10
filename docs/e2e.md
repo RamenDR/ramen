@@ -33,6 +33,14 @@ for VM workload testing:
 cat config-vm.yaml.sample ~/.config/drenv/rdr-kubevirt/config.yaml > config.yaml
 ```
 
+If the `drenv` was used to configure RDR clusters and user intends to test using
+recipe for the discovered apps, user can easily copy `config-recipe.yaml.sample`
+and add the clusters kubeconfig paths into `config.yaml` using:
+
+```sh
+cat config-recipe.yaml.sample ~/.config/drenv/rdr-kubevirt/config.yaml > config.yaml
+```
+
 #### For real cluster
 
 Create a `config.yaml` file by copying the `config.yaml.sample` template:
