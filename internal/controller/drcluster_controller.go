@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -499,14 +500,19 @@ func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
 ) (string, error) {
-	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
+	s3ProfileName := drcluster.Spec.S3ProfileName
+	if s3ProfileName != NoS3StoreAvailable {
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
-			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
+			s3ProfileName, listKeyPrefix, log); err != nil {
 			return reason, err
 		}
 	}
 
 	return "", nil
+}
+
+func getRamenNamespace() string {
+	return os.Getenv("POD_NAMESPACE")
 }
 
 func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
@@ -521,6 +527,24 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 
 	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
 		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
+	}
+
+	if s3ProfileName != "" {
+		// fetch the corresponding S3StoreProfile from RamenConfig
+		s3profile, err := GetRamenConfigS3StoreProfile(ctx, apiReader, s3ProfileName)
+		if err != nil {
+			return "", fmt.Errorf("failed to get profile %s, %w",
+				s3ProfileName, err)
+		}
+
+		if len(s3profile.S3SecretRef.Name) > 0 {
+			ns := s3profile.S3SecretRef.Namespace
+			ramenNS := getRamenNamespace()
+
+			if ns != "" && ns != ramenNS {
+				return "", fmt.Errorf("invalid S3SecretRef namespace %q for s3 profile %s; must be %q", ns, s3ProfileName, ramenNS)
+			}
+		}
 	}
 
 	return "", nil
