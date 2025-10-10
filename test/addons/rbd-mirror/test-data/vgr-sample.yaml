@@ -8,6 +8,7 @@ metadata:
   name: vgr-sample
 spec:
   volumeGroupReplicationClassName: vgrc-sample
+  volumeReplicationClassName: vrc-sample
   replicationState: primary
   source:
     selector:

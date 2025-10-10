@@ -3,7 +3,7 @@
 
 ---
 resources:
-- vr-sample.yaml
+- vgr-sample.yaml
 - rbd-pvc.yaml
 
 namespace: rook-ceph
