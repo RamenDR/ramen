@@ -294,8 +294,15 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		if cg.IsHook {
 			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
 
-			executor, err1 := hooks.GetHookExecutor(cg.Hook, v.reconciler.APIReader, v.reconciler.Scheme,
-				v.recipeElements)
+			hookCtx := hooks.HookContext{
+				Hook:           cg.Hook,
+				Client:         v.reconciler.Client,
+				Reader:         v.reconciler.APIReader,
+				Scheme:         v.reconciler.Scheme,
+				RecipeElements: v.recipeElements,
+			}
+
+			executor, err1 := hooks.GetHookExecutor(hookCtx)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", cg.Hook)
@@ -755,8 +762,15 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		if rg.IsHook {
 			isEssentialStep = rg.Hook.Essential != nil && *rg.Hook.Essential
 
-			executor, err1 := hooks.GetHookExecutor(rg.Hook, v.reconciler.APIReader, v.reconciler.Scheme,
-				v.recipeElements)
+			hookCtx := hooks.HookContext{
+				Hook:           rg.Hook,
+				Client:         v.reconciler.Client,
+				Reader:         v.reconciler.APIReader,
+				Scheme:         v.reconciler.Scheme,
+				RecipeElements: v.recipeElements,
+			}
+
+			executor, err1 := hooks.GetHookExecutor(hookCtx)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", rg.Hook)
@@ -1150,14 +1164,35 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 // TODO: Return error as well or ensure that other than exec and check hooks are
 // handled properly.
 func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	// based on hook.type check of the hook is chks or ops
-	if hook.Type == "exec" {
+	// based on hook.type, the hook is chks, ops or scale
+	switch hook.Type {
+	case "exec":
 		return getOpHookSpec(&hook, suffix)
-	} else if hook.Type == "check" {
+	case "check":
 		return getChkHookSpec(&hook, suffix)
+	case "scale":
+		return getScaleHookSpec(&hook, suffix)
+	default:
+		return kubeobjects.HookSpec{}
 	}
+}
 
-	return kubeobjects.HookSpec{}
+func getScaleHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	return kubeobjects.HookSpec{
+		Name:           hook.Name,
+		Namespace:      hook.Namespace,
+		Type:           hook.Type,
+		SelectResource: hook.SelectResource,
+		LabelSelector:  hook.LabelSelector,
+		NameSelector:   hook.NameSelector,
+		Essential:      hook.Essential,
+		Timeout:        hook.Timeout,
+		OnError:        hook.OnError,
+		// suffix will be up, down, or sync
+		Scale: kubeobjects.ScaleSpec{
+			Operation: suffix,
+		},
+	}
 }
 
 func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
