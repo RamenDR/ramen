@@ -2062,9 +2062,17 @@ func (d *DRPCInstance) EnsureCleanup(clusterToSkip string) error {
 	if condition.Reason == rmn.ReasonSuccess &&
 		condition.Status == metav1.ConditionTrue &&
 		condition.ObservedGeneration == d.instance.Generation {
-		d.log.Info("Condition values tallied, cleanup is considered complete")
+		for cluster, vrg := range d.vrgs {
+			if cluster == clusterToSkip {
+				continue
+			}
 
-		return nil
+			if vrg.Status.State == rmn.SecondaryState && vrg.Generation == vrg.Status.ObservedGeneration {
+				d.log.Info("Condition values tallied, cleanup is considered complete")
+
+				return nil
+			}
+		}
 	}
 
 	d.log.Info(fmt.Sprintf("PeerReady Condition is %s, msg: %s", condition.Status, condition.Message))
