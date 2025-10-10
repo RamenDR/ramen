@@ -815,6 +815,7 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 		return err
 	}
 
+	// Delete any RD and its associated PVC (if VRG is being deleted and label matches)
 	if err := v.volSyncHandler.DeleteRD(name, namespace); err != nil {
 		return err
 	}
