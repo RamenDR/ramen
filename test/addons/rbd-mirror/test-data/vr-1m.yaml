@@ -5,9 +5,9 @@
 apiVersion: replication.storage.openshift.io/v1alpha1
 kind: VolumeReplication
 metadata:
-  name: vr-sample
+  name: vr-1m
 spec:
-  volumeReplicationClass: vrc-sample
+  volumeReplicationClass: vrc-1m
   replicationState: primary
   dataSource:
     kind: PersistentVolumeClaim

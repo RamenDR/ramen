@@ -8,7 +8,7 @@ repo:
   branch: main
 
 # DRPolicy name in the hub cluster.
-drPolicy: dr-policy
+drPolicy: dr-policy-1m
 
 # Add ClusterSet name to match your Open Cluster Management configuration.
 clusterSet: default
