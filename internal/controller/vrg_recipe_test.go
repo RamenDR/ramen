@@ -6,6 +6,7 @@ package controllers_test
 import (
 	"context"
 	"strings"
+	"time"
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -249,7 +250,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	vrgDelete := func() {
 		Expect(k8sClient.Delete(ctx, vrg)).To(Succeed())
-		Eventually(vrgGet).Should(MatchError(k8serrors.NewNotFound(
+		Eventually(vrgGet, time.Second*10, time.Millisecond*100).Should(MatchError(k8serrors.NewNotFound(
 			schema.GroupResource{
 				Group:    ramen.GroupVersion.Group,
 				Resource: "volumereplicationgroups",
