@@ -47,8 +47,5 @@ patches:
                 env:
                   - name: ROOK_DISABLE_ADMISSION_CONTROLLER
                     value: 'true'
-                  # Using quay.io/csiaddons/k8s-sidecar image
-                  # with digest sha256:66a7257319284294181b7a3ba639d0706ea8b12783997d17056132021e9e13d7,
-                  # which was the latest image available at the time of writing.
                   - name: ROOK_CSIADDONS_IMAGE
-                    value: quay.io/csiaddons/k8s-sidecar@sha256:66a7257319284294181b7a3ba639d0706ea8b12783997d17056132021e9e13d7
+                    value: quay.io/nladha/csiaddons-sidecar:cg
