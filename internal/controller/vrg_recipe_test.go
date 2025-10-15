@@ -250,7 +250,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 	vrgDelete := func() {
 		Expect(k8sClient.Delete(ctx, vrg)).To(Succeed())
-		Eventually(vrgGet, time.Second*10, time.Millisecond*100).Should(MatchError(k8serrors.NewNotFound(
+		Eventually(vrgGet).WithTimeout(10 * time.Second).Should(MatchError(k8serrors.NewNotFound(
 			schema.GroupResource{
 				Group:    ramen.GroupVersion.Group,
 				Resource: "volumereplicationgroups",
