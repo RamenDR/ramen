@@ -22,6 +22,16 @@ rules:
   - update
 - apiGroups:
   - ""
+  resourceNames:
+  - kube-system
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
   resources:
   - persistentvolumeclaims
   - secrets
