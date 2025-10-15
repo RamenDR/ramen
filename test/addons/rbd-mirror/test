@@ -85,7 +85,7 @@ def test_volume_replication(primary, secondary):
 
     print(f"Waiting until vgr {VGR_NAME} is completed in cluster '{primary}'")
     kubectl.wait(
-        "volumegroupreplication/{VGR_NAME}",
+        f"volumegroupreplication/{VGR_NAME}",
         "--for=condition=Completed",
         "--namespace=rook-ceph",
         "--timeout=300s",
@@ -94,7 +94,7 @@ def test_volume_replication(primary, secondary):
 
     print(f"Waiting until vgr {VGR_NAME} state is primary in cluster '{primary}'")
     kubectl.wait(
-        "volumegroupreplication/{VGR_NAME}",
+        f"volumegroupreplication/{VGR_NAME}",
         "--for=jsonpath={.status.state}=Primary",
         "--namespace=rook-ceph",
         "--timeout=300s",
@@ -103,7 +103,7 @@ def test_volume_replication(primary, secondary):
 
     print(f"Looking up pvc {PVC_NAME} pv name in cluster '{primary}'")
     vgrcontent_name = kubectl.get(
-        "volumegroupreplication/vgr-sample",
+        f"volumegroupreplication/{VGR_NAME}",
         "--output=jsonpath={.spec.volumeGroupReplicationContentName}",
         "--namespace=rook-ceph",
         context=primary,
@@ -138,7 +138,7 @@ def test_volume_replication(primary, secondary):
 
     print(f"vgr {VGR_NAME} info on primary cluster '{primary}'")
     kubectl.get(
-        "volumegroupreplication/{VGR_NAME}",
+        f"volumegroupreplication/{VGR_NAME}",
         "--output=yaml",
         "--namespace=rook-ceph",
         context=primary,
