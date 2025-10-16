@@ -414,14 +414,14 @@ func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool
 // getVGRUsingSCLabel fetches the VGR that is protecting the PVC using the SC and VGRC labels, it is useful when the CG
 // label is present without a correlating value to construuct the VGR name
 func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*volrep.VolumeGroupReplication, error) {
-	grID, err := v.getVGRClassReplicationID(pvc)
+	vgrName, err := v.CreateVGRName("", pvc)
 	if err != nil {
 		// Error is masked here, as caller expects k8serrors regarding vgr resource
 		return nil, fmt.Errorf("error determining replicationID")
 	}
 
 	vgrNamespacedName := types.NamespacedName{
-		Name:      rmnutil.CreateVGRName(grID, v.instance.Name),
+		Name:      vgrName,
 		Namespace: pvc.Namespace,
 	}
 
@@ -1101,4 +1101,19 @@ func (v *VRGInstance) processVGRCSecrets(vgrc *volrep.VolumeGroupReplicationCont
 	}
 
 	return nil
+}
+
+func (v *VRGInstance) CreateVGRName(cg string, pvc *corev1.PersistentVolumeClaim) (string, error) {
+	if cg == "" {
+		grID, err := v.getVGRClassReplicationID(pvc)
+		if err != nil {
+			v.log.Error(err, "error creating VGR name")
+
+			return grID, err
+		}
+
+		cg = grID
+	}
+
+	return rmnutil.TrimToK8sResourceNameLength("vgr-" + cg + "-" + v.instance.Name), nil
 }
