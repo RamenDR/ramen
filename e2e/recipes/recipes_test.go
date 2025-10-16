@@ -15,7 +15,7 @@ import (
 
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
-	e2e_recipe "github.com/ramendr/ramen/e2e/recipes"
+	"github.com/ramendr/ramen/e2e/recipes"
 	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/workloads"
@@ -51,167 +51,19 @@ func (c *Context) Context() context.Context {
 	return c.context
 }
 
-func createWorkload() (types.Workload, error) {
-	pvcSpec := config.PVCSpec{
-		Name:             "busybox-pvc",
-		StorageClassName: "test-sc",
-		AccessModes:      "ReadWriteOnce",
-	}
-
-	return workloads.New("deploy", "main", pvcSpec)
-}
-
-func createDeployer() (types.Deployer, error) {
-	deployConfig := config.Deployer{
-		Name:        "disapp",
-		Type:        "disapp",
-		Description: "Discovered apps application test",
-		Recipe: &config.Recipe{
-			Type:      "generate",
-			CheckHook: false,
-			ExecHook:  false,
-		},
-	}
-
-	return deployers.New(deployConfig)
-}
+var group = map[string]string{"group": "rg1"}
 
 func TestGenerateWithNoHooks(t *testing.T) {
-	expectedRecipe := getExpectedRecipeWithoutHooks()
-
-	workload, err := createWorkload()
-	if err != nil {
-		t.Errorf("error creating workload")
-	}
-
-	deployer, err := createDeployer()
-	if err != nil {
-		t.Errorf("error creating deployer")
-	}
-
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
-	testContext := test.NewContext(&parent, workload, deployer)
-
 	recipeConfig := &config.Recipe{
 		Type:      "generate",
 		CheckHook: false,
 		ExecHook:  false,
 	}
+	testContext := createTestContext(t, recipeConfig)
 
-	actualRecipe := e2e_recipe.Generate(&testContext, recipeConfig)
-	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
-		t.Errorf("actual generated recipe doesn't match with expected recipe")
-	}
-}
+	actualRecipe := recipes.Generate(testContext, recipeConfig)
 
-func TestGenerateWithOnlyCheckHooks(t *testing.T) {
-	expectedRecipe := getExpectedRecipeWithCheckHook()
-
-	workload, err := createWorkload()
-	if err != nil {
-		t.Errorf("error creating workload")
-	}
-
-	deployer, err := createDeployer()
-	if err != nil {
-		t.Errorf("error creating deployer")
-	}
-
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
-	testContext := test.NewContext(&parent, workload, deployer)
-
-	recipeConfig := &config.Recipe{
-		Type:      "generate",
-		CheckHook: true,
-		ExecHook:  false,
-	}
-
-	actualRecipe := e2e_recipe.Generate(&testContext, recipeConfig)
-	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
-		t.Errorf("actual generated recipe doesn't match with expected recipe")
-	}
-}
-
-func TestGenerateWithOnlyExecHooks(t *testing.T) {
-	expectedRecipe := getExpectedRecipeWithExecHook()
-
-	workload, err := createWorkload()
-	if err != nil {
-		t.Errorf("error creating workload")
-	}
-
-	deployer, err := createDeployer()
-	if err != nil {
-		t.Errorf("error creating deployer")
-	}
-
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
-	testContext := test.NewContext(&parent, workload, deployer)
-
-	recipeConfig := &config.Recipe{
-		Type:      "generate",
-		CheckHook: false,
-		ExecHook:  true,
-	}
-
-	actualRecipe := e2e_recipe.Generate(&testContext, recipeConfig)
-	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
-		t.Errorf("actual generated recipe doesn't match with expected recipe")
-	}
-}
-
-func TestGenerateWithCheckAndExecHooks(t *testing.T) {
-	expectedRecipe := getExpectedRecipeWithCheckAndExecHook()
-
-	workload, err := createWorkload()
-	if err != nil {
-		t.Errorf("error creating workload")
-	}
-
-	deployer, err := createDeployer()
-	if err != nil {
-		t.Errorf("error creating deployer")
-	}
-
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
-	testContext := test.NewContext(&parent, workload, deployer)
-
-	recipeConfig := &config.Recipe{
-		Type:      "generate",
-		CheckHook: true,
-		ExecHook:  true,
-	}
-
-	actualRecipe := e2e_recipe.Generate(&testContext, recipeConfig)
-	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
-		t.Errorf("actual generated recipe doesn't match with expected recipe")
-	}
-}
-
-func getExpectedRecipeWithoutHooks() *recipe.Recipe {
-	group := map[string]string{"group": "rg1"}
-
-	return &recipe.Recipe{
+	expectedRecipe := &recipe.Recipe{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Recipe",
 			APIVersion: "recipe.ramendr.io/v1alpha1",
@@ -251,6 +103,109 @@ func getExpectedRecipeWithoutHooks() *recipe.Recipe {
 				},
 			},
 		},
+	}
+
+	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
+		t.Fatal("actual generated recipe doesn't match with expected recipe")
+	}
+}
+
+func TestGenerateWithOnlyCheckHooks(t *testing.T) {
+	recipeConfig := &config.Recipe{
+		Type:      "generate",
+		CheckHook: true,
+		ExecHook:  false,
+	}
+
+	expectedRecipe := getExpectedRecipeWithCheckHook()
+
+	workload, err := createWorkload()
+	if err != nil {
+		t.Errorf("error creating workload")
+	}
+
+	deployer, err := createDeployer(recipeConfig)
+	if err != nil {
+		t.Errorf("error creating deployer")
+	}
+
+	parent := Context{
+		log:     zap.NewExample().Sugar(),
+		env:     &types.Env{},
+		config:  &config.Config{},
+		context: context.Background(),
+	}
+	testContext := test.NewContext(&parent, workload, deployer)
+
+	actualRecipe := recipes.Generate(&testContext, recipeConfig)
+	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
+		t.Errorf("actual generated recipe doesn't match with expected recipe")
+	}
+}
+
+func TestGenerateWithOnlyExecHooks(t *testing.T) {
+	recipeConfig := &config.Recipe{
+		Type:      "generate",
+		CheckHook: false,
+		ExecHook:  true,
+	}
+
+	expectedRecipe := getExpectedRecipeWithExecHook()
+
+	workload, err := createWorkload()
+	if err != nil {
+		t.Errorf("error creating workload")
+	}
+
+	deployer, err := createDeployer(recipeConfig)
+	if err != nil {
+		t.Errorf("error creating deployer")
+	}
+
+	parent := Context{
+		log:     zap.NewExample().Sugar(),
+		env:     &types.Env{},
+		config:  &config.Config{},
+		context: context.Background(),
+	}
+	testContext := test.NewContext(&parent, workload, deployer)
+
+	actualRecipe := recipes.Generate(&testContext, recipeConfig)
+	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
+		t.Errorf("actual generated recipe doesn't match with expected recipe")
+	}
+}
+
+func TestGenerateWithCheckAndExecHooks(t *testing.T) {
+	recipeConfig := &config.Recipe{
+		Type:      "generate",
+		CheckHook: true,
+		ExecHook:  true,
+	}
+
+	expectedRecipe := getExpectedRecipeWithCheckAndExecHook()
+
+	workload, err := createWorkload()
+	if err != nil {
+		t.Errorf("error creating workload")
+	}
+
+	deployer, err := createDeployer(recipeConfig)
+	if err != nil {
+		t.Errorf("error creating deployer")
+	}
+
+	parent := Context{
+		log:     zap.NewExample().Sugar(),
+		env:     &types.Env{},
+		config:  &config.Config{},
+		context: context.Background(),
+	}
+	testContext := test.NewContext(&parent, workload, deployer)
+
+	actualRecipe := recipes.Generate(&testContext, recipeConfig)
+	if !reflect.DeepEqual(expectedRecipe, actualRecipe) {
+		t.Errorf("actual generated recipe doesn't match with expected recipe")
 	}
 }
 
@@ -459,4 +414,51 @@ func getExpectedRecipeWithCheckAndExecHook() *recipe.Recipe {
 			},
 		},
 	}
+}
+
+// Helpers
+
+func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
+	t.Helper()
+
+	workload, err := createWorkload()
+	if err != nil {
+		t.Fatalf("error creating workload")
+	}
+
+	deployer, err := createDeployer(rc)
+	if err != nil {
+		t.Fatalf("error creating deployer")
+	}
+
+	parent := Context{
+		log:     zap.NewExample().Sugar(),
+		env:     &types.Env{},
+		config:  &config.Config{},
+		context: context.Background(),
+	}
+	tc := test.NewContext(&parent, workload, deployer)
+
+	return &tc
+}
+
+func createWorkload() (types.Workload, error) {
+	pvcSpec := config.PVCSpec{
+		Name:             "busybox-pvc",
+		StorageClassName: "test-sc",
+		AccessModes:      "ReadWriteOnce",
+	}
+
+	return workloads.New("deploy", "main", pvcSpec)
+}
+
+func createDeployer(rc *config.Recipe) (types.Deployer, error) {
+	deployConfig := config.Deployer{
+		Name:        "disapp",
+		Type:        "disapp",
+		Description: "Discovered apps application test",
+		Recipe:      rc,
+	}
+
+	return deployers.New(deployConfig)
 }

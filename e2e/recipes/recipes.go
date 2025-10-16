@@ -16,18 +16,15 @@ const defaultHookTimeout = 300
 
 func Generate(ctx types.TestContext, recipeConfig *config.Recipe) *recipe.Recipe {
 	ctxName := ctx.Name()
-	appNS := ctx.AppNamespace()
+	appNamespace := ctx.AppNamespace()
 	appName := ctx.Workload().GetAppName()
 	resourceType := ctx.Workload().GetResourceType()
 
-	recipe := prepareBaseRecipe(ctxName, appNS)
+	recipe := prepareBaseRecipe(ctxName, appNamespace)
 
-	if recipeConfig.CheckHook || recipeConfig.ExecHook {
-		recipe.Spec.Hooks = prepareHooks(appNS, appName, resourceType, recipeConfig.CheckHook, recipeConfig.ExecHook)
-	}
-
-	recipe.Spec.Groups = prepareGroups(appNS)
-	recipe.Spec.Workflows = prepareWorkflows(recipeConfig)
+	recipe.Spec.Hooks = generateHook(appNamespace, appName, resourceType, recipeConfig)
+	recipe.Spec.Groups = prepareGroups(appNamespace)
+	recipe.Spec.Workflows = generateWorkflows(recipeConfig)
 
 	return recipe
 }
@@ -45,57 +42,35 @@ func prepareBaseRecipe(ctxName, appNS string) *recipe.Recipe {
 	}
 }
 
-func prepareGroups(namespace string) []*recipe.Group {
-	return []*recipe.Group{
-		{
-			Name:      "rg1",
-			Type:      "resource",
-			BackupRef: "rg1",
-			IncludedNamespaces: []string{
-				namespace,
-			},
-			LabelSelector: &metav1.LabelSelector{
-				MatchExpressions: []metav1.LabelSelectorRequirement{
-					{
-						Key:      "appname",
-						Operator: metav1.LabelSelectorOpIn,
-						Values:   []string{"busybox"},
-					},
-				},
-			},
-		},
-	}
-}
+func generateHook(namespace, appName, resourceType string, rc *config.Recipe) []*recipe.Hook {
+	var hooks []*recipe.Hook
 
-// nolint:mnd
-func prepareHooks(namespace, appName, resourceType string, checkHook, execHook bool) []*recipe.Hook {
-	hooks := make([]*recipe.Hook, 0)
-
-	if checkHook {
-		cHook := prepareCheckHook(namespace, appName, resourceType)
-		hooks = append(hooks, cHook)
+	if rc.CheckHook {
+		checkHook := prepareCheckHook(namespace, appName, resourceType)
+		hooks = append(hooks, checkHook)
 	}
 
-	if execHook {
-		eHook := prepareExecHook(namespace, appName, resourceType)
-		hooks = append(hooks, eHook)
+	if rc.ExecHook {
+		execHook := prepareExecHook(namespace, appName, resourceType)
+		hooks = append(hooks, execHook)
 	}
 
 	return hooks
 }
 
-func prepareCheckHook(namespace, appName, resourceType string) *recipe.Hook {
+// XXX document in e2e.doc need for RBAC for specific resources
+func prepareCheckHook(appNamespace, appName, resourceType string) *recipe.Hook {
 	return &recipe.Hook{
 		Name:           "check-hook",
 		Type:           "check",
-		Namespace:      namespace,
-		NameSelector:   appName,
-		SelectResource: resourceType,
+		Namespace:      appNamespace,
+		NameSelector:   appName,      // XXX use label selecotr so we test the code path in ramen
+		SelectResource: resourceType, // XXX fail if we cannot handle the resource typoe
 		Timeout:        defaultHookTimeout,
 		Chks: []*recipe.Check{
 			{
 				Name:      "check-replicas",
-				Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
+				Condition: "{$.spec.replicas} == {$.status.readyReplicas}", // XXX works only for resources with .replicas
 			},
 		},
 	}
@@ -118,7 +93,29 @@ func prepareExecHook(namespace, appName, resourceType string) *recipe.Hook {
 	}
 }
 
-func prepareWorkflows(recipeSpec *config.Recipe) []*recipe.Workflow {
+func prepareGroups(appNamespace string) []*recipe.Group {
+	return []*recipe.Group{
+		{
+			Name:      "rg1",
+			Type:      "resource", // XXX make constant
+			BackupRef: "rg1",
+			IncludedNamespaces: []string{
+				appNamespace,
+			},
+			LabelSelector: &metav1.LabelSelector{
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "appname", // XXX workload.LabelName()
+						Operator: metav1.LabelSelectorOpIn,
+						Values:   []string{"busybox"}, // XXX workload.GetAppName()},
+					},
+				},
+			},
+		},
+	}
+}
+
+func generateWorkflows(recipeSpec *config.Recipe) []*recipe.Workflow {
 	backup := &recipe.Workflow{Name: "backup"}
 	restore := &recipe.Workflow{Name: "restore"}
 
