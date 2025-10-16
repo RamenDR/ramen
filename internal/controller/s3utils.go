@@ -124,6 +124,16 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 			s3ProfileName, callerTag, err)
 	}
 
+	if s3ProfileName != "" && len(s3StoreProfile.S3SecretRef.Name) > 0 {
+		ns := s3StoreProfile.S3SecretRef.Namespace
+		ramenNS := RamenOperatorNamespace()
+
+		if ns != "" && ns != ramenNS {
+			return nil, s3StoreProfile, fmt.Errorf("invalid S3SecretRef namespace %q for s3 profile %s; "+
+				"must be %q", ns, s3ProfileName, ramenNS)
+		}
+	}
+
 	accessID, secretAccessKey, err := GetS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
 	if err != nil {
 		return nil, s3StoreProfile, fmt.Errorf("failed to get secret %v for caller %s, %w",
