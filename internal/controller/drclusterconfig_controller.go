@@ -35,9 +35,10 @@ import (
 )
 
 const (
-	drCConfigFinalizerName = "drclusterconfigs.ramendr.openshift.io/finalizer"
-	drCConfigOwnerLabel    = "drclusterconfigs.ramendr.openshift.io/owner"
-	drCConfigOwnerName     = "ramen"
+	drCConfigFinalizerName    = "drclusterconfigs.ramendr.openshift.io/finalizer"
+	drCConfigOwnerLabel       = "drclusterconfigs.ramendr.openshift.io/owner"
+	drCConfigOwnerName        = "ramen"
+	clusterIDClusterClaimName = "id.k8s.io"
 
 	maxReconcileBackoff = 5 * time.Minute
 )
@@ -70,6 +71,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,resourceNames=kube-system,verbs=get;list;watch
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
@@ -243,6 +245,28 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	log logr.Logger,
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
+	// Validating Cluster ID
+	claims, result, err := r.getClusterClaims(ctx)
+	if err != nil {
+		return result, err
+	}
+
+	var clusterID string
+
+	for idx := range claims.Items {
+		claim := claims.Items[idx]
+		if claim.GetName() == clusterIDClusterClaimName {
+			clusterID = claim.Spec.Value
+
+			break
+		}
+	}
+
+	if drCConfig.Spec.ClusterID != clusterID {
+		return ctrl.Result{}, fmt.Errorf("cluster ID claim value %v differs from that of the cluster %v",
+			clusterID, drCConfig.Spec.ClusterID)
+	}
+
 	if err := util.NewResourceUpdater(drCConfig).
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
@@ -253,7 +277,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
-	err := r.UpdateSupportedClasses(ctx, drCConfig)
+	err = r.UpdateSupportedClasses(ctx, drCConfig)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
 		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
@@ -276,6 +300,17 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		"Configuration processed and validated", metav1.ConditionTrue, DRClusterConfigConditionConfigurationProcessed)
 
 	return ctrl.Result{}, nil
+}
+
+func (r *DRClusterConfigReconciler) getClusterClaims(ctx context.Context) (*clusterv1alpha1.ClusterClaimList,
+	ctrl.Result, error,
+) {
+	claims := &clusterv1alpha1.ClusterClaimList{}
+	if err := r.Client.List(ctx, claims); err != nil {
+		return nil, ctrl.Result{Requeue: true}, fmt.Errorf("failed to list ClusterClaims, %w", err)
+	}
+
+	return claims, ctrl.Result{}, nil
 }
 
 // UpdateSupportedClasses updates DRClusterConfig status with a list of storage related classes that are marked for DR
