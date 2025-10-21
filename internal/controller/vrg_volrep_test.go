@@ -88,17 +88,13 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	storageIDLabel := genStorageIDLabel(storageIDs[0])
 	storageID := storageIDLabel[vrgController.StorageIDLabel]
 	vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
-	testcaseTemplate := &template{
-		ClaimBindInfo:          corev1.ClaimBound,
-		VolumeBindInfo:         corev1.VolumeBound,
-		schedulingInterval:     "1h",
-		storageClassName:       appendSuffix("manual-kumbaya"),
-		replicationClassName:   appendSuffix("test-replicationclass"),
-		vrcProvisioner:         "manual.storage.com",
-		scProvisioner:          "manual.storage.com",
-		storageIDLabels:        storageIDLabel,
-		replicationClassLabels: vrcLabels,
-	}
+	testcaseTemplate := newTemplateWithDefaults()
+	testcaseTemplate.ClaimBindInfo = corev1.ClaimBound
+	testcaseTemplate.VolumeBindInfo = corev1.VolumeBound
+	testcaseTemplate.storageClassName = appendSuffix("manual-kumbaya")
+	testcaseTemplate.replicationClassName = appendSuffix("test-replicationclass")
+	testcaseTemplate.storageIDLabels = storageIDLabel
+	testcaseTemplate.replicationClassLabels = vrcLabels
 
 	syncPeerClass := genPeerClass("", testcaseTemplate.storageClassName, []string{storageID}, false)
 	var dataReadyCondition *metav1.Condition
@@ -1093,16 +1089,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		storageIDLabel := genStorageIDLabel(storageIDs[0])
 		storageID := storageIDLabel[vrgController.StorageIDLabel]
 		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
-		vrgEmptySCTemplate := &template{
-			ClaimBindInfo:          corev1.ClaimBound,
-			VolumeBindInfo:         corev1.VolumeBound,
-			schedulingInterval:     "1h",
-			replicationClassName:   "test-replicationclass",
-			vrcProvisioner:         "manual.storage.com",
-			scProvisioner:          "manual.storage.com",
-			storageIDLabels:        storageIDLabel,
-			replicationClassLabels: vrcLabels,
-		}
+		vrgEmptySCTemplate := newTemplateWithDefaults()
+		vrgEmptySCTemplate.ClaimBindInfo = corev1.ClaimBound
+		vrgEmptySCTemplate.VolumeBindInfo = corev1.VolumeBound
+		vrgEmptySCTemplate.replicationClassName = "test-replicationclass"
+		vrgEmptySCTemplate.storageIDLabels = storageIDLabel
+		vrgEmptySCTemplate.replicationClassLabels = vrcLabels
 
 		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
 			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
@@ -1596,16 +1588,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		storageIDLabel := genStorageIDLabel(storageIDs[0])
 		storageID := storageIDLabel[vrgController.StorageIDLabel]
 		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
-		vrgEmptySCTemplate := &template{
-			ClaimBindInfo:          corev1.ClaimBound,
-			VolumeBindInfo:         corev1.VolumeBound,
-			schedulingInterval:     "1h",
-			replicationClassName:   "test-replicationclass",
-			vrcProvisioner:         "manual.storage.com",
-			scProvisioner:          "manual.storage.com",
-			storageIDLabels:        storageIDLabel,
-			replicationClassLabels: vrcLabels,
-		}
+		vrgEmptySCTemplate := newTemplateWithDefaults()
+		vrgEmptySCTemplate.ClaimBindInfo = corev1.ClaimBound
+		vrgEmptySCTemplate.VolumeBindInfo = corev1.VolumeBound
+		vrgEmptySCTemplate.replicationClassName = "test-replicationclass"
+		vrgEmptySCTemplate.storageIDLabels = storageIDLabel
+		vrgEmptySCTemplate.replicationClassLabels = vrcLabels
 		It("sets up PVCs, PVs and VRGs - with nil/empty StorageClassName", func() {
 			vrgEmptySCTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgEmptySCTemplate.volsyncEnabled = true
@@ -2238,6 +2226,15 @@ type template struct {
 	s3Profiles             []string
 	volsyncEnabled         bool
 	scDisabled             bool
+}
+
+// newTemplateWithDefaults creates a template with defaults for commonly repeated values
+func newTemplateWithDefaults() *template {
+	return &template{
+		schedulingInterval: "1h",
+		vrcProvisioner:     "manual.storage.com",
+		scProvisioner:      "manual.storage.com",
+	}
 }
 
 // we want the math rand version here and not the crypto rand. This way we can debug the tests by repeating the seed.
