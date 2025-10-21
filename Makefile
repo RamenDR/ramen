@@ -181,6 +181,9 @@ test-vrg-kubeobjects: generate manifests envtest ## Run VolumeReplicationGroupKu
 test-drpc: generate manifests envtest ## Run DRPlacementControl tests.
 	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRPlacementControl
 
+test-scheduler: generate manifests envtest ## Run DRPlacementControl tests.
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRPlacementControl_Reconciler_Test_Scheduler
+
 test-drcluster: generate manifests envtest ## Run DRCluster tests.
 	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DRClusterController
 
