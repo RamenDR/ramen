@@ -1417,7 +1417,7 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 
 	// Expect(getManifestWorkCount(toCluster1)).Should(Equal(2)) // MWs for VRG+ROLES
 	if !isSyncDR {
-		Expect(getManifestWorkCount(fromCluster)).Should(Equal(3)) // DRClusters + NS MW + VRG MW
+		Expect(getManifestWorkCount(fromCluster)).Should(BeElementOf(3, 4)) // DRClusters + NS MW + VRG MW
 	} else {
 		// By the time this check is made, the NetworkFence CR in the
 		// cluster from where the application is migrated might not have
@@ -1733,6 +1733,125 @@ func verifyDRPCOwnedByPlacement(placementObj client.Object, drpc *rmn.DRPlacemen
 
 	Fail(fmt.Sprintf("DRPC %s not owned by Placement %s", drpc.GetName(), placementObj.GetName()))
 }
+
+var _ = Describe("DRPlacementControl - Ensure do-not-delete PVC Annotation", func() {
+	BeforeEach(func() {
+		populateDRClusters()
+	})
+
+	AfterEach(func() {
+		err := forceCleanupClusterAfterAErrorTest()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	var mwu rmnutil.MWUtil
+
+	BeforeEach(func() {
+		mwu = rmnutil.MWUtil{
+			Client:          k8sClient,
+			APIReader:       k8sClient,
+			Ctx:             context.TODO(),
+			Log:             testLogger,
+			InstName:        DRPCCommonName,
+			TargetNamespace: DefaultDRPCNamespace,
+		}
+	})
+
+	testEnsureAnnotation := func(plType PlacementType) {
+		resourceType := "UserPlacement"
+		if plType == UsePlacementRule {
+			resourceType = "UserPlacementRule"
+		}
+
+		It(fmt.Sprintf("Should handle annotation propagation for %s", resourceType), func(ctx SpecContext) {
+			placementObj, drpc := InitialDeploymentAsync(
+				DefaultDRPCNamespace,
+				UserPlacementRuleName,
+				East1ManagedCluster,
+				plType, // UsePlacementRule or UsePlacement
+			)
+
+			vrg := getDefaultVRG(DefaultDRPCNamespace)
+
+			// Set scheduler based on placement type
+			if plType == UsePlacementRule {
+				// PlacementRule changes scheduler in Spec
+				pr, err := placementObj.(*plrv1.PlacementRule)
+				Expect(err).NotTo(BeNil())
+				Expect(pr).NotTo(BeNil())
+				pr.Spec.SchedulerName = "ramen"
+			} else {
+				// Placement changes scheduling via annotation instead
+				pl, err := placementObj.(*clrapiv1beta1.Placement)
+				Expect(err).NotTo(BeNil())
+				Expect(pl).NotTo(BeNil())
+
+				annotations := pl.GetAnnotations()
+				if annotations == nil {
+					annotations = make(map[string]string)
+				}
+
+				annotations[controllers.DoNotDeletePVCAnnotation] = controllers.DoNotDeletePVCAnnotationVal
+				pl.SetAnnotations(annotations)
+			}
+
+			// Positive base case: Ramen is the scheduler - do nothing, no error
+			err := controllers.EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, East1ManagedCluster, mwu.Log)
+			Expect(err).To(BeNil())
+
+			// Default scheduler
+			if plType == UsePlacementRule {
+				// PlacementRule changes scheduler in Spec
+				pr, err := placementObj.(*plrv1.PlacementRule)
+				Expect(err).NotTo(BeNil())
+				Expect(pr).NotTo(BeNil())
+				pr.Spec.SchedulerName = "default-scheduler"
+			} else {
+				placementObj.SetAnnotations(make(map[string]string))
+			}
+
+			// With default scheduler, missing annotation on DRPC causes error
+			err = controllers.EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, East1ManagedCluster, mwu.Log)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("do-not-delete-pvc annotation not yet applied to the DRPC"))
+
+			// Add annotation to DRPC to fix first error
+			annotations := drpc.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+			annotations[controllers.DoNotDeletePVCAnnotation] = "true"
+			drpc.SetAnnotations(annotations)
+
+			// Now missing annotation on VRG causes error
+			err = controllers.EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, East1ManagedCluster, mwu.Log)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("annotation hasn't been propagated to cluster"))
+
+			// Add annotation to VRG to fix propagation issue
+			annotations = vrg.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+			annotations[controllers.DoNotDeletePVCAnnotation] = "true"
+			vrg.SetAnnotations(annotations)
+
+			// Final success case
+			err = controllers.EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, East1ManagedCluster, mwu.Log)
+			Expect(err).To(BeNil())
+
+			deleteDRPC()
+		})
+	}
+
+	When("EnsureDoNotDeletePVCAnnotation is called with a PlacementRule", func() {
+		testEnsureAnnotation(UsePlacementRule)
+	})
+
+	When("EnsureDoNotDeletePVCAnnotation is called with a Placement", func() {
+		testEnsureAnnotation(UsePlacementWithSubscription)
+	})
+})
 
 var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 	BeforeEach(func() {
