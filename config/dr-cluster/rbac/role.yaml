@@ -260,6 +260,7 @@ rules:
   - velero.io
   resources:
   - backups
+  - backupstoragelocations
   - restores
   verbs:
   - create
@@ -277,18 +278,6 @@ rules:
   - restores/status
   verbs:
   - get
-- apiGroups:
-  - velero.io
-  resources:
-  - backupstoragelocations
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - list
-  - patch
-  - update
 - apiGroups:
   - volsync.backube
   resources:
