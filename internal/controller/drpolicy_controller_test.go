@@ -10,9 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	gomegaTypes "github.com/onsi/gomega/types"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	controllers "github.com/ramendr/ramen/internal/controller"
-	"github.com/ramendr/ramen/internal/controller/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +19,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	controllers "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("DRPolicyController", func() {

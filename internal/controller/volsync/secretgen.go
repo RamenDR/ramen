@@ -10,13 +10,14 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
 const tlsPSKDataSize = 64

@@ -8,9 +8,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
+
+	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("IsManifestInAppliedState", func() {
