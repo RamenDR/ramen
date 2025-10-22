@@ -9,54 +9,18 @@ import (
 	"os"
 	"os/signal"
 	"testing"
-	"time"
 
-	"go.uber.org/zap"
-
+	"github.com/ramendr/ramen/e2e/app"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/env"
 	"github.com/ramendr/ramen/e2e/test"
-	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
-// Context implements types.Context for sharing the log, env, and config with all code.
-type Context struct {
-	log     *zap.SugaredLogger
-	env     *types.Env
-	config  *config.Config
-	context context.Context
-}
-
-func (c *Context) Logger() *zap.SugaredLogger {
-	return c.log
-}
-
-func (c *Context) Config() *config.Config {
-	return c.config
-}
-
-func (c *Context) Env() *types.Env {
-	return c.env
-}
-
-func (c *Context) Context() context.Context {
-	return c.context
-}
-
-// WithTimeout returns a derived context with a deadline. Call cancel to release resources associated with the context
-// as soon as the operation running in the context complete.
-func (c Context) WithTimeout(d time.Duration) (*Context, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(c.context, d)
-	c.context = ctx //nolint:revive
-
-	return &c, cancel
-}
-
 // The global test context.
-var Ctx Context
+var Ctx *app.Context
 
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
@@ -73,16 +37,14 @@ func testMain(m *testing.M) int {
 	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
 	flag.Parse()
 
-	Ctx.log, err = test.CreateLogger(logFile)
+	log, err := test.CreateLogger(logFile)
 	if err != nil {
 		panic(err)
 	}
 
 	defer func() {
-		_ = Ctx.log.Sync() //nolint:errcheck
+		_ = log.Sync() //nolint:errcheck
 	}()
-
-	log := Ctx.log
 
 	log.Infof("Using config file %q", configFile)
 	log.Infof("Using log file %q", logFile)
@@ -92,7 +54,7 @@ func testMain(m *testing.M) int {
 		Workloads: workloads.AvailableNames(),
 	}
 
-	Ctx.config, err = config.ReadConfig(configFile, options)
+	config, err := config.ReadConfig(configFile, options)
 	if err != nil {
 		log.Errorf("Failed to read config: %s", err)
 
@@ -102,15 +64,17 @@ func testMain(m *testing.M) int {
 	// The context will be canceled when receiving a signal.
 	var stop context.CancelFunc
 
-	Ctx.context, stop = signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	Ctx.env, err = env.New(Ctx.Context(), Ctx.config.Clusters, Ctx.log)
+	env, err := env.New(ctx, config.Clusters, log)
 	if err != nil {
 		log.Errorf("Failed to create env: %s", err)
 
 		return 1
 	}
+
+	Ctx = app.NewContext(ctx, config, env, log)
 
 	log.Infof("Using DeployTimeout: %v", util.DeployTimeout)
 	log.Infof("Using UneployTimeout: %v", util.UndeployTimeout)
