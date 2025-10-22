@@ -27,6 +27,13 @@ type Context struct {
 	logger   *zap.SugaredLogger
 }
 
+type BaseContext struct {
+	log     *zap.SugaredLogger
+	env     *types.Env
+	config  *config.Config
+	context context.Context
+}
+
 func NewContext(
 	parent types.Context,
 	w types.Workload,
@@ -42,6 +49,36 @@ func NewContext(
 		name:     name,
 		logger:   parent.Logger().Named(name),
 	}
+}
+
+func NewBaseContext(
+	ctx context.Context,
+	env *types.Env,
+	config *config.Config,
+	log *zap.SugaredLogger,
+) BaseContext {
+	return BaseContext{
+		context: ctx,
+		env:     env,
+		config:  config,
+		log:     log,
+	}
+}
+
+func (c *BaseContext) Logger() *zap.SugaredLogger {
+	return c.log
+}
+
+func (c *BaseContext) Config() *config.Config {
+	return c.config
+}
+
+func (c *BaseContext) Env() *types.Env {
+	return c.env
+}
+
+func (c *BaseContext) Context() context.Context {
+	return c.context
 }
 
 func (c *Context) Deployer() types.Deployer {

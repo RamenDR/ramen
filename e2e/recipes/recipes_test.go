@@ -28,29 +28,6 @@ const (
 	depResourceType = "deployment"
 )
 
-type Context struct {
-	log     *zap.SugaredLogger
-	env     *types.Env
-	config  *config.Config
-	context context.Context
-}
-
-func (c *Context) Logger() *zap.SugaredLogger {
-	return c.log
-}
-
-func (c *Context) Config() *config.Config {
-	return c.config
-}
-
-func (c *Context) Env() *types.Env {
-	return c.env
-}
-
-func (c *Context) Context() context.Context {
-	return c.context
-}
-
 var group = map[string]string{"group": "rg1"}
 
 func TestGenerateWithNoHooks(t *testing.T) {
@@ -129,12 +106,7 @@ func TestGenerateWithOnlyCheckHooks(t *testing.T) {
 		t.Errorf("error creating deployer")
 	}
 
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
+	parent := test.NewBaseContext(context.Background(), &types.Env{}, &config.Config{}, zap.NewExample().Sugar())
 	testContext := test.NewContext(&parent, workload, deployer)
 
 	actualRecipe := recipes.Generate(&testContext, recipeConfig)
@@ -162,12 +134,7 @@ func TestGenerateWithOnlyExecHooks(t *testing.T) {
 		t.Errorf("error creating deployer")
 	}
 
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
+	parent := test.NewBaseContext(context.Background(), &types.Env{}, &config.Config{}, zap.NewExample().Sugar())
 	testContext := test.NewContext(&parent, workload, deployer)
 
 	actualRecipe := recipes.Generate(&testContext, recipeConfig)
@@ -195,12 +162,7 @@ func TestGenerateWithCheckAndExecHooks(t *testing.T) {
 		t.Errorf("error creating deployer")
 	}
 
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
+	parent := test.NewBaseContext(context.Background(), &types.Env{}, &config.Config{}, zap.NewExample().Sugar())
 	testContext := test.NewContext(&parent, workload, deployer)
 
 	actualRecipe := recipes.Generate(&testContext, recipeConfig)
@@ -431,12 +393,7 @@ func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 		t.Fatalf("error creating deployer")
 	}
 
-	parent := Context{
-		log:     zap.NewExample().Sugar(),
-		env:     &types.Env{},
-		config:  &config.Config{},
-		context: context.Background(),
-	}
+	parent := test.NewBaseContext(context.Background(), &types.Env{}, &config.Config{}, zap.NewExample().Sugar())
 	tc := test.NewContext(&parent, workload, deployer)
 
 	return &tc
