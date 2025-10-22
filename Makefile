@@ -132,6 +132,12 @@ lint-e2e: golangci-bin ## Run configured golangci-lint for e2e module
 lint-api: golangci-bin ## Run configured golangci-lint for api module
 	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 
+.PHONY: fmt
+fmt: golangci-bin ## Run golangci-lint formatting on the codebase.
+	testbin/golangci-lint fmt
+	cd e2e && ../testbin/golangci-lint fmt
+	cd api && ../testbin/golangci-lint fmt
+
 .PHONY: create-rdr-env
 create-rdr-env: drenv-prereqs ## Create a new rdr environment.
 	./hack/dev-env.sh create
