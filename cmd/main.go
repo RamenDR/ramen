@@ -44,7 +44,9 @@ import (
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	virtv1 "kubevirt.io/api/core/v1"
+
 	// +kubebuilder:scaffold:imports
+	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
 var (

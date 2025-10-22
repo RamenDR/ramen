@@ -52,7 +52,9 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+
 	// +kubebuilder:scaffold:imports
+	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
