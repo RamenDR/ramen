@@ -16,18 +16,18 @@ import (
 )
 
 func TestDR(dt *testing.T) {
-	t := test.WithLog(dt, Ctx.log)
+	t := test.WithLog(dt, Ctx.Logger())
 	t.Parallel()
 
-	if len(Ctx.config.Tests) == 0 {
+	if len(Ctx.Config().Tests) == 0 {
 		t.Fatal("No tests found in the configuration file")
 	}
 
-	if err := validate.TestConfig(&Ctx); err != nil {
+	if err := validate.TestConfig(Ctx); err != nil {
 		t.Fatal(err.Error())
 	}
 
-	if err := util.EnsureChannel(&Ctx); err != nil {
+	if err := util.EnsureChannel(Ctx); err != nil {
 		t.Fatalf("Failed to ensure channel: %s", err)
 	}
 
@@ -40,16 +40,16 @@ func TestDR(dt *testing.T) {
 		}
 	})
 
-	pvcSpecs := config.PVCSpecsMap(Ctx.config)
-	deploySpecs := config.DeployersMap(Ctx.config)
+	pvcSpecs := config.PVCSpecsMap(Ctx.Config())
+	deploySpecs := config.DeployersMap(Ctx.Config())
 
-	for _, tc := range Ctx.config.Tests {
+	for _, tc := range Ctx.Config().Tests {
 		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
 		if !ok {
 			panic("unknown pvcSpec")
 		}
 
-		workload, err := workloads.New(tc.Workload, Ctx.config.Repo.Branch, pvcSpec)
+		workload, err := workloads.New(tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
 		if err != nil {
 			panic(err)
 		}
@@ -64,7 +64,7 @@ func TestDR(dt *testing.T) {
 			panic(err)
 		}
 
-		ctx := test.NewContext(&Ctx, workload, deployer)
+		ctx := test.NewContext(Ctx, workload, deployer)
 		t.Run(ctx.Name(), func(dt *testing.T) {
 			t := test.WithLog(dt, ctx.Logger())
 			t.Parallel()
