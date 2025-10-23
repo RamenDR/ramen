@@ -97,7 +97,6 @@ rules:
   - get
   - list
   - watch
-  - update
 - apiGroups:
   - apps.open-cluster-management.io
   resources:
