@@ -407,7 +407,7 @@ func (d *DRPCInstance) isProtected() bool {
 		}
 	}
 
-	const msg = "waiting for workload protection before starting failover"
+	const msg = "cannot start failover because workload is not protected"
 	d.log.Info("Failover blocked", "reason", msg)
 
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
