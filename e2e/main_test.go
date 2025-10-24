@@ -14,7 +14,6 @@ import (
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/deployers"
 	"github.com/ramendr/ramen/e2e/env"
-	"github.com/ramendr/ramen/e2e/test"
 	"github.com/ramendr/ramen/e2e/util"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
@@ -37,7 +36,7 @@ func testMain(m *testing.M) int {
 	flag.StringVar(&logFile, "logfile", "ramen-e2e.log", "e2e log file")
 	flag.Parse()
 
-	log, err := test.CreateLogger(logFile)
+	log, err := app.CreateLogger(logFile)
 	if err != nil {
 		panic(err)
 	}
