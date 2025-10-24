@@ -11,9 +11,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	controllers "github.com/ramendr/ramen/internal/controller"
-	"github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +19,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	workv1 "open-cluster-management.io/api/work/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	controllers "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var NFClassAvailable bool

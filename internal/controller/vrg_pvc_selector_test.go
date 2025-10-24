@@ -9,16 +9,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"k8s.io/apimachinery/pkg/types"
-
+	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	vrgController "github.com/ramendr/ramen/internal/controller"
+	"k8s.io/apimachinery/pkg/types"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	vrgController "github.com/ramendr/ramen/internal/controller"
 )
 
 var (

@@ -4,8 +4,9 @@
 package controllers
 
 import (
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 type PvcSelector struct {

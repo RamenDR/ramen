@@ -189,7 +189,6 @@ linters:
     #  - paralleltest
     #  - goerr113  # TODO: Need to introduce error definition and bring this back
     #  - goheader  # TODO: Introduce back post fixing linter errors
-    #  - gci
     #  - interfacer  # interfacer linter is archived and deprecated (https://github.com/mvdan/interfacer)
     #  - exhaustruct
     #  - tagliatelle
@@ -210,9 +209,16 @@ formatters:
   enable:
     - gofmt
     - gofumpt
+    - gci
   exclusions:
     generated: lax
     paths:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule

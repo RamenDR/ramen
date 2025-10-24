@@ -8,26 +8,24 @@ import (
 	"fmt"
 	"path/filepath"
 
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	"go.uber.org/zap"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	virtv1 "kubevirt.io/api/core/v1"
+	// ClusterClaim
+	ocmv1a1 "open-cluster-management.io/api/cluster/v1alpha1"
 	// Placement
 	ocmv1b1 "open-cluster-management.io/api/cluster/v1beta1"
 	// ManagedClusterSetBinding
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
-	// ClusterClaim
-	ocmv1a1 "open-cluster-management.io/api/cluster/v1alpha1"
-
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
-	recipe "github.com/ramendr/recipe/api/v1alpha1"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	subscription "open-cluster-management.io/multicloud-operators-subscription/pkg/apis"
 	placementrule "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/placementrule/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
