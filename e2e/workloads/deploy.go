@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/ramendr/ramen/e2e/config"
@@ -16,10 +17,11 @@ import (
 )
 
 const (
-	deploymentName    = "deploy"
-	deploymentAppName = "busybox"
-	deploymentPath    = "workloads/deployment/base"
-	deploymentPVCName = "busybox-pvc"
+	deploymentName           = "deploy"
+	deploymentAppName        = "busybox"
+	deploymentPath           = "workloads/deployment/base"
+	deploymentPVCName        = "busybox-pvc"
+	deploymentSelectResource = "deployment"
 
 	//nolint:lll
 	// deploymentMinimumReplicasAvailable is added in a deployment when it has its minimum replicas required available.
@@ -55,6 +57,14 @@ func (w Deployment) GetPath() string {
 
 func (w Deployment) GetBranch() string {
 	return w.Branch
+}
+
+func (w Deployment) GetSelectResource() string {
+	return deploymentSelectResource
+}
+
+func (w Deployment) GetLabelSelector() *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": deploymentAppName}}
 }
 
 func (w Deployment) Kustomize() string {
