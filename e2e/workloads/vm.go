@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	virtv1 "kubevirt.io/api/core/v1"
 
@@ -50,6 +51,14 @@ func (w *VM) GetPath() string {
 
 func (w *VM) GetBranch() string {
 	return w.Branch
+}
+
+func (w *VM) GetSelectResource() string {
+	return "kubevirt.io/v1/virtualmachines"
+}
+
+func (w *VM) GetLabelSelector() *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": vmAppName}}
 }
 
 func (w *VM) Kustomize() string {

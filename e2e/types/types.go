@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"go.uber.org/zap"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/e2e/config"
@@ -64,6 +65,12 @@ type Workload interface {
 	GetAppName() string
 	GetPath() string
 	GetBranch() string
+	// GetSelectResource returns the hook.selectResource of workload used. It can be either "deployment"
+	//  or "pod" or "statefulset" or any resource with the format "<apigroup>/<apiversion>/<kindplural>"
+	GetSelectResource() string
+	// GetLabelSelector returns the labelSelector to used for selecting the resources.
+	// This value is made use during preparation of hooks used in recipe.
+	GetLabelSelector() *metav1.LabelSelector
 	Health(ctx TestContext, cluster *Cluster) error
 	Status(ctx TestContext) ([]WorkloadStatus, error)
 }
