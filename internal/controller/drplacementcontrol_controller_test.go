@@ -1487,6 +1487,8 @@ func relocateToPreferredCluster(placementObj client.Object, fromCluster string) 
 
 	updateManifestWorkStatus(toCluster1, placementObj.GetNamespace(), "vrg", ocmworkv1.WorkApplied)
 
+	waitForDRPCProtected(placementObj.GetNamespace())
+
 	verifyUserPlacementRuleDecision(placementObj.GetName(), placementObj.GetNamespace(), toCluster1)
 	verifyDRPCStatusPreferredClusterExpectation(placementObj.GetNamespace(), rmn.Relocated)
 	verifyVRGManifestWorkCreatedAsPrimary(placementObj.GetNamespace(), toCluster1)
