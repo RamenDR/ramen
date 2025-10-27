@@ -226,55 +226,8 @@ func newPlacementRule(name string, namespace string,
 	}
 }
 
-// localSecret is added to provide for an interface that can convert the "template" value in secret.Data
-// and store it as a policy object. Currently the actual secret.Data is a map of []byte, which hence garbles
-// the value of the template secret value in the policy. Using stringData which is a map of string does not
-// work with the configuration controllers, as values from actual secret's data is encoded in base64 twice.
-// This needs to be tracked with OCM and fixed, at which point we can remove the local copy and adapt to
-// the fix.
-type localSecret struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Data              map[string]string `json:"data,omitempty"`
-}
-
-// DeepCopyObject interfaces required to use localSecret as a runtime.Object
-// Lifted from generated deep copy file for other resources
-func (in *localSecret) DeepCopyObject() runtime.Object {
-	return in.DeepCopy()
-}
-
-// DeepCopy is for copying the receiver, creating a new ClusterStatus.
-func (in *localSecret) DeepCopy() *localSecret {
-	if in == nil {
-		return nil
-	}
-
-	out := new(localSecret)
-
-	in.DeepCopyInto(out)
-
-	return out
-}
-
-// DeepCopyInto is for copying the receiver, writing into out. in must be non-nil.
-func (in *localSecret) DeepCopyInto(out *localSecret) {
-	*out = *in
-	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-
-	if in.Data != nil {
-		in, out := &in.Data, &out.Data
-		*out = make(map[string]string, len(*in))
-
-		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-}
-
-func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) *localSecret {
-	localsecret := &localSecret{
+func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns string) *corev1.Secret {
+	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: "v1",
@@ -283,25 +236,21 @@ func newS3ConfigurationSecret(s3SecretRef corev1.SecretReference, targetns strin
 			Name:      s3SecretRef.Name,
 			Namespace: targetns,
 		},
-		Data: map[string]string{
-			"AWS_ACCESS_KEY_ID": "{{hub fromSecret " +
-				"\"" + s3SecretRef.Namespace + "\"" + " " +
-				"\"" + s3SecretRef.Name + "\"" + " " +
-				"\"AWS_ACCESS_KEY_ID\" hub}}",
-			"AWS_SECRET_ACCESS_KEY": "{{hub fromSecret " +
-				"\"" + s3SecretRef.Namespace + "\"" + " " +
-				"\"" + s3SecretRef.Name + "\"" + " " +
-				"\"AWS_SECRET_ACCESS_KEY\" hub}}",
+		StringData: map[string]string{
+			"AWS_ACCESS_KEY_ID": "{{hub ((lookup \"v1\" \"Secret\" \"" + s3SecretRef.Namespace +
+				"\" \"" + s3SecretRef.Name + "\").data.AWS_ACCESS_KEY_ID | base64dec) hub}}",
+			"AWS_SECRET_ACCESS_KEY": "{{hub ((lookup \"v1\" \"Secret\" \"" + s3SecretRef.Namespace +
+				"\" \"" + s3SecretRef.Name + "\").data.AWS_SECRET_ACCESS_KEY | base64dec) hub}}",
 		},
 	}
 
-	AddLabel(localsecret, CreatedByRamenLabel, "true")
+	AddLabel(secret, CreatedByRamenLabel, "true")
 
-	return localsecret
+	return secret
 }
 
-func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) *localSecret {
-	localsecret := &localSecret{
+func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyName string) *corev1.Secret {
+	secret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: "v1",
@@ -310,31 +259,20 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 			Name:      GenerateVeleroSecretName(s3SecretRef.Name),
 			Namespace: veleroNS,
 		},
-		/*
-			keyName contains, base 64 encoded data as follows:
-			[default]
-			  aws_access_key_id = <key-id>
-			  aws_secret_access_key = <key>
-
-			Where, <key-id> and <key> are base 64 decoded values from looked up secret (s3SecretRef.Name)
-			in namespace (fromNS)
-		*/
-		Data: map[string]string{
-			keyName: "{{ (printf \"[default]\\n  aws_access_key_id = %s\\n  aws_secret_access_key = %s\\n\" " +
-				"((lookup \"v1\" \"Secret\" \"" + fromNS +
-				"\" \"" + s3SecretRef.Name + "\").data.AWS_ACCESS_KEY_ID | base64dec) " +
-				"((lookup \"v1\" \"Secret\" \"" + fromNS +
-				"\" \"" + s3SecretRef.Name + "\").data.AWS_SECRET_ACCESS_KEY | base64dec)" +
-				") | base64enc }}",
+		StringData: map[string]string{
+			keyName: "[default]\n  aws_access_key_id = {{hub ((lookup \"v1\" \"Secret\" \"" + fromNS +
+				"\" \"" + s3SecretRef.Name + "\").data.AWS_ACCESS_KEY_ID | base64dec) hub}}" +
+				"\n  aws_secret_access_key = {{hub ((lookup \"v1\" \"Secret\" \"" + fromNS +
+				"\" \"" + s3SecretRef.Name + "\").data.AWS_SECRET_ACCESS_KEY | base64dec) hub}}",
 		},
 	}
 
-	AddLabel(localsecret, CreatedByRamenLabel, "true")
+	AddLabel(secret, CreatedByRamenLabel, "true")
 
-	return localsecret
+	return secret
 }
 
-func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
+func newConfigurationPolicy(name string, object []*cpcv1.ObjectTemplate) *cpcv1.ConfigurationPolicy {
 	return &cpcv1.ConfigurationPolicy{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigurationPolicy",
@@ -346,12 +284,7 @@ func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.Co
 		Spec: &cpcv1.ConfigurationPolicySpec{
 			RemediationAction: cpcv1.Enforce,
 			Severity:          "high",
-			ObjectTemplates: []*cpcv1.ObjectTemplate{
-				{
-					ComplianceType:   cpcv1.MustHave,
-					ObjectDefinition: *object,
-				},
-			},
+			ObjectTemplates:   object,
 		},
 	}
 }
@@ -383,7 +316,7 @@ func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension
 
 // nolint:funlen
 func (sutil *SecretsUtil) createPolicyResources(
-	secret *corev1.Secret,
+	secret *corev1.Secret, objects []*cpcv1.ObjectTemplate,
 	cluster, namespace, targetNS string,
 	format TargetSecretFormat,
 	veleroNS string,
@@ -420,7 +353,7 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 	// Create a Policy object for the secret
 	configObject := newConfigurationPolicy(configPolicyName,
-		sutil.policyObject(secret.Name, namespace, targetNS, format, veleroNS))
+		sutil.policyObject(secret.Name, namespace, targetNS, objects, format, veleroNS))
 	AddLabel(configObject, CreatedByRamenLabel, "true")
 
 	sutil.Log.Info("Initializing secret policy trigger", "secret", secret.Name, "trigger", secret.ResourceVersion)
@@ -450,25 +383,33 @@ func (sutil *SecretsUtil) createPolicyResources(
 
 func (sutil *SecretsUtil) policyObject(
 	secretName, secretNS, targetNS string,
+	objects []*cpcv1.ObjectTemplate,
 	format TargetSecretFormat,
 	veleroNS string,
-) *runtime.RawExtension {
-	var object *runtime.RawExtension
-
+) []*cpcv1.ObjectTemplate {
 	s3SecretRef := corev1.SecretReference{Name: secretName, Namespace: secretNS}
+
+	var secretObject *corev1.Secret
 
 	switch format {
 	case SecretFormatRamen:
-		object = &runtime.RawExtension{Object: newS3ConfigurationSecret(s3SecretRef, targetNS)}
+		secretObject = newS3ConfigurationSecret(s3SecretRef, targetNS)
+		AddLabel(secretObject, CreatedByRamenLabel, "true")
 	case SecretFormatVelero:
-		object = &runtime.RawExtension{
-			Object: newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault),
-		}
+		secretObject = newVeleroSecret(s3SecretRef, targetNS, veleroNS, VeleroSecretKeyNameDefault)
+		AddLabel(secretObject, CreatedByRamenLabel, "true")
 	default:
 		panic(unknownFormat)
 	}
 
-	return object
+	object := &cpcv1.ObjectTemplate{
+		ComplianceType:   cpcv1.MustHave,
+		ObjectDefinition: runtime.RawExtension{Object: secretObject},
+	}
+
+	objects = append(objects, object)
+
+	return objects
 }
 
 func (sutil *SecretsUtil) deletePolicyResources(
@@ -693,6 +634,7 @@ func (sutil *SecretsUtil) ensureS3SecretResources(
 // the targetNS)
 func (sutil *SecretsUtil) AddSecretToCluster(
 	secretName, clusterName, namespace, targetNS string,
+	objects []*cpcv1.ObjectTemplate,
 	format TargetSecretFormat,
 	veleroNS string,
 ) error {
@@ -729,7 +671,7 @@ func (sutil *SecretsUtil) AddSecretToCluster(
 			return fmt.Errorf("failed to get placementRule object: %w", err)
 		}
 
-		return sutil.createPolicyResources(secret, clusterName, namespace, targetNS, format, veleroNS)
+		return sutil.createPolicyResources(secret, objects, clusterName, namespace, targetNS, format, veleroNS)
 	}
 
 	return sutil.updatePolicyResources(plRule, secret, clusterName, namespace, format, true)
