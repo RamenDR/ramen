@@ -4,7 +4,6 @@
 package cel_test
 
 import (
-	// "context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	. "github.com/onsi/gomega"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 
-	// "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/testutils"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes/scheme"
