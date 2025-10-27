@@ -6,9 +6,10 @@ package controllers
 import (
 	"fmt"
 
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 func updateProtectedConditionUnknown(drpc *rmn.DRPlacementControl, clusterName string) {
