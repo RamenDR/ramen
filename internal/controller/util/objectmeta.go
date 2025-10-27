@@ -4,10 +4,11 @@
 package util
 
 import (
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 func ObjectMetaEmbedded(objectMeta *metav1.ObjectMeta) metav1.ObjectMeta {

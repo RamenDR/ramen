@@ -4,11 +4,11 @@
 package deployers
 
 import (
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
-
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type ApplicationSet struct {

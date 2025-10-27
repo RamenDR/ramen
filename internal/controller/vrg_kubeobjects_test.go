@@ -7,12 +7,10 @@ package controllers //nolint:testpackage
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-
+	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
 var _ = Describe("VRG_KubeObjectProtection", func() {

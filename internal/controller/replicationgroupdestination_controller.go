@@ -10,10 +10,6 @@ import (
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/cephfscg"
-	"github.com/ramendr/ramen/internal/controller/util"
-	"github.com/ramendr/ramen/internal/controller/volsync"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -24,6 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/cephfscg"
+	"github.com/ramendr/ramen/internal/controller/util"
+	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
 // ReplicationGroupDestinationReconciler reconciles a ReplicationGroupDestination object

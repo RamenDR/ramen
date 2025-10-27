@@ -5,8 +5,9 @@ package controllers
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (

@@ -12,10 +12,6 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	recipecore "github.com/ramendr/ramen/internal/controller/core"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	"github.com/ramendr/ramen/internal/controller/util"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -24,6 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 const (

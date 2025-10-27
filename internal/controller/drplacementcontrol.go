@@ -19,11 +19,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (

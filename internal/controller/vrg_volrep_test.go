@@ -15,13 +15,8 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	"github.com/onsi/gomega/format"
-
 	gomegatypes "github.com/onsi/gomega/types"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	vrgController "github.com/ramendr/ramen/internal/controller"
-	"github.com/ramendr/ramen/internal/controller/util"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,6 +28,10 @@ import (
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	vrgController "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 const (

@@ -5,11 +5,12 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/core"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	virtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/internal/controller/core"
 )
 
 func ListVMsByLabelSelector(

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +16,7 @@ import (
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/types"
 )
 

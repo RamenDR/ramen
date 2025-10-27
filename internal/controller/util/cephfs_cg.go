@@ -11,7 +11,6 @@ import (
 	ramenutils "github.com/backube/volsync/controllers/utils"
 	"github.com/go-logr/logr"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -20,6 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
