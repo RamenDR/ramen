@@ -136,8 +136,12 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 		m.Logger.Info("Set DoNotDeleteLabel to the image",
 			"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
 
+		rgdName := m.ReplicationGroupDestination.Name
+		vrgName := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel]
+		vrgNamespace := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNamespaceLabel]
+
 		if err := util.DeferDeleteImage(
-			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, m.ReplicationGroupDestination.Name,
+			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rgdName, vrgName, vrgNamespace,
 		); err != nil {
 			return mover.InProgress(), err
 		}
@@ -189,7 +193,7 @@ func (m *rgdMachine) ReconcileRD(
 	}
 
 	log := m.Logger.WithValues("ProtectedPVCName", rdSpec.ProtectedPVC.Name)
-	vrgName := m.ReplicationGroupDestination.GetLabels()[volsync.VRGOwnerNameLabel]
+	vrgName := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel]
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it

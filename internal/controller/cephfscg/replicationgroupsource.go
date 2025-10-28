@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
@@ -141,7 +142,7 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 	}
 
 	m.Logger.Info("Create ReplicationSource for each Restored PVC")
-	vrgName := m.ReplicationGroupSource.GetLabels()[volsync.VRGOwnerNameLabel]
+	vrgName := m.ReplicationGroupSource.GetLabels()[util.VRGOwnerNameLabel]
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 

@@ -463,7 +463,8 @@ var _ = Describe("CephfsCg", func() {
 				})
 				Describe("DeferDeleteImage with vs exist", func() {
 					It("Should be success", func() {
-						err := util.DeferDeleteImage(context.Background(), k8sClient, "vs", "default", "rgdName")
+						err := util.DeferDeleteImage(context.Background(), k8sClient, "vs", "default",
+							"rgdName", "vrgName", "vrgNamespace")
 						Expect(err).To(BeNil())
 						Eventually(func() []string {
 							vs := &vsv1.VolumeSnapshot{}
@@ -483,7 +484,8 @@ var _ = Describe("CephfsCg", func() {
 	})
 	Describe("DeferDeleteImage with vs not exist", func() {
 		It("Should be success", func() {
-			err := util.DeferDeleteImage(context.Background(), k8sClient, "vsnotexist", "default", "rgdName")
+			err := util.DeferDeleteImage(context.Background(), k8sClient, "vsnotexist", "default",
+				"rgdName", "vrgName", "vrgNamespace")
 			Expect(err).NotTo(BeNil())
 		})
 	})

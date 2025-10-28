@@ -129,8 +129,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 			}
 		}
 
-		util.AddLabel(rgd, volsync.VRGOwnerNameLabel, c.instance.GetName())
-		util.AddLabel(rgd, volsync.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
+		util.AddLabel(rgd, util.VRGOwnerNameLabel, c.instance.GetName())
+		util.AddLabel(rgd, util.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, c.instance.GetName())
 		util.AddAnnotation(rgd, volsync.OwnerNamespaceAnnotation, c.instance.GetNamespace())
 
@@ -248,8 +248,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 			}
 		}
 
-		util.AddLabel(rgs, volsync.VRGOwnerNameLabel, c.instance.GetName())
-		util.AddLabel(rgs, volsync.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
+		util.AddLabel(rgs, util.VRGOwnerNameLabel, c.instance.GetName())
+		util.AddLabel(rgs, util.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, c.instance.GetName())
 		util.AddAnnotation(rgs, volsync.OwnerNamespaceAnnotation, c.instance.GetNamespace())
 
@@ -509,8 +509,8 @@ func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, o
 	ownerNamespace string, logger logr.Logger,
 ) error {
 	matchLabels := map[string]string{
-		volsync.VRGOwnerNameLabel:      ownerName,
-		volsync.VRGOwnerNamespaceLabel: ownerNamespace,
+		util.VRGOwnerNameLabel:      ownerName,
+		util.VRGOwnerNamespaceLabel: ownerNamespace,
 	}
 
 	listOptions := []client.ListOption{

@@ -63,8 +63,8 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
 	if err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      rgd.GetLabels()[volsync.VRGOwnerNameLabel],
-		Namespace: rgd.GetLabels()[volsync.VRGOwnerNamespaceLabel],
+		Name:      rgd.GetLabels()[util.VRGOwnerNameLabel],
+		Namespace: rgd.GetLabels()[util.VRGOwnerNamespaceLabel],
 	}, vrg); err != nil {
 		return ctrl.Result{}, err
 	}

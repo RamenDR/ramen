@@ -90,7 +90,7 @@ func NewVolumeGroupSourceHandler(
 	defaultCephFSCSIDriverName string,
 	logger logr.Logger,
 ) VolumeGroupSourceHandler {
-	vrgName := rgs.GetLabels()[volsync.VRGOwnerNameLabel]
+	vrgName := rgs.GetLabels()[util.VRGOwnerNameLabel]
 
 	vgsName := rgs.Name
 

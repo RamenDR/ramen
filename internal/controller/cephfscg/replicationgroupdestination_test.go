@@ -21,6 +21,7 @@ import (
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	internalController "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
@@ -67,7 +68,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 						Name:      rgdName,
 						Namespace: "default",
 						UID:       "123",
-						Labels:    map[string]string{volsync.VRGOwnerNameLabel: vrgName},
+						Labels:    map[string]string{util.VRGOwnerNameLabel: vrgName},
 					},
 					Spec: ramendrv1alpha1.ReplicationGroupDestinationSpec{
 						RDSpecs: []ramendrv1alpha1.VolSyncReplicationDestinationSpec{{
