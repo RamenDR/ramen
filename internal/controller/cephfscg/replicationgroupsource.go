@@ -7,14 +7,14 @@ import (
 	"context"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/backube/volsync/controllers/mover"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type replicationGroupSourceMachine struct {
@@ -105,12 +105,39 @@ func (m *replicationGroupSourceMachine) Conditions() *[]metav1.Condition {
 func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Create volume group snapshot")
 
-	if err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
+	wait, err := m.VolumeGroupHandler.WaitIfPVCTooNew(ctx)
+	if err != nil {
+		m.Logger.Error(err, "Failed to check if PVCs are in use before creating volume group snapshot")
+
+		return mover.InProgress(), err
+	}
+	// If any PVC is too new, wait and requeue
+	// Note: this is only a mitigation, not a full solution, to the problem of ROX PVCs
+	//	not being ready (with correct SELinux labels) in time
+	//	--- see note on VolumeGroupSourceHandler.WaitIfPVCTooNew() for details.
+	//  We could eliminate this by waiting for all PVCs to be used (mounted) before
+	//	creating the snapshot, but that would mean, we will not be able to protect unused
+	//	PVCs (e.g. those created but only mounted sometime in the future).
+	//
+	if wait {
+		m.Logger.Error(err, "Some PVCs are not old enough, cannot create volume group snapshot now")
+
+		return mover.InProgress(), nil
+	}
+
+	createdOrUpdatedVGS, err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
 		ctx, m.ReplicationGroupSource,
-	); err != nil {
+	)
+	if err != nil {
 		m.Logger.Error(err, "Failed to create volume group snapshot")
 
 		return mover.InProgress(), err
+	}
+
+	if createdOrUpdatedVGS {
+		m.Logger.Info("VolumeGroupSnapshot was created or updated, need to wait until it's ready to be used")
+
+		return mover.InProgress(), nil
 	}
 
 	m.Logger.Info("Create ReplicationSource for each Restored PVC")
@@ -151,12 +178,18 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		return mover.InProgress(), err
 	}
 
-	replicationSources, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
+	replicationSources, srcCreatedOrUpdated, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource)
 	if err != nil {
 		m.Logger.Error(err, "Failed to create replication source")
 
 		return mover.InProgress(), err
+	}
+
+	if srcCreatedOrUpdated {
+		m.Logger.Info("Some replication sources were created or updated, need to wait until they are ready to be used")
+
+		return mover.InProgress(), nil
 	}
 
 	m.ReplicationGroupSource.Status.ReplicationSources = replicationSources

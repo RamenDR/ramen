@@ -8,9 +8,10 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var drClustersMutex sync.Mutex

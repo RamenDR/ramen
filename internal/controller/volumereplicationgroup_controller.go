@@ -13,14 +13,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
-	"golang.org/x/time/rate"
-
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
-	"github.com/ramendr/ramen/internal/controller/util"
+	"golang.org/x/time/rate"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -29,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -40,11 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	recipecore "github.com/ramendr/ramen/internal/controller/core"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
@@ -533,11 +532,11 @@ const (
 	// StorageClass offloaded label
 	StorageOffloadedLabel = "ramendr.openshift.io/offloaded"
 
-	// Consistency group label
-	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
-
 	// VolumeReplicationClass and VolumeGroupReplicationClass label
 	ReplicationIDLabel = "ramendr.openshift.io/replicationid"
+
+	// VolumeGroupReplicationClass label
+	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
@@ -873,14 +872,14 @@ func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolum
 		return nil
 	}
 
-	replicationID, err := v.getVGRClassReplicationID(pvc)
+	groupReplicationID, err := v.getVGRClassReplicationID(pvc)
 	if err != nil {
 		return err
 	}
 
 	// Add label for PVC, showing that this PVC is part of consistency group
 	return util.NewResourceUpdater(pvc).
-		AddLabel(ConsistencyGroupLabel, replicationID).
+		AddLabel(util.ConsistencyGroupLabel, groupReplicationID).
 		Update(v.ctx, v.reconciler.Client)
 }
 
@@ -892,7 +891,7 @@ func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim
 
 	// Add a CG label to indicate that this PVC belongs to a consistency group.
 	return util.NewResourceUpdater(pvc).
-		AddLabel(ConsistencyGroupLabel, cgLabelVal).
+		AddLabel(util.ConsistencyGroupLabel, cgLabelVal).
 		Update(v.ctx, v.reconciler.Client)
 }
 
@@ -1076,7 +1075,7 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 	}
 
 	// label VolSync PVCs if peerClass.grouping is enabled
-	if peerClass.Grouping {
+	if peerClass.Grouping && !v.instance.Spec.RunFinalSync {
 		if err := v.addConsistencyGroupLabel(pvc); err != nil {
 			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 				pvc.GetNamespace(), pvc.GetName(), err)
@@ -1121,6 +1120,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 	return nil
 }
 
+//nolint:gocognit,cyclop
 func (v *VRGInstance) findReplicationClassUsingPeerClass(
 	peerClass *ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass,
@@ -1131,6 +1131,15 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 
 		matched := sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&
 			rIDFromReplicationClass == peerClass.ReplicationID &&
+			provisioner == storageClass.Provisioner
+
+		if matched {
+			return replicationClass
+		}
+
+		grIDFromReplicationClass := replicationClass.GetLabels()[GroupReplicationIDLabel]
+		matched = sIDfromReplicationClass == storageClass.GetLabels()[StorageIDLabel] &&
+			grIDFromReplicationClass == peerClass.GroupReplicationID &&
 			provisioner == storageClass.Provisioner
 
 		if matched {
@@ -1255,6 +1264,10 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 	if err := v.disownPVCs(); err != nil {
 		v.log.Info("Disowning PVCs failed", "error", err)
 
+		return ctrl.Result{Requeue: true}
+	}
+
+	if err := v.pvcsDeselectedUnprotect(); err != nil {
 		return ctrl.Result{Requeue: true}
 	}
 
@@ -1574,7 +1587,7 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 			"PVC deselection skipped",
 			"replicationstate",
 			v.instance.Spec.ReplicationState,
-			"finalsync",
+			"Prepare or run final sync",
 			v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync,
 		)
 

@@ -33,10 +33,10 @@ environment.
 1. Install minikube, for example on RHEL/CentOS/Fedora:
 
    ```
-   sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
    ```
 
-   Tested with version v1.36.0.
+   Tested with version v1.37.0.
 
 1. Install the `kubectl` tool
 
@@ -48,7 +48,7 @@ environment.
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.33.2.
+   Tested with version v1.34.1.
 
 1. Install the `clusteradm` tool
 
@@ -545,13 +545,13 @@ $ drenv start envs/example.yaml
 2023-01-03 23:41:01,166 INFO    [example] Environment started in 35.71 seconds
 ```
 
-#### Using --verbose option
+#### The log file
 
-While debugging it is useful to use the `--verbose` option to see much
-more details:
+The console logs contains INFO level message. To see all log messages check the
+log file:
 
-```
-$ drenv start envs/example.yaml -v
+```console
+$ cat drenv.log
 2023-01-03 23:41:53,414 INFO    [example] Starting environment
 2023-01-03 23:41:53,416 INFO    [ex1] Starting cluster
 2023-01-03 23:41:53,539 DEBUG   [ex1] * [ex1] minikube v1.28.0 on Fedora 37

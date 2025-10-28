@@ -65,7 +65,7 @@ coverage-clean:
 	rm -f .coverage
 
 cluster:
-	drenv start --name-prefix $(prefix) $(env) --verbose --timeout $(TIMEOUT)
+	drenv start --name-prefix $(prefix) $(env) --timeout $(TIMEOUT)
 
 clean:
 	drenv delete --name-prefix $(prefix) $(env)

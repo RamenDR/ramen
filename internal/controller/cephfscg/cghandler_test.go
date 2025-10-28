@@ -10,11 +10,6 @@ import (
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	internalController "github.com/ramendr/ramen/internal/controller"
-	"github.com/ramendr/ramen/internal/controller/cephfscg"
-	"github.com/ramendr/ramen/internal/controller/util"
-	"github.com/ramendr/ramen/internal/controller/volsync"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -23,6 +18,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	internalController "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/cephfscg"
+	"github.com/ramendr/ramen/internal/controller/util"
+	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
 var (
@@ -180,7 +181,7 @@ var _ = Describe("Cghandler", func() {
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, &metav1.LabelSelector{}, nil, rgsName, testLogger)
-			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource(rgsName, "default", false)
+			rgs, finalSync, err := vsCGHandler.CreateOrUpdateReplicationGroupSource("default", false)
 			Expect(err).To(BeNil())
 			Expect(finalSync).To(BeFalse())
 			Expect(rgs.Spec.Trigger.Schedule).NotTo(BeNil())
@@ -208,7 +209,7 @@ var _ = Describe("Cghandler", func() {
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
 			}, &metav1.LabelSelector{}, nil, "0", testLogger)
-			image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "notexist", "default")
+			image, err := vsCGHandler.GetLatestImageFromRGD(nil, "default")
 			Expect(err).NotTo(BeNil())
 			Expect(image).To(BeNil())
 		})
@@ -237,21 +238,6 @@ var _ = Describe("Cghandler", func() {
 
 					return client.IgnoreNotFound(err)
 				}, timeout, interval).Should(BeNil())
-			})
-			It("Should be failed", func() {
-				vsCGHandler = cephfscg.NewVSCGHandler(Ctx, k8sClient, &ramendrv1alpha1.VolumeReplicationGroup{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: "default",
-						Name:      vrgName,
-						UID:       "123",
-					},
-					Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
-						Async: &ramendrv1alpha1.VRGAsyncSpec{},
-					},
-				}, &metav1.LabelSelector{}, nil, "0", testLogger)
-				image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
-				Expect(err).NotTo(BeNil())
-				Expect(image).To(BeNil())
 			})
 			Context("rd,rgd exist", func() {
 				BeforeEach(func() {
@@ -310,7 +296,10 @@ var _ = Describe("Cghandler", func() {
 							Async: &ramendrv1alpha1.VRGAsyncSpec{},
 						},
 					}, &metav1.LabelSelector{}, nil, "0", testLogger)
-					image, err := vsCGHandler.GetLatestImageFromRGD(Ctx, "pvc1", "default")
+					rgd, err := cephfscg.GetRGD(Ctx, k8sClient, rgdName, "default", testLogger)
+					Expect(err).To(BeNil())
+
+					image, err := vsCGHandler.GetLatestImageFromRGD(rgd, "pvc1")
 					Expect(err).To(BeNil())
 					Expect(image.Name).To(Equal("image1"))
 				})
@@ -383,12 +372,9 @@ var _ = Describe("Cghandler", func() {
 								}, &ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 								"Direct", false,
 							), "0", testLogger)
-						err := vsCGHandler.DeleteLocalRDAndRS(&volsyncv1alpha1.ReplicationDestination{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      "pvc1",
-								Namespace: "default",
-							},
-						})
+						rd, err := volsync.GetRD(Ctx, k8sClient, "pvc1", "default", testLogger)
+						Expect(err).To(BeNil())
+						err = vsCGHandler.DeleteLocalRDAndRS(rd)
 						Expect(err).To(BeNil())
 					})
 				})

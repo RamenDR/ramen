@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
@@ -75,6 +76,14 @@ func (u *ResourceUpdater) DeleteLabel(key string) *ResourceUpdater {
 	u.obj.SetLabels(labels)
 
 	u.objModified = u.objModified || deleted
+
+	return u
+}
+
+func (u *ResourceUpdater) AddAnnotation(key, value string) *ResourceUpdater {
+	added := AddAnnotation(u.obj, key, value)
+
+	u.objModified = u.objModified || added
 
 	return u
 }
@@ -378,6 +387,10 @@ func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string
 	}
 
 	return true
+}
+
+func CreateVGRName(prefix string, suffix string) string {
+	return TrimToK8sResourceNameLength("vgr-" + prefix + "-" + suffix)
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {

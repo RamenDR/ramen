@@ -11,12 +11,11 @@ import (
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/ramendr/ramen/internal/controller/util"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("PVCS_Util", func() {

@@ -10,8 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	gomegaTypes "github.com/onsi/gomega/types"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/util"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,6 +19,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	controllers "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("DRPolicyController", func() {
@@ -330,6 +332,178 @@ var _ = Describe("DRPolicyController", func() {
 			validatedConditionExpect(drp, metav1.ConditionTrue, Ignore())
 			drpolicyDeleteAndConfirm(drp)
 			vaildateSecretDistribution(nil)
+		})
+	})
+
+	When("validating DRPolicy for conflicts for MetroDR", func() {
+		It("should prevent the second policy from being validated due to multiple overlapping metro clusters", func() {
+			dp1 := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "metro-dp1"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{"metro-dr1", "metro-dr2"},
+					SchedulingInterval: "0m",
+				},
+				Status: ramen.DRPolicyStatus{
+					Sync: ramen.Sync{
+						PeerClasses: []ramen.PeerClass{
+							{
+								StorageID:        []string{"sID1"},
+								StorageClassName: "metro-sc",
+								ClusterIDs:       []string{"cID1", "cID2"},
+							},
+						},
+					},
+				},
+			}
+
+			dp2 := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "metro-dp2"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{"metro-dr1", "metro-dr2"},
+					SchedulingInterval: "0m",
+				},
+				Status: ramen.DRPolicyStatus{
+					Sync: ramen.Sync{
+						PeerClasses: []ramen.PeerClass{
+							{
+								StorageID:        []string{"sID1"},
+								StorageClassName: "metro-sc",
+								ClusterIDs:       []string{"cID1", "cID2"},
+							},
+						},
+					},
+				},
+			}
+
+			existingPolicies := ramen.DRPolicyList{
+				Items: []ramen.DRPolicy{*dp1},
+			}
+
+			drClusterIDsToNames := map[string]string{
+				"cID1": "metro-dr1",
+				"cID2": "metro-dr2",
+			}
+
+			By("testing for conflicting DRPolicy")
+			err := controllers.HasConflictingDRPolicy(dp2, existingPolicies, drClusterIDsToNames)
+
+			By("verifying that conflict is detected")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("has overlapping clusters with another drpolicy"))
+		})
+
+		It("should prevent the second policy from being validated due to a single overlapping metro cluster", func() {
+			dp1 := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "metro-dp1"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{"metro-dr1", "metro-dr2"},
+					SchedulingInterval: "0m",
+				},
+				Status: ramen.DRPolicyStatus{
+					Sync: ramen.Sync{
+						PeerClasses: []ramen.PeerClass{
+							{
+								StorageID:        []string{"sID1"},
+								StorageClassName: "metro-sc",
+								ClusterIDs:       []string{"cID1", "cID2"},
+							},
+						},
+					},
+				},
+			}
+
+			dp2 := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "metro-dp2"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{"metro-dr1", "metro-dr3"},
+					SchedulingInterval: "0m",
+				},
+				Status: ramen.DRPolicyStatus{
+					Sync: ramen.Sync{
+						PeerClasses: []ramen.PeerClass{
+							{
+								StorageID:        []string{"sID1"},
+								StorageClassName: "metro-sc",
+								ClusterIDs:       []string{"cID1", "cID3"},
+							},
+						},
+					},
+				},
+			}
+
+			existingPolicies := ramen.DRPolicyList{
+				Items: []ramen.DRPolicy{*dp1},
+			}
+
+			drClusterIDsToNames := map[string]string{
+				"cID1": "metro-dr1",
+				"cID2": "metro-dr2",
+				"cID3": "metro-dr3",
+			}
+
+			By("testing for conflicting DRPolicy")
+			err := controllers.HasConflictingDRPolicy(dp2, existingPolicies, drClusterIDsToNames)
+
+			By("verifying that conflict is detected")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("has overlapping clusters with another drpolicy"))
+		})
+
+		It("should allow the second policy to be validated having non overlapping metro clusters", func() {
+			dp1 := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "metro-dp1"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{"metro-dr1", "metro-dr2"},
+					SchedulingInterval: "0m",
+				},
+				Status: ramen.DRPolicyStatus{
+					Sync: ramen.Sync{
+						PeerClasses: []ramen.PeerClass{
+							{
+								StorageID:        []string{"sID1"},
+								StorageClassName: "metro-sc-1",
+								ClusterIDs:       []string{"cID1", "cID2"},
+							},
+						},
+					},
+				},
+			}
+
+			dp2 := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "metro-dp2"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{"metro-dr3", "metro-dr4"},
+					SchedulingInterval: "0m",
+				},
+				Status: ramen.DRPolicyStatus{
+					Sync: ramen.Sync{
+						PeerClasses: []ramen.PeerClass{
+							{
+								StorageID:        []string{"sID2"},
+								StorageClassName: "metro-sc-2",
+								ClusterIDs:       []string{"cID3", "cID4"},
+							},
+						},
+					},
+				},
+			}
+
+			existingPolicies := ramen.DRPolicyList{
+				Items: []ramen.DRPolicy{*dp1},
+			}
+
+			drClusterIDsToNames := map[string]string{
+				"cID1": "metro-dr1",
+				"cID2": "metro-dr2",
+				"cID3": "metro-dr3",
+				"cID4": "metro-dr4",
+			}
+
+			By("testing for non-conflicting DRPolicy")
+			err := controllers.HasConflictingDRPolicy(dp2, existingPolicies, drClusterIDsToNames)
+
+			By("verifying that no conflict is detected")
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

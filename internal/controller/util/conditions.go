@@ -192,7 +192,7 @@ func mergedCondition(conditions []*metav1.Condition, ignoreReasons []string) met
 
 		// NOTE: Reason differs, for now merge the message. We could look at error reasons
 		// taking precedence over other reasons
-		merged.Message += subCondition.Message
+		merged.Message = merged.Message + ". " + subCondition.Message
 	}
 
 	return merged

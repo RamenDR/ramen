@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+[tool.pytest.ini_options]
+# -r chars: (s)skipped, (x)failed, (X)passed
+addopts = "--verbose -rsxX --durations 10"
+
+# https://docs.pytest.org/en/latest/how-to/mark.html#registering-marks
+markers = [
+    "cluster: marks tests requiring a test cluster (deselect with -m 'not cluster')"
+]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"

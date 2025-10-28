@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ramendr/ramen/internal/controller/hooks"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +12,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/ramendr/ramen/internal/controller/hooks"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
 func setup(t *testing.T) client.Client {

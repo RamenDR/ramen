@@ -15,15 +15,20 @@ on:
 
 jobs:
   refresh-cache:
-    runs-on: [self-hosted, e2e-rdr]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - e2e-rdr-2
+          - e2e-rdr-3
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
-
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Install drenv
-        run: pip install -e test
+      - name: Create virtual environment
+        run: hack/make-venv .venv
 
       - name: Refresh cache
         uses: nick-fields/retry@v3
@@ -33,10 +38,17 @@ jobs:
           max_attempts: 10
           command: |
             cd test
-            drenv cache -v envs/regional-dr.yaml
+            source ../venv
+            drenv cache envs/regional-dr.yaml
 
   prune-images:
-    runs-on: [self-hosted, e2e-rdr]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - e2e-rdr-2
+          - e2e-rdr-3
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
       - name: Prune images

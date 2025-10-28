@@ -11,9 +11,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/go-logr/logr"
-
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -92,7 +91,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
+			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
 			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
 
 			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
@@ -174,7 +173,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
+			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
 			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
 
 			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
@@ -308,7 +307,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	_, selectVolumeGroup := v.isCGEnabled(pvc)
 
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
+	_, err = v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -326,16 +325,28 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 	protectedPVC.Resources = pvc.Spec.Resources
 	protectedPVC.VolumeMode = pvc.Spec.VolumeMode
 
-	setPVCStorageIdentifiers(protectedPVC, storageClass, volumeReplicationClass)
-
-	return nil
+	return v.setPVCStorageIdentifiers(protectedPVC, storageClass, pvc)
 }
 
-func setPVCStorageIdentifiers(
+func (v *VRGInstance) setPVCStorageIdentifiers(
 	protectedPVC *ramendrv1alpha1.ProtectedPVC,
 	storageClass *storagev1.StorageClass,
-	volumeReplicationClass client.Object,
-) {
+	pvc *corev1.PersistentVolumeClaim,
+) error {
+	// If SC is offloaded, do not proceed
+	offloaded := rmnutil.HasLabel(storageClass, StorageOffloadedLabel)
+	if offloaded {
+		return nil
+	}
+
+	// We should always take rID from VRClass and not grID, and for !offloaded
+	// VRC will be present (is a pre-requisite)
+	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
+	if err != nil {
+		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+			v.instance.Name, err)
+	}
+
 	protectedPVC.StorageIdentifiers.StorageProvisioner = storageClass.Provisioner
 
 	if value, ok := storageClass.Labels[StorageIDLabel]; ok {
@@ -351,6 +362,8 @@ func setPVCStorageIdentifiers(
 			protectedPVC.StorageIdentifiers.ReplicationID.Modes = MModesFromCSV(modes)
 		}
 	}
+
+	return nil
 }
 
 func MModesFromCSV(modes string) []ramendrv1alpha1.MMode {
@@ -540,7 +553,7 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	delete(pvc.Annotations, pvcVRAnnotationProtectedKey)
 	delete(pvc.Annotations, pvcVRAnnotationArchivedKey)
 
-	delete(pvc.Labels, ConsistencyGroupLabel)
+	delete(pvc.Labels, rmnutil.ConsistencyGroupLabel)
 
 	log1 := log.WithValues("owner removed", ownerRemoved, "finalizer removed", finalizerRemoved)
 
@@ -621,7 +634,10 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 }
 
 func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bool {
-	return pvc.Spec.Resources.Requests["storage"] == pvc.Status.Capacity["storage"]
+	requested := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	actual := pvc.Status.Capacity[corev1.ResourceStorage]
+
+	return requested.Cmp(actual) == 0
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
@@ -869,6 +885,7 @@ func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log l
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
 
+//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
@@ -897,7 +914,18 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.TrimToK8sResourceNameLength(cg + v.instance.Name)
+			if cg == "" {
+				grID, err := v.getVGRClassReplicationID(pvc)
+				if err != nil {
+					v.requeue()
+
+					continue
+				}
+
+				cg = grID
+			}
+
+			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
 			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
 
 			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
@@ -1400,7 +1428,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	matchingReplicationClassList := []client.Object{}
 
 	filterMatchingReplicationClass := func(replicationClass client.Object, parameters map[string]string,
-		provisioner string,
+		provisioner string, rIDLabel string,
 	) {
 		schedulingInterval, found := parameters[ReplicationClassScheduleKey]
 
@@ -1429,6 +1457,15 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			if sIDFromReplicationClass != storageClass.GetLabels()[StorageIDLabel] {
 				return
 			}
+
+			rIDFromReplicationClass, exists := replicationClass.GetLabels()[rIDLabel]
+			if !exists {
+				return
+			}
+
+			if rIDFromReplicationClass != storageClass.GetLabels()[rIDLabel] {
+				return
+			}
 		}
 
 		matchingReplicationClassList = append(matchingReplicationClassList, replicationClass)
@@ -1442,7 +1479,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			replicationClass := &v.replClassList.Items[index]
 
 			filterMatchingReplicationClass(replicationClass, replicationClass.Spec.Parameters,
-				replicationClass.Spec.Provisioner)
+				replicationClass.Spec.Provisioner, ReplicationIDLabel)
 		}
 	} else {
 		for index := range v.grpReplClassList.Items {
@@ -1450,7 +1487,7 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 			replicationClass := &v.grpReplClassList.Items[index]
 
 			filterMatchingReplicationClass(replicationClass, replicationClass.Spec.Parameters,
-				replicationClass.Spec.Provisioner)
+				replicationClass.Spec.Provisioner, GroupReplicationIDLabel)
 		}
 	}
 

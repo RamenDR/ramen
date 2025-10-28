@@ -4,9 +4,10 @@
 package util
 
 import (
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
 const RecipeElementsGetForPVC = "recipeElementsGetForPVC"

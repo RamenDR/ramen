@@ -11,10 +11,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/hooks"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	"github.com/ramendr/ramen/internal/controller/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +18,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/hooks"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
@@ -1164,14 +1165,15 @@ func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 	for _, chk := range hook.Chks {
 		if chk.Name == suffix {
 			return kubeobjects.HookSpec{
-				Name:           hook.Name,
-				Namespace:      hook.Namespace,
-				Type:           hook.Type,
-				SelectResource: hook.SelectResource,
-				LabelSelector:  hook.LabelSelector,
-				NameSelector:   hook.NameSelector,
-				Timeout:        chk.Timeout,
-				OnError:        chk.OnError,
+				Name:                 hook.Name,
+				Namespace:            hook.Namespace,
+				Type:                 hook.Type,
+				SelectResource:       hook.SelectResource,
+				LabelSelector:        hook.LabelSelector,
+				NameSelector:         hook.NameSelector,
+				Timeout:              chk.Timeout,
+				OnError:              chk.OnError,
+				SkipHookIfNotPresent: hook.SkipHookIfNotPresent,
 				Chk: kubeobjects.Check{
 					Name:      suffix,
 					Condition: chk.Condition,

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	core "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -21,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -28,9 +28,9 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
+	core "github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 )
 
 const (
@@ -681,7 +681,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// cleanup for VRG artifacts
-	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, vrgNamespace); err != nil {
+	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, placementObj, vrgNamespace); err != nil {
 		return err
 	}
 
@@ -718,6 +718,7 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	log logr.Logger,
 	mwu rmnutil.MWUtil,
 	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
 	vrgNamespace string,
 ) error {
 	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
@@ -733,12 +734,12 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 
 	// We have to ensure the secondary VRG is deleted before deleting the primary VRG. This will fail until there
 	// is no secondary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Secondary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Secondary); err != nil {
 		return err
 	}
 
 	// This will fail until there is no primary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Primary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Primary); err != nil {
 		return err
 	}
 
@@ -760,6 +761,7 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 	mwu rmnutil.MWUtil,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
 	vrgNamespace string,
 	replicationState rmn.ReplicationState,
 ) error {
@@ -771,7 +773,7 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 				return fmt.Errorf("%s VRG adoption in progress", replicationState)
 			}
 
-			if err := r.ensureDoNotDeletePVCAnnotation(mwu, drpc, vrg, cluster, r.Log); err != nil {
+			if err := EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, cluster, r.Log); err != nil {
 				return fmt.Errorf("wait for annotation to propagate to the VRG. Msg: %w", err)
 			}
 
@@ -2889,13 +2891,14 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 	return false
 }
 
-// ensureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
+// EnsureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
 // resource to the VRG resource on the specified cluster. If the annotation is set on the DRPC but not yet
 // present on the VRG, this function updates the VRG ManifestWork to include the annotation. This is used to
 // prevent deletion of app PVCs during DR disabling.
-func (r *DRPlacementControlReconciler) ensureDoNotDeletePVCAnnotation(
+func EnsureDoNotDeletePVCAnnotation(
 	mwu rmnutil.MWUtil,
 	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
 	vrg *rmn.VolumeReplicationGroup,
 	cluster string,
 	log logr.Logger,
@@ -2904,14 +2907,44 @@ func (r *DRPlacementControlReconciler) ensureDoNotDeletePVCAnnotation(
 		return nil // Only propagate the annotation if the VRG is in primary state
 	}
 
-	if drpc.GetAnnotations()[DoNotDeletePVCAnnotation] == DoNotDeletePVCAnnotationVal &&
-		vrg.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
+	if rmnutil.ResourceIsDeleted(placementObj) {
+		return nil // Propagate the annotation only if the Placement resource is NOT being deleted
+	}
+
+	if IsRamenPlacementScheduler(placementObj) {
+		return nil // If Ramen is still the scheduler, no need to propagate the annotation
+	}
+
+	// Ramen is no longer the scheduler. We need to make sure the annotation exists; otherwise, the process will wait.
+	if drpc.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
+		return fmt.Errorf("do-not-delete-pvc annotation not yet applied to the DRPC")
+	}
+
+	// Check whether the annotation is already set on the VRG. If it is, no action is needed.
+	// If not, propagate the annotation to the VRG.
+	if vrg.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
 		err := propagateAnnotationToVRG(mwu, cluster, DoNotDeletePVCAnnotation, DoNotDeletePVCAnnotationVal, log)
 
 		return fmt.Errorf("annotation hasn't been propagated to cluster %s (%w)", cluster, err)
 	}
 
 	return nil
+}
+
+func IsRamenPlacementScheduler(placementObj client.Object) bool {
+	switch obj := placementObj.(type) {
+	case *plrv1.PlacementRule:
+		scName := obj.Spec.SchedulerName
+		if scName == RamenScheduler {
+			return true
+		}
+	case *clrapiv1beta1.Placement:
+		if val, ok := obj.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; ok && val == "true" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // propagateAnnotationToVRG adds or updates a specific annotation on a VRG resource in the ManifestWork

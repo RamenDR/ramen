@@ -8,6 +8,7 @@ from drenv import commands
 from drenv import ramen
 
 RAMEN_NAMESPACE = "ramen-system"
+DRPOLICY_INTERVALS = ["1m", "5m"]
 SOURCE_DIR = "."
 
 log = logging.getLogger("ramendev")

@@ -12,9 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	gomegatypes "github.com/onsi/gomega/types"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	controllers "github.com/ramendr/ramen/internal/controller"
-	"github.com/ramendr/ramen/internal/controller/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -25,6 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	controllers "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("VolumeReplicationGroupRecipe", func() {

@@ -34,6 +34,8 @@ UNSUPPORTED_OPTIONS = (
     "service_cluster_ip_range",
 )
 
+LOCAL_REGISTRY = "host.lima.internal:5050"
+
 # limactl delete is racy, trying to access lima.yaml in other clusters and
 # fails when the files are deleted by another limactl process. Until limactl is
 # fixed, ensure only single concurent delete.
@@ -61,16 +63,18 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False, timeout=None):
+def start(profile, verbose=False, timeout=None, local_registry=False):
     start = time.monotonic()
     logging.info("[%s] Starting lima cluster", profile["name"])
 
+    existing = True
     if not exists(profile):
+        existing = False
         _log_unsupported_options(profile)
         with tempfile.NamedTemporaryFile(
             prefix=f"drenv.lima.{profile['name']}.tmp",
         ) as tmp:
-            _write_config(profile, tmp.name)
+            _write_config(profile, tmp.name, local_registry=local_registry)
             _create_vm(profile, tmp.name)
 
     # Get vm before starting to detect a stopped vm.
@@ -82,7 +86,7 @@ def start(profile, verbose=False, timeout=None):
     debug = partial(logging.debug, f"[{profile['name']}] %s")
     cluster.wait_until_ready(profile["name"], timeout=30, log=debug)
 
-    if vm["status"] == STOPPED:
+    if existing and vm["status"] == STOPPED:
         # We have random failures (e.g. ocm webooks) when starting a stopped
         # cluster. Until we find A better way, try to wait give the system
         # more time to become stable.
@@ -171,7 +175,7 @@ def _log_unsupported_options(profile):
             )
 
 
-def _write_config(profile, path):
+def _write_config(profile, path, local_registry=False):
     """
     Create vm config for profile at path.
     """
@@ -195,6 +199,9 @@ def _write_config(profile, path):
     config["disk"] = profile["disk_size"]
 
     config["additionalDisks"] = _create_additional_disks(profile)
+
+    if local_registry:
+        config["param"]["LOCAL_REGISTRY"] = LOCAL_REGISTRY
 
     with open(path, "w") as f:
         yaml.dump(config, f)

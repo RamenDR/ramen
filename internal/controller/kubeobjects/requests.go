@@ -110,6 +110,9 @@ type HookSpec struct {
 	Timeout   int   `json:"timeout,omitempty"`
 	Essential *bool `json:"essential,omitempty"`
 
+	// Flag to skip a Hook.
+	SkipHookIfNotPresent bool `json:"skipHookIfNotPresent,omitempty"`
+
 	Op Operation `json:"operation,omitempty"`
 
 	Chk Check `json:"check,omitempty"`

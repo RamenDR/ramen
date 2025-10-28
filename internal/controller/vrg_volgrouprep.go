@@ -8,9 +8,8 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/go-logr/logr"
-
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +19,11 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
+)
+
+const (
+	groupReplicationSecretName      = "replication.storage.openshift.io/group-replication-secret-name"
+	groupReplicationSecretNamespace = "replication.storage.openshift.io/group-replication-secret-namespace"
 )
 
 //nolint:gocognit,cyclop,funlen
@@ -398,7 +402,7 @@ func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool
 		return reset, nil
 	}
 
-	err := rmnutil.NewResourceUpdater(pvc).AddLabel(ConsistencyGroupLabel, "").Update(v.ctx, v.reconciler.Client)
+	err := rmnutil.NewResourceUpdater(pvc).AddLabel(rmnutil.ConsistencyGroupLabel, "").Update(v.ctx, v.reconciler.Client)
 	if err != nil {
 		return !reset, fmt.Errorf("error (%s) updating PVC labels", err)
 	}
@@ -409,14 +413,14 @@ func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool
 // getVGRUsingSCLabel fetches the VGR that is protecting the PVC using the SC and VGRC labels, it is useful when the CG
 // label is present without a correlating value to construuct the VGR name
 func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*volrep.VolumeGroupReplication, error) {
-	rID, err := v.getVGRClassReplicationID(pvc)
+	grID, err := v.getVGRClassReplicationID(pvc)
 	if err != nil {
 		// Error is masked here, as caller expects k8serrors regarding vgr resource
 		return nil, fmt.Errorf("error determining replicationID")
 	}
 
 	vgrNamespacedName := types.NamespacedName{
-		Name:      rmnutil.TrimToK8sResourceNameLength(rID + v.instance.Name),
+		Name:      rmnutil.CreateVGRName(grID, v.instance.Name),
 		Namespace: pvc.Namespace,
 	}
 
@@ -428,21 +432,21 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 
 // getVGRClassReplicationID is a utility function that fetches the replicationID for the PVC looking at the class labels
 func (v *VRGInstance) getVGRClassReplicationID(pvc *corev1.PersistentVolumeClaim) (string, error) {
-	vgrClass, err := v.selectVolumeReplicationClass(pvc, true)
+	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
 	if err != nil {
 		return "", err
 	}
 
-	replicationID, ok := vgrClass.GetLabels()[ReplicationIDLabel]
+	groupReplicationID, ok := storageClass.GetLabels()[GroupReplicationIDLabel]
 	if !ok {
-		v.log.Info(fmt.Sprintf("VolumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
+		v.log.Info(fmt.Sprintf("StorageClass %s is missing groupReplicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName()))
 
-		return "", fmt.Errorf("volumeGroupReplicationClass %s is missing replicationID for PVC %s/%s",
-			vgrClass.GetName(), pvc.GetNamespace(), pvc.GetName())
+		return "", fmt.Errorf("storageClass %s is missing groupReplicationID for PVC %s/%s",
+			storageClass.GetName(), pvc.GetNamespace(), pvc.GetName())
 	}
 
-	return replicationID, nil
+	return groupReplicationID, nil
 }
 
 // ensurePVCUnprotected returns true if the passed in PVC is not protected by the vgr
@@ -471,8 +475,8 @@ func (v *VRGInstance) deleteVGRIfUnused(vgr *volrep.VolumeGroupReplication) erro
 		return nil
 	}
 
-	err := v.reconciler.Delete(v.ctx, vgr)
-	if err != nil && !k8serrors.IsNotFound(err) {
+	vrNamespacedName := types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}
+	if err := v.deleteVGR(vrNamespacedName, v.log); err != nil {
 		return err
 	}
 	// TODO: Delete VGR from S3 store
@@ -619,7 +623,7 @@ func (v *VRGInstance) reconcileMissingVGR(vrNamespacedName types.NamespacedName,
 }
 
 func (v *VRGInstance) isCGEnabled(pvc *corev1.PersistentVolumeClaim) (string, bool) {
-	cg, ok := pvc.GetLabels()[ConsistencyGroupLabel]
+	cg, ok := pvc.GetLabels()[rmnutil.ConsistencyGroupLabel]
 
 	return cg, ok && rmnutil.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader)
 }
@@ -781,13 +785,13 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 		volumeReplicationClassName = volumeReplicationClass.GetName()
 	}
 
-	cg, ok := pvcs[0].GetLabels()[ConsistencyGroupLabel]
+	cg, ok := pvcs[0].GetLabels()[rmnutil.ConsistencyGroupLabel]
 	if !ok {
 		return fmt.Errorf("failed to create VolumeGroupReplication (%s/%s) %w",
 			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
 	}
 
-	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, ConsistencyGroupLabel, cg)
+	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, rmnutil.ConsistencyGroupLabel, cg)
 
 	volRep := &volrep.VolumeGroupReplication{
 		ObjectMeta: metav1.ObjectMeta{
@@ -805,6 +809,8 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 			},
 		},
 	}
+
+	rmnutil.AddLabel(volRep, rmnutil.CreatedByRamenLabel, "true")
 
 	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
 		// This is to keep existing behavior of ramen.
@@ -974,7 +980,7 @@ func (v *VRGInstance) restoreVGRCsFromObjectStore(objectStore ObjectStorer, s3Pr
 		return 0, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
-	return restoreClusterDataObjects(v, vgrcList, "VGRC", cleanupVGRCForRestore, v.validateExistingVGRC)
+	return restoreClusterDataObjects(v, vgrcList, "VGRC", v.cleanupVGRCForRestore, v.validateExistingVGRC)
 }
 
 func (v *VRGInstance) restoreVGRsFromObjectStore(objectStore ObjectStorer, s3ProfileName string) (int, error) {
@@ -1052,11 +1058,11 @@ func (v *VRGInstance) validateExistingVGR(vgr *volrep.VolumeGroupReplication) er
 	return nil
 }
 
-func cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+func (v *VRGInstance) cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
 	vgrc.ResourceVersion = ""
 	vgrc.Spec.VolumeGroupReplicationRef = nil
 
-	return nil
+	return v.processVGRCSecrets(vgrc)
 }
 
 func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) error {
@@ -1070,6 +1076,27 @@ func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) e
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				vgr.GetName(), vgr.GetNamespace(), err)
 		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) processVGRCSecrets(vgrc *volrep.VolumeGroupReplicationContent) error {
+	vgrclass := &volrep.VolumeGroupReplicationClass{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: vgrc.Spec.VolumeGroupReplicationClassName}, vgrclass)
+	if err != nil {
+		return err
+	}
+
+	secretName := vgrclass.Spec.Parameters[groupReplicationSecretName]
+	if secretName != "" {
+		rmnutil.AddAnnotation(vgrc, groupReplicationSecretName, secretName)
+	}
+
+	secretNamespace := vgrclass.Spec.Parameters[groupReplicationSecretNamespace]
+	if secretNamespace != "" {
+		rmnutil.AddAnnotation(vgrc, groupReplicationSecretNamespace, secretNamespace)
 	}
 
 	return nil

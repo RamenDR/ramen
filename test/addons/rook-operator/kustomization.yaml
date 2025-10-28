@@ -4,9 +4,9 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://raw.githubusercontent.com/rook/rook/release-1.17/deploy/examples/crds.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.17/deploy/examples/common.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.17/deploy/examples/operator.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/crds.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/common.yaml
+  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/operator.yaml
 
 patches:
   - target:
@@ -20,6 +20,12 @@ patches:
       - op: add
         path: /data/CSI_ENABLE_OMAP_GENERATOR
         value: 'true'
+      # Rook now uses ceph-csi-operator to deploy CSI by default.
+      # Ramen is not yet configured to use ceph-csi-operator,
+      # so this flag is still required until that is done.
+      - op: replace
+        path: /data/ROOK_USE_CSI_OPERATOR
+        value: 'false'
   # Disable to avoid random failures when restaring the enviroment.
   #   failed to call webhook:
   #   Post "https://rook-ceph-admission-controller.rook-ceph.svc:443/
@@ -41,3 +47,5 @@ patches:
                 env:
                   - name: ROOK_DISABLE_ADMISSION_CONTROLLER
                     value: 'true'
+                  - name: ROOK_CSIADDONS_IMAGE
+                    value: quay.io/nladha/csiaddons-sidecar:cg

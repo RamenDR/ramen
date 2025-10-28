@@ -18,7 +18,7 @@ patches:
       spec:
         config:
           insecureRegistries:
-            - host.minikube.internal:5000
+            - host.minikube.internal:5050
   # Incrase certificate duration to avoid certificates renewals while a cluster
   # is suspended and resumed.
   - target:

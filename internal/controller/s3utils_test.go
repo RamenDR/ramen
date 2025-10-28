@@ -16,9 +16,10 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type fakeObjectStoreGetter struct{}

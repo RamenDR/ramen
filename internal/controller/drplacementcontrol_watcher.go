@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -26,7 +27,6 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
-	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 )
 
 func ManifestWorkPredicateFunc() predicate.Funcs {

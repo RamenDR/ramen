@@ -6,8 +6,9 @@ package controllers
 import (
 	"time"
 
-	"github.com/ramendr/ramen/internal/controller/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 // VRG status condition types.  These condition are applicable at the VRG

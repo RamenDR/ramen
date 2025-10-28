@@ -6,11 +6,12 @@ package controllers
 import (
 	"fmt"
 
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error {

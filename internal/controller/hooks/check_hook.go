@@ -7,14 +7,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
 type CheckHook struct {
@@ -31,11 +36,19 @@ func (c CheckHook) Execute(log logr.Logger) error {
 	}
 
 	hookName := c.Hook.Name + "/" + c.Hook.Chk.Name
-	log.Info("check hook executed successfully", "hook", hookName, "result", hookResult)
+
+	if !hookResult && c.Hook.SkipHookIfNotPresent {
+		log.Info("check hook skipped due to skip flag for", "hook", hookName, "resource type",
+			c.Hook.SelectResource)
+
+		return nil
+	}
 
 	if !hookResult && shouldChkHookBeFailedOnError(c.Hook) {
 		return fmt.Errorf("stopping workflow as hook %s failed", c.Hook.Name)
 	}
+
+	log.Info("check hook executed successfully", "hook", hookName, "result", hookResult)
 
 	return nil
 }
@@ -71,6 +84,10 @@ func EvaluateCheckHook(k8sReader client.Reader, hook *kubeobjects.HookSpec, log 
 	for int(pollInterval.Seconds()) < timeout {
 		select {
 		case <-ctx.Done():
+			if hook.SkipHookIfNotPresent {
+				return false, nil
+			}
+
 			return false, fmt.Errorf("no resource found with nameSelector %s and labelSelector %s: %w",
 				hook.NameSelector, hook.LabelSelector, ctx.Err())
 		case <-ticker.C:
@@ -142,7 +159,7 @@ func ConvertClientObjectToMap(obj client.Object) (map[string]interface{}, error)
 func getResourcesList(k8sReader client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) ([]client.Object, error) {
 	resourceList := make([]client.Object, 0)
 
-	objList, err := getObjectListBasedOnResourceType(hook.SelectResource)
+	uList, err := validateAndGetUnstructedListBasedOnType(hook.SelectResource)
 	if err != nil {
 		return resourceList, fmt.Errorf("error getting object list based on resource type: %w", err)
 	}
@@ -150,7 +167,7 @@ func getResourcesList(k8sReader client.Reader, hook *kubeobjects.HookSpec, log l
 	if hook.NameSelector != "" {
 		log.Info("getting resources using nameSelector", "nameSelector", hook.NameSelector)
 
-		selectorType, objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sReader, hook, objList)
+		selectorType, objsUsingNameSelector, err := getResourcesUsingNameSelector(k8sReader, hook, uList)
 		if err != nil {
 			return resourceList, fmt.Errorf("error getting resources using nameSelector: %w", err)
 		}
@@ -162,65 +179,126 @@ func getResourcesList(k8sReader client.Reader, hook *kubeobjects.HookSpec, log l
 	if hook.LabelSelector != nil {
 		log.Info("getting resources using labelSelector", "labelSelector", hook.LabelSelector)
 
-		err := getResourcesUsingLabelSelector(k8sReader, hook, objList)
+		err := getResourcesUsingLabelSelector(k8sReader, hook, uList)
 		if err != nil {
 			return resourceList, fmt.Errorf("error getting resources using labelSelector: %w", err)
 		}
 
-		objsUsingLabelSelector := getObjectsBasedOnType(objList)
+		objsUsingLabelSelector := getObjectsBasedOnType(uList)
 		resourceList = append(resourceList, objsUsingLabelSelector...)
 	}
 
 	return resourceList, nil
 }
 
-func getObjectListBasedOnResourceType(selectResource string) (client.ObjectList, error) {
-	switch selectResource {
-	case podType:
-		return &corev1.PodList{}, nil
-	case deploymentType:
-		return &appsv1.DeploymentList{}, nil
-	case statefulsetType:
-		return &appsv1.StatefulSetList{}, nil
-	default:
-		return nil, fmt.Errorf("unsupported resource type %s", selectResource)
+func validateAndGetUnstructedListBasedOnType(resourceType string) (*unstructured.UnstructuredList, error) {
+	const three = 3
+
+	resourceParts := strings.Split(resourceType, "/")
+	if len(resourceParts) != 1 && len(resourceParts) != three {
+		return nil, fmt.Errorf("invalid resource type, supported resource types are pod/deployment/statefulset," +
+			"plural resource names for core or custom resource in the format <apiGroup>/<apiVersion>/<resourceName>")
 	}
+
+	list := &unstructured.UnstructuredList{}
+
+	// process resource given as one of the predefined types pod, deployment or statefulset
+	gvkMap := prepareMapForDefinedTypes()
+	if gvk, ok := gvkMap[resourceType]; ok {
+		list.SetGroupVersionKind(gvk)
+
+		return list, nil
+	}
+
+	mapper, err := getRestMapper()
+	if err != nil {
+		return list, err
+	}
+
+	// process resource given in the format <apiGroup>/<apiVersion>/<resource>
+	if len(resourceParts) == three {
+		gvr := schema.GroupVersionResource{
+			Group:    resourceParts[0],
+			Version:  resourceParts[1],
+			Resource: resourceParts[2],
+		}
+
+		gvk, err := convertGVRToGVK(mapper, gvr)
+		if err != nil {
+			return list, err
+		}
+
+		list.SetGroupVersionKind(*gvk)
+
+		return list, nil
+	}
+
+	// process resources given as serviceaccounts etc which belong to core apis
+	gvr := schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: resourceType,
+	}
+
+	gvk, err := convertGVRToGVK(mapper, gvr)
+	if err != nil {
+		return list, fmt.Errorf("unrecognized core resource or invalid format: %w", err)
+	}
+
+	list.SetGroupVersionKind(*gvk)
+
+	return list, nil
 }
 
-func getMatchingPods(pList *corev1.PodList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range pList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
+func prepareMapForDefinedTypes() map[string]schema.GroupVersionKind {
+	gvkMap := make(map[string]schema.GroupVersionKind)
+	gvkMap["pod"] = schema.GroupVersionKind{
+		Group:   "",
+		Version: "v1",
+		Kind:    "Pod",
 	}
 
-	return objs
+	gvkMap["deployment"] = schema.GroupVersionKind{
+		Group:   "apps",
+		Version: "v1",
+		Kind:    "Deployment",
+	}
+
+	gvkMap["statefulset"] = schema.GroupVersionKind{
+		Group:   "apps",
+		Version: "v1",
+		Kind:    "StatefulSet",
+	}
+
+	return gvkMap
 }
 
-func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range dList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
+func getRestMapper() (meta.RESTMapper, error) {
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
 	}
 
-	return objs
+	dc, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	apiGroupResources, err := restmapper.GetAPIGroupResources(dc)
+	if err != nil {
+		return nil, err
+	}
+
+	return restmapper.NewDiscoveryRESTMapper(apiGroupResources), nil
 }
 
-func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
-	objs := make([]client.Object, 0)
-
-	for _, pod := range ssList.Items {
-		if re.MatchString(pod.Name) {
-			objs = append(objs, &pod)
-		}
+func convertGVRToGVK(mapper meta.RESTMapper, gvr schema.GroupVersionResource) (*schema.GroupVersionKind, error) {
+	gvk, err := mapper.KindFor(gvr)
+	if err != nil {
+		return nil, err
 	}
 
-	return objs
+	return &gvk, nil
 }
 
 func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
