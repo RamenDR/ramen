@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -28,9 +29,11 @@ import (
 )
 
 const (
-	WorkflowAnyError       = "any-error"
-	WorkflowEssentialError = "essential-error"
-	WorkflowFullError      = "full-error"
+	WorkflowAnyError         = "any-error"
+	WorkflowEssentialError   = "essential-error"
+	WorkflowFullError        = "full-error"
+	veleroDeployment         = "velero"
+	kubevirtVeleroPluginName = "kubevirt-velero-plugin"
 )
 
 func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.CaptureSpec {
@@ -166,6 +169,10 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 		return recipeElements, fmt.Errorf("recipe %v namespaces validation error: %w", recipeNamespacedName.String(), err)
 	}
 
+	if err := recipeVMBackupValidate(ctx, reader, recipeElements, vrg, ramenConfig, log); err != nil {
+		return recipeElements, fmt.Errorf("recipe %v VM backup validation error: %w", recipeNamespacedName.String(), err)
+	}
+
 	return recipeElements, nil
 }
 
@@ -191,6 +198,7 @@ func isRecipeReconcileToStop(parameters map[string][]string) bool {
 
 func getRecipeParameters(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) map[string][]string {
 	parameters := vrg.Spec.KubeObjectProtection.RecipeParameters
+
 	if vrg.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(ramenConfig) &&
 		vrg.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
 		parameters["VM_NAMESPACE"] = append(parameters["VM_NAMESPACE"], *vrg.Spec.ProtectedNamespaces...)
@@ -328,6 +336,89 @@ func recipeNamespacesValidate(recipeElements util.RecipeElements, vrg ramen.Volu
 
 	// vrg is in the ramen operator namespace, allow it to protect any namespace
 	return nil
+}
+
+func recipeVMBackupValidate(ctx context.Context, reader client.Reader, recipeElements util.RecipeElements,
+	vrg ramen.VolumeReplicationGroup,
+	ramenConfig ramen.RamenConfig, log logr.Logger,
+) error {
+	vmProtection := isProtectingVirtualMachine(recipeElements, vrg, log)
+
+	if !vmProtection {
+		return nil
+	}
+
+	if ramenConfig.KubeObjectProtection.VeleroNamespaceName != "" ||
+		len(ramenConfig.KubeObjectProtection.VeleroNamespaceName) > 0 {
+		if isKubeVirtEnabled(ctx, reader, ramenConfig, log) {
+			return nil
+		}
+
+		return fmt.Errorf("kubevirt plugin is disabled, hence VM resources backup/restore might not succeed")
+	}
+
+	log.Info("Velero is not used for discovered app DR")
+
+	return nil
+}
+
+func isProtectingVirtualMachine(recipeElements util.RecipeElements, vrg ramen.VolumeReplicationGroup,
+	log logr.Logger,
+) bool {
+	if vrg.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
+		log.Info("Recipe protects VM resources")
+
+		return true
+	}
+
+	// ToDO: Add validatation on recipe protecting VMs without using inbuilt VM-recipe
+	for _, group := range recipeElements.RecipeWithParams.Spec.Groups {
+		if len(group.IncludedResourceTypes) > 0 {
+			for _, resourceTypes := range group.IncludedResourceTypes {
+				if strings.Contains(strings.ToLower(resourceTypes), "virtualmachine") {
+					log.Info("Recipe protects VM resources")
+
+					return true
+				}
+			}
+		}
+	}
+
+	log.Info("Recipe is not protecting VM resource")
+
+	return false
+}
+
+func isKubeVirtEnabled(ctx context.Context, reader client.Reader,
+	ramenConfig ramen.RamenConfig, log logr.Logger,
+) bool {
+	log.Info("Checking if kubevirt is enabled")
+	// Read Velero deployment and check if kubevirt plugin is enabled
+	var veleroDeploy appsv1.Deployment
+
+	veleroLookUpKey := types.NamespacedName{
+		Name:      veleroDeployment,
+		Namespace: ramenConfig.KubeObjectProtection.VeleroNamespaceName,
+	}
+	// Fetch the Velero deployment
+	if err := reader.Get(ctx, veleroLookUpKey, &veleroDeploy); err != nil {
+		log.Error(err, "failed to get Velero deployment")
+
+		return false
+	}
+
+	// Go through InitContainers to check if kubevirt plugin is enabled
+	for _, ic := range veleroDeploy.Spec.Template.Spec.InitContainers {
+		if strings.Contains(ic.Name, kubevirtVeleroPluginName) {
+			log.Info("kubevirt is enabled")
+
+			return true
+		}
+	}
+
+	log.Info("kubevirt is not enabled")
+
+	return false
 }
 
 func recipeNamespaceNames(recipeElements util.RecipeElements) sets.Set[string] {
