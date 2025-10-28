@@ -333,6 +333,8 @@ var _ = Describe("VolSync_Handler", func() {
 	})
 
 	Describe("Reconcile ReplicationDestination", func() {
+		pvcCapacity := resource.MustParse("1Gi")
+
 		Context("When reconciling RDSpec", func() {
 			capacity := resource.MustParse("2Gi")
 
@@ -421,6 +423,13 @@ var _ = Describe("VolSync_Handler", func() {
 							return k8sClient.Get(ctx, client.ObjectKeyFromObject(rs), rs)
 						}, maxWait, interval).Should(Succeed())
 
+						createDummyPVCAndMountingPod(
+							rdSpec.ProtectedPVC.Name,
+							rdSpec.ProtectedPVC.Namespace,
+							pvcCapacity,
+							nil,
+							corev1.PodRunning,
+							true)
 						// Run ReconcileRD
 						var err error
 						_, err = vsHandler.ReconcileRD(rdSpec, nil)
@@ -438,6 +447,13 @@ var _ = Describe("VolSync_Handler", func() {
 
 				Context("When reconciling RD with no previous RS", func() {
 					JustBeforeEach(func() {
+						createDummyPVCAndMountingPod(
+							rdSpec.ProtectedPVC.Name,
+							rdSpec.ProtectedPVC.Namespace,
+							pvcCapacity,
+							nil,
+							corev1.PodRunning,
+							true)
 						// Run ReconcileRD
 						var err error
 						returnedRD, err = vsHandler.ReconcileRD(rdSpec, nil)
@@ -451,8 +467,8 @@ var _ = Describe("VolSync_Handler", func() {
 							}, createdRD)
 						}, maxWait, interval).Should(Succeed())
 
-						// Expect the RD should be owned by owner
-						Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeTrue())
+						// Expect the RD shouldn't be owned by owner
+						Expect(!ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeTrue())
 
 						// Check common fields
 						Expect(createdRD.Spec.RsyncTLS).NotTo(BeNil())
@@ -1408,11 +1424,36 @@ var _ = Describe("VolSync_Handler", func() {
 					}, dummyPSKSecretOtherOwner)
 			}, maxWait, interval).Should(Succeed())
 
+			capacity := pvcCapacity // already defined
+
+			for _, rdSpec := range rdSpecList {
+				createDummyPVCAndMountingPod(
+					rdSpec.ProtectedPVC.Name,
+					rdSpec.ProtectedPVC.Namespace,
+					capacity,
+					nil,
+					corev1.PodRunning,
+					true,
+				)
+			}
+
 			for _, rdSpec := range rdSpecList {
 				// create RDs using our vsHandler
 				_, err := vsHandler.ReconcileRD(rdSpec, nil)
 				Expect(err).NotTo(HaveOccurred())
 			}
+
+			for _, rdSpec := range rdSpecListOtherOwner {
+				createDummyPVCAndMountingPod(
+					rdSpec.ProtectedPVC.Name,
+					rdSpec.ProtectedPVC.Namespace,
+					capacity,
+					nil,
+					corev1.PodRunning,
+					true,
+				)
+			}
+
 			for _, rdSpecOtherOwner := range rdSpecListOtherOwner {
 				// create other RDs using another vsHandler (will be owned by another VRG)
 				_, err := otherVSHandler.ReconcileRD(rdSpecOtherOwner, nil)
