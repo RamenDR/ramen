@@ -41,6 +41,9 @@ const (
 	VGSCRDPrivateName = "volumegroupsnapshots.groupsnapshot.storage.openshift.io"
 	VGSCRDName        = "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
 	VGRCRDName        = "volumegroupreplications.replication.storage.openshift.io"
+
+	VRGOwnerNameLabel      string = "volumereplicationgroups-owner"
+	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
 )
 
 type ResourceUpdater struct {

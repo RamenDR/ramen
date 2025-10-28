@@ -199,7 +199,7 @@ func IsRDExist(rdspec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 }
 
 func DeferDeleteImage(ctx context.Context,
-	k8sClient client.Client, imageName, imageNamespace, rgdName string,
+	k8sClient client.Client, imageName, imageNamespace, rgdName, vrgName, vrgNamespace string,
 ) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		volumeSnapshot := &vsv1.VolumeSnapshot{}
@@ -216,6 +216,8 @@ func DeferDeleteImage(ctx context.Context,
 
 		labels[ramenutils.DoNotDeleteLabelKey] = "true"
 		labels[RGDOwnerLabel] = rgdName
+		labels[VRGOwnerNameLabel] = vrgName
+		labels[VRGOwnerNamespaceLabel] = vrgNamespace
 		volumeSnapshot.SetLabels(labels)
 
 		return k8sClient.Update(ctx, volumeSnapshot)
