@@ -1901,8 +1901,8 @@ func (v *VRGInstance) updateProtectedCGsForVolSync(pvcGroups *[]ramendrv1alpha1.
 	var rgss ramendrv1alpha1.ReplicationGroupSourceList
 
 	matchLabels := map[string]string{
-		volsync.VRGOwnerNameLabel:      v.instance.Name,
-		volsync.VRGOwnerNamespaceLabel: v.instance.Namespace,
+		util.VRGOwnerNameLabel:      v.instance.Name,
+		util.VRGOwnerNamespaceLabel: v.instance.Namespace,
 	}
 
 	listOptions := []client.ListOption{
