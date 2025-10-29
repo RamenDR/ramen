@@ -205,11 +205,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 
 		if v.undoPVCFinalizersAndPVRetention(pvc, log) {
 			requeue = true
-
-			continue
 		}
-
-		v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 	}
 
 	v.reconcileVolGroupRepsAsSecondary(&requeue, groupPVCs)
@@ -565,6 +561,8 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 			pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
+	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
+
 	log1.Info("Deleted ramen annotations, labels, and finallizers from PersistentVolumeClaim",
 		"annotations", pvc.GetAnnotations(), "labels", pvc.GetLabels(), "finalizers", pvc.GetFinalizers())
 
@@ -877,12 +875,6 @@ func (v *VRGInstance) pvcUnprotectVolRep(pvc corev1.PersistentVolumeClaim, log l
 	} else {
 		v.pvcsUnprotectVolRep([]corev1.PersistentVolumeClaim{pvc})
 	}
-
-	if v.result.Requeue {
-		return
-	}
-
-	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
 
 //nolint:funlen,gocognit,cyclop
