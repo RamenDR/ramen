@@ -1782,14 +1782,16 @@ var _ = Describe("DRPlacementControl - Ensure do-not-delete PVC Annotation", fun
 
 	testEnsureAnnotation := func(plType PlacementType) {
 		resourceType := "UserPlacement"
+		placementName := UserPlacementName
 		if plType == UsePlacementRule {
 			resourceType = "UserPlacementRule"
+			placementName = UserPlacementRuleName
 		}
 
 		It(fmt.Sprintf("Should handle annotation propagation for %s", resourceType), func(ctx SpecContext) {
 			placementObj, drpc := InitialDeploymentAsync(
 				DefaultDRPCNamespace,
-				UserPlacementRuleName,
+				placementName,
 				East1ManagedCluster,
 				plType, // UsePlacementRule or UsePlacement
 			)
@@ -1862,6 +1864,12 @@ var _ = Describe("DRPlacementControl - Ensure do-not-delete PVC Annotation", fun
 			// Final success case
 			err = controllers.EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, East1ManagedCluster, mwu.Log)
 			Expect(err).To(BeNil())
+
+			if plType == UsePlacementRule {
+				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+			} else {
+				deleteUserPlacement()
+			}
 
 			deleteDRPC()
 		})
@@ -2398,7 +2406,6 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("HubRecovery: DRAction is Initial deploy -> Primary Down", func() {
 			It("Should pause and wait for user to trigger a failover. Primary East1ManagedCluster", func() {
 				setClusterDown(East1ManagedCluster)
-				clearFakeUserPlacementRuleStatus(UserPlacementRuleName, DefaultDRPCNamespace)
 				clearDRPCStatus()
 				expectedAction := rmn.DRAction("")
 				expectedPhase := rmn.WaitForUser
