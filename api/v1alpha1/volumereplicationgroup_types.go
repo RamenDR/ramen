@@ -17,7 +17,7 @@ const (
 	// Promote the protected PVCs to primary
 	Primary ReplicationState = "primary"
 
-	// Demote the proteced PVCs to secondary
+	// Demote the protected PVCs to secondary
 	Secondary ReplicationState = "secondary"
 )
 
