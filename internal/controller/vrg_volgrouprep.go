@@ -93,14 +93,6 @@ func (v *VRGInstance) reconcileVolGroupRepsAsSecondary(requeue *bool,
 
 		if v.undoPVCFinalizersAndPVRetentionForVGR(vgrNamespacedName, pvcs, log) {
 			*requeue = true
-
-			continue
-		}
-
-		for idx := range pvcs {
-			pvc := pvcs[idx]
-
-			v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 		}
 	}
 }
