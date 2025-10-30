@@ -996,8 +996,6 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 }
 
 func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim) {
-	v.log.Info("separating PVC using only sc provisioner")
-
 	replicationClassMatchFound := false
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1023,8 +1021,6 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
-	v.log.Info("separate PVC using peerClasses")
-
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
 		return err
