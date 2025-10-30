@@ -500,7 +500,12 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 
 	// Remote service address created for the ReplicationDestination on the secondary
 	// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
-	remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	remoteAddress, err := v.resolveRemoteAddress(rsSpec)
+	if err != nil {
+		l.Error(err, "unable to resolve remote address")
+
+		return nil, err
+	}
 
 	rs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
@@ -569,6 +574,25 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	l.V(1).Info("ReplicationSource createOrUpdate Complete", "op", op)
 
 	return rs, nil
+}
+
+func (v *VSHandler) resolveRemoteAddress(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec) (string, error) {
+	if util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		// Remote service address created for the ReplicationDestination on the secondary
+		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
+		remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		v.log.Info("Using Submariner remote address", "remoteAddress", remoteAddress)
+
+		return remoteAddress, nil
+	}
+
+	if rsSpec.RsyncTLS == nil {
+		return "", fmt.Errorf("rsSpec.RsyncTLS is nil for PVC %s", rsSpec.ProtectedPVC.Name)
+	}
+
+	v.log.Info("Using direct TLS remote address", "remoteAddress", rsSpec.RsyncTLS.Address)
+
+	return rsSpec.RsyncTLS.Address, nil
 }
 
 //nolint:cyclop
