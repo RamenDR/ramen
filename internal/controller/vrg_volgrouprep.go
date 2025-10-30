@@ -769,8 +769,7 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], true)
 	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeGroupReplicationClass (%s) %w",
-			v.instance.Name, err)
+		return err
 	}
 
 	volumeReplicationClassName := ""
@@ -778,8 +777,7 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	if !offloaded {
 		volumeReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], false)
 		if err != nil {
-			return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-				v.instance.Name, err)
+			return err
 		}
 
 		volumeReplicationClassName = volumeReplicationClass.GetName()
