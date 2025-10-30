@@ -309,8 +309,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	_, err = v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
 	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+		return err
 	}
 
 	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
@@ -343,8 +342,7 @@ func (v *VRGInstance) setPVCStorageIdentifiers(
 	// VRC will be present (is a pre-requisite)
 	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
 	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+		return err
 	}
 
 	protectedPVC.StorageIdentifiers.StorageProvisioner = storageClass.Provisioner
@@ -1328,8 +1326,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 
 	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
 	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+		return err
 	}
 
 	volRep := &volrep.VolumeReplication{
@@ -1498,9 +1495,6 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 		return nil, fmt.Errorf("no %s found to match provisioner and schedule", objType)
 	case 1:
-		v.log.Info(fmt.Sprintf("Found %s that matches provisioner and schedule %s/%s", objType,
-			storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
-
 		return matchingReplicationClassList[0], nil
 	}
 
