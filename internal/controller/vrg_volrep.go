@@ -1493,9 +1493,6 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 		return nil, fmt.Errorf("no %s found to match provisioner and schedule", objType)
 	case 1:
-		v.log.Info(fmt.Sprintf("Found %s that matches provisioner and schedule %s/%s", objType,
-			storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
-
 		return matchingReplicationClassList[0], nil
 	}
 
