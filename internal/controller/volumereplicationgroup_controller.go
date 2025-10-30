@@ -190,7 +190,8 @@ func pvcPredicateFunc() predicate.Funcs {
 	pvcPredicate := predicate.Funcs{
 		// NOTE: Create predicate is retained, to help with logging the event
 		CreateFunc: func(e event.CreateEvent) bool {
-			log.Info("Create event for PersistentVolumeClaim")
+			o := e.Object
+			log.Info("PVC created", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -208,13 +209,13 @@ func pvcPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info("Update event for PersistentVolumeClaim")
+			log.Info("PVC updated", "namespace", oldPVC.GetNamespace(), "name", oldPVC.GetName())
 
 			return updateEventDecision(oldPVC, newPVC, log)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			o := e.Object
-			log.Info("PVC Delete", "namespace", o.GetNamespace(), "name", o.GetName())
+			log.Info("PVC deleted", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
