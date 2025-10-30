@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 	v1 "k8s.io/api/core/v1"
 	v1a "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +37,7 @@ type FakeVolumeGroupSourceHandler struct {
 	cleanVolumeGroupSnapshotReturnsOnCall map[int]struct {
 		result1 error
 	}
-	CreateOrUpdateReplicationSourceForRestoredPVCsStub        func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, bool, error)
+	CreateOrUpdateReplicationSourceForRestoredPVCsStub        func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object, *ramendrv1alpha1.VolumeReplicationGroup, bool) ([]*v1.ObjectReference, bool, error)
 	createOrUpdateReplicationSourceForRestoredPVCsMutex       sync.RWMutex
 	createOrUpdateReplicationSourceForRestoredPVCsArgsForCall []struct {
 		arg1 context.Context
@@ -230,7 +231,7 @@ func (fake *FakeVolumeGroupSourceHandler) CleanVolumeGroupSnapshotReturnsOnCall(
 	}{result1}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(arg1 context.Context, arg2 string, arg3 []cephfscg.RestoredPVC, arg4 v1a.Object) ([]*v1.ObjectReference, bool, error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(arg1 context.Context, arg2 string, arg3 []cephfscg.RestoredPVC, arg4 v1a.Object, arg5 *ramendrv1alpha1.VolumeReplicationGroup, arg6 bool) ([]*v1.ObjectReference, bool, error) {
 	var arg3Copy []cephfscg.RestoredPVC
 	if arg3 != nil {
 		arg3Copy = make([]cephfscg.RestoredPVC, len(arg3))
@@ -246,10 +247,10 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 	}{arg1, arg2, arg3Copy, arg4})
 	stub := fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub
 	fakeReturns := fake.createOrUpdateReplicationSourceForRestoredPVCsReturns
-	fake.recordInvocation("CreateOrUpdateReplicationSourceForRestoredPVCs", []interface{}{arg1, arg2, arg3Copy, arg4})
+	fake.recordInvocation("CreateOrUpdateReplicationSourceForRestoredPVCs", []interface{}{arg1, arg2, arg3Copy, arg4, arg5, arg6})
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		return stub(arg1, arg2, arg3, arg4, arg5, arg6)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2, ret.result3
@@ -263,7 +264,7 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 	return len(fake.createOrUpdateReplicationSourceForRestoredPVCsArgsForCall)
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCalls(stub func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, bool, error)) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCalls(stub func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object, *ramendrv1alpha1.VolumeReplicationGroup, bool) ([]*v1.ObjectReference, bool, error)) {
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Lock()
 	defer fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub = stub
