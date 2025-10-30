@@ -348,8 +348,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		// this. If not found, then reconcile request would not be sent
 		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
-			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
-
 			continue
 		}
 
@@ -2246,8 +2244,6 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 
 	vgr, ok := obj.(*volrep.VolumeGroupReplication)
 	if !ok {
-		log.Info("map function received non-vgr resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2260,8 +2256,6 @@ func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj cl
 
 	vr, ok := obj.(*volrep.VolumeReplication)
 	if !ok {
-		log.Info("map function received non-vr resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2274,8 +2268,6 @@ func (r *VolumeReplicationGroupReconciler) RDMapFunc(ctx context.Context, obj cl
 
 	rd, ok := obj.(*volsyncv1alpha1.ReplicationDestination)
 	if !ok {
-		log.Info("map function received not a replication destination resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2288,8 +2280,6 @@ func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj cl
 
 	rs, ok := obj.(*volsyncv1alpha1.ReplicationSource)
 	if !ok {
-		log.Info("map function received not a replication source resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2302,8 +2292,6 @@ func (r *VolumeReplicationGroupReconciler) RGDMapFunc(ctx context.Context, obj c
 
 	rgd, ok := obj.(*ramendrv1alpha1.ReplicationGroupDestination)
 	if !ok {
-		log.Info("map function received not a replication group destination resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2316,8 +2304,6 @@ func (r *VolumeReplicationGroupReconciler) RGSMapFunc(ctx context.Context, obj c
 
 	rgs, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
 	if !ok {
-		log.Info("map function received not a replication group source resource")
-
 		return []reconcile.Request{}
 	}
 
