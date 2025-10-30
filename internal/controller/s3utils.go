@@ -140,7 +140,6 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 			string(secretAccessKey), ""),
 		Endpoint:         aws.String(s3Endpoint),
 		Region:           aws.String(s3Region),
-		DisableSSL:       aws.Bool(true),
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {
