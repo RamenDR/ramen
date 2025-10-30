@@ -352,18 +352,20 @@ var _ = Describe("VolSync_Handler", func() {
 
 			createdRD := &volsyncv1alpha1.ReplicationDestination{}
 			var returnedRD *volsyncv1alpha1.ReplicationDestination
+			var returnedRDInfo *ramendrv1alpha1.VolSyncReplicationDestinationInfo
 
 			Context("When the psk secret for volsync does not exist", func() {
 				JustBeforeEach(func() {
 					// Run ReconcileRD
 					var err error
 					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
-					returnedRD, err = vsHandler.ReconcileRD(rdSpec, nil)
-					Expect(err).ToNot(HaveOccurred())
+					returnedRD, returnedRDInfo, err = vsHandler.ReconcileRD(rdSpec, nil)
+					Expect(err).To(HaveOccurred())
 				})
 
 				It("Should return a nil replication destination and not create an RD yet", func() {
 					Expect(returnedRD).To(BeNil())
+					Expect(returnedRDInfo).To(BeNil())
 
 					// ReconcileRD should not have created the replication destination - since the secret isn't there
 					Consistently(func() error {
@@ -423,7 +425,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 						// Run ReconcileRD
 						var err error
-						_, err = vsHandler.ReconcileRD(rdSpec, nil)
+						_, _, err = vsHandler.ReconcileRD(rdSpec, nil)
 						Expect(err).ToNot(HaveOccurred())
 					})
 
@@ -440,7 +442,7 @@ var _ = Describe("VolSync_Handler", func() {
 					JustBeforeEach(func() {
 						// Run ReconcileRD
 						var err error
-						returnedRD, err = vsHandler.ReconcileRD(rdSpec, nil)
+						returnedRD, returnedRDInfo, err = vsHandler.ReconcileRD(rdSpec, nil)
 						Expect(err).ToNot(HaveOccurred())
 
 						// RD should be created with name=PVCName
@@ -1410,12 +1412,12 @@ var _ = Describe("VolSync_Handler", func() {
 
 			for _, rdSpec := range rdSpecList {
 				// create RDs using our vsHandler
-				_, err := vsHandler.ReconcileRD(rdSpec, nil)
+				_, _, err := vsHandler.ReconcileRD(rdSpec, nil)
 				Expect(err).NotTo(HaveOccurred())
 			}
 			for _, rdSpecOtherOwner := range rdSpecListOtherOwner {
 				// create other RDs using another vsHandler (will be owned by another VRG)
-				_, err := otherVSHandler.ReconcileRD(rdSpecOtherOwner, nil)
+				_, _, err := otherVSHandler.ReconcileRD(rdSpecOtherOwner, nil)
 				Expect(err).NotTo(HaveOccurred())
 			}
 
