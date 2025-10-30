@@ -332,8 +332,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	}
 
 	for _, vrg := range vrgs.Items {
-		log1 := log.WithValues("vrg", vrg.Name)
-
 		ctx := context.WithValue(context.Background(), util.RecipeElementsGetForPVC, "true")
 
 		pvcSelector, err := GetPVCSelector(ctx, reader, vrg, *ramenConfig, log)
@@ -346,8 +344,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		// this. If not found, then reconcile request would not be sent
 		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
-			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
-
 			continue
 		}
 
@@ -357,11 +353,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		ownerMatch := util.OwnerNamespacedName(pvc) == vrgNamespacedName
 
 		if labelMatch && namespaceSelected || ownerMatch {
-			log1.Info("Found VolumeReplicationGroup with matching labels or owner",
-				"vrg", vrgNamespacedName.String(), "selector", selector,
-				"namespaces selected", pvcSelector.NamespaceNames,
-				"label match", labelMatch, "owner match", ownerMatch)
-
 			req = append(req, reconcile.Request{NamespacedName: vrgNamespacedName})
 		}
 	}
@@ -2210,16 +2201,11 @@ func filterVRGDependentObjects(reader client.Reader, obj client.Object, log logr
 	}
 
 	for _, vrg := range vrgs.Items {
-		log1 := log.WithValues("vrg", vrg.Name)
-
 		if vrg.Spec.ProtectedNamespaces == nil || len(*vrg.Spec.ProtectedNamespaces) == 0 {
 			continue
 		}
 
 		if slices.Contains(*vrg.Spec.ProtectedNamespaces, obj.GetNamespace()) {
-			log1.Info("Found VolumeReplicationGroup with matching namespace",
-				"vrg", vrg.Name, "namespace", obj.GetNamespace())
-
 			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{
 				Name:      vrg.Name,
 				Namespace: vrg.Namespace,
@@ -2307,8 +2293,6 @@ func (r *VolumeReplicationGroupReconciler) RGSMapFunc(ctx context.Context, obj c
 
 	rgs, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
 	if !ok {
-		log.Info("map function received not a replication group source resource")
-
 		return []reconcile.Request{}
 	}
 
