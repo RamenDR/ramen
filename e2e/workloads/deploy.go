@@ -6,6 +6,7 @@ package workloads
 import (
 	"fmt"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,6 +23,7 @@ const (
 	deploymentPath           = "workloads/deployment/base"
 	deploymentPVCName        = "busybox-pvc"
 	deploymentSelectResource = "deployment"
+	defaultHookTimeout       = 300
 
 	//nolint:lll
 	// deploymentMinimumReplicasAvailable is added in a deployment when it has its minimum replicas required available.
@@ -65,6 +67,40 @@ func (w Deployment) GetSelectResource() string {
 
 func (w Deployment) GetLabelSelector() *metav1.LabelSelector {
 	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": deploymentAppName}}
+}
+
+func (w Deployment) GetCheckHook(namespace string) *recipe.Hook {
+	return &recipe.Hook{
+		Name:           "check-hook",
+		Type:           "check",
+		Namespace:      namespace,
+		LabelSelector:  w.GetLabelSelector(),
+		SelectResource: w.GetSelectResource(),
+		Timeout:        defaultHookTimeout,
+		Chks: []*recipe.Check{
+			{
+				Name:      "check-replicas",
+				Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
+			},
+		},
+	}
+}
+
+func (w Deployment) GetExecHook(namespace string) *recipe.Hook {
+	return &recipe.Hook{
+		Name:           "exec-hook",
+		Type:           "exec",
+		Namespace:      namespace,
+		NameSelector:   w.GetAppName(),
+		SelectResource: w.GetSelectResource(),
+		Timeout:        defaultHookTimeout,
+		Ops: []*recipe.Operation{
+			{
+				Name:    "ls",
+				Command: "/bin/sh -c ls",
+			},
+		},
+	}
 }
 
 func (w Deployment) Kustomize() string {
