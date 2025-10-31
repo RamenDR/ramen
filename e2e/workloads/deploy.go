@@ -6,6 +6,7 @@ package workloads
 import (
 	"fmt"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -65,6 +66,24 @@ func (w Deployment) GetSelectResource() string {
 
 func (w Deployment) GetLabelSelector() *metav1.LabelSelector {
 	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": deploymentAppName}}
+}
+
+func (w Deployment) GetChecks(namespace string) []*recipe.Check {
+	return []*recipe.Check{
+		{
+			Name:      "check-replicas",
+			Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
+		},
+	}
+}
+
+func (w Deployment) GetOperations(namespace string) []*recipe.Operation {
+	return []*recipe.Operation{
+		{
+			Name:    "ls",
+			Command: "/bin/sh -c ls",
+		},
+	}
 }
 
 func (w Deployment) Kustomize() string {

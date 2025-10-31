@@ -6,6 +6,7 @@ package workloads
 import (
 	"fmt"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,6 +60,16 @@ func (w *VM) GetSelectResource() string {
 
 func (w *VM) GetLabelSelector() *metav1.LabelSelector {
 	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": vmAppName}}
+}
+
+// TODO: To be implemented according to the VM workload
+func (w *VM) GetChecks(namespace string) []*recipe.Check {
+	return nil
+}
+
+// TODO: To be implemented according to the VM workload
+func (w *VM) GetOperations(namespace string) []*recipe.Operation {
+	return nil
 }
 
 func (w *VM) Kustomize() string {
