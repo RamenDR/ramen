@@ -6,6 +6,7 @@ package types
 import (
 	"context"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,6 +58,7 @@ type Deployer interface {
 	WaitForResourcesDelete(TestContext) error
 }
 
+// nolint:interfacebloat
 type Workload interface {
 	// Can differ based on the workload, hence part of the Workload interface
 	Kustomize() string
@@ -71,6 +73,10 @@ type Workload interface {
 	// GetLabelSelector returns the labelSelector to used for selecting the resources.
 	// This value is made use during preparation of hooks used in recipe.
 	GetLabelSelector() *metav1.LabelSelector
+	// GetChecks returns the check hook to be executed based on workload and given namespace.
+	GetChecks(string) []*recipe.Check
+	// GetOperations returns the exec hook to be executed based on workload and given namespace.
+	GetOperations(string) []*recipe.Operation
 	Health(ctx TestContext, cluster *Cluster) error
 	Status(ctx TestContext) ([]WorkloadStatus, error)
 }
