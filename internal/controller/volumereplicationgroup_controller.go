@@ -2007,13 +2007,11 @@ func (v *VRGInstance) updateProtectedCGsForVolRep(pvcGroups *[]ramendrv1alpha1.G
 }
 
 func (v *VRGInstance) logAndSetConditions(conditionName string, subconditions ...*metav1.Condition) {
-	msg := fmt.Sprintf("merging %s condition", conditionName)
-	v.log.Info(msg, "subconditions", subconditions)
 	finalCondition := util.MergeConditions(util.SetStatusCondition,
 		&v.instance.Status.Conditions,
 		[]string{VRGConditionReasonUnused},
 		subconditions...)
-	msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+	msg := fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
 	v.log.Info(msg, "finalCondition", finalCondition)
 }
 
