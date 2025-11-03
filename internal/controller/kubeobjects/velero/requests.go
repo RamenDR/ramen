@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
@@ -172,7 +173,7 @@ func (r RequestsManager) RecoverRequestsDelete(
 
 func (RequestsManager) RecoverRequestCreate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
 	s3Url string,
 	s3BucketName string,
@@ -203,7 +204,7 @@ func (RequestsManager) RecoverRequestCreate(
 	)
 
 	restore, err := restoreRealCreate(
-		objectWriter{ctx: ctx, Writer: writer, log: log},
+		objectWriter{ctx: ctx, Client: k8sclient, log: log},
 		s3Url,
 		s3BucketName,
 		s3RegionName,
@@ -340,7 +341,7 @@ func restoreStatusProcess(
 
 func (RequestsManager) ProtectRequestCreate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
 	s3Url string,
 	s3BucketName string,
@@ -367,9 +368,8 @@ func (RequestsManager) ProtectRequestCreate(
 		"label set", labels,
 		"annotations", annotations,
 	)
-
 	_, backup, err := backupRealCreate(
-		objectWriter{ctx: ctx, Writer: writer, log: log},
+		objectWriter{ctx: ctx, Client: k8sclient, log: log},
 		s3Url,
 		s3BucketName,
 		s3RegionName,
@@ -476,10 +476,10 @@ func backupRealStatusProcess(
 
 func (r BackupRequest) Deallocate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
 ) error {
-	return objectWriter{ctx: ctx, Writer: writer, log: log}.backupObjectsDelete(
+	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.backupObjectsDelete(
 		&velero.BackupStorageLocation{ObjectMeta: metav1.ObjectMeta{Namespace: r.backup.Namespace, Name: r.backup.Name}},
 		r.backup,
 	)
@@ -487,12 +487,12 @@ func (r BackupRequest) Deallocate(
 
 func (r RestoreRequest) Deallocate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
 ) error {
 	backupObjectMeta := metav1.ObjectMeta{Namespace: r.restore.Namespace, Name: r.restore.Spec.BackupName}
 
-	return objectWriter{ctx: ctx, Writer: writer, log: log}.restoreObjectsDelete(
+	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.restoreObjectsDelete(
 		&velero.BackupStorageLocation{ObjectMeta: backupObjectMeta},
 		&velero.Backup{ObjectMeta: backupObjectMeta},
 		r.restore,
@@ -501,7 +501,7 @@ func (r RestoreRequest) Deallocate(
 
 type objectWriter struct {
 	ctx context.Context
-	client.Writer
+	client.Client
 	log logr.Logger
 }
 
@@ -519,18 +519,26 @@ func backupRequestCreate(
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	backupLocation := backupLocation(requestsNamespaceName, requestName,
-		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-		caCertificates,
-		labels,
-	)
-
-	util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
-
-	if err := w.objectCreate(backupLocation); err != nil {
-		return backupLocation, nil, err
+	backupLocation := &velero.BackupStorageLocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: requestsNamespaceName,
+			Name:      requestName,
+		},
 	}
 
+	err := w.bslCreateOrUpdate(s3Url,
+		s3BucketName,
+		s3RegionName,
+		s3KeyPrefix,
+		secretKeyRef,
+		caCertificates,
+		labels,
+		backupLocation)
+	if err != nil {
+		w.log.Error(err, "")
+
+		return backupLocation, nil, err
+	}
 	// Check BSL availability before creating backup
 	if err := w.checkBSLAvailability(backupLocation); err != nil {
 		return backupLocation, nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",
@@ -581,6 +589,48 @@ func (w objectWriter) objectCreate(o client.Object) error {
 	return nil
 }
 
+func (w objectWriter) bslCreateOrUpdate(s3Url string,
+	s3BucketName string,
+	s3RegionName string,
+	s3KeyPrefix string,
+	secretKeyRef *corev1.SecretKeySelector,
+	caCertificates []byte,
+	labels map[string]string,
+	backupLocation *velero.BackupStorageLocation,
+) error {
+	op, err := controllerruntime.CreateOrUpdate(w.ctx, w.Client, backupLocation, func() error {
+		backupLocation.TypeMeta = veleroTypeMeta("BackupStorageLocation")
+		backupLocation.ObjectMeta.Labels = labels
+		backupLocation.Spec = velero.BackupStorageLocationSpec{
+			Provider: "aws",
+			StorageType: velero.StorageType{
+				ObjectStorage: &velero.ObjectStorageLocation{
+					Bucket: s3BucketName,
+					Prefix: s3KeyPrefix + path,
+					CACert: caCertificates,
+				},
+			},
+			Config: map[string]string{
+				"region":            s3RegionName,
+				"s3ForcePathStyle":  "true",
+				"s3Url":             s3Url,
+				"checksumAlgorithm": "",
+			},
+			Credential: secretKeyRef,
+		}
+		util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create or update BackupStorageLocation: %w", err)
+	}
+
+	w.log.Info("backupstoragelocation reconciled", "operation", op, "name", backupLocation.GetName())
+
+	return nil
+}
+
 func (w objectWriter) objectDelete(o client.Object) error {
 	if err := w.Delete(w.ctx, o); err != nil {
 		if !k8serrors.IsNotFound(err) {
@@ -623,7 +673,7 @@ func (w objectWriter) checkBSLStatus(
 
 // checkBSLAvailability checks if BSL is Available and returns error if not ready
 func (w objectWriter) checkBSLAvailability(bsl *velero.BackupStorageLocation) error {
-	reader, ok := w.Writer.(client.Reader)
+	reader, ok := w.Client.(client.Reader)
 	if !ok {
 		return fmt.Errorf("writer does not implement client.Reader interface")
 	}
@@ -663,39 +713,6 @@ func veleroTypeMeta(kind string) metav1.TypeMeta {
 
 func backupTypeMeta() metav1.TypeMeta  { return veleroTypeMeta("Backup") }
 func restoreTypeMeta() metav1.TypeMeta { return veleroTypeMeta("Restore") }
-
-func backupLocation(namespaceName, name string,
-	s3Url, s3BucketName, s3RegionName, s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
-	labels map[string]string,
-) *velero.BackupStorageLocation {
-	return &velero.BackupStorageLocation{
-		TypeMeta: veleroTypeMeta("BackupStorageLocation"),
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespaceName,
-			Name:      name,
-			Labels:    labels,
-		},
-		Spec: velero.BackupStorageLocationSpec{
-			Provider: "aws",
-			StorageType: velero.StorageType{
-				ObjectStorage: &velero.ObjectStorageLocation{
-					Bucket: s3BucketName,
-					Prefix: s3KeyPrefix + path,
-					CACert: caCertificates,
-				},
-			},
-			Config: map[string]string{
-				"region":            s3RegionName,
-				"s3ForcePathStyle":  "true",
-				"s3Url":             s3Url,
-				"checksumAlgorithm": "",
-			},
-			Credential: secretKeyRef,
-		},
-	}
-}
 
 func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 	labels map[string]string,
