@@ -22,6 +22,7 @@ const (
 	deploymentAppName        = "busybox"
 	deploymentPath           = "workloads/deployment/base"
 	deploymentPVCName        = "busybox-pvc"
+	deploymentPVCName1       = "extra-pvc"
 	deploymentSelectResource = "deployment"
 
 	//nolint:lll
@@ -109,6 +110,13 @@ func (w Deployment) Kustomize() string {
 					},
 					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + scName +
 		`\n- op: add\n  path: /spec/accessModes\n  value: [` + accessMode + `]"
+				},{
+					"target": {
+						"kind": "PersistentVolumeClaim",
+						"name": "extra-pvc"
+					},
+					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + scName +
+		`\n- op: add\n  path: /spec/accessModes\n  value: [` + accessMode + `]"
 				}]
 			}`
 
@@ -172,6 +180,7 @@ func (w Deployment) Status(ctx types.TestContext) ([]types.WorkloadStatus, error
 	return statuses, nil
 }
 
+//nolint:cyclop
 func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Cluster) (types.WorkloadStatus, error) {
 	deploymentExist, err := findDeployment(ctx, cluster, ctx.AppNamespace(), w.GetAppName())
 	if err != nil {
@@ -183,12 +192,17 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
+	pvcExist1, err := findPVC(ctx, cluster, ctx.AppNamespace(), deploymentPVCName1)
+	if err != nil {
+		return types.WorkloadStatus{}, err
+	}
+
 	var status types.ApplicationStatus
 
 	switch {
-	case deploymentExist && pvcExist:
+	case deploymentExist && pvcExist && pvcExist1:
 		status = types.ApplicationFound
-	case deploymentExist || pvcExist:
+	case deploymentExist || pvcExist || pvcExist1:
 		status = types.ApplicationPartial
 	default:
 		status = types.ApplicationNotFound
