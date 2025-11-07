@@ -120,6 +120,28 @@ provision:
       EOF
       systemctl restart containerd
 
+  # Pre-pull kubeadm images to improve probing performance
+  # See <https://github.com/lima-vm/lima/pull/3082>
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      test -e /etc/kubernetes/admin.conf && exit 0
+      command -v kubeadm >/dev/null 2>&1 || exit 0
+      # Ramen: Use local registry for k8s images
+      if [ -n "{{.Param.LOCAL_REGISTRY}}" ]; then
+        IMAGE_REPOSITORY="{{.Param.LOCAL_REGISTRY}}/k8s"
+      else
+        IMAGE_REPOSITORY=""
+      fi
+      # Pre-pull images using kubeadm config
+      cat <<EOF >kubeadm-images-config.yaml
+      kind: ClusterConfiguration
+      apiVersion: kubeadm.k8s.io/v1beta3
+      imageRepository: "$IMAGE_REPOSITORY"
+      EOF
+      kubeadm config images pull --config kubeadm-images-config.yaml
+
   # See <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/>
   - mode: system
     script: |
