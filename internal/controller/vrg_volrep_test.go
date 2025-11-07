@@ -616,7 +616,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgS3UploadTestCase.verifyCachedUploadError()
 		})
 		Specify("set VRG's S3 profile names to empty", func() {
-			vrgS3UploadTestCase.vrgS3ProfilesSet([]string{vrgController.NoS3StoreAvailable})
+			vrgS3UploadTestCase.vrgS3ProfilesSet([]string{""})
 		})
 		It("cleans up after testing", func() {
 			vrgS3UploadTestCase.cleanupStatusUnprotected()

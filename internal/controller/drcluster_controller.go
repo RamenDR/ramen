@@ -319,7 +319,7 @@ func filterDRClusterSecret(ctx context.Context, reader client.Reader, secret *co
 
 		s3ProfileName := drcluster.Spec.S3ProfileName
 
-		if s3ProfileName == NoS3StoreAvailable {
+		if s3ProfileName == "" {
 			continue
 		}
 
@@ -499,7 +499,7 @@ func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
 ) (string, error) {
-	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
+	if drcluster.Spec.S3ProfileName != "" {
 		if reason, err := s3ProfileValidate(ctx, apiReader, objectStoreGetter,
 			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
 			return reason, err

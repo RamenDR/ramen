@@ -1106,13 +1106,21 @@ func (v *VRGInstance) pvAndPvcObjectReplicasDelete(pvc corev1.PersistentVolumeCl
 }
 
 func (v *VRGInstance) s3StoresDo(do func(ObjectStorer) error, msg string) error {
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if s3ProfileName == NoS3StoreAvailable {
-			v.log.Info("NoS3 available to clean")
-
-			continue
+	// Filter out empty profile names (no S3 store configured)
+	s3Profiles := make([]string, 0, len(v.instance.Spec.S3Profiles))
+	for _, profile := range v.instance.Spec.S3Profiles {
+		if profile != "" {
+			s3Profiles = append(s3Profiles, profile)
 		}
+	}
 
+	if len(s3Profiles) == 0 {
+		v.log.Info("NoS3 available to clean")
+
+		return nil
+	}
+
+	for _, s3ProfileName := range s3Profiles {
 		if err := v.s3StoreDo(do, msg, s3ProfileName); err != nil {
 			return fmt.Errorf("%s using profile %s, err %w", msg, s3ProfileName, err)
 		}
@@ -2151,18 +2159,23 @@ func (v *VRGInstance) restorePVsAndPVCsForVolRep(result *ctrl.Result) (int, erro
 }
 
 func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) {
-	err := errors.New("s3Profiles empty")
-	NoS3 := false
-
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if s3ProfileName == NoS3StoreAvailable {
-			v.log.Info("NoS3 available to fetch")
-
-			NoS3 = true
-
-			continue
+	// Filter out empty profile names (no S3 store configured)
+	s3Profiles := make([]string, 0, len(v.instance.Spec.S3Profiles))
+	for _, profile := range v.instance.Spec.S3Profiles {
+		if profile != "" {
+			s3Profiles = append(s3Profiles, profile)
 		}
+	}
 
+	if len(s3Profiles) == 0 {
+		v.log.Info("NoS3 available to fetch")
+
+		return 0, nil
+	}
+
+	err := errors.New("s3Profiles empty")
+
+	for _, s3ProfileName := range s3Profiles {
 		var objectStore ObjectStorer
 
 		objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
@@ -2199,10 +2212,6 @@ func (v *VRGInstance) restorePVsAndPVCsFromS3(result *ctrl.Result) (int, error) 
 		v.log.Info(fmt.Sprintf("Restored %d PVs and %d PVCs using profile %s", pvCount, pvcCount, s3ProfileName))
 
 		return pvCount + pvcCount, nil
-	}
-
-	if NoS3 {
-		return 0, nil
 	}
 
 	result.Requeue = true
