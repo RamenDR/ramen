@@ -221,7 +221,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 		vrg = &ramen.VolumeReplicationGroup{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespaceName, Name: "a"},
 			Spec: ramen.VolumeReplicationGroupSpec{
-				S3Profiles:       []string{controllers.NoS3StoreAvailable},
+				S3Profiles:       []string{""},
 				ReplicationState: ramen.Primary,
 				Sync: &ramen.VRGSyncSpec{
 					PeerClasses: vrgSyncPeerClasses(),
