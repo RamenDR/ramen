@@ -146,9 +146,35 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 	Describe("CreateOrUpdateReplicationSourceForRestoredPVCs", func() {
 		It("Should be successful", func() {
+			vrg := &v1alpha1.VolumeReplicationGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vrgName,
+					Namespace: "default",
+				},
+				Spec: v1alpha1.VolumeReplicationGroupSpec{
+					VolSync: v1alpha1.VolSyncSpec{
+						RSSpec: []v1alpha1.VolSyncReplicationSourceSpec{
+							{
+								ProtectedPVC: v1alpha1.ProtectedPVC{
+									Name: "mypvc",
+								},
+								RsyncTLS: &v1alpha1.RsyncTLSConfig{
+									Address: "dummy-address.default.svc",
+								},
+							},
+						},
+					},
+				},
+			}
+
 			rsList, srcCreatedOrUpdated, err := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 				context.Background(), "maunal",
-				[]cephfscg.RestoredPVC{{SourcePVCName: "source", RestoredPVCName: "resource", VolumeSnapshotName: "vs"}}, rgs)
+				[]cephfscg.RestoredPVC{{
+					SourcePVCName:      "source",
+					RestoredPVCName:    "resource",
+					VolumeSnapshotName: "vs",
+				}},
+				rgs, vrg, true)
 			Expect(err).To(BeNil())
 			Expect(srcCreatedOrUpdated).To(BeTrue())
 			Expect(len(rsList)).To(Equal(1))

@@ -47,6 +47,8 @@ type VolumeGroupSourceHandler interface {
 		manual string,
 		restoredPVCs []RestoredPVC,
 		owner metav1.Object,
+		vrg *ramendrv1alpha1.VolumeReplicationGroup,
+		isSubmarinerEnabled bool,
 	) ([]*corev1.ObjectReference, bool, error)
 
 	CheckReplicationSourceForRestoredPVCsCompleted(
@@ -451,6 +453,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 	manual string,
 	restoredPVCs []RestoredPVC,
 	owner metav1.Object,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	isSubmarinerEnabled bool,
 ) ([]*corev1.ObjectReference, bool, error) {
 	logger := h.Logger.WithName("CreateReplicationSourceForRestoredPVCs").
 		WithValues("NumberOfRestoredPVCs", len(restoredPVCs))
@@ -474,7 +478,10 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			},
 		}
 
-		rdService := getRemoteServiceNameForRDFromPVCName(pvcName, replicationSourceNamepspace)
+		rdService, err := h.resolveRDService(&restoredPVC, vrg, replicationSourceNamepspace, isSubmarinerEnabled, logger)
+		if err != nil {
+			return nil, false, err
+		}
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
 			if err := ctrl.SetControllerReference(owner, replicationSource, h.Client.Scheme()); err != nil {
@@ -523,6 +530,28 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 	logger.Info("Replication sources are successfully created for all restored PVCs")
 
 	return replicationSources, createdOrUpdated, nil
+}
+
+func (h *volumeGroupSourceHandler) resolveRDService(
+	restoredPVC *RestoredPVC,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	rsNS string,
+	isSubmarinerEnabled bool,
+	logger logr.Logger,
+) (string, error) {
+	if isSubmarinerEnabled {
+		return getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, rsNS), nil
+	}
+
+	logger.Info("Non submariner", "rsspec", vrg.Spec.VolSync.RSSpec)
+
+	for _, rs := range vrg.Spec.VolSync.RSSpec {
+		if fmt.Sprintf(RestorePVCinCGNameFormat, rs.ProtectedPVC.Name) == restoredPVC.RestoredPVCName {
+			return rs.RsyncTLS.Address, nil
+		}
+	}
+
+	return "", fmt.Errorf("no matching RSSpec for restored PVC %q", restoredPVC.RestoredPVCName)
 }
 
 // CheckReplicationSourceForRestoredPVCsCompleted check if all replication source are completed
