@@ -1678,7 +1678,7 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 		v.instance.Status.Conditions = []metav1.Condition{}
 	}
 
-	if !result.Requeue && v.isVMRecipeProtection() {
+	if v.isVMRecipeProtection() {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			result.Requeue = true
 		}
