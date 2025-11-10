@@ -5,6 +5,41 @@ SPDX-License-Identifier: Apache-2.0
 
 # Kubernetes Resource Protection with Recipes
 
+## Introduction
+
+Recipes are part of Ramen's OpenShift-native Disaster
+Recovery ecosystem, providing vendor-supplied or custom
+disaster recovery specifications for complex stateful
+applications. While Ramen supports multiple workload
+protection methods (GitOps, discovered applications, and
+Recipes), Recipes are specifically designed for applications
+that require:
+
+- Application-specific quiesce operations before capture
+    (e.g., database flush)
+- Strict resource ordering during capture or recovery
+- Custom pre/post hooks for DR operations
+- Vendor-defined DR workflows that ensure data consistency
+
+**Target Audience:**
+
+- **Software Vendors**: Create Recipes to accompany your
+    products, providing DR protection as a product feature
+- **Advanced Users**: Write custom Recipes when vendors
+    haven't provided them for critical applications
+
+**When to use Recipes:**
+
+- Your application requires specific operations before backup
+  (quiesce, flush, etc.)
+- Resources must be captured/restored in a specific order
+- Standard volume replication alone doesn't guarantee
+  application consistency
+- You need to execute custom logic during DR operations
+
+For general workload protection without custom workflows,
+see [usage.md](usage.md) for simpler alternatives (GitOps or discovered applications).
+
 ## Overview
 
 By default, Kubernetes resources are Captured and Recovered as single, namespaced
@@ -19,7 +54,7 @@ Recipe source code and additional information can be found [here](https://github
 ## Requirements
 
 1. Recipe CRD must be available on the cluster. The base Recipe CRD can be found
-  [here](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml)
+   [here](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml)
 1. The Recipe target must be available in the same Namespace as the application.
 
 ## Example
@@ -110,7 +145,7 @@ apiVersion: ramendr.openshift.io/v1alpha1
 kind: VolumeReplicationGroup
 metadata:
   name: vrg-sample
-  namespace: my-app-ns  # same Namespace as Recipe
+  namespace: my-app-ns # same Namespace as Recipe
 spec:
   kubeObjectProtection:
     recipeRef:
@@ -130,7 +165,7 @@ There are several parts of this example to be aware of:
 1. Capture and Recover actions are performed on the VRG, not by the Recipe. This
    includes the scheduling interval, s3 profile information, and sync/async configuration.
 1. Groups can be referenced by arbitrary sequences. If they apply to both a Capture
-  Workflow and a Recover Workflow, the group may be reused.
+   Workflow and a Recover Workflow, the group may be reused.
 1. In order to run Hooks, the relevant Pods and containers must be running before
    the Hook is executed. This is the responsibility of the user and application,
    and Recipes do not check for valid Pods prior to running a Workflow.
