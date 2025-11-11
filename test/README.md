@@ -86,11 +86,39 @@ environment.
    For more info see
    [Velero Basic Install](https://velero.io/docs/v1.16/basic-install/)
 
-1. Install `helm` tool - on Fedora you can use:
+1. Install Helm (version ≥ 3.13 recommended).
 
+   You can install it in one of two ways:
+
+   **Option 1: Using DNF (recommended for recent Fedora/RHEL)**
+
+   ```bash
+   sudo dnf install -y helm
    ```
-   sudo dnf install helm
+
+   **Option 2: Using official Helm GitHub releases (for older Fedora or
+   outdated package versions)**
+
+   Check the latest release: [Helm's GitHub release page](https://github.com/helm/helm/releases)
+
+   ```bash
+   HELM_VERSION=$(curl -s https://api.github.com/repos/helm/helm/releases/latest \
+     | grep tag_name | cut -d '"' -f 4)
+      curl -L https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o helm.tgz
+      tar -xzf helm.tgz
+      sudo mv linux-amd64/helm /usr/local/bin/helm
+      rm -rf linux-amd64 helm.tgz
+      ```
+
+   Verify:
+
+   ```bash
+   helm version
    ```
+
+   > ⚠️ If you’re on Fedora 37 or earlier, the `dnf` package may install Helm
+   > 3.11 or older, which is not supported by Ramen. Use the GitHub release
+   > method instead.
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
    Tested with version v3.18.1.
