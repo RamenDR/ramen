@@ -89,11 +89,14 @@ environment.
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-   sudo dnf install helm
+    HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
+    curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
+    sudo install helm /usr/local/bin
+    rm -f helm
    ```
 
-   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
-   Tested with version v3.18.1.
+   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
+   Tested with version v4.0.1.
 
 1. Install the `virtctl` tool
 
