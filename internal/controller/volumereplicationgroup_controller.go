@@ -1395,10 +1395,6 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	v.resetKubeObjectsCaptureStatusIfRequired()
 
-	if err := v.pvcsDeselectedUnprotect(); err != nil {
-		return v.dataError(err, "PVCs deselected unprotect failed", v.result.Requeue)
-	}
-
 	if v.shouldRestoreClusterData() {
 		v.result.Requeue = true
 
@@ -1411,6 +1407,10 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 		if numOfRestoredRes != 0 {
 			return v.updateVRGConditionsAndStatus(v.result)
 		}
+	}
+
+	if err := v.pvcsDeselectedUnprotect(); err != nil {
+		return v.dataError(err, "PVCs deselected unprotect failed", v.result.Requeue)
 	}
 
 	v.reconcileAsPrimary()
@@ -1627,7 +1627,43 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
+	v.cleanupProtectedPVCs(pvcsVr, pvcsVs, log)
+
 	return nil
+}
+
+func (v *VRGInstance) cleanupProtectedPVCs(
+	pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim, log logr.Logger,
+) {
+	if !v.ramenConfig.VolumeUnprotectionEnabled {
+		log.Info("Volume unprotection disabled")
+
+		return
+	}
+
+	// clean up the PVCs that are part of protected pvcs but not in v.volReps and v.volSyncs
+	protectedPVCsFiltered := make([]ramendrv1alpha1.ProtectedPVC, 0)
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		pvcNamespacedName := client.ObjectKey{Namespace: protectedPVC.Namespace, Name: protectedPVC.Name}
+
+		if _, ok := pvcsVr[pvcNamespacedName]; ok {
+			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+
+			continue
+		}
+
+		if _, ok := pvcsVs[pvcNamespacedName]; ok {
+			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
+
+			continue
+		}
+
+		v.log.Info(fmt.Sprintf("Removing stale protected pvc %s/%s from VRG %s/%s",
+			protectedPVC.Namespace, protectedPVC.Name, v.instance.Namespace, v.instance.Name))
+	}
+
+	v.instance.Status.ProtectedPVCs = protectedPVCsFiltered
 }
 
 // processAsSecondary reconciles the current instance of VRG as secondary
