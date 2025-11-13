@@ -665,31 +665,40 @@ func (v *VSHandler) retainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
 		return fmt.Errorf("failed to get pv (%s) for pvc (%s/%s), %w", pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}
 
-	if pv.ObjectMeta.Annotations == nil {
-		pv.ObjectMeta.Annotations = map[string]string{}
-	}
+	mutate := func(obj client.Object) error {
+		pvObj, ok := obj.(*corev1.PersistentVolume)
+		if !ok {
+			return fmt.Errorf("expected *corev1.PersistentVolume, got %T", obj)
+		}
 
-	pv.ObjectMeta.Annotations[PVAnnotationRetentionKey] = PVAnnotationRetentionValue
+		if pvObj.ObjectMeta.Annotations == nil {
+			pvObj.ObjectMeta.Annotations = map[string]string{}
+		}
 
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef = &corev1.ObjectReference{}
-	}
+		pvObj.ObjectMeta.Annotations[PVAnnotationRetentionKey] = PVAnnotationRetentionValue
 
-	tmpPVCName := util.GetTmpPVCNameForFinalSync(pvc.Name)
+		if pvObj.Spec.ClaimRef == nil {
+			pvObj.Spec.ClaimRef = &corev1.ObjectReference{}
+		}
 
-	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain &&
-		pv.Spec.ClaimRef.Name == tmpPVCName && pv.Spec.ClaimRef.Namespace == pvc.Namespace {
+		tmpPVCName := util.GetTmpPVCNameForFinalSync(pvc.Name)
+
+		if pvObj.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain &&
+			pvObj.Spec.ClaimRef.Name == tmpPVCName && pvObj.Spec.ClaimRef.Namespace == pvc.Namespace {
+			return nil
+		}
+
+		// if not retained, retain PV, and add an annotation to denote this is updated for VolSync needs
+		pvObj.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
+
+		if pvObj.Spec.ClaimRef.Name != tmpPVCName {
+			updateClaimRef(pvObj, tmpPVCName, pvc.Namespace)
+		}
+
 		return nil
 	}
 
-	// if not retained, retain PV, and add an annotation to denote this is updated for VolSync needs
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
-
-	if pv.Spec.ClaimRef.Name != tmpPVCName {
-		updateClaimRef(pv, tmpPVCName, pvc.Namespace)
-	}
-
-	return v.updateResource(pv)
+	return v.updateResource(pv, mutate)
 }
 
 func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedName,
@@ -779,6 +788,7 @@ func (v *VSHandler) configureReplicationSourceSpec(rs *volsyncv1alpha1.Replicati
 	return nil
 }
 
+//nolint:cyclop,funlen
 func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 	v.log.V(1).Info("Undo after final sync", "pvcName", pvcName)
 	// Remove claimRef and reset the original PVC claimRef (without uid)
@@ -822,12 +832,20 @@ func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 		return fmt.Errorf("failed to get PersistentVolume (%s), %w", pv.Name, err)
 	}
 
-	updateClaimRef(pv, originalPVC.Name, originalPVC.Namespace)
+	mutate := func(obj client.Object) error {
+		pvObj, ok := obj.(*corev1.PersistentVolume)
+		if !ok {
+			return fmt.Errorf("expected *corev1.PersistentVolume, got %T", obj)
+		}
 
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
-	delete(pv.ObjectMeta.Annotations, PVAnnotationRetentionKey)
+		updateClaimRef(pvObj, originalPVC.Name, originalPVC.Namespace)
 
-	if err := v.updateResource(pv); err != nil {
+		pvObj.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
+		delete(pvObj.ObjectMeta.Annotations, PVAnnotationRetentionKey)
+
+		return nil
+	}
+	if err := v.updateResource(pv, mutate); err != nil {
 		return err
 	}
 
@@ -938,15 +956,24 @@ func (v *VSHandler) stopRGSScheduling(rgsNamespacedName types.NamespacedName, lo
 		return client.IgnoreNotFound(err)
 	}
 
-	if rgs.Spec.Trigger != nil && rgs.Spec.Trigger.Manual == PrepareForFinalSyncTriggerString {
+	mutate := func(obj client.Object) error {
+		rgsObj, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
+		if !ok {
+			return fmt.Errorf("expected *ramendrv1alpha1.ReplicationGroupSource, got %T", obj)
+		}
+
+		if rgsObj.Spec.Trigger != nil && rgsObj.Spec.Trigger.Manual == PrepareForFinalSyncTriggerString {
+			return nil
+		}
+
+		rgsObj.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
+			Manual: PrepareForFinalSyncTriggerString,
+		}
+
 		return nil
 	}
 
-	rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
-		Manual: PrepareForFinalSyncTriggerString,
-	}
-
-	return v.updateResource(rgs)
+	return v.updateResource(rgs, mutate)
 }
 
 func (v *VSHandler) waitForVGSCompletion(rgsNamespacedName types.NamespacedName, log logr.Logger) (bool, error) {
@@ -2657,9 +2684,18 @@ func (v *VSHandler) pauseRD(rdName, rdNamespace string) (*volsyncv1alpha1.Replic
 		return rd, nil
 	}
 
-	rd.Spec.Paused = true
+	mutate := func(obj client.Object) error {
+		rdObj, ok := obj.(*volsyncv1alpha1.ReplicationDestination)
+		if !ok {
+			return fmt.Errorf("expected *volsyncv1alpha1.ReplicationDestination, got %T", obj)
+		}
 
-	return rd, v.updateResource(rd)
+		rdObj.Spec.Paused = true
+
+		return nil
+	}
+
+	return rd, v.updateResource(rd, mutate)
 }
 
 func (v *VSHandler) stopSchedulingRS(rsName, rsNamespace string) (*volsyncv1alpha1.ReplicationSource, error) {
@@ -2672,11 +2708,20 @@ func (v *VSHandler) stopSchedulingRS(rsName, rsNamespace string) (*volsyncv1alph
 		return rs, nil
 	}
 
-	rs.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
-		Manual: PrepareForFinalSyncTriggerString,
+	mutate := func(obj client.Object) error {
+		rsObj, ok := obj.(*volsyncv1alpha1.ReplicationSource)
+		if !ok {
+			return fmt.Errorf("expected *volsyncv1alpha1.ReplicationSource, got %T", obj)
+		}
+
+		rsObj.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
+			Manual: PrepareForFinalSyncTriggerString,
+		}
+
+		return nil
 	}
 
-	return rs, v.updateResource(rs)
+	return rs, v.updateResource(rs, mutate)
 }
 
 func (v *VSHandler) stopPVCSnapshotting(pvcNamespacedName types.NamespacedName) error {
@@ -2689,29 +2734,48 @@ func (v *VSHandler) stopPVCSnapshotting(pvcNamespacedName types.NamespacedName) 
 		return nil
 	}
 
-	// In order to stop volsync from automatically creating snapshots, we add an annotation to the PVC as described here:
-	// https://volsync.readthedocs.io/en/stable/usage/pvccopytriggers.html
-	util.AddAnnotation(pvc, "volsync.backube/use-copy-trigger", "stopped-by-ramen")
+	mutate := func(obj client.Object) error {
+		pvcObj, ok := obj.(*corev1.PersistentVolumeClaim)
+		if !ok {
+			return fmt.Errorf("expected *corev1.PersistentVolumeClaim, got %T", obj)
+		}
 
-	return v.updateResource(pvc)
+		// In order to stop volsync from automatically creating snapshots, we add an annotation to the PVC as described here:
+		// https://volsync.readthedocs.io/en/stable/usage/pvccopytriggers.html
+		util.AddAnnotation(pvcObj, "volsync.backube/use-copy-trigger", "stopped-by-ramen")
+
+		return nil
+	}
+
+	return v.updateResource(pvc, mutate)
 }
 
-func (v *VSHandler) updateResource(obj client.Object) error {
+func (v *VSHandler) updateResource(obj client.Object, mutateFn func(obj client.Object) error) error {
 	objKindAndName := getKindAndName(v.client.Scheme(), obj)
 
-	if err := v.client.Update(v.ctx, obj); err != nil {
-		if errors.IsConflict(err) {
-			v.log.Info("Conflict updating resource, will retry", "KindAndName", objKindAndName)
-			// refetch the resource and try again
-			// we could do a retry loop here, but for now just try once more
-			// since this should be a rare occurrence and even if we return an error
-			// the controller will retry
-			if err := v.client.Get(v.ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-				return fmt.Errorf("failed to get resource %s/%s. Error %v", obj.GetNamespace(), obj.GetName(), err)
-			}
+	if err := mutateFn(obj); err != nil {
+		return fmt.Errorf("mutateFn failed for %s before first update. Error %v", objKindAndName, err)
+	}
 
-			return v.client.Update(v.ctx, obj)
+	if err := v.client.Update(v.ctx, obj); err != nil {
+		if !errors.IsConflict(err) {
+			return fmt.Errorf("failed to update %s. Error %v", objKindAndName, err)
 		}
+
+		v.log.Info("Conflict updating resource, will retry", "KindAndName", objKindAndName)
+		// refetch the resource and try again
+		// we could do a retry loop here, but for now just try once more
+		// since this should be a rare occurrence and even if we return an error
+		// the controller will retry
+		if err := v.client.Get(v.ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+			return fmt.Errorf("failed to get resource %s/%s. Error %v", obj.GetNamespace(), obj.GetName(), err)
+		}
+
+		if err := mutateFn(obj); err != nil {
+			return fmt.Errorf("mutateFn failed for %s after conflict. Error %v", objKindAndName, err)
+		}
+
+		return v.client.Update(v.ctx, obj)
 	}
 
 	v.log.Info("Updated object", "obj", objKindAndName)
