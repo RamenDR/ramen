@@ -170,13 +170,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
-	err := d.ensureVRGManifestWork(clusterName)
-	if err != nil {
-		return !done, err
-	}
-
 	// If we get here, the deployment is successful
-	err = d.EnsureSecondaryReplicationSetup(homeCluster)
+	err := d.finalizeInitialDeployment(homeCluster, clusterName)
 	if err != nil {
 		return !done, err
 	}
@@ -192,6 +187,15 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.setActionDuration()
 
 	return done, nil
+}
+
+func (d *DRPCInstance) finalizeInitialDeployment(homeCluster, clusterName string) error {
+	if err := d.ensureVRGManifestWork(clusterName); err != nil {
+		return err
+	}
+
+	// If we get here, the deployment is successful
+	return d.EnsureSecondaryReplicationSetup(homeCluster)
 }
 
 func (d *DRPCInstance) getHomeClusterForInitialDeploy() (string, string) {
@@ -2029,20 +2033,7 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 			return fmt.Errorf("failed to get NS MW (%w)", err)
 		}
 
-		annotations := make(map[string]string)
-
-		annotations[DRPCNameAnnotation] = d.instance.Name
-		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
-
-		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations,
-			map[string]string{})
-		if err != nil {
-			return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
-		}
-
-		d.log.Info(fmt.Sprintf("Created Namespace '%s' on cluster %s", d.vrgNamespace, homeCluster))
-
-		return nil // created namespace
+		return d.createOrUpdateNamespaces(homeCluster)
 	}
 
 	// Ensure the OCM backup label does not exists, otherwise, remove it.
@@ -2058,6 +2049,63 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 	}
 
 	return nil
+}
+
+func (d *DRPCInstance) createOrUpdateNamespaces(homeCluster string) error {
+	if !isDiscoveredApp(d.instance) {
+		return d.createOrUpdateNSForNonDiscoveredApps(homeCluster)
+	}
+
+	return d.createOrUpdateNSForDiscoveredApps(homeCluster)
+}
+
+func (d *DRPCInstance) createOrUpdateNSForDiscoveredApps(homeCluster string) error {
+	protectedNamespaces := make([]*corev1.Namespace, 0)
+
+	for _, ns := range *d.instance.Spec.ProtectedNamespaces {
+		protectedNamespace, err := d.reconciler.MCVGetter.GetNSFromManagedCluster(homeCluster, ns)
+		if err != nil {
+			d.log.Error(err, fmt.Sprintf("error getting namespace %s from managed cluster %s using MCV", ns, homeCluster))
+
+			return err
+		}
+
+		protectedNamespaces = append(protectedNamespaces, protectedNamespace)
+	}
+
+	for _, protectedNamespaceObj := range protectedNamespaces {
+		annotations := removeSCCAnnotations(protectedNamespaceObj.Annotations)
+
+		for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if homeCluster == dstCluster {
+				continue
+			}
+
+			if err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, protectedNamespaceObj.Name, dstCluster,
+				annotations, protectedNamespaceObj.Labels); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) createOrUpdateNSForNonDiscoveredApps(homeCluster string) error {
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
+	err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations,
+		map[string]string{})
+	if err != nil {
+		return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
+	}
+
+	d.log.Info(fmt.Sprintf("Created Namespace '%s' on cluster %s", d.vrgNamespace, homeCluster))
+
+	return nil // created namespace
 }
 
 func isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
@@ -2875,4 +2923,16 @@ func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
 	} else {
 		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 	}
+}
+
+func removeSCCAnnotations(annotations map[string]string) map[string]string {
+	filteredAnnotations := make(map[string]string)
+
+	for key, val := range annotations {
+		if !strings.Contains(key, "sa.scc") {
+			filteredAnnotations[key] = val
+		}
+	}
+
+	return filteredAnnotations
 }
