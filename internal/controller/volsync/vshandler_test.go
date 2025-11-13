@@ -451,8 +451,8 @@ var _ = Describe("VolSync_Handler", func() {
 							}, createdRD)
 						}, maxWait, interval).Should(Succeed())
 
-						// Expect the RD should be owned by owner
-						Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeTrue())
+						// Expect the RD shouldn't be owned by owner
+						Expect(ownerMatches(createdRD, owner.GetName(), "ConfigMap", true /*should be controller*/)).To(BeFalse())
 
 						// Check common fields
 						Expect(createdRD.Spec.RsyncTLS).NotTo(BeNil())
