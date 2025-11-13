@@ -2623,7 +2623,7 @@ func adoptOrphanVRG(
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
 	// Adopt the namespace as well
-	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations)
+	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations, map[string]string{})
 	if err != nil {
 		log.Info("error creating namespace via ManifestWork during adoption", "error", err, "cluster", cluster)
 
