@@ -2034,7 +2034,8 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 		annotations[DRPCNameAnnotation] = d.instance.Name
 		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
 
-		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations)
+		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations,
+			map[string]string{})
 		if err != nil {
 			return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
 		}
