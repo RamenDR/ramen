@@ -1350,11 +1350,15 @@ func (v *VSHandler) removeRDAsOwnerFromPVC(
 
 func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcName, pvcNamespace string) error {
 	// Step 1: Disown PVC
+	v.log.Info("Removing RD as owner from PVC", "PVCName", pvcName, "PVCNamespace", pvcNamespace)
+
 	if err := v.removeRDAsOwnerFromPVC(rd, pvcName, pvcNamespace); err != nil {
 		v.log.Error(err, "Failed to disown PVC before deleting RD", "rd", rd.GetName())
 	}
 
 	// Step 2: Delete local RS if needed
+	v.log.Info("Deleting local RS if needed", "PVCName", pvcName, "PVCNamespace", pvcNamespace)
+
 	if v.IsCopyMethodDirect() {
 		if err := v.deleteLocalRDAndRS(rd); err != nil {
 			return err
@@ -1362,6 +1366,8 @@ func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcNam
 	}
 
 	// Step 3: Delete the RD itself
+	v.log.Info("Deleting the RD itself", "PVCName", pvcName, "PVCNamespace", pvcNamespace)
+
 	if err := v.client.Delete(v.ctx, rd); err != nil {
 		v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
 	} else {
@@ -1383,6 +1389,8 @@ func (v *VSHandler) DeleteRD(pvcName, pvcNamespace string) error {
 		rd := &currentRDListByOwner.Items[i]
 
 		if rd.GetName() == expectedRDName {
+			v.log.Info("Entering cleanup of RD function", "rdName", rd.Name, "rdNamespace", rd.Namespace)
+
 			if err := v.cleanupRD(rd, pvcName, pvcNamespace); err != nil {
 				return err
 			}
