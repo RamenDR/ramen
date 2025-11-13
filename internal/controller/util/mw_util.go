@@ -355,7 +355,12 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	name string, namespaceName string, managedClusterNamespace string,
 	annotations map[string]string, labels map[string]string,
 ) error {
-	manifest, err := mwu.GenerateManifest(Namespace(namespaceName))
+	ns := Namespace(namespaceName)
+	// Set labels and annotations on the namespace object itself
+	ns.Labels = labels
+	ns.Annotations = annotations
+
+	manifest, err := mwu.GenerateManifest(ns)
 	if err != nil {
 		return err
 	}
