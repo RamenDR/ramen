@@ -174,6 +174,11 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, err
 	}
 
+	err = d.createNamespacesOnRemote(homeCluster)
+	if err != nil {
+		return !done, err
+	}
+
 	// If we get here, the deployment is successful
 	err = d.EnsureSecondaryReplicationSetup(homeCluster)
 	if err != nil {
@@ -2728,6 +2733,41 @@ func (d *DRPCInstance) setActionDuration() {
 		fmt.Sprintf("%v", d.instance.Status.Phase), d.instance.Status.ActionStartTime, duration))
 }
 
+func (d *DRPCInstance) createNamespacesOnRemote(homeCluster string) error {
+	var protectedNamespaces []*corev1.Namespace
+	var err error
+
+	for _, ns := range *d.instance.Spec.ProtectedNamespaces {
+		protectedNamespace, err := d.reconciler.MCVGetter.GetNSFromManagedCluster(homeCluster, ns)
+		if err != nil {
+			d.log.Error(err, fmt.Sprintf("error getting namespace %s from managed cluster %s using MCV", ns, homeCluster))
+
+			return err
+		}
+
+		protectedNamespaces = append(protectedNamespaces, protectedNamespace)
+	}
+
+	for _, protectedNamespaceObj := range protectedNamespaces {
+
+		annotations := removeSCCAnnotations(protectedNamespaceObj.Annotations)
+
+		for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if homeCluster == dstCluster {
+				continue
+			}
+
+			if err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, protectedNamespaceObj.Name, dstCluster,
+				annotations, protectedNamespaceObj.Labels); err != nil {
+				return err
+			}
+		}
+
+	}
+
+	return err
+}
+
 func getCallerFunction(ancestorLevel int) string {
 	// this is a util function and the caller is not going to count this
 	// function in the skiplevel. Incrementing the skiplevel by 1
@@ -2748,4 +2788,16 @@ func getCallerFunction(ancestorLevel int) string {
 	}
 
 	return strings.TrimPrefix(details.Name(), "github.com/ramendr/ramen/internal/controller.")
+}
+
+func removeSCCAnnotations(annotations map[string]string) map[string]string {
+	filteredAnnotations := make(map[string]string)
+
+	for key, val := range annotations {
+		if !strings.Contains(key, "sa.scc") {
+			filteredAnnotations[key] = val
+		}
+	}
+
+	return filteredAnnotations
 }
