@@ -286,6 +286,37 @@ func recipeWorkflowsGet(recipe recipev1.Recipe, recipeElements *util.RecipeEleme
 		recipeElements.RestoreFailOn = WorkflowAnyError
 	}
 
+	// TODO: Add a capture and restore workflow element at the first index to capture and restore the recipe       fmt.Println("**** ASN, adding recipe capture step")
+	cap := recipeElements.CaptureWorkflow
+	recipeCapture := kubeobjects.CaptureSpec{
+		// ns of recipe needs to be obtained from vrg
+		Name: "capture-recipe",
+		Spec: kubeobjects.Spec{
+			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
+				IncludedNamespaces: []string{recipe.Namespace},
+				IncludedResources:  []string{"recipe.ramendr.openshift.io"},
+			},
+		},
+	}
+	recipeElements.CaptureWorkflow = append([]kubeobjects.CaptureSpec{recipeCapture}, cap...)
+
+	fmt.Println("**** ASN, adding recipe recover step")
+	rec := recipeElements.RecoverWorkflow
+	recipeRecover := kubeobjects.RecoverSpec{
+		// ns of recipe needs to be obtained from vrg
+		BackupName: "capture-recipe",
+		Spec: kubeobjects.Spec{
+			KubeResourcesSpec: kubeobjects.KubeResourcesSpec{
+				IncludedNamespaces: []string{recipe.Namespace},
+				IncludedResources:  []string{"recipe.ramendr.openshift.io"},
+			},
+		},
+	}
+
+	recipeElements.RecoverWorkflow = append([]kubeobjects.RecoverSpec{recipeRecover}, rec...)
+
+	fmt.Println("****ASN, recipe Elements after recipe workflow addition: ", recipeElements)
+
 	return nil
 }
 
