@@ -22,81 +22,85 @@ capabilities:
 
 Before installing Ramen, ensure the following requirements are met:
 
-### 1. Open Cluster Management (OCM) Setup
+### 1. Kubernetes Versions
 
-Ramen requires an [OCM hub cluster](https://open-cluster-management.io/concepts/architecture/#hub-cluster)
-with at least two [managed clusters](https://open-cluster-management.io/concepts/managedcluster/)
-for disaster recovery operations.
+**Supported versions:**
+
+- Kubernetes 1.30 or higher
+
+### 2. Open Cluster Management (OCM) Setup
+
+Ramen requires an
+[OCM](https://open-cluster-management.io/docs/concepts/architecture/) hub cluster
+with at least two managed clusters for disaster recovery operations.
 
 **Requirements:**
 
-- OCM hub cluster with `multicluster-engine` or
-  `advanced-cluster-management` installed
+- OCM hub cluster with `multicluster-engine`, `ocm-controller` (from
+  multicloud-operators-foundation), and hub addons
+  (`application-manager`, `governance-policy-framework`)
+- OCM managed cluster addons on each managed cluster:
+  `application-manager`, `governance-policy-framework`, and
+  `config-policy-controller`
 - At least 2 managed clusters registered with the hub
-- Clusters must be able to communicate for replication (directly or via
-  Submariner)
+- All clusters must be able to communicate with each other
 
-**Verify OCM setup:**
+For OCM installation instructions, see the [OCM installation guide](https://open-cluster-management.io/docs/getting-started/installation/).
 
-```bash
-# On the hub cluster
-kubectl get managedclusters
-```
+### 3. Storage Replication Support
 
-You should see at least two managed clusters in `Ready` state.
+Ramen supports two disaster recovery modes, each with different storage requirements:
 
-### 2. Storage Replication Support
+#### Sync Mode (Metro DR)
 
-Each managed cluster must have storage that supports volume replication through
-one of these methods:
+Sync mode uses an external storage cluster that all managed clusters connect
+to, providing all clusters access to the same storage backend.
 
-#### Option A: Async Replication (VolumeReplication)
+**Supported:**
 
-Storage must support the CSI
-[VolumeReplication](https://github.com/csi-addons/volume-replication-operator)
-extensions.
+- Any CSI-compatible storage systems that support shared external storage
+    clusters
+- CSI drivers that support static provisioning for PVCs and can attach the
+    same storage when a PV is transferred between clusters sharing the same
+    storage backend
 
-**Supported storage providers:**
+**Required:**
 
-- [Ceph-CSI](https://github.com/ceph/ceph-csi/) with RBD mirroring
-- Other CSI drivers implementing the VolumeReplication spec
+- External storage cluster
+- Storage provider installed that supports CSI and synchronous replication
+- StorageClasses on managed clusters with the same
+    `ramendr.openshift.io/storageid` labels (indicating shared storage)
+- Low-latency network connectivity between managed clusters and the external
+    storage cluster
 
-**Requirements:**
+#### Async Mode (Regional DR)
 
-- VolumeReplication CRD installed on managed clusters
-- VolumeReplicationClass configured for your storage
-- Storage replication configured between peer clusters (e.g., Ceph RBD
-  mirroring)
+Async mode uses storage in each managed cluster with asynchronous replication
+between clusters based on configurable time intervals.
 
-**Verify VolumeReplication support:**
+**Supported:**
 
-```bash
-# On each managed cluster
-kubectl get crd volumereplicationclasses.replication.storage.openshift.io
-kubectl get volumereplicationclass
-```
+- Any CSI-compatible storage that supports VolumeReplication or
+    VolumeSnapshot
 
-#### Option B: Sync Replication (VolSync)
+**Required:**
 
-Storage must support CSI snapshots for VolSync-based replication.
+- Storage provider installed in each managed cluster that supports CSI and
+    VolumeReplication or VolumeSnapshot
+- StorageClasses on managed clusters with different
+    `ramendr.openshift.io/storageid` labels (indicating separate storage
+    instances)
+- [VolumeReplication](https://github.com/csi-addons/volume-replication-operator)
+    CRD and VolumeReplicationClass OR VolSync operator and VolumeSnapshotClass
+- Network connectivity between managed clusters for replication
 
-**Requirements:**
+For information about installing storage providers that support CSI, see your
+storage vendor's documentation or the
+[Kubernetes CSI documentation](https://kubernetes-csi.github.io/docs/).
 
-- VolSync operator installed on managed clusters
-- VolumeSnapshotClass configured
-- CSI driver supporting snapshots
+### 4. S3 Object Storage
 
-**Verify VolSync support:**
-
-```bash
-# On each managed cluster
-kubectl get csv -n openshift-operators | grep volsync
-kubectl get volumesnapshotclass
-```
-
-### 3. S3 Object Storage
-
-Ramen stores cluster metadata (PV specs, VRG state) in S3-compatible object
+Ramen stores workload metadata and Ramen resources in S3-compatible object
 storage for cross-cluster recovery.
 
 **Requirements:**
@@ -105,96 +109,41 @@ storage for cross-cluster recovery.
 - Bucket(s) created for each managed cluster
 - S3 credentials (access key and secret key)
 
-**Supported S3 providers:**
+**Supported:**
 
-- AWS S3
-- Ceph RGW (RADOS Gateway)
-- MinIO
-- Any other S3-compatible storage
+- Any S3-compatible storage
 
-**S3 access will be configured after installation** - see
-[configure.md](configure.md).
-
-### 4. Operator Lifecycle Manager (OLM)
+### 5. Operator Lifecycle Manager (OLM)
 
 Ramen operators are distributed via OLM catalogs.
 
 **Requirements:**
 
 - OLM installed on hub and managed clusters
-- OpenShift 4.x includes OLM by default
-- For vanilla Kubernetes, [install
-  OLM](https://olm.operatorframework.io/docs/getting-started/)
-
-**Verify OLM:**
-
-```bash
-kubectl get csv -n openshift-operators  # or other namespace
-```
-
-### 5. Kubernetes/OpenShift Versions
-
-**Supported versions:**
-
-- Kubernetes 1.20 or higher
-- OpenShift 4.10 or higher (recommended for full feature support)
-
-**Verify cluster version:**
-
-```bash
-kubectl version --short
-```
+- For vanilla Kubernetes, [install OLM](https://olm.operatorframework.io/docs/getting-started/)
 
 ### 6. Required Tools
 
 The following tools must be installed on your workstation:
 
-- **kubectl** >= v1.21 - Kubernetes CLI
-
-  ```bash
-  kubectl version --client
-  ```
-
-- **oc** (optional) - OpenShift CLI, if using OpenShift
-
-  ```bash
-  oc version --client
-  ```
+- **kubectl** >= v1.30 - Kubernetes CLI
 
 ### 7. Optional Components
 
 These components enhance Ramen's capabilities:
 
-#### Velero (for Kube Object Protection)
-
-Required if protecting applications using discovered application or Recipe
-methods.
-
-**Install on each managed cluster:**
-
-```bash
-# Example using Helm
-helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
-helm install velero vmware-tanzu/velero --namespace velero --create-namespace \
-  --set configuration.backupStorageLocation[0].bucket=<your-bucket> \
-  --set configuration.backupStorageLocation[0].config.region=<region> \
-  --set-file credentials.secretContents.cloud=<path-to-credentials>
-```
-
-**Verify:**
-
-```bash
-kubectl get deploy -n velero
-```
-
 #### Recipe CRD (for Recipe-based Protection)
 
 Required if using Recipe-based workload protection.
 
-The Recipe CRD is available at:
-[recipe/config/crd/bases/ramendr.openshift.io_recipes.yaml](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml)
+**Install on each managed cluster:**
 
-Installation instructions are in [recipe.md](recipe.md).
+```bash
+kubectl apply -k "https://github.com/RamenDR/recipe.git/config/crd?ref=main"
+```
+
+The Recipe CRD is also available at:
+[recipe/config/crd/bases/ramendr.openshift.io_recipes.yaml](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml)
 
 ## Installation Steps
 
@@ -206,7 +155,7 @@ cluster. It controls:
 - [DRPlacementControl (DRPC)](drpc-crd.md) - DR operations for individual
   applications
 - [DRPolicy](drpolicy-crd.md) - DR topology and replication configuration
-- DRCluster - Managed cluster registration and S3 configuration
+- [DRCluster](drcluster-crd.md) - Managed cluster registration and S3 configuration
 
 #### Install on Hub Cluster
 
@@ -219,7 +168,7 @@ kubectl config use-context <hub-cluster-context>
 Install the operator using OLM:
 
 ```bash
-kubectl apply -k github.com/RamenDR/ramen/config/olm-install/hub/?ref=main
+kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/hub?ref=main"
 ```
 
 This creates:
@@ -231,152 +180,37 @@ This creates:
 
 #### Verify Hub Operator Installation
 
-1. **Check operator deployment:**
+**Check operator deployment:**
 
-   ```bash
-   kubectl get deployments -n ramen-system
-   ```
+```bash
+kubectl get deployments -n ramen-system
+```
 
-   Expected output:
+Expected output:
 
-   ```
-   NAME                 READY   UP-TO-DATE   AVAILABLE   AGE
-   ramen-hub-operator   1/1     1            1           2m
-   ```
-
-1. **Check operator pod status:**
-
-   ```bash
-   kubectl get pods -n ramen-system
-   ```
-
-   Expected output:
-
-   ```
-   NAME                                  READY   STATUS    RESTARTS   AGE
-   ramen-hub-operator-xxxxxxxxxx-xxxxx   2/2     Running   0          2m
-   ```
-
-1. **Check CRDs are installed:**
-
-   ```bash
-   kubectl get crd | grep ramendr
-   ```
-
-   Expected CRDs:
-
-   ```
-   drplacementcontrols.ramendr.openshift.io
-   drpolicies.ramendr.openshift.io
-   drclusters.ramendr.openshift.io
-   ```
-
-1. **Check operator logs for errors:**
-
-   ```bash
-   kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager
-   ```
+```
+NAME                 READY   UP-TO-DATE   AVAILABLE   AGE
+ramen-hub-operator   1/1     1            1           2m
+```
 
 ### Step 2: Install Ramen DR Cluster Operator
 
-The `ramen-dr-cluster-operator` manages volume replication and workload
-protection on each managed cluster. It controls:
+Install the catalog source for the DR Cluster operator in all managed clusters.
 
-- [VolumeReplicationGroup (VRG)](vrg-crd.md) - PVC replication and application
-  protection
-- Volume replication coordination (VolumeReplication or VolSync)
-- Kube object capture and recovery
-
-**Note:** The hub operator creates VRG resources on managed clusters via
-ManifestWork - you don't create them manually.
-
-#### Install on Each Managed Cluster
-
-Repeat these steps for each managed cluster that will participate in DR.
-
-Configure kubectl to use the managed cluster context:
+Switch to each managed cluster context:
 
 ```bash
 kubectl config use-context <managed-cluster-context>
 ```
 
-Install the operator using OLM:
+Install the catalog source:
 
 ```bash
-kubectl apply -k github.com/RamenDR/ramen/config/olm-install/dr-cluster/?ref=main
+kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=main"
 ```
 
-This creates:
-
-- `ramen-system` namespace
-- Ramen DR cluster operator deployment
-- Required CRDs (VolumeReplicationGroup, DRClusterConfig, etc.)
-- RBAC resources
-
-#### Verify DR Cluster Operator Installation
-
-1. **Check operator deployment:**
-
-   ```bash
-   kubectl get deployments -n ramen-system
-   ```
-
-   Expected output:
-
-   ```
-   NAME                        READY   UP-TO-DATE   AVAILABLE   AGE
-   ramen-dr-cluster-operator   1/1     1            1           2m
-   ```
-
-1. **Check operator pod status:**
-
-   ```bash
-   kubectl get pods -n ramen-system
-   ```
-
-   Expected output:
-
-   ```
-   NAME                                         READY   STATUS    RESTARTS   AGE
-   ramen-dr-cluster-operator-xxxxxxxxxx-xxxxx   2/2     Running   0          2m
-   ```
-
-1. **Check CRDs are installed:**
-
-   ```bash
-   kubectl get crd | grep ramendr
-   ```
-
-   Expected CRDs:
-
-   ```
-   volumereplicationgroups.ramendr.openshift.io
-   drclusterconfigs.ramendr.openshift.io
-   maintenancemodes.ramendr.openshift.io
-   ```
-
-1. **Check operator logs:**
-
-   ```bash
-   kubectl logs -n ramen-system deployment/ramen-dr-cluster-operator -c manager
-   ```
-
-### Step 3: Verify Multi-Cluster Installation
-
-Switch back to the hub cluster and verify operators are running on all clusters:
-
-```bash
-kubectl config use-context <hub-cluster-context>
-
-# Check hub operator
-kubectl get deploy -n ramen-system ramen-hub-operator
-
-# Check managed cluster operators via kubectl with context
-for cluster in dr1 dr2; do
-  echo "Checking cluster: $cluster"
-  kubectl get deploy -n ramen-system ramen-dr-cluster-operator --context $cluster
-done
-```
+The DR Cluster operator will be installed automatically during configuration.
+Refer to [configure.md](configure.md) for more details.
 
 ## Post-Installation
 
@@ -384,17 +218,8 @@ After installing Ramen operators, you need to configure them for your environmen
 
 ### Next Steps
 
-1. **Configure Ramen** - Set up DRPolicy, DRCluster resources, and S3 storage
-
-    - See [configure.md](configure.md) for detailed configuration instructions
-
-1. **Verify storage replication** - Ensure volume replication is working
-
-    - Test VolumeReplication or VolSync on your managed clusters
-
-1. **Protect your first workload** - Deploy an application with DR protection
-
-    - See [usage.md](usage.md) for workload protection methods
+**Configure Ramen** - Set up DRPolicy, DRCluster resources, and S3 storage.
+See [configure.md](configure.md) for detailed configuration instructions.
 
 ### Configuration Prerequisites
 
@@ -461,20 +286,15 @@ kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager --tail=100
 - API server connection issues - verify network connectivity
 - Missing dependencies - ensure OCM is properly installed
 
-### Manual Cleanup (if needed)
+### Rollback Installation
 
-If you need to uninstall and reinstall:
+**Note:** If Ramen has been configured, roll back configurations before rolling
+back the installation.
 
 **Remove hub operator:**
 
 ```bash
-kubectl delete -k github.com/RamenDR/ramen/config/olm-install/hub/?ref=main
-```
-
-**Remove DR cluster operator:**
-
-```bash
-kubectl delete -k github.com/RamenDR/ramen/config/olm-install/dr-cluster/?ref=main
+kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/hub?ref=main"
 ```
 
 **Note:** This will remove the operators but not the CRDs. To remove CRDs:
@@ -483,7 +303,12 @@ kubectl delete -k github.com/RamenDR/ramen/config/olm-install/dr-cluster/?ref=ma
 kubectl delete crd drplacementcontrols.ramendr.openshift.io
 kubectl delete crd drpolicies.ramendr.openshift.io
 kubectl delete crd drclusters.ramendr.openshift.io
-kubectl delete crd volumereplicationgroups.ramendr.openshift.io
+```
+
+**Remove catalog source in all managed clusters:**
+
+```bash
+kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=main"
 ```
 
 ## Development Installation
