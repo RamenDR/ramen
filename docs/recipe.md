@@ -3,17 +3,17 @@ SPDX-FileCopyrightText: The RamenDR authors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Kubernetes Resource Protection with Recipes
+# Using Recipes for Disaster Recovery (DR)
 
 ## Introduction
 
-Recipes are part of Ramen's OpenShift-native Disaster
-Recovery ecosystem, providing vendor-supplied or custom
-disaster recovery specifications for complex stateful
-applications. While Ramen supports multiple workload
-protection methods (GitOps, discovered applications, and
-Recipes), Recipes are specifically designed for applications
-that require:
+A recipe is a Kubernetes Custom Resource that defines custom workflows for
+capturing and recovering application resources and volumes during disaster
+recovery (DR) operations. Recipes are part of Ramen's OpenShift-native Disaster
+Recovery ecosystem, providing vendor-supplied or custom disaster recovery
+specifications for complex stateful applications. While Ramen supports
+multiple workload protection methods (GitOps, discovered applications),
+Recipes are specifically designed for applications that require:
 
 - Application-specific quiesce operations before capture
     (e.g., database flush)
@@ -23,39 +23,67 @@ that require:
 
 **Target Audience:**
 
-- **Software Vendors**: Create Recipes to accompany your
-    products, providing DR protection as a product feature
+- **Software Vendors**: Create Recipes to accompany
+    products, ensuring proper DR protection out-of-the-box.
 - **Advanced Users**: Write custom Recipes when vendors
     haven't provided them for critical applications
 
 **When to use Recipes:**
 
-- Your application requires specific operations before backup
-  (quiesce, flush, etc.)
-- Resources must be captured/restored in a specific order
-- Standard volume replication alone doesn't guarantee
-  application consistency
-- You need to execute custom logic during DR operations
+- **Complex stateful applications** (e.g., databases, middleware) requiring
+ custom workflows
+- **Applications needing quiesce operations** before capture (e.g., database
+ flush, application freeze)
+- **Strict resource ordering** required during capture/recovery (e.g.,
+ ConfigMaps before Deployments)
+- **Custom hooks needed** for pre/post DR operations
+- **Vendor-provided Recipes** are available for your application
+- **Standard volume replication alone** doesn't guarantee application
+ consistency
 
-For general workload protection without custom workflows,
-see [usage.md](usage.md) for simpler alternatives (GitOps or discovered applications).
+**When NOT to use Recipes:**
+
+- Simple stateless applications (use GitOps or discovered applications)
+- Applications without specific capture/recovery requirements.
+- When vendor-provided Recipes are not available and you lack expertise
+ to create custom ones.
 
 ## Overview
 
-By default, Kubernetes resources are Captured and Recovered as single, namespaced
-groups. Some applications may require strict ordering by type of resource during
-Capture or Recover to ensure a successful deployment. To provide this flexibility,
-Recipes can be used to describe a Workflow used for a Capture or Recover action.
-These Recipe Workflows can be referenced by the VolumeReplicationGroup (VRG), and
-executed periodically.
+A Recipe defines custom workflows for disaster recovery operations through
+ four main components:
 
-Recipe source code and additional information can be found [here](https://github.com/RamenDR/recipe).
+- **Groups**: Collections of Kubernetes resources with specific selection
+ criteria.
+- **Hooks**: Custom operations (exec, scale, check) executed during workflows.
+ These are treated as pre/post operations for backup and restore.
+- **Workflows**: Ordered sequences of groups and hooks for capture (backup)
+ and recovery (restore).
+- **Volumes**: Persistent volume selectors for data protection. If provided,
+ will take highest precedence.
+
+When a VolumeReplicationGroup (VRG) or DRPlacementControl (DRPC) references a
+Recipe, Ramen executes the Recipe's workflows according to VRG's schedule.
+The workflows define the exact order in which resources are captured or
+recovered, ensuring application consistency.
+
+Recipe source code and additional information can be found
+[here](https://github.com/RamenDR/recipe).
+
+By default, without Recipes, Kubernetes resources are captured and recovered as
+single, namespaced groups without specific ordering. Recipes provide the
+flexibility to define custom sequences tailored to application requirements.
+
+**Note:** The terms "capture" and "recover" refer to the DR operations, while
+Recipe workflows are named "backup" and "restore" respectively. Ramen
+ automatically maps these operations to the corresponding workflows.
 
 ## Requirements
 
-1. Recipe CRD must be available on the cluster. The base Recipe CRD can be found
-   [here](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml)
-1. The Recipe target must be available in the same Namespace as the application.
+1. Recipe CRD must be installed on the cluster. The base Recipe CRD can be
+ found [here](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml).
+1. Velero must be installed for Kubernetes object protection (see [install.md](install.md#velero-for-kube-object-protection))
+1. The Recipe must exist in the namespace referenced by DRPC.
 
 ## Example
 
@@ -77,7 +105,7 @@ Recover:
 
 Volumes:
 PVC volumes associated with the app should be protected, and are identified with
-LabelSelector `app=my-app`.
+labelSelector `app=my-app`.
 
 ### Recipe sample
 
@@ -85,57 +113,102 @@ LabelSelector `app=my-app`.
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: Recipe
 metadata:
-  name: recipe-sample
+  name: sample-app-recipe
   namespace: my-app-ns
 spec:
-  appType: demo-app  # required, but not currently used
-- name: volumes
-  type: volume
-  labelSelector: app=my-app
-- name: config
-  backupRef: config
-  type: resource
-  includedResourceTypes:
-  - configmap
-  - secret
-- name: deployments
-  backupRef: deployments
-  type: resource
-  includedResourceTypes:
-  - deployment
-- name: instance-resources
-  backupRef: instance-resources
-  type: resource
-  excludedResourceTypes:
-  - configmap
-  - secret
-  - deployment
-hooks:
-- name: service-hooks
-  namespace: my-app-ns
-  labelSelector: shouldRunHook=true
-  ops:
-  - name: pre-backup
-    container: main
-    command: ["/scripts/pre_backup.sh"]  # must exist in 'main' container
-    timeout: 1800
-  - name: post-restore
-    container: main
-    command: ["/scripts/post_restore.sh"]  # must exist in 'main' container
-    timeout: 3600
-workflows:
-- name: capture  # referenced in VRG
-  sequence:
-  - group: config
-  - group: deployments
-  - hook: service-hooks/pre-backup
-  - group: instance-resources
-- name: recover  # referenced in VRG
-  sequence:
-  - group: config
-  - group: deployments
-  - group: instance-resources
-  - hook: service-hooks/post-restore
+  appType: sample-app
+  groups:
+  - name: config
+    type: resource
+    includedResourceTypes:
+    - configmap
+    - secret
+    includedNamespaces:
+    - my-app-ns
+    labelSelector:
+      matchLabels:
+        app: my-app
+  - name: deployments
+    type: resource
+    includedResourceTypes:
+    - deployment
+    includedNamespaces:
+    - my-app-ns
+    labelSelector:
+      matchLabels:
+        app: my-app
+  - name: other-resources
+    type: resource
+    excludedResourceTypes:
+    - configmap
+    - secret
+    - deployment
+    includedNamespaces:
+    - my-app-ns
+    labelSelector:
+      matchLabels:
+        app: my-app
+  volumes:
+    name: app-volumes
+    type: volume
+    labelSelector:
+      matchLabels:
+        app: my-app
+  hooks:
+  - name: scale-test
+    nameSelector: busybox
+    namespace: my-app-ns
+    selectResource: deployment
+    type: scale
+  - name: exec-test
+    nameSelector: busybox-.*
+    namespace: my-app-ns
+    selectResource: pod
+    type: exec
+    ops:
+    - command: >
+        ["/bin/sh", "-c", "ls"]
+      name: busy
+  - chks:
+    - condition: '{$.spec.replicas} == {$.status.readyReplicas}'
+      name: check-replicas
+    name: backup
+    nameSelector: busybox
+    namespace: my-app-ns
+    onError: fail
+    selectResource: deployment
+    timeout: 300
+    type: check
+  - chks:
+    - condition: '{$.status.phase} == {Running}'
+      name: check-replicas
+    name: restore
+    nameSelector: busybox-.*
+    namespace: my-app-ns
+    onError: fail
+    selectResource: pod
+    timeout: 300
+    type: check
+  workflows:
+  - failOn: any-error  # Failure handling: any-error (default), essential-error, full-error
+    name: backup
+    sequence:
+    - hook: backup/check-replicas
+    - hook: scale-test/up
+    - hook: scale-test/sync
+    - hook: scale-test/down
+    - group: config
+    - group: deployments
+    - group: other-resources
+  - failOn: any-error  # Failure handling: any-error (default), essential-error, full-error
+    name: restore
+    sequence:
+    - group: config
+    - group: deployments
+    - group: other-resources
+    - hook: restore/check-replicas
+    - hook: exec-test/busy
+    - hook: restore/check-replicas
 ```
 
 ### VRG sample that uses this Recipe
@@ -149,31 +222,50 @@ metadata:
 spec:
   kubeObjectProtection:
     recipeRef:
-      name: recipe-sample
-      captureWorkflowName: capture
-      recoverWorkflowName: recover
-      volumeGroupName: volumes
+      name: sample-app-recipe
+      # namespace: my-app-ns  # Optional - only needed if Recipe is in different namespace
 ```
 
 ### Additional information about sample Recipe and VRG
 
 There are several parts of this example to be aware of:
 
-1. Both the VRG and Recipe need to exist in the same Namespace.
-1. Once the VRG has the Recipe information on it, users only need to update the
-   Recipe itself to change the Capture/Protect order or types.
-1. Capture and Recover actions are performed on the VRG, not by the Recipe. This
-   includes the scheduling interval, s3 profile information, and sync/async configuration.
-1. Groups can be referenced by arbitrary sequences. If they apply to both a Capture
-   Workflow and a Recover Workflow, the group may be reused.
-1. In order to run Hooks, the relevant Pods and containers must be running before
-   the Hook is executed. This is the responsibility of the user and application,
-   and Recipes do not check for valid Pods prior to running a Workflow.
-1. Hooks may use arbitrary commands, but they must be able to run on a valid container
-   found within the app. In the example above, a Pod with container `main` has
-   scripts appropriate for running Hooks. Be aware that by default, Hooks will
-   attempt to run on all valid Pods and search for the specified container. If
-   several Pods exist in the target application, but only some of them use the
-   `main` container, limit where the Hook can run with a `LabelSelector`. In the
-   example above, this is done by adding `shouldRunHook=true` labels to the appropriate
-   Pods.
+1. **Namespace requirement**: The VRG and Recipe must exist in the same namespace,
+   unless the Recipe's namespace is explicitly specified in `recipeRef.namespace`.
+   If `recipeRef.namespace` is omitted, Ramen assumes the Recipe is in the same
+   namespace as the VRG.
+
+1. **Workflow names**: Recipe workflows must be named "backup" and "restore" (not
+   "capture" and "recover"). Ramen automatically discovers these workflows by name.
+
+1. **Recipe updates**: Once the VRG references a Recipe, users only need to update
+   the Recipe itself to change the capture/recover order or resource types. The VRG
+   will automatically use the updated Recipe.
+
+1. **VRG configuration**: Capture and recover actions are performed on the VRG, not
+   by the Recipe. The VRG controls the scheduling interval, S3 profile information,
+   and sync/async configuration.
+
+1. **Group reuse**: Groups can be referenced by arbitrary sequences. If they apply
+   to both a backup workflow and a restore workflow, the group may be reused.
+
+1. **Volumes**: The volumes section in the Recipe automatically determines which
+   PVCs are protected. No additional configuration is needed in the VRG.
+
+1. **Hook prerequisites**: In order to run hooks, the relevant Pods and containers
+   must be running before the hook is executed. This is the responsibility of the
+   user and application, and Recipes do not check for valid Pods prior to running
+   a workflow.
+
+1. **Hook execution**: Hooks may use arbitrary commands, but they must be able to
+   run on a valid container found within the app. Hooks can target resources using
+   `nameSelector` (regex pattern) or `labelSelector`. By default, hooks will
+   attempt to run on all matching Pods and search for the specified container.
+   Use `labelSelector` to limit where hooks can run if needed.
+
+## Additional usage examples
+
+For more comprehensive examples, advanced use cases, and detailed Recipe specifications,
+see the [Recipe repository README](https://github.com/RamenDR/recipe/blob/main/README.md).
+The repository contains additional examples, best practices, and detailed documentation
+on creating and managing Recipes for various application types.
