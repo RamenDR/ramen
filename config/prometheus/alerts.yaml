@@ -40,3 +40,11 @@ spec:
           annotations:
             description: "Workload is not protected for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions for details."
             alert_type: "DisasterRecovery"
+        - alert: UnsupportedConsistencyGroupingEnabled
+          expr: ramen_unsupported_consistency_grouping_enabled == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            description: "Unsupported consistency grouping is enabled for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})."
+            alert_type: "DisasterRecovery"
