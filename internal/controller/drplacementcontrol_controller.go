@@ -350,6 +350,28 @@ func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProte
 	workloadProtectionMetrics.WorkloadProtectionStatus.Set(float64(protected))
 }
 
+// setCGEnabledMetric sets metric based on annotations on DRPC,
+// where 0 indicates consistency grouping is not enabled
+// and 1 indicates consistency grouping is enabled
+func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementControl,
+	cgEnabledMetrics *CGEnabledMetrics, log logr.Logger,
+) {
+	if cgEnabledMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", CGEnabled))
+
+	enabled := 0
+
+	drpcAnnotations := drpc.GetAnnotations()
+	if drpcAnnotations != nil && drpcAnnotations[rmnutil.IsCGEnabledAnnotation] == "true" {
+		enabled = 1
+	}
+
+	cgEnabledMetrics.CGEnabled.Set(float64(enabled))
+}
+
 //nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
@@ -457,6 +479,17 @@ func (r *DRPlacementControlReconciler) createWorkloadProtectionMetricsInstance(
 
 	return &WorkloadProtectionMetrics{
 		WorkloadProtectionStatus: workloadProtectionMetrics.WorkloadProtectionStatus,
+	}
+}
+
+func (r *DRPlacementControlReconciler) createCGEnabledMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *CGEnabledMetrics {
+	cgEnabledLabels := CGEnabledMetricLabels(drpc)
+	cgEnabledMetrics := NewCGEnabledMetric(cgEnabledLabels)
+
+	return &CGEnabledMetrics{
+		CGEnabled: cgEnabledMetrics.CGEnabled,
 	}
 }
 
@@ -708,6 +741,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
 	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
+
+	cgEnabledMetricLabels := CGEnabledMetricLabels(drpc)
+	DeleteCGEnabledMetric(cgEnabledMetricLabels)
 
 	return nil
 }
@@ -1582,6 +1618,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
 	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+
+	cgEnabledMetrics := r.createCGEnabledMetricsInstance(drpc)
+	r.setCGEnabledMetric(drpc, cgEnabledMetrics, log)
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
