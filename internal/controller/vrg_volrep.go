@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -2886,4 +2887,102 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 	}
 
 	return result
+}
+
+func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
+	if !v.IsDRActionInProgress() {
+		v.log.Info("Skip VM cleanup; reconcile as secondary")
+
+		return false
+	}
+
+	v.log.Info(
+		"DR action progressing",
+		"component", "VRGController",
+		"action", "reconcile",
+		"vrgName", v.instance.GetName(),
+		"namespace", v.instance.GetNamespace(),
+		"desiredState", v.instance.Spec.ReplicationState,
+		"currentState", v.instance.Status.State,
+	)
+
+	vmNamespaceList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+	var foundVMs []string
+	var err error
+	if len(vmList) > 0 {
+		if rmnutil.IsVMDeletionInProgress(v.ctx, v.reconciler.Client, vmList, vmNamespaceList, v.log) {
+			v.log.Info("VM deletion is in progress, skipping ownerreferences check")
+
+			return true
+		}
+
+		foundVMs, err = rmnutil.ListVMsByVMNamespace(v.ctx, v.reconciler.APIReader,
+			v.log, vmNamespaceList, vmList)
+		if len(foundVMs) == 0 || err != nil {
+			v.log.Info(
+				"No VirtualMachines found for cleanup; deletion appears complete",
+				"vmList", vmList,
+				"namespaceList", vmNamespaceList,
+			)
+
+			return false
+		}
+	}
+
+	if v.IsAllProtectedPVCsOwnedByProtectedVMs(foundVMs) {
+		v.log.Info("all protected PVCs have ownerreferences to protected list of VMs")
+		// Cleanup VM resources
+		err := rmnutil.DeleteVMs(v.ctx, v.reconciler.Client, vmList, vmNamespaceList, v.log)
+		if err != nil {
+			v.log.Error(err, "Failed to delete VMs",
+				"vmList", vmList,
+			)
+
+			return false
+		}
+
+		return true
+	}
+
+	v.log.Info("not all protected PVCs have ownerReferences to the protected list of VMs")
+
+	return false
+}
+
+func (v *VRGInstance) IsAllProtectedPVCsOwnedByProtectedVMs(foundVMs []string) bool {
+	yes := true
+	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	allPVCs := make([]corev1.PersistentVolumeClaim, 0, len(v.volRepPVCs)+len(v.volSyncPVCs))
+	allPVCs = append(allPVCs, v.volRepPVCs...)
+	allPVCs = append(allPVCs, v.volSyncPVCs...)
+
+	for idx := range allPVCs {
+		pvc := &allPVCs[idx]
+		log := logWithPvcName(v.log, pvc)
+
+		vmName, err := rmnutil.IsOwnedByVM(v.ctx, v.reconciler.Client, pvc, pvc.OwnerReferences, log)
+		if err != nil {
+			log.Error(err, "Skipping cleanup",
+				"pvc", pvc.Name,
+				"vm", vmName,
+				"reason", "invalid ownerReferences",
+				"action", "manual cleanup required")
+			return false
+		}
+
+		v.log.Info("PVC is owned by VM", "pvc", pvc.Name, "vm", vmName)
+
+		if !slices.Contains(vmList, vmName) {
+			v.log.Info("PVC is owned by a VM that is not in the protected VM list",
+				"pvc", pvc.Name,
+				"vm", vmName,
+				"protectedVMs", vmList)
+
+			return false
+		}
+	}
+
+	return yes
 }

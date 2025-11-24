@@ -397,7 +397,8 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
-// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list
+// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups="cdi.kubevirt.io",resources=datavolumes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -1696,6 +1697,35 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result := ctrl.Result{}
+
+	if v.isVMRecipeProtection() {
+		v.log.Info("Checking VM cleanup and cross-cluster resource conflicts",
+			"name", v.instance.GetName(),
+			"namespace", v.instance.GetNamespace(),
+			"recipeName", "vm-recipe")
+
+		if err := v.validateVMsForStandaloneProtection(); err != nil {
+			result.Requeue = true
+		}
+
+		if !result.Requeue {
+			v.log.Info("VRG status observed",
+				"name", v.instance.GetName(),
+				"namespace", v.instance.GetNamespace(),
+				"replicationState", v.instance.Spec.ReplicationState,
+				"statusState", v.instance.Status.State,
+				"generation", v.instance.GetGeneration(),
+				"resourceVersion", v.instance.GetResourceVersion(),
+			)
+
+			if v.ShouldCleanupVMForSecondary() {
+				v.log.Info("Requeuing until VM cleanup is complete")
+
+				result.Requeue = true
+			}
+		}
+	}
+
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
@@ -1712,12 +1742,6 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	// clean. In all other cases, the VRG will be deleted and we don't care about the its conditions.
 	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 {
 		v.instance.Status.Conditions = []metav1.Condition{}
-	}
-
-	if !result.Requeue && v.isVMRecipeProtection() {
-		if err := v.validateVMsForStandaloneProtection(); err != nil {
-			result.Requeue = true
-		}
 	}
 
 	return result
@@ -1826,6 +1850,8 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	}
 
 	v.updateStatusState()
+
+	result.Requeue = v.instance.Status.State == ramendrv1alpha1.UnknownState
 
 	v.instance.Status.ObservedGeneration = v.instance.Generation
 
