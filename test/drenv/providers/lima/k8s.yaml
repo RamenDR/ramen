@@ -84,24 +84,27 @@ provision:
     script: |
       #!/bin/bash
       set -eux -o pipefail
-      grep SystemdCgroup /etc/containerd/config.toml && exit 0
-      grep "version = 2" /etc/containerd/config.toml || exit 1
+      test -e /etc/containerd/conf.d/k8s.toml && exit 0
+      mkdir -p /etc/containerd/conf.d
       # Configuring the systemd cgroup driver
       # Overriding the sandbox (pause) image
-      cat <<EOF >>/etc/containerd/config.toml
-        [plugins]
-          [plugins."io.containerd.grpc.v1.cri"]
-            sandbox_image = "$(kubeadm config images list | grep pause | sort -r | head -n1)"
-            # Ramen: Allow unprivileged pods to access block devices.
-            device_ownership_from_security_context = true
-            [plugins."io.containerd.grpc.v1.cri".containerd]
-              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
-                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-                  runtime_type = "io.containerd.runc.v2"
-                  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-                    SystemdCgroup = true
-            [plugins."io.containerd.grpc.v1.cri".registry]
-              config_path = "/etc/containerd/certs.d"
+      cat <<EOF >/etc/containerd/conf.d/k8s.toml
+      version = 2
+      [plugins]
+        [plugins."io.containerd.grpc.v1.cri"]
+          sandbox_image = "$(kubeadm config images list | grep pause | sort -r | head -n1)"
+          # Ramen: Allow unprivileged pods to access block devices.
+          device_ownership_from_security_context = true
+          [plugins."io.containerd.grpc.v1.cri".containerd]
+            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+              [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+                runtime_type = "io.containerd.runc.v2"
+                [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+                  SystemdCgroup = true
+          [plugins."io.containerd.grpc.v1.cri".registry]
+            config_path = "/etc/containerd/certs.d"
+        [plugins."io.containerd.cri.v1.runtime".cni]
+          bin_dirs = ["/usr/local/libexec/cni","/opt/cni/bin"]
       EOF
       systemctl restart containerd
 
