@@ -187,7 +187,7 @@ def _write_config(profile, path, local_registry=False):
     config["vmType"] = "vz"
 
     if profile["rosetta"]:
-        config["rosetta"] = {"enabled": True, "binfmt": True}
+        config["vmOpts"] = {"vz": {"rosetta": {"enabled": True, "binfmt": True}}}
 
     # We always use socket_vmnet to get shared network.
     config["networks"] = [{"socket": "/var/run/socket_vmnet"}]
