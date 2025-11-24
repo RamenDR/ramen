@@ -14,17 +14,22 @@ the hub) and serves two primary purposes:
 
 1. **Configuration Communication**: Conveys the cluster identity and
     desired replication schedules from the hub to the managed cluster
-1. **Capability Discovery**: Reports available storage classes,
-    snapshot classes, and replication classes back to the hub for peer
-    class matching
+1. **Capability Discovery**: Scans the cluster for storage-related classes
+    (StorageClass, VolumeSnapshotClass, VolumeReplicationClass, etc.) that
+    have the required Ramen labels/annotations and reports them in its status.
+    See the Status Fields section below for the specific label/annotation
+    requirements for each class type.
 
-Storage providers watch DRClusterConfig to discover replication
-requirements and create appropriate VolumeReplicationClass or
-VolumeSnapshotClass resources. The hub cluster uses the discovered
-capabilities to populate DRPolicy status with peer class information.
+**Note:** DRClusterConfig does not create these classes. Storage providers
+or administrators must create and label/annotate the classes appropriately.
+DRClusterConfig only discovers and reports them in its status.
 
 **Lifecycle:** Automatically created and managed by Ramen on each
 managed cluster. Users typically don't create this resource manually.
+
+**Resource Name:** The DRClusterConfig resource name matches the name of
+the managed cluster. For example, if the managed cluster is named "cluster1",
+the DRClusterConfig resource will also be named "cluster1".
 
 ## API Group and Version
 
@@ -46,6 +51,7 @@ namespace UID.
 
 **Requirements:**
 
+- Required field
 - Immutable after creation
 - Must be globally unique
 
@@ -75,30 +81,27 @@ List of desired replication schedules that storage providers should support.
 ```yaml
 replicationSchedules:
   - "5m"
-  - "30m"
-  - "1h"
 ```
-
-**How it works:**
-
-1. Hub cluster determines required schedules from DRPolicies
-1. Sets these schedules in DRClusterConfig spec
-1. Storage provider controllers watch DRClusterConfig
-1. Providers create VolumeReplicationClass resources with matching schedules
 
 ## Status Fields
 
 The DRClusterConfig status is populated by the
-Ramen DR cluster operator and storage provider controllers.
+Ramen DR cluster operator, which scans the cluster for classes
+with the required labels/annotations and updates the status accordingly.
 
 ### `conditions` ([]metav1.Condition)
 
-Standard Kubernetes conditions.
+Standard Kubernetes conditions array.
 
-**Condition types:**
+**Condition type:**
 
-- `Processed` - Configuration has been processed successfully
-- `Reachable` - S3 storage is reachable from this cluster
+- `Processed` - Indicates whether the DRClusterConfig configuration has been processed
+
+**Condition reasons:**
+
+- `"Initializing"` - Condition is being initialized
+- `"Succeeded"` - Configuration processed successfully
+- `"Failed"` - Configuration processing failed
 
 ### `storageClasses` ([]string)
 
@@ -108,8 +111,8 @@ List of StorageClass names that have the `ramendr.openshift.io/storageid` label.
 
 ```yaml
 storageClasses:
-  - ceph-rbd
-  - ceph-cephfs
+  - block-storage
+  - file-storage
 ```
 
 **Purpose:** Reports available storage classes to the hub for peer class discovery.
@@ -122,8 +125,8 @@ List of VolumeSnapshotClass names with the `ramendr.openshift.io/storageid` labe
 
 ```yaml
 volumeSnapshotClasses:
-  - csi-cephfsplugin-snapclass
-  - csi-rbdplugin-snapclass
+  - csi-fileplugin-snapclass
+  - csi-blockplugin-snapclass
 ```
 
 **Purpose:** Used for sync DR (Metro DR) peer class matching.
@@ -151,8 +154,8 @@ List of VolumeReplicationClass names with the
 
 ```yaml
 volumeReplicationClasses:
-  - rbd-replication-1h
-  - rbd-replication-5m
+  - block-replication-1h
+  - block-replication-5m
 ```
 
 **Purpose:** Used for async DR (Regional DR) peer class matching.
@@ -160,202 +163,70 @@ volumeReplicationClasses:
 ### `volumeGroupReplicationClasses` ([]string)
 
 List of VolumeGroupReplicationClass names with the
-`ramendr.openshift.io/replicationid` label.
+`ramendr.openshift.io/groupreplicationid` label.
 
 **Example:**
 
 ```yaml
 volumeGroupReplicationClasses:
-  - ceph-rbd-group-replication
+  - block-group-replication
 ```
 
 **Purpose:** Enables consistency group replication for multiple PVCs.
 
 ### `networkFenceClasses` ([]string)
 
-List of NetworkFence class names available for cluster fencing operations.
+List of NetworkFenceClass names with the
+`ramendr.openshift.io/storageid` annotation.
 
 **Example:**
 
 ```yaml
 networkFenceClasses:
-  - fence-agents-network
+  - network-fence-class
 ```
 
 **Purpose:** Used by Metro DR for network-based cluster fencing.
 
 ## Examples
 
-### Example 1: Basic DRClusterConfig
+### DRClusterConfig with All Class Types
 
-Typical DRClusterConfig on a managed cluster:
-
-```yaml
-apiVersion: ramendr.openshift.io/v1alpha1
-kind: DRClusterConfig
-metadata:
-  name: drclusterconfig
-spec:
-  clusterID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-  replicationSchedules:
-    - "1h"
-    - "5m"
-status:
-  conditions:
-    - type: Processed
-      status: "True"
-    - type: Reachable
-      status: "True"
-  storageClasses:
-    - ceph-rbd
-  volumeSnapshotClasses:
-    - csi-rbdplugin-snapclass
-  volumeReplicationClasses:
-    - rbd-replication-1h
-    - rbd-replication-5m
-```
-
-### Example 2: Complete Configuration with All Class Types
-
-DRClusterConfig with full storage capabilities:
+DRClusterConfig on a managed cluster with full storage capabilities:
 
 ```yaml
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRClusterConfig
 metadata:
-  name: drclusterconfig
+  name: cluster1
 spec:
   clusterID: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
   replicationSchedules:
     - "5m"
-    - "30m"
-    - "1h"
 status:
   conditions:
     - type: Processed
       status: "True"
-      lastTransitionTime: "2024-01-15T10:00:00Z"
-    - type: Reachable
-      status: "True"
+      reason: "Succeeded"
+      message: "Configuration processed and validated"
+      observedGeneration: 1
       lastTransitionTime: "2024-01-15T10:00:00Z"
   storageClasses:
-    - ceph-rbd
-    - ceph-cephfs
+    - block-storage
+    - file-storage
   volumeSnapshotClasses:
-    - csi-rbdplugin-snapclass
-    - csi-cephfsplugin-snapclass
+    - csi-blockplugin-snapclass
+    - csi-fileplugin-snapclass
   volumeGroupSnapshotClasses:
     - csi-vg-snapclass
   volumeReplicationClasses:
-    - rbd-replication-5m
-    - rbd-replication-30m
-    - rbd-replication-1h
+    - block-replication-5m
+    - block-replication-30m
+    - block-replication-1h
   volumeGroupReplicationClasses:
-    - ceph-rbd-group-replication
+    - block-group-replication
   networkFenceClasses:
-    - fence-agents-network
-```
-
-## How It Works
-
-### Configuration Flow
-
-1. **Hub → Managed Cluster:**
-
-    - User creates DRPolicy on hub with `schedulingInterval: "1h"`
-    - Hub operator determines required schedules
-    - Hub creates/updates DRClusterConfig on managed cluster with
-        `replicationSchedules: ["1h"]`
-
-1. **Storage Provider Response:**
-
-    - Ceph CSI operator watches DRClusterConfig
-    - Sees `replicationSchedules: ["1h"]`
-    - Creates VolumeReplicationClass with 1h schedule
-    - Labels it with `ramendr.openshift.io/replicationid`
-
-1. **Managed Cluster → Hub:**
-
-    - Ramen DR cluster operator scans for labeled classes
-    - Updates DRClusterConfig status with discovered classes
-    - Hub reads status via ManagedClusterView
-
-1. **Hub Processing:**
-    - Hub compares status across all clusters in DRPolicy
-    - Identifies common storage classes
-    - Populates DRPolicy status with peer classes
-
-### Storage Provider Integration
-
-Storage providers should:
-
-1. **Watch DRClusterConfig** for spec changes
-1. **Create VolumeReplicationClass** resources matching requested schedules
-1. **Label resources** appropriately:
-    - `ramendr.openshift.io/storageid: <storage-id>` on StorageClass
-    - `ramendr.openshift.io/replicationid: <replication-id>` on
-        VolumeReplicationClass
-
-**Example VolumeReplicationClass created by storage provider:**
-
-```yaml
-apiVersion: replication.storage.openshift.io/v1alpha1
-kind: VolumeReplicationClass
-metadata:
-  name: rbd-replication-1h
-  labels:
-    ramendr.openshift.io/replicationid: ceph-replication
-spec:
-  provisioner: rbd.csi.ceph.com
-  parameters:
-    replication.storage.openshift.io/replication-secret-name: rook-csi-rbd-provisioner
-    replication.storage.openshift.io/replication-secret-namespace: rook-ceph
-    schedulingInterval: "1h"
-```
-
-## Usage
-
-### Viewing DRClusterConfig
-
-**On managed cluster:**
-
-```bash
-kubectl get drclusterconfig
-kubectl describe drclusterconfig drclusterconfig
-```
-
-**From hub cluster (via ManagedClusterView):**
-
-```bash
-# Hub creates ManagedClusterView to read DRClusterConfig
-kubectl get managedclusterview -n <cluster-namespace> | grep drclusterconfig
-```
-
-### Checking Discovered Classes
-
-```bash
-# View all discovered classes
-kubectl get drclusterconfig drclusterconfig -o yaml
-
-# Check specific class types
-kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status.volumeReplicationClasses}'
-kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status.storageClasses}'
-```
-
-### Verifying S3 Connectivity
-
-```bash
-kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status.conditions}' | jq '.[] | select(.type=="Reachable")'
-```
-
-Expected output:
-
-```json
-{
-  "type": "Reachable",
-  "status": "True",
-  "lastTransitionTime": "2024-01-15T10:00:00Z"
-}
+    - network-fence-class
 ```
 
 ## Monitoring
@@ -363,21 +234,21 @@ Expected output:
 ### Check Configuration Status
 
 ```bash
-kubectl get drclusterconfig drclusterconfig -o yaml
+kubectl get drclusterconfig cluster1 -o yaml
 ```
 
 ### Verify Processing
 
 ```bash
 # Check Processed condition
-kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status.conditions[?(@.type=="Processed")].status}'
+kubectl get drclusterconfig cluster1 -o jsonpath='{.status.conditions[?(@.type=="Processed")].status}'
 ```
 
 ### Monitor Class Discovery
 
 ```bash
 # Watch for new classes being discovered
-kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status}' | jq
+kubectl get drclusterconfig cluster1 -o jsonpath='{.status}' | jq
 ```
 
 ## Troubleshooting
@@ -388,143 +259,45 @@ kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status}' | jq
 
 **Check:**
 
-1. **Storage classes have correct labels:**
+1. **Verify classes exist in the cluster:**
 
    ```bash
-   kubectl get sc -o yaml | grep "ramendr.openshift.io/storageid"
-   ```
-
-1. **VolumeReplicationClass exists:**
-
-   ```bash
+   # Check all class types
+   kubectl get storageclass
+   kubectl get volumesnapshotclass
+   kubectl get volumegroupsnapshotclass
    kubectl get volumereplicationclass
+   kubectl get volumegroupreplicationclass
+   kubectl get networkfenceclass
    ```
 
-1. **Labels on VolumeReplicationClass:**
+1. **Verify classes have required labels/annotations:**
 
    ```bash
-   kubectl get volumereplicationclass -o yaml | grep "ramendr.openshift.io/replicationid"
+   # Check for required labels/annotations on all class types
+   kubectl get storageclass -o yaml | grep "ramendr.openshift.io"
+   kubectl get volumesnapshotclass -o yaml | grep "ramendr.openshift.io"
+   kubectl get volumegroupsnapshotclass -o yaml | grep "ramendr.openshift.io"
+   kubectl get volumereplicationclass -o yaml | grep "ramendr.openshift.io"
+   kubectl get volumegroupreplicationclass -o yaml | grep "ramendr.openshift.io"
+   kubectl get networkfenceclass -o yaml | grep "ramendr.openshift.io"
    ```
 
-**Solution:** Ensure storage provider has created classes with appropriate
-Ramen labels.
-
-### S3 Not Reachable
-
-**Symptom:** `Reachable` condition is `False`.
-
-**Check:**
-
-1. **S3 secret exists:**
+1. **Verify Ramen DR cluster operator is running:**
 
    ```bash
-   kubectl get secret -n ramen-system | grep s3
+   kubectl get pods -n ramen-system
    ```
 
-1. **S3 credentials are correct:**
+1. **Check Ramen DR cluster operator logs:**
 
    ```bash
-   kubectl get secret <s3-secret-name> -n ramen-system -o yaml
+   kubectl logs -n ramen-system <pod-name> | grep -i "drclusterconfig"
    ```
 
-1. **Network connectivity to S3:**
-
-   ```bash
-   # Test from a pod
-   kubectl run -it --rm debug --image=amazon/aws-cli --restart=Never -- \
-     s3 ls --endpoint-url=https://s1.amazonaws.com s3://<bucket-name>
-   ```
-
-**Solution:** Verify S3 configuration in DRCluster and ensure network
-policies allow S3 access.
-
-### Replication Schedules Not Applied
-
-**Symptom:** VolumeReplicationClass with requested schedule doesn't exist.
-
-**Check:**
-
-1. **DRClusterConfig spec has schedules:**
-
-   ```bash
-   kubectl get drclusterconfig drclusterconfig -o jsonpath='{.spec.replicationSchedules}'
-   ```
-
-1. **Storage provider controller is running:**
-
-   ```bash
-   kubectl get pods -n rook-ceph | grep operator
-   ```
-
-1. **Storage provider logs:**
-
-   ```bash
-   kubectl logs -n rook-ceph deploy/rook-ceph-operator | grep VolumeReplicationClass
-   ```
-
-**Solution:** Ensure storage provider controller is watching
-DRClusterConfig and creating classes.
-
-### ClusterID Mismatch
-
-**Symptom:** Peer classes not matching across clusters.
-
-**Check:**
-
-```bash
-# Verify clusterID matches kube-system namespace UID
-kubectl get namespace kube-system -o jsonpath='{.metadata.uid}'
-kubectl get drclusterconfig drclusterconfig -o jsonpath='{.spec.clusterID}'
-```
-
-**Solution:** ClusterID should automatically match namespace UID. If not,
-check Ramen operator logs.
-
-## Best Practices
-
-1. **Don't manually edit DRClusterConfig** - It's managed by Ramen operators
-
-1. **Monitor status regularly** - Ensure classes are being discovered:
-
-   ```bash
-   kubectl get drclusterconfig drclusterconfig -o jsonpath='{.status}' | jq
-   ```
-
-1. **Label storage resources correctly:**
-
-    - StorageClass: `ramendr.openshift.io/storageid: <unique-id>`
-    - VolumeReplicationClass: `ramendr.openshift.io/replicationid: <unique-id>`
-
-1. **Test S3 connectivity** before creating DRClusters on the hub
-
-1. **Ensure storage providers are running** and watching DRClusterConfig
-
-1. **Check for consistent labels** across peer clusters for proper class matching
-
-## Storage Provider Guidelines
-
-If you're developing a storage provider that integrates with Ramen:
-
-1. **Watch DRClusterConfig resources:**
-
-   ```go
-   // Watch for DRClusterConfig changes
-   err := controller.Watch(&source.Kind{Type: &ramendrv1alpha1.DRClusterConfig{}}, handler)
-   ```
-
-1. **Parse replicationSchedules** and create matching VolumeReplicationClass resources
-
-1. **Label your resources:**
-
-   ```yaml
-   metadata:
-     labels:
-       ramendr.openshift.io/replicationid: "your-replication-id"
-   ```
-
-1. **Report capabilities** by ensuring Ramen can discover your classes via labels
-
-1. **Handle schedule updates** when DRClusterConfig spec changes
+**Solution:** Ensure classes exist in the cluster and have the required
+labels/annotations as specified in the Overview section. Classes without
+the required labels/annotations will not be discovered by DRClusterConfig.
 
 ## Related Resources
 
