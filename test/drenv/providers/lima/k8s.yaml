@@ -8,6 +8,9 @@
 
 # yamllint disable rule:line-length
 ---
+
+minimumLimaVersion: 2.0.0
+
 # We use only stable ubuntu image for better stability.
 images:
   - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"

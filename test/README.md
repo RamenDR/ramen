@@ -171,8 +171,8 @@ environment.
        virtctl
    ```
 
-   lima version 1.0.0 or later is required, latest version is
-   recommended. Tested with lima version 1.0.4.
+   lima version 2.0.0 or later is required, latest version is
+   recommended. Tested with lima version 2.0.2.
 
 1. Install the `clusteradm` tool
 
