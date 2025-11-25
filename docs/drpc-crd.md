@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: The RamenDR authors
-SPDX-License-Identifier: Apache-1.0
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # DRPlacementControl CRD
@@ -8,22 +8,20 @@ SPDX-License-Identifier: Apache-1.0
 ## Overview
 
 The **DRPlacementControl** (DRPC) custom resource is the primary interface
-for protecting and managing applications with disaster recovery
-capabilities. Created by users in the application namespace on the OCM hub
-cluster, it orchestrates:
+for protecting and managing applications with disaster recovery capabilities.
+Created by users in the application namespace on the OCM hub cluster, it
+orchestrates:
 
 - Initial deployment of applications to the preferred cluster
 - Failover operations to peer clusters during disasters
 - Planned relocation between clusters
-- Volume replication and kube object protection
 
 The DRPC is the control plane for application DR - it creates and manages
-VolumeReplicationGroup (VRG) resources on managed clusters via
-ManifestWork, coordinates with OCM Placement, and tracks DR state.
+VolumeReplicationGroup (VRG) resources on managed clusters via ManifestWork,
+coordinates with OCM Placement, and tracks DR state.
 
-**Lifecycle:** One DRPC per application. Created when enabling DR
-protection, modified to trigger DR operations, deleted when removing DR
-protection.
+**Lifecycle:** One DRPC per application. Created when enabling DR protection,
+modified to trigger DR operations, deleted when removing DR protection.
 
 ## API Group and Version
 
@@ -74,7 +72,7 @@ configuration.
 
 ```yaml
 drPolicyRef:
-  name: regional-dr-policy
+  name: dr-policy
 ```
 
 #### `pvcSelector` (metav1.LabelSelector)
@@ -103,8 +101,8 @@ pvcSelector:
 
 #### `preferredCluster` (string)
 
-The cluster name where the application should initially run and
-return to after relocate.
+The cluster name where the application should initially run and return to
+after relocate.
 
 **Behavior:**
 
@@ -122,8 +120,7 @@ preferredCluster: east-cluster
 
 The target cluster for failover operations.
 
-**When to use:** Set this along with `action: Failover`
-to trigger a failover.
+**When to use:** Set this along with `action: Failover` to trigger a failover.
 
 **Example:**
 
@@ -140,8 +137,8 @@ The DR action to perform: `Failover` or `Relocate`.
 
 **Valid values:**
 
-- `Failover` - Recover application on `failoverCluster`
-    (assumes source is down)
+- `Failover` - Recover application on `failoverCluster` (assumes source is
+  down)
 - `Relocate` - Migrate application to target cluster (planned operation)
 
 **Example:**
@@ -158,8 +155,8 @@ action: Relocate
 preferredCluster: east-cluster
 ```
 
-**State machine:** Set action to trigger operation,
-DRPC clears it when complete.
+**State machine:** Set action to trigger operation, DRPC clears it when
+complete.
 
 #### `protectedNamespaces` ([]string)
 
@@ -180,8 +177,7 @@ protectedNamespaces:
   - app-config-namespace
 ```
 
-**Use case:** Multi-namespace applications or shared
-configuration namespaces.
+**Use case:** Multi-namespace applications or shared configuration namespaces.
 
 #### `kubeObjectProtection` (KubeObjectProtectionSpec)
 
@@ -189,12 +185,12 @@ Configuration for protecting Kubernetes resources (not just PVCs).
 
 **Fields:**
 
-- `captureInterval` (metav1.Duration) -
-    How often to capture kube objects (default: 5m)
+- `captureInterval` (metav1.Duration) - How often to capture Kubernetes
+  objects (default: 5m)
 - `recipeRef` (RecipeRef) - Reference to Recipe for custom workflows
 - `recipeParameters` (map[string][]string) - Parameters for Recipe
-- `kubeObjectSelector` (metav1.LabelSelector) -
-    Selector for objects to protect
+- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to
+  protect
 
 **Example:**
 
@@ -225,8 +221,7 @@ volSyncSpec:
 
 ## Status Fields
 
-The DRPC status provides detailed information about
-the DR state and progress.
+The DRPC status provides detailed information about the DR state and progress.
 
 ### `phase` (DRState)
 
@@ -234,6 +229,8 @@ Current state of the DRPC.
 
 **States:**
 
+- `WaitForUser` - Waiting for user action after hub recovery
+- `Initiating` - Action (Deploy/Failover/Relocate) preparing for execution
 - `Deploying` - Initial deployment in progress
 - `Deployed` - Application running normally with DR protection
 - `FailingOver` - Failover operation in progress
@@ -260,14 +257,56 @@ How long the current action has been running.
 
 Detailed progress indicator for the current operation.
 
-**Example values:**
+**Deploy progressions** (during initial deployment):
 
-- `Completed` - Operation finished successfully
-- `WaitForReadiness` - Waiting for application to become ready
 - `CreatingMW` - Creating ManifestWork for VRG
-- `FailingOverToCluster` - Executing failover
+- `UpdatingPlRule` - Updating Placement Rule
+- `EnsuringVolSyncSetup` - Setting up VolSync (if enabled)
+- `SettingUpVolSyncDest` - Setting up VolSync destination
+- `Completed` - Operation finished successfully
+
+**Failover progressions** (during failover operation):
+
+Pre-failover (before creating VRG on failover cluster):
+
+- `CheckingFailoverPrerequisites` - Verifying failover prerequisites
+- `WaitForFencing` - Waiting for storage fencing to complete
+- `WaitForStorageMaintenanceActivation` - Waiting for storage maintenance mode
+
+Post-failover (after creating VRG on failover cluster):
+
+- `FailingOverToCluster` - Executing failover to target cluster
+- `WaitingForResourceRestore` - Waiting for resources to restore
+- `WaitForReadiness` - Waiting for application to become ready
+- `UpdatedPlacement` - Placement has been updated
+- `Completed` - Operation finished successfully
+- `CleaningUp` - Cleaning up resources on source cluster
+- `WaitOnUserToCleanUp` - Waiting for user intervention
+
+**Relocate progressions** (during relocate operation):
+
+Pre-relocate (before creating VRG on preferred cluster):
+
 - `PreparingFinalSync` - Preparing for final data sync
-- `WaitForFencing` - Waiting for storage fencing
+- `ClearingPlacement` - Clearing placement decisions
+- `RunningFinalSync` - Running final data sync
+- `FinalSyncComplete` - Final sync completed
+- `EnsuringVolumesAreSecondary` - Setting volumes to secondary state
+- `WaitOnUserToCleanUp` - Waiting for user intervention (if needed)
+
+Post-relocate (after creating VRG on preferred cluster):
+
+- `WaitingForResourceRestore` - Waiting for resources to restore
+- `WaitForReadiness` - Waiting for application to become ready
+- `UpdatedPlacement` - Placement has been updated
+- `Completed` - Operation finished successfully
+- `CleaningUp` - Cleaning up resources on source cluster
+
+**Special progressions** (any operation):
+
+- `Deleting` - DRPC deletion in progress
+- `Deleted` - DRPC has been deleted
+- `Paused` - Action is paused, user intervention required
 
 ### `preferredDecision` (PlacementDecision)
 
@@ -302,7 +341,7 @@ Total bytes transferred in the most recent sync.
 
 ### `lastKubeObjectProtectionTime` (metav1.Time)
 
-Time of the most recent successful kube object protection.
+Time of the most recent successful Kubernetes object protection.
 
 ## Examples
 
@@ -322,7 +361,7 @@ spec:
 
   # Use regional DR policy
   drPolicyRef:
-    name: regional-dr-policy
+    name: dr-policy
 
   # Reference OCM Placement
   placementRef:
@@ -349,7 +388,7 @@ spec:
   preferredCluster: east-cluster
   failoverCluster: west-cluster # Target cluster
   drPolicyRef:
-    name: regional-dr-policy
+    name: dr-policy
   placementRef:
     kind: Placement
     name: webapp-placement
@@ -372,7 +411,7 @@ metadata:
 spec:
   preferredCluster: east-cluster # Target cluster
   drPolicyRef:
-    name: regional-dr-policy
+    name: dr-policy
   placementRef:
     kind: Placement
     name: webapp-placement
@@ -395,7 +434,7 @@ metadata:
 spec:
   preferredCluster: east-cluster
   drPolicyRef:
-    name: regional-dr-policy
+    name: dr-policy
   placementRef:
     kind: Placement
     name: mysql-placement
@@ -422,7 +461,7 @@ metadata:
 spec:
   preferredCluster: east-cluster
   drPolicyRef:
-    name: regional-dr-policy
+    name: dr-policy
   placementRef:
     kind: Placement
     name: multi-ns-app-placement
@@ -540,8 +579,8 @@ kubectl delete drpc myapp-drpc -n myapp
 kubectl get drpc -A
 ```
 
-Output shows: name, age, preferredCluster,
-failoverCluster, desiredState, currentState.
+Output shows: name, age, preferredCluster, failoverCluster, desiredState,
+currentState.
 
 ### View Detailed Status
 
@@ -562,124 +601,124 @@ kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.lastGroupSyncBytes}'
 kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.conditions}' | jq
 ```
 
-### Check VRG on Managed Cluster
-
-```bash
-kubectl get vrg -n myapp --context east-cluster
-kubectl describe vrg myapp-drpc -n myapp --context east-cluster
-```
-
 ## Troubleshooting
 
-### DRPC Stuck in Deploying
+### General Diagnosis
 
-**Check:**
-
-```bash
-kubectl get drpc myapp-drpc -n myapp -o yaml
-```
-
-**Common causes:**
-
-1. VRG ManifestWork not created - check `status.progression`
-1. PVC selector doesn't match any PVCs
-1. Storage classes not found on managed cluster
-
-**Debug:**
+Check DRPC status and progression to identify issues:
 
 ```bash
-# Check ManifestWork
-kubectl get manifestwork -A | grep myapp
-
-# Check PVCs match selector
-kubectl get pvc -n myapp -l app=myapp
-
-# Check VRG on managed cluster
-kubectl get vrg -n myapp --context east-cluster
-```
-
-### Failover Not Progressing
-
-**Check progression:**
-
-```bash
+kubectl get drpc myapp-drpc -n myapp
+kubectl describe drpc myapp-drpc -n myapp
 kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
 ```
 
-**Common issues:**
+### DRPC Stuck in Deploying
 
-- `WaitForFencing` - Storage fencing taking time
-- `WaitForReadiness` - Application not becoming ready
-- Storage replication not healthy
-
-**Check VRG conditions:**
+**Check:** Verify PVCs match the selector and VRG is created.
 
 ```bash
-kubectl get vrg myapp-drpc -n myapp --context west-cluster -o yaml
+kubectl get pvc -n myapp -l app=myapp
+kubectl get manifestwork -A | grep myapp
 ```
 
-### Data Not Replicating
+**Common causes:** PVC selector mismatch, storage class not found on target
+cluster, or VRG not becoming ready.
 
-**Check sync times:**
+**Solution:** Ensure PVCs have correct labels, storage class exists on managed
+cluster, and check VRG status for errors.
+
+### Failover Not Progressing
+
+**Check:** Look for `WaitForFencing` or `WaitForReadiness` progression.
 
 ```bash
-kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.lastGroupSyncTime}'
+kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
+kubectl get pods -n myapp --context west-cluster
 ```
 
-**If null or stale:**
+**Common causes:** Storage fencing in progress, application pods not ready,
+or S3 storage not accessible.
 
-1. Check VRG status on source cluster
-1. Check VolumeReplication resources
-1. Verify storage replication is configured
+**Solution:** Wait for fencing to complete (normal for Metro DR), fix
+application issues (image pull, resources), or verify S3 connectivity.
+
+### Relocate Taking Too Long
+
+**Check:** Monitor progression for `RunningFinalSync` status.
 
 ```bash
-kubectl get volumereplication -n myapp --context east-cluster
+kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
+kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.lastGroupSyncBytes}'
 ```
+
+**Common causes:** Large data sync in progress or source cluster not
+accessible.
+
+**Solution:** Wait for final sync to complete. If source cluster is down,
+use Failover instead of Relocate.
+
+### PeerReady Condition False
+
+**Check:** Verify peer cluster connectivity and VRG status.
+
+```bash
+kubectl get managedcluster west-cluster
+kubectl get vrg myapp-drpc -n myapp --context west-cluster
+```
+
+**Common causes:** Peer cluster unavailable or storage replication not
+established.
+
+**Solution:** Ensure peer cluster is healthy and replication is configured
+correctly.
 
 ### Cannot Delete DRPC
 
-**Stuck in deletion:**
-
-- VRG may have finalizers
-- ManifestWork cleanup pending
-
-**Force cleanup (use carefully):**
+**Check:** Look for stuck finalizers or VRG cleanup issues.
 
 ```bash
-kubectl patch drpc myapp-drpc -n myapp -p '{"metadata":{"finalizers":[]}}' --type=merge
+kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.metadata.finalizers}'
+kubectl get vrg -n myapp --context east-cluster
 ```
+
+**Common causes:** VRG cleanup pending on managed clusters.
+
+**Solution:** Wait for VRG cleanup. If stuck, manually delete VRG or remove
+finalizers (use with caution).
 
 ## Best Practices
 
-1. **Use descriptive names** - Include app name in DRPC name (e.g., `myapp-drpc`)
+1. **Use descriptive names** - Include app name in DRPC name (e.g.,
+   `myapp-drpc`)
 
-1. **Label PVCs specifically** - Use unique labels to
-    avoid protecting wrong PVCs
+1. **Label PVCs specifically** - Use unique labels to avoid protecting wrong
+   PVCs
 
-1. **Monitor status regularly** - Check `lastGroupSyncTime`
-    to ensure replication is working
+1. **Monitor status regularly** - Check `lastGroupSyncTime` to ensure
+   replication is working
 
-1. **Test failover** - Perform planned failover tests
-    before actual disasters
+1. **Test failover** - Perform planned failover tests before actual disasters
 
-1. **Document procedures** - Create runbooks for DR operations
-    specific to your apps
+1. **Document procedures** - Create runbooks for DR operations specific to
+   your apps
 
 1. **Use GitOps when possible** - For easier application recreation
 
 1. **Set appropriate capture intervals** - Balance protection vs. overhead
-
     - Critical apps: 5m
     - Standard apps: 15m to 30m
     - Low-priority: 1h
 
-1. **Verify peer readiness** - Check `PeerReady` condition before triggering DR
+1. **Verify peer readiness** - Check `PeerReady` condition before triggering
+   DR
 
 1. **Clean up after testing** - Remove DRPCs for apps that don't need DR
 
 ## Related Resources
 
-- [DRPolicy](drpolicy-crd.md) - Defines DR topology referenced by DRPC
-- [VolumeReplicationGroup](vrg-crd.md) - Created by DRPC on managed clusters
+- [DRPolicy CRD](drpolicy-crd.md) - Defines DR topology referenced by DRPC
+- [VolumeReplicationGroup CRD](vrg-crd.md) - Created by DRPC on managed
+  clusters
 - [Usage Guide](usage.md) - How to protect workloads with Ramen
 - [Recipe Documentation](recipe.md) - For Recipe-based protection
