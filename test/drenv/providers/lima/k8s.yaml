@@ -31,6 +31,7 @@ portForwards:
   - ignore: true
     proto: any
     guestIP: "0.0.0.0"
+    guestIPMustBeZero: false
 
 param:
   # If set, allow acess to local insecure registry and use it as image
