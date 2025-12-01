@@ -363,8 +363,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
 		d.setDRState(rmn.FailedOver)
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		if err := d.ensureVRGManifestWork(failoverCluster); err != nil {
 			d.log.Info("Unable to ensure VRG ManifestWork on failover cluster")
@@ -381,6 +379,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 			return !done, nil
 		}
+
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
