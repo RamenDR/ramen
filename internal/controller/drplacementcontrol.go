@@ -802,6 +802,13 @@ func checkActivationForStorageIdentifier(
 			continue
 		}
 
+		if statusMMode.State != rmn.MModeStateCompleted {
+			log.Info("ClusterMaintenanceMode state not completed", "state", statusMMode.State,
+				"provisioner", statusMMode.StorageProvisioner, "targetID", statusMMode.TargetID)
+
+			return false
+		}
+
 		for _, condition := range statusMMode.Conditions {
 			if condition.Type != string(activation) {
 				continue
