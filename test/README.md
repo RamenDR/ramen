@@ -17,6 +17,7 @@ environment.
 
    ```
    sudo dnf install @virtualization
+   rpm -q libvirt virt-manager
    ```
 
    For more info see
@@ -34,6 +35,7 @@ environment.
 
    ```
    sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
+   minikube version
    ```
 
    Tested with version v1.37.0.
@@ -44,6 +46,7 @@ environment.
    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
    sudo install kubectl /usr/local/bin
    rm kubectl
+   kubectl version --client
    ```
 
    For more info see
@@ -54,6 +57,7 @@ environment.
 
    ```
    curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   clusteradm version
    ```
 
    For more info see
@@ -67,6 +71,7 @@ environment.
    curl -Ls https://get.submariner.io | bash
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
+   subctl version
    ```
 
    For more info see
@@ -81,6 +86,7 @@ environment.
    tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
+   velero version
    ```
 
    For more info see
@@ -93,6 +99,7 @@ environment.
     curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
     sudo install helm /usr/local/bin
     rm -f helm
+    helm version
    ```
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
@@ -104,6 +111,7 @@ environment.
    curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
+   virtctl version
    ```
 
    For more info see
@@ -115,6 +123,7 @@ environment.
    curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
    sudo install mc /usr/local/bin
    rm mc
+   mc --version
    ```
 
    For more info see
@@ -126,6 +135,7 @@ environment.
    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
    sudo install kustomize /usr/local/bin
    rm kustomize
+   kustomize version
    ```
 
    For more info see
@@ -137,6 +147,7 @@ environment.
    curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
+   argocd version --client
    ```
 
    For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
@@ -148,6 +159,7 @@ environment.
    curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   kubectl gather --version
    ```
 
    kubectl-gather version 0.6.0 or later is required. Tested with
@@ -181,6 +193,7 @@ environment.
 
    ```
    curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   clusteradm version
    ```
 
    For more info see
@@ -194,6 +207,7 @@ environment.
    curl -Ls https://get.submariner.io | bash
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
+   subctl version
    ```
 
    For more info see
@@ -207,6 +221,7 @@ environment.
    curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   kubectl gather --version
    ```
 
    kubectl-gather version 0.6.0 or later is required. Tested with
@@ -229,6 +244,7 @@ environment.
    sudo launchctl bootstrap system "/Library/LaunchDaemons/$SERVICE_ID.plist"
    sudo launchctl enable system/$SERVICE_ID
    sudo launchctl kickstart -kp system/$SERVICE_ID
+   /opt/socket_vmnet/bin/socket_vmnet --version
    ```
 
    For more info see [Installing socket_vmnet from binary](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-binary)
