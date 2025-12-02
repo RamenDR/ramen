@@ -334,6 +334,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
+//
+//nolint:funlen
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -375,6 +377,13 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		ready := d.checkReadiness(failoverCluster)
 		if !ready {
 			d.log.Info("VRGCondition not ready to finish failover")
+			d.setProgression(rmn.ProgressionWaitForReadiness)
+
+			return !done, nil
+		}
+
+		if d.areMultipleVRGsPrimary() {
+			d.log.Info("Multiple VRGs are primary, cannot complete failover yet")
 			d.setProgression(rmn.ProgressionWaitForReadiness)
 
 			return !done, nil
