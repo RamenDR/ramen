@@ -18,6 +18,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	virtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -246,7 +247,8 @@ func (v *VRGInstance) isPVCReadyForSecondary(pvc *corev1.PersistentVolumeClaim, 
 
 	// If PVC is not being deleted, it is not ready for Secondary, unless action is failover
 	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover && !rmnutil.ResourceIsDeleted(pvc) {
-		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion")
+		log.Info("VolumeReplication cannot become Secondary, as its PersistentVolumeClaim is not marked for deletion",
+			"pvc", pvc.Name)
 
 		msg := "unable to transition to Secondary as PVC is not deleted"
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
@@ -2889,13 +2891,60 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 	return result
 }
 
-func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
-	if !v.IsDRActionInProgress() {
-		v.log.Info("Skip VM cleanup; reconcile as secondary")
+// Checks and requeues reconciler of VM resource cleanup.
+func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
+	if !v.isVMRecipeProtection() {
+		return false
+	}
+
+	v.log.Info("Checking VM cleanup and cross-cluster resource conflicts",
+		"recipeName", "vm-recipe")
+
+	if v.isResourceConflict() {
+		v.log.Info("Conflict detected; blocking resource cleanup until resolution")
 
 		return false
 	}
 
+	v.log.Info("VRG status observed",
+		"replicationState", v.instance.Spec.ReplicationState,
+		"statusState", v.instance.Status.State,
+		"generation", v.instance.GetGeneration(),
+		"resourceVersion", v.instance.GetResourceVersion(),
+	)
+
+	if !v.IsDRActionInProgress() {
+		v.log.Info("Skip resource cleanup; reconcile as secondary")
+
+		return false
+	}
+
+	if v.ShouldCleanupVMForSecondary() {
+		v.log.Info("Requeuing until VM cleanup is complete")
+
+		return true
+	}
+
+	return false
+}
+
+// Checks if there are conflicting protected resources across managed clusters
+func (v *VRGInstance) isResourceConflict() bool {
+	if err := v.validateVMsForStandaloneProtection(); err != nil {
+		return true
+	}
+
+	return false
+}
+
+//  1. If VM resource cleanup is in progress, requeue for reconciliation
+//  2. If protected VMs are not found in protected NS, consider VM cleanup complete
+//  3. Validates if all protected VMs owns PVCs from the lis tof all the protected volumes directly or indirectly
+//     a) VM manifest has references to PVC through DataVolumeTemplate or DataVolume
+//     b) VM instance pod - virt-launcher-xxx is using the PVC, whose lifecycle management is independent of VM
+//  4. for step 3(b) VM ownership is set on the respective PVCs
+//  5. Deletes the VM using cascade foreground deletion API
+func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
 	v.log.Info(
 		"DR action progressing",
 		"component", "VRGController",
@@ -2908,81 +2957,271 @@ func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
 
 	vmNamespaceList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
 	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
-	var foundVMs []string
-	var err error
-	if len(vmList) > 0 {
-		if rmnutil.IsVMDeletionInProgress(v.ctx, v.reconciler.Client, vmList, vmNamespaceList, v.log) {
-			v.log.Info("VM deletion is in progress, skipping ownerreferences check")
 
-			return true
-		}
-
-		foundVMs, err = rmnutil.ListVMsByVMNamespace(v.ctx, v.reconciler.APIReader,
-			v.log, vmNamespaceList, vmList)
-		if len(foundVMs) == 0 || err != nil {
-			v.log.Info(
-				"No VirtualMachines found for cleanup; deletion appears complete",
-				"vmList", vmList,
-				"namespaceList", vmNamespaceList,
-			)
-
-			return false
-		}
-	}
-
-	if v.IsAllProtectedPVCsOwnedByProtectedVMs(foundVMs) {
-		v.log.Info("all protected PVCs have ownerreferences to protected list of VMs")
-		// Cleanup VM resources
-		err := rmnutil.DeleteVMs(v.ctx, v.reconciler.Client, vmList, vmNamespaceList, v.log)
-		if err != nil {
-			v.log.Error(err, "Failed to delete VMs",
-				"vmList", vmList,
-			)
-
-			return false
-		}
-
+	foundVMs, yes := v.skipVMCleanupVerificationCheck()
+	if yes { // VM cleanup is in progress
 		return true
 	}
 
-	v.log.Info("not all protected PVCs have ownerReferences to the protected list of VMs")
+	if len(foundVMs) == 0 && !yes { // VM cleanup complete
+		v.log.Info(
+			"No VirtualMachines found for cleanup; deletion appears complete",
+			"vmList", vmList,
+			"namespaceList", vmNamespaceList,
+		)
 
-	return false
+		return false
+	}
+
+	// Proceed to verify if VMs are eligibile for auto-cleanup
+
+	yes = v.validatePVCOwnershipOnVMs()
+	if !yes {
+		v.log.Info("VMs not eligible for automated cleanup")
+
+		return yes
+	}
+
+	v.log.Info("Proceed to cleanup VM resources")
+	// Cleanup VM resources
+	err := rmnutil.DeleteVMs(v.ctx, v.reconciler.Client, foundVMs, v.log)
+	if err != nil { // Requeue and retry
+		v.log.Error(err, "Failed to delete VMs",
+			"vmList", vmList,
+		)
+
+		// return false
+	}
+
+	return true
+
+	// return false
 }
 
-func (v *VRGInstance) IsAllProtectedPVCsOwnedByProtectedVMs(foundVMs []string) bool {
-	yes := true
-	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+// pvcProcessResult captures the decision for a single PVC.
+type pvcProcessResult struct {
+	vm    *metav1.PartialObjectMetadata
+	skip  bool // manual cleanup required; abort overall cleanup
+	retry bool // transient error; request requeue
+}
 
-	allPVCs := make([]corev1.PersistentVolumeClaim, 0, len(v.volRepPVCs)+len(v.volSyncPVCs))
-	allPVCs = append(allPVCs, v.volRepPVCs...)
-	allPVCs = append(allPVCs, v.volSyncPVCs...)
+// ValidatePVCOwnershipOnVMs ensures PVCs used by protected VMs carry VM OwnerReferences,
+// or decides to skip/retry cleanup based on current state.
+func (v *VRGInstance) validatePVCOwnershipOnVMs() bool {
+	protectedPVCs := v.collectProtectedPVCs()
+	protectedVMs := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+	protectedVMSet := toSet(protectedVMs)
 
-	for idx := range allPVCs {
-		pvc := &allPVCs[idx]
-		log := logWithPvcName(v.log, pvc)
+	// Map PVC name → VM for patching later
+	pvcToVM := make(map[string]*metav1.PartialObjectMetadata)
 
-		vmName, err := rmnutil.IsOwnedByVM(v.ctx, v.reconciler.Client, pvc, pvc.OwnerReferences, log)
-		if err != nil {
-			log.Error(err, "Skipping cleanup",
-				"pvc", pvc.Name,
-				"vm", vmName,
-				"reason", "invalid ownerReferences",
-				"action", "manual cleanup required")
-			return false
+	var (
+		skipCleanup  bool
+		retryCleanup bool
+	)
+
+	for i := range protectedPVCs {
+		if rmnutil.ResourceIsDeleted(&protectedPVCs[i]) {
+			// skip validation if pvc is already in terminating state
+			continue
 		}
 
-		v.log.Info("PVC is owned by VM", "pvc", pvc.Name, "vm", vmName)
+		res := v.verifyVMPVCOwnershipAndUsage(&protectedPVCs[i], protectedVMSet)
+		if res.skip {
+			skipCleanup = true
 
-		if !slices.Contains(vmList, vmName) {
-			v.log.Info("PVC is owned by a VM that is not in the protected VM list",
-				"pvc", pvc.Name,
-				"vm", vmName,
-				"protectedVMs", vmList)
+			break
+		}
 
-			return false
+		if res.retry {
+			retryCleanup = true
+
+			break
+		}
+
+		if res.vm != nil {
+			pvcToVM[protectedPVCs[i].Name] = res.vm
 		}
 	}
 
-	return yes
+	// If any PVC cannot be associated → skip cleanup
+	if skipCleanup || len(pvcToVM) == 0 {
+		return false
+	}
+
+	// Patch PVCs outside the loop
+	if v.patchPVCsOwnerRefs(pvcToVM) {
+		retryCleanup = true
+	}
+	// return true if no retry needed, return false if retry required
+	return !retryCleanup
+}
+
+// collectProtectedPVCs merges volRepPVCs and volSyncPVCs.
+func (v *VRGInstance) collectProtectedPVCs() []corev1.PersistentVolumeClaim {
+	p := make([]corev1.PersistentVolumeClaim, 0, len(v.volRepPVCs)+len(v.volSyncPVCs))
+	p = append(p, v.volRepPVCs...)
+	p = append(p, v.volSyncPVCs...)
+
+	return p
+}
+
+// verifyVMPVCOwnershipAndUsage decides what to do with a single PVC:
+// - If it already has an OwnerReference, validate it.
+// - Else, check if used by virt-launcher, and whether VM is protected.
+// Returns mapping info or flags indicating skip/retry.
+func (v *VRGInstance) verifyVMPVCOwnershipAndUsage(
+	pvc *corev1.PersistentVolumeClaim,
+	protectedVMSet map[string]struct{},
+) pvcProcessResult {
+	log := logWithPvcName(v.log, pvc)
+
+	if len(pvc.OwnerReferences) > 0 {
+		return v.handleExistingOwnerRef(pvc, log)
+	}
+
+	vm, decision := v.resolveOwnerFromVirtLauncher(pvc, log)
+	if decision.skip || decision.retry || vm == nil {
+		return decision
+	}
+
+	// 3) Ensure VM is among protected VMs; else skip cleanup.
+	if !v.isProtectedVM(vm.GetName(), protectedVMSet) {
+		log.Info("Skipping cleanup, PVC not used by protected VM", "pvc", pvc.Name, "vm", vm.GetName())
+
+		return pvcProcessResult{skip: true}
+	}
+
+	// 4) Success: return VM metadata for patching.
+	pom, ok := vm.(*metav1.PartialObjectMetadata)
+	if !ok {
+		log.Info("VirtualMachine(VM) map function received non-VM resource")
+
+		return pvcProcessResult{}
+	}
+
+	return pvcProcessResult{vm: pom}
+}
+
+// handleExistingOwnerRef validates PVC ownerReferences chain and returns skip on invalid.
+func (v *VRGInstance) handleExistingOwnerRef(
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+) pvcProcessResult {
+	vm, err := rmnutil.IsOwnedByVM(v.ctx, v.reconciler.Client, pvc, log)
+	if err != nil {
+		log.Error(err, "Skipping cleanup", "pvc", pvc.Name,
+			"reason", "invalid ownerReferences", "action", "manual cleanup required")
+
+		return pvcProcessResult{skip: true}
+	}
+
+	log.Info("Continue with cleanup",
+		"pvc", pvc.GetName(),
+		"ownedByVM", vm.GetName(),
+		"ownerReferences", pvc.OwnerReferences)
+
+	// Already valid; no patching needed
+	pom, ok := vm.(*metav1.PartialObjectMetadata)
+	if !ok {
+		log.Info("VirtualMachine(VM) map function received non-VM resource")
+
+		return pvcProcessResult{}
+	}
+
+	return pvcProcessResult{vm: pom}
+}
+
+// resolveOwnerFromVirtLauncher tries to map PVC usage to a virt-launcher pod's VM.
+func (v *VRGInstance) resolveOwnerFromVirtLauncher(
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+) (client.Object, pvcProcessResult) {
+	ownerVMMetadata, err := rmnutil.IsUsedByVirtLauncherPod(v.ctx, v.reconciler.Client, pvc, log)
+	if err != nil {
+		// Transient resolution error → ask for retry
+		return nil, pvcProcessResult{retry: true}
+	}
+
+	if ownerVMMetadata == nil {
+		// No virt-launcher usage found → manual cleanup
+		return nil, pvcProcessResult{skip: true}
+	}
+
+	// Ensure the reported object is a VM PartialObjectMetadata
+	vm, ok := ownerVMMetadata.(*metav1.PartialObjectMetadata)
+	if !ok {
+		log.Info("VirtualMachine(VM) map function received non-VM resource")
+
+		return nil, pvcProcessResult{}
+	}
+
+	return vm, pvcProcessResult{}
+}
+
+// isProtectedVM checks membership in the protected set.
+func (v *VRGInstance) isProtectedVM(vmName string, protectedVMSet map[string]struct{}) bool {
+	_, ok := protectedVMSet[vmName]
+
+	return ok
+}
+
+// patchPVCsOwnerRefs applies VM OwnerReference to PVCs and returns true if any patch failed.
+func (v *VRGInstance) patchPVCsOwnerRefs(pvcToVM map[string]*metav1.PartialObjectMetadata) bool {
+	var patchError bool
+
+	for pvcName, vm := range pvcToVM {
+		err := rmnutil.UpdatePvcWithVMOwnerRef(v.ctx, v.reconciler.Client, vm, pvcName, vm.Namespace, v.log)
+		if err != nil {
+			v.log.Error(err, "Failed to patch PVC owner reference",
+				"pvcName", pvcName,
+				"vm", vm.GetName())
+
+			patchError = true
+		}
+	}
+
+	return patchError
+}
+
+func toSet(items []string) map[string]struct{} {
+	m := make(map[string]struct{}, len(items))
+	for _, it := range items {
+		m[it] = struct{}{}
+	}
+
+	return m
+}
+
+// skip VM cleanup if cleanup is already in progress or cleanup just completed.
+// Returns TRUE to skip further validation and requeue for reconcile
+// Rerurns FALSE to proceed further with VM GarbageCollection process
+// Returns empty VM array list and FALSE if VM GC is complete and no need to requeue for reconcile
+func (v *VRGInstance) skipVMCleanupVerificationCheck() ([]virtv1.VirtualMachine, bool) {
+	vmNamespaceList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	vmList := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	var foundVMs []virtv1.VirtualMachine
+
+	if len(vmList) == 0 {
+		v.log.V(1).Info("no protected VMs specified. Skipping VM garbage collection processing")
+
+		return nil, true
+	}
+
+	foundVMs, yes, err := rmnutil.IsVMDeletionInProgress(v.ctx, v.reconciler.Client, vmList, vmNamespaceList, v.log)
+	if err != nil {
+		// Skip and requeue for Get API errors
+		v.log.V(1).Error(err, "Failed to list VMs")
+
+		return foundVMs, true
+	}
+
+	if yes { // skip and requeue as deletion is already in progress
+		v.log.Info("VM deletion is in progress, skipping ownerreferences check")
+
+		return foundVMs, true
+	}
+
+	return foundVMs, false
 }
