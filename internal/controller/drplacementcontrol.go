@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -1022,7 +1023,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 		// to wait on user to clean up. For non-discovered apps, we can set the
 		// progression to clearing placement.
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setVMRecipeProgression(homeCluster)
 		} else {
 			// clear current user PlacementRule's decision
 			d.setProgression(rmn.ProgressionClearingPlacement)
@@ -1042,7 +1043,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 
 	if !result {
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setVMRecipeProgression(homeCluster)
 		} else {
 			d.setProgression(rmn.ProgressionRunningFinalSync)
 		}
@@ -1291,7 +1292,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setVMRecipeProgression(clusterToSkip)
 		} else {
 			d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
 		}
@@ -2160,7 +2161,7 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 	// So set the progression to wait on user to clean up.
 	// If not discovered apps, then we can set the progression to cleaning up.
 	if isDiscoveredApp(d.instance) {
-		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		d.setVMRecipeProgression(clusterToSkip)
 	}
 
 	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
@@ -2747,4 +2748,133 @@ func getCallerFunction(ancestorLevel int) string {
 	}
 
 	return strings.TrimPrefix(details.Name(), "github.com/ramendr/ramen/internal/controller.")
+}
+
+func (d *DRPCInstance) isVMRecipeCleanup(drpc *rmn.DRPlacementControl) bool {
+	if drpc.Spec.KubeObjectProtection.RecipeRef.Name != recipecore.VMRecipeName {
+		d.log.Info("Its not vm-recipe, skip cleanup")
+
+		return false
+	}
+
+	return true
+}
+
+func (d *DRPCInstance) isCleanupReadiness(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg.Generation > vrg.Status.ObservedGeneration &&
+		!(vrg.Spec.PrepareForFinalSync || vrg.Status.FinalSyncComplete || vrg.Status.PrepareForFinalSyncComplete) {
+		return true
+	}
+
+	dataReadyCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeDataReady)
+	if dataReadyCondition == nil {
+		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
+			clusterName, vrg))
+
+		return false
+	}
+
+	dataProtectedCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
+	if dataProtectedCondition == nil {
+		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
+			clusterName, vrg))
+
+		return false
+	}
+
+	d.log.Info("Cleanup readiness", "vrg.Generation", vrg.Generation,
+		"dataReadyCondition.ObservedGeneration", dataReadyCondition.ObservedGeneration,
+		"dataReadyCondition.Status", dataReadyCondition.Status,
+		"dataReadyCondition.Reason", dataReadyCondition.Reason,
+		"dataProtectedCondition.Status", dataProtectedCondition.Status,
+		"dataProtectedCondition.ObservedGeneration", dataProtectedCondition.ObservedGeneration)
+
+	if vrg.Generation == dataReadyCondition.ObservedGeneration &&
+		dataReadyCondition.Status == metav1.ConditionTrue &&
+		dataReadyCondition.Reason == VRGConditionReasonReady { /*&&
+		dataProtectedCondition.Status == metav1.ConditionFalse &&
+		vrg.Generation == dataProtectedCondition.ObservedGeneration {*/
+		d.log.Info("Its cleanup readiness")
+
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isCleaningUp(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+
+	dataReadyCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeDataReady)
+	if dataReadyCondition == nil {
+		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
+			clusterName, vrg))
+
+		return false
+	}
+
+	dataProtectedCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
+	if dataProtectedCondition == nil {
+		d.log.Info(fmt.Sprintf("VRG DataProtected condition not available for cluster %s (%v)",
+			clusterName, vrg))
+
+		return false
+	}
+
+	d.log.Info("Cleaning Up status", "vrg.Generation", vrg.Generation,
+		"vrg.Status.ObservedGeneration", vrg.Status.ObservedGeneration,
+		"dataReadyCondition.Status", dataReadyCondition.Status,
+		"dataProtectedCondition.Status", dataProtectedCondition.Status)
+
+	if vrg.Generation == vrg.Status.ObservedGeneration &&
+		dataReadyCondition.Status == metav1.ConditionFalse &&
+		!(dataReadyCondition.Reason == VRGConditionReasonReady) {
+		d.log.Info("cleaning up state in progress")
+
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) getCleanupSecondaryVRG(clusterName string) *rmn.VolumeReplicationGroup {
+	vrg := d.vrgs[clusterName]
+	if (d.instance.Spec.PreferredCluster == clusterName &&
+		d.instance.Spec.Action == rmn.ActionRelocate) ||
+		(d.instance.Spec.FailoverCluster == clusterName &&
+			d.instance.Spec.Action == rmn.ActionFailover) {
+		d.log.Info("Its target cluster, no cleanup action to be performed here.")
+
+		for _, managedCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if clusterName == managedCluster {
+				continue
+			}
+
+			vrg = d.vrgs[managedCluster]
+
+			break
+		}
+	}
+
+	d.log.Info("VM GC will be done on " + vrg.GetAnnotations()[DestinationClusterAnnotationKey])
+
+	return vrg
+}
+
+func (d *DRPCInstance) setVMRecipeProgression(clusterName string) {
+	if d.isVMRecipeCleanup(d.instance) {
+		switch {
+		case d.isCleanupReadiness(clusterName):
+			d.log.Info("Setting progression - CleanUpReadiness")
+			d.setProgression(rmn.ProgressionCleanupReadiness)
+		case d.isCleaningUp(clusterName):
+			d.log.Info("Setting progression - Cleaning Up")
+			d.setProgression(rmn.ProgressionCleaningUp)
+		default:
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		}
+	} else {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+	}
 }
