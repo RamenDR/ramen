@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/ramendr/ramen/internal/controller/core"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,6 +45,7 @@ func ListPVCsByPVCSelector(
 	pvcLabelSelector metav1.LabelSelector,
 	namespaces []string,
 	volSyncDisabled bool,
+	recipeName string,
 ) (*corev1.PersistentVolumeClaimList, error) {
 	// convert metav1.LabelSelector to a labels.Selector
 	pvcSelector, err := metav1.LabelSelectorAsSelector(&pvcLabelSelector)
@@ -99,7 +102,15 @@ func ListPVCsByPVCSelector(
 
 	for _, pvc := range pvcList.Items {
 		if slices.Contains(namespaces, pvc.Namespace) {
-			pvcs = append(pvcs, pvc)
+			if !IsTemporaryImportPVC(&pvc, recipeName) {
+				pvcs = append(pvcs, pvc)
+			} else {
+				done := UpdateLabel(&pvc, core.VMLabelSelector, "")
+				if !done {
+					logger.Error(err, "failed to update the temporary CDI volumesource importer PVC")
+					return nil, err
+				}
+			}
 		}
 	}
 
@@ -396,4 +407,42 @@ func sortJSON(v interface{}) interface{} {
 
 func GetTmpPVCNameForFinalSync(pvcName string) string {
 	return fmt.Sprintf("%s%s", pvcName, SuffixForFinalsyncPVC)
+}
+
+// IsTemporaryImportPVC determines whether the given PVC is the CDI-created
+// "prime" import PVC used in the VM recipe workflow to rebind a target PVC.
+// It validates that:
+//   - The PVC name follows the expected pattern (starts with "prime" and does not contain "scratch").
+//   - The associated recipe name is exactly "vm-recipe".
+//   - The PVC was created via CDI VolumeImportSource annotations, not DataSourceRef or DataSource.
+//   - The PVC//   - The PVC includes CDI import annotations and is owned by another PVC, indicating it is part of
+func IsTemporaryImportPVC(pvc *corev1.PersistentVolumeClaim, recipeName string) bool {
+	if pvc == nil || recipeName != core.VMRecipeName ||
+		!strings.HasPrefix(pvc.GetName(), "prime") ||
+		strings.Contains(pvc.GetName(), "scratch") {
+		return false
+	}
+
+	anns := pvc.GetAnnotations()
+	const (
+		annImportEndpoint = "cdi.kubevirt.io/storage.import.endpoint"
+		annPopulatorKind  = "cdi.kubevirt.io/storage.populator.kind"
+		expectedKind      = "VolumeImportSource"
+	)
+
+	if anns == nil || anns[annImportEndpoint] == "" ||
+		anns[annPopulatorKind] != expectedKind ||
+		pvc.Spec.DataSourceRef != nil ||
+		pvc.Spec.DataSource != nil {
+		return false
+	}
+
+	// Must be a temporary/derived PVC (owned by traget PVC)
+	for _, owner := range pvc.GetOwnerReferences() {
+		if owner.Kind == "PersistentVolumeClaim" {
+			return true
+		}
+	}
+
+	return false
 }

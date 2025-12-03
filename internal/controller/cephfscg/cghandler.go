@@ -200,8 +200,12 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		namespaces = *c.instance.Spec.ProtectedNamespaces
 	}
 
+	recipeName := ""
+	if c.instance.Spec.KubeObjectProtection != nil && c.instance.Spec.KubeObjectProtection.RecipeRef != nil {
+		recipeName = c.instance.Spec.KubeObjectProtection.RecipeRef.Name
+	}
 	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(c.ctx, c.Client,
-		c.volumeGroupSnapshotClassSelector, *c.volumeGroupSnapshotSource, namespaces, c.logger)
+		c.volumeGroupSnapshotClassSelector, *c.volumeGroupSnapshotSource, namespaces, c.logger, recipeName)
 	if err != nil {
 		log.Error(err, "Failed to get VGSClass name")
 		// If final sync is requested, ensure final sync cleanup is run regardless of the error
