@@ -238,11 +238,20 @@ rules:
 - apiGroups:
   - kubevirt.io
   resources:
+  - virtualmachineinstances
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kubevirt.io
+  resources:
   - virtualmachines
   verbs:
   - delete
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - multicluster.x-k8s.io
