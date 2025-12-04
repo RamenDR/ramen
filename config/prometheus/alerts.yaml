@@ -42,7 +42,7 @@ spec:
             alert_type: "DisasterRecovery"
         - alert: UnsupportedConsistencyGroupingEnabled
           expr: ramen_unsupported_consistency_grouping_enabled == 1
-          for: 10m
+          for: 5s
           labels:
             severity: warning
           annotations:
