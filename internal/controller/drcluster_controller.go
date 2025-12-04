@@ -64,6 +64,11 @@ const (
 
 	DRClusterConditionReasonError        = "Error"
 	DRClusterConditionReasonErrorUnknown = "UnknownError"
+
+	DRClusterReasonDRClusterConfigReadFailed = "DRClusterConfigReadFailed"
+
+	DRClusterReasonS3Unreachable = "S3Unreachable"
+	DRClusterReasonS3Reachable   = "S3Reachable"
 )
 
 //nolint:gosec
@@ -428,8 +433,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		u.log.Info("Error during processing fencing", "error", err)
 	}
 
-	if reason, err := validateS3Profile(u.ctx, r.APIReader, r.ObjectStoreGetter, u.object, u.namespacedName.String(),
-		u.log); err != nil {
+	if reason, err := u.syncS3HealthFromDRClusterConfig(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
 	}
 
@@ -495,15 +499,44 @@ func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluste
 	return nil
 }
 
-func validateS3Profile(ctx context.Context, apiReader client.Reader,
-	objectStoreGetter ObjectStoreGetter,
-	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
-) (string, error) {
-	if drcluster.Spec.S3ProfileName != NoS3StoreAvailable {
-		if reason, err := S3ProfileValidate(ctx, apiReader, objectStoreGetter,
-			drcluster.Spec.S3ProfileName, listKeyPrefix, log); err != nil {
-			return reason, err
+// syncS3HealthFromDRClusterConfig reads DRClusterConfig's S3Healthy condition via MCV, and sets DRCluster's S3Healthy
+// condition accordingly.
+func (u *drclusterInstance) syncS3HealthFromDRClusterConfig() (string, error) {
+	drcluster := u.object
+	annotations := make(map[string]string)
+	annotations[AllDRPolicyAnnotation] = drcluster.GetName()
+
+	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(drcluster.GetName(), annotations)
+	if err != nil {
+		return DRClusterReasonDRClusterConfigReadFailed, err
+	}
+
+	cond := meta.FindStatusCondition(drcConfig.Status.Conditions, ramen.DRClusterConfigS3Healthy)
+	if cond != nil && cond.Status == metav1.ConditionTrue {
+		if err := u.statusConditionSetAndUpdate(
+			ramen.DRClusterConditionS3Healthy,
+			metav1.ConditionTrue,
+			DRClusterReasonS3Reachable,
+			cond.Message,
+		); err != nil {
+			return ramen.DRClusterConditionS3UpdateFailed, fmt.Errorf("failed to update S3Reachable (true): %w", err)
 		}
+
+		return "", nil
+	}
+
+	msg := "S3 not reachable by the cluster"
+	if cond != nil && cond.Message != "" {
+		msg = cond.Message
+	}
+
+	if err := u.statusConditionSetAndUpdate(
+		ramen.DRClusterConditionS3Healthy,
+		metav1.ConditionFalse,
+		DRClusterReasonS3Unreachable,
+		msg,
+	); err != nil {
+		return ramen.DRClusterConditionS3UpdateFailed, fmt.Errorf("failed to update S3Reachable (false): %w", err)
 	}
 
 	return "", nil

@@ -27,6 +27,9 @@ import (
 
 var NFClassAvailable bool
 
+// allow DRClusterConfig fake to return S3Healthy=True for positive tests
+var S3HealthyInDRCC bool
+
 var baseNF = &csiaddonsv1alpha1.NetworkFence{
 	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 	ObjectMeta: metav1.ObjectMeta{Name: strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0"}, "-")},
@@ -143,6 +146,18 @@ func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
 	if NFClassAvailable {
 		return generateDRCC(), nil
 	}
+	// Enable tests to force S3 healthy in the returned DRClusterConfig
+	if S3HealthyInDRCC {
+		drcc := generateDRCC()
+		drcc.Status.Conditions = append(drcc.Status.Conditions, metav1.Condition{
+			Type:    ramen.DRClusterConfigS3Healthy,
+			Status:  metav1.ConditionTrue,
+			Reason:  controllers.DRClusterReasonS3Reachable,
+			Message: "All S3 profiles are healthy",
+		})
+
+		return drcc, nil
+	}
 
 	return &ramen.DRClusterConfig{}, nil
 }
@@ -184,6 +199,32 @@ func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *
 	case false:
 		Expect(value == sub.Spec.StartingCSV).To(BeFalse())
 	}
+}
+
+// Helper assertions for DRCluster S3 condition (the controller uses "S3Healthy")
+func expectClusterS3Unreachable(drcluster *ramen.DRCluster) {
+	objectConditionExpectEventually(
+		apiReader,
+		drcluster,
+		metav1.ConditionFalse,
+		Equal(controllers.DRClusterReasonS3Unreachable),
+		Ignore(),
+		ramen.DRClusterConditionS3Healthy,
+		false,
+	)
+}
+
+// Helper for positive path where DRClusterConfig reports S3Healthy=True → DRCluster mirrors it
+func expectClusterS3Reachable(drcluster *ramen.DRCluster) {
+	objectConditionExpectEventually(
+		apiReader,
+		drcluster,
+		metav1.ConditionTrue,
+		Equal(controllers.DRClusterReasonS3Reachable),
+		Ignore(),
+		ramen.DRClusterConditionS3Healthy,
+		false,
+	)
 }
 
 var _ = Describe("DRClusterController", func() {
@@ -345,26 +386,25 @@ var _ = Describe("DRClusterController", func() {
 		createOtherDRClusters()
 	})
 
+	// -------------------------------------------------------------------------
+	// DRCluster S3Profile validation
+	// -------------------------------------------------------------------------
 	Context("DRCluster resource S3Profile validation", func() {
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("an S3Profile is missing in config", func() {
-			It("reports NOT validated with reason s3ConnectionFailed", func() {
+			It("reports S3 unhealthy", func() {
 				By("creating a new DRCluster with an invalid S3Profile")
 				drcluster.Spec.S3ProfileName = "missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
-				objectConditionExpectEventually(
-					apiReader,
-					drcluster,
-					metav1.ConditionFalse,
-					Equal("s3ConnectionFailed"),
-					Ignore(),
-					ramen.DRClusterValidated,
-					false,
-				)
+				// Ensure DRCConfig is applied so DRCluster consumes its S3 status
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				// New behavior: S3 condition on DRCluster
+				expectClusterS3Unreachable(drcluster)
 			})
 		})
 		When("deleting a DRCluster", func() {
@@ -377,20 +417,14 @@ var _ = Describe("DRClusterController", func() {
 			})
 		})
 		When("an S3Profile fails listing", func() {
-			It("reports NOT validated with reason s3ListFailed", func() {
+			It("reports S3 unhealthy", func() {
 				By("creating a DRCluster with an invalid S3Profile that fails listing")
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
-				objectConditionExpectEventually(
-					apiReader,
-					drcluster,
-					metav1.ConditionFalse,
-					Equal("s3ListFailed"),
-					Ignore(),
-					ramen.DRClusterValidated,
-					false,
-				)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				expectClusterS3Unreachable(drcluster)
 			})
 		})
 		When("fenced", func() {
@@ -451,7 +485,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 
 		When("S3Profile is changed to an invalid profile in ramen config", func() {
-			It("reports NOT validated with reason s3ConnectionFailed", func() {
+			It("reports S3 unhealthy", func() {
 				By("creating a DRCluster with the new valid S3Profile")
 				drcluster.Spec.S3ProfileName = s3Profiles[5].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -470,15 +504,9 @@ var _ = Describe("DRClusterController", func() {
 				newS3Profiles := s3Profiles[0:]
 				s3Profiles[5].S3Bucket = bucketNameFail
 				s3ProfilesStore(newS3Profiles)
-				objectConditionExpectEventually(
-					apiReader,
-					drcluster,
-					metav1.ConditionFalse,
-					Equal("s3ConnectionFailed"),
-					Ignore(),
-					ramen.DRClusterValidated,
-					false,
-				)
+
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+				expectClusterS3Unreachable(drcluster)
 				// TODO: Ensure when changing S3Profile, dr-cluster's ramen config is updated in MW
 			})
 		})
@@ -494,26 +522,33 @@ var _ = Describe("DRClusterController", func() {
 		})
 
 		When("when adding an invalid S3Profile in DRCLuster", func() {
-			It("reports NOT validated with reason s3ListFailed", func() {
+			It("reports S3 unhealthy", func() {
 				By("creating a DRCluster with an invalid S3Profile that fails listing")
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
-				objectConditionExpectEventually(
-					apiReader,
-					drcluster,
-					metav1.ConditionFalse,
-					Equal("s3ListFailed"),
-					Ignore(),
-					ramen.DRClusterValidated,
-					false,
-				)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+				expectClusterS3Unreachable(drcluster)
 			})
 		})
 		When("deleting a DRCluster with an invalid s3Profile", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
 				drclusterDelete(drcluster)
+			})
+		})
+
+		When("DRClusterConfig reports S3 healthy", func() {
+			It("sets S3Healthy True in DRCluster status", func() {
+				S3HealthyInDRCC = true
+				defer func() { S3HealthyInDRCC = false }()
+				drcluster = drclusters[0].DeepCopy()
+
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				expectClusterS3Reachable(drcluster)
 			})
 		})
 	})
@@ -525,9 +560,9 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided CIDR value is incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
-				By("creating a new DRCluster with an invalid CIDR")
+				By("updating an existing DRCluster with an invalid CIDR")
 				drcluster.Spec.CIDRs = cidrs[1]
-				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
@@ -743,7 +778,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 
 		When("provided Fencing value is Fenced and the s3 validation fails", func() {
-			It("reports fenced with reason Fencing success but validated condition should be false", func() {
+			It("reports fenced with reason Fencing success and S3Healthy False", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -757,6 +792,8 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterConditionTypeFenced,
 					false,
 				)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+				expectClusterS3Unreachable(drcluster)
 			})
 		})
 
