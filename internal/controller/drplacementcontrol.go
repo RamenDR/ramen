@@ -334,6 +334,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
+//
+//nolint:funlen
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -363,8 +365,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
 		d.setDRState(rmn.FailedOver)
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		if err := d.ensureVRGManifestWork(failoverCluster); err != nil {
 			d.log.Info("Unable to ensure VRG ManifestWork on failover cluster")
@@ -381,6 +381,16 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 			return !done, nil
 		}
+
+		if d.areMultipleVRGsPrimary() {
+			d.log.Info("Multiple VRGs are primary, cannot complete failover yet")
+			d.setProgression(rmn.ProgressionWaitForReadiness)
+
+			return !done, nil
+		}
+
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
@@ -799,6 +809,13 @@ func checkActivationForStorageIdentifier(
 		if statusMMode.StorageProvisioner != storageIdentifier.StorageProvisioner ||
 			statusMMode.TargetID != storageIdentifier.ReplicationID.ID {
 			continue
+		}
+
+		if statusMMode.State != rmn.MModeStateCompleted {
+			log.Info("ClusterMaintenanceMode state not completed", "state", statusMMode.State,
+				"provisioner", statusMMode.StorageProvisioner, "targetID", statusMMode.TargetID)
+
+			return false
 		}
 
 		for _, condition := range statusMMode.Conditions {
