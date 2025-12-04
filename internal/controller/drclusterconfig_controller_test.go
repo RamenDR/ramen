@@ -134,10 +134,6 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		ensureNamespaceExists(context.TODO(), k8sClient, ramenNamespace)
-		By("Creating namespaces")
-
-		Expect(k8sClient.Create(context.TODO(),
-			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ramenNamespace}})).To(Succeed())
 
 		By("Defining a ramen configuration")
 
