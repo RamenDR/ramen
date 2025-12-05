@@ -579,6 +579,16 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 
 	v.log.Info("Recipe", "elements", v.recipeElements)
 
+	if err := recipeVMBackupValidate(v.ctx, v.reconciler.Client, v.recipeElements,
+		*v.instance, *v.ramenConfig, v.log); err != nil {
+		return v.invalid(
+			err,
+			"Velero misconfiguration detected; disaster recovery for the VM workload will not succeed. "+
+				"Verify Velero configuration and enable the required plugins",
+			false,
+		)
+	}
+
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
 	}
