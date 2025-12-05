@@ -915,7 +915,7 @@ func (v *VRGInstance) cleanupResources() error {
 }
 
 func (v *VRGInstance) doCleanupResources(name, namespace string) error {
-	if err := v.volSyncHandler.DeleteRS(name, namespace); err != nil {
+	if err := v.volSyncHandler.DeleteRS(name, namespace, true); err != nil {
 		return err
 	}
 
