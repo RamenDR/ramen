@@ -145,6 +145,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - datavolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - cluster.open-cluster-management.io
   resources:
   - clusterclaims
@@ -230,10 +238,21 @@ rules:
 - apiGroups:
   - kubevirt.io
   resources:
-  - virtualmachines
+  - virtualmachineinstances
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - watch
 - apiGroups:
   - multicluster.x-k8s.io
   resources:
