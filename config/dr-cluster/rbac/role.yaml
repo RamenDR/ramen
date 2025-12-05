@@ -293,6 +293,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations/finalizers
+  - replicationsources/finalizers
+  verbs:
+  - update
+- apiGroups:
   - ""
   resources:
   - pods/exec
