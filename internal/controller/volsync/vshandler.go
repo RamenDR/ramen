@@ -2390,7 +2390,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 		}
 
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.GetRsyncServiceType(),
+			ServiceType: &DefaultRsyncServiceType,
 			KeySecret:   &pskSecretName,
 
 			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
