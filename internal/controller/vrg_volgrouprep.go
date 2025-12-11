@@ -902,18 +902,23 @@ func (v *VRGInstance) restoreVGRsAndVGRCsForVolRep(result *ctrl.Result) error {
 }
 
 func (v *VRGInstance) restoreVGRsAndVGRCsFromS3(result *ctrl.Result) error {
-	err := errors.New("s3Profiles empty")
-	NoS3 := false
-
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if s3ProfileName == NoS3StoreAvailable {
-			v.log.Info("NoS3 available to fetch")
-
-			NoS3 = true
-
-			continue
+	// Filter out empty profile names (no S3 store configured)
+	s3Profiles := make([]string, 0, len(v.instance.Spec.S3Profiles))
+	for _, profile := range v.instance.Spec.S3Profiles {
+		if profile != "" {
+			s3Profiles = append(s3Profiles, profile)
 		}
+	}
 
+	if len(s3Profiles) == 0 {
+		v.log.Info("NoS3 available to fetch")
+
+		return nil
+	}
+
+	err := errors.New("s3Profiles empty")
+
+	for _, s3ProfileName := range s3Profiles {
 		var objectStore ObjectStorer
 
 		objectStore, _, err = v.reconciler.ObjStoreGetter.ObjectStore(
@@ -942,10 +947,6 @@ func (v *VRGInstance) restoreVGRsAndVGRCsFromS3(result *ctrl.Result) error {
 
 		v.log.Info(fmt.Sprintf("Restored %d VGRCs and %d VGRs using profile %s", vgrcCount, vgrCount, s3ProfileName))
 
-		return nil
-	}
-
-	if NoS3 {
 		return nil
 	}
 
