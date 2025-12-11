@@ -10,7 +10,7 @@ ramen:
   clusters: [dr1, dr2]
   topology: regional-dr
   features:
-    volsync: false
+    volsync: true
 
 templates:
   - name: "dr-cluster"
@@ -25,19 +25,23 @@ templates:
     memory: "8g"
     extra_disks: 1
     disk_size: "50g"
+    feature_gates:
+      - StatefulSetAutoDeletePVC=true
     workers:
       - addons:
-          - name: external-snapshotter
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
           - name: cdi
+          - name: rook-cephfs
       - addons:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: recipe
       - addons:
+          - name: odf-external-snapshotter
+          - name: external-snapshotter
           - name: csi-addons
           - name: olm
           - name: minio
@@ -47,13 +51,18 @@ templates:
     driver: "$vm"
     container_runtime: containerd
     network: "$network"
-    cpus: 2
+    cpus: 3
     memory: "4g"
     workers:
       - addons:
           - name: ocm-hub
           - name: ocm-controller
           - name: olm
+      - addons:
+          - name: submariner
+            args: ["hub", "dr1", "dr2"]
+          - name: argocd
+            args: ["hub", "dr1", "dr2"]
 
 profiles:
   - name: "dr1"
@@ -66,4 +75,7 @@ profiles:
 workers:
   - addons:
       - name: rbd-mirror
+        args: ["dr1", "dr2"]
+  - addons:
+      - name: volsync
         args: ["dr1", "dr2"]
