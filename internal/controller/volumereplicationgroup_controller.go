@@ -10,6 +10,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	virtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -397,7 +399,9 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
-// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list
+// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;patch;delete
+// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachineinstances,verbs=get;list;watch
+// +kubebuilder:rbac:groups="cdi.kubevirt.io",resources=datavolumes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -1696,6 +1700,8 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result := ctrl.Result{}
+
+	result.Requeue = v.ShouldCleanupForSecondary()
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
@@ -1712,12 +1718,6 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	// clean. In all other cases, the VRG will be deleted and we don't care about the its conditions.
 	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 {
 		v.instance.Status.Conditions = []metav1.Condition{}
-	}
-
-	if !result.Requeue && v.isVMRecipeProtection() {
-		if err := v.validateVMsForStandaloneProtection(); err != nil {
-			result.Requeue = true
-		}
 	}
 
 	return result
@@ -1826,6 +1826,8 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 	}
 
 	v.updateStatusState()
+
+	result.Requeue = v.instance.Status.State == ramendrv1alpha1.UnknownState
 
 	v.instance.Status.ObservedGeneration = v.instance.Generation
 
@@ -2477,22 +2479,29 @@ func (v *VRGInstance) CheckForVMConflictOnSecondary() error {
 }
 
 func (v *VRGInstance) CheckForVMNameConflictOnSecondary(vmNamespaceList, vmList []string) error {
-	var foundVMs []string
+	foundVMs, err := util.ListVMsByVMNamespace(v.ctx, v.reconciler.APIReader,
+		v.log, vmNamespaceList, vmList)
+	if err != nil {
+		return err
+	}
 
-	var err error
-	if foundVMs, err = util.ListVMsByVMNamespace(v.ctx, v.reconciler.APIReader,
-		v.log, vmNamespaceList, vmList); err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return fmt.Errorf("failed to lookup virtualmachine resources, check rbacs")
-		}
-
+	if len(foundVMs) == 0 {
 		return nil
 	}
 
-	v.log.Info(fmt.Sprintf("found conflicting VM[%v] on secondary", foundVMs))
+	v.log.Info("found conflicting VMs on secondary", "foundVMs", vmNamesString(foundVMs))
 
 	return fmt.Errorf("protected VMs on the primary cluster share names with VMs on " +
 		"the secondary site, which may impact failover or recovery")
+}
+
+func vmNamesString(vms []virtv1.VirtualMachine) string {
+	names := make([]string, len(vms))
+	for i := range vms {
+		names[i] = vms[i].Name
+	}
+
+	return strings.Join(names, ", ")
 }
 
 func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condition {
