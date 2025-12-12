@@ -192,7 +192,8 @@ func pvcPredicateFunc() predicate.Funcs {
 	pvcPredicate := predicate.Funcs{
 		// NOTE: Create predicate is retained, to help with logging the event
 		CreateFunc: func(e event.CreateEvent) bool {
-			log.Info("Create event for PersistentVolumeClaim")
+			o := e.Object
+			log.Info("PVC created", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -210,13 +211,13 @@ func pvcPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info("Update event for PersistentVolumeClaim")
+			log.Info("PVC updated", "namespace", oldPVC.GetNamespace(), "name", oldPVC.GetName())
 
 			return updateEventDecision(oldPVC, newPVC, log)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			o := e.Object
-			log.Info("PVC Delete", "namespace", o.GetNamespace(), "name", o.GetName())
+			log.Info("PVC deleted", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -334,8 +335,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 	}
 
 	for _, vrg := range vrgs.Items {
-		log1 := log.WithValues("vrg", vrg.Name)
-
 		ctx := context.WithValue(context.Background(), util.RecipeElementsGetForPVC, "true")
 
 		pvcSelector, err := GetPVCSelector(ctx, reader, vrg, *ramenConfig, log)
@@ -348,8 +347,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		// this. If not found, then reconcile request would not be sent
 		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
-			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
-
 			continue
 		}
 
@@ -359,11 +356,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		ownerMatch := util.OwnerNamespacedName(pvc) == vrgNamespacedName
 
 		if labelMatch && namespaceSelected || ownerMatch {
-			log1.Info("Found VolumeReplicationGroup with matching labels or owner",
-				"vrg", vrgNamespacedName.String(), "selector", selector,
-				"namespaces selected", pvcSelector.NamespaceNames,
-				"label match", labelMatch, "owner match", ownerMatch)
-
 			req = append(req, reconcile.Request{NamespacedName: vrgNamespacedName})
 		}
 	}
@@ -1000,8 +992,6 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 }
 
 func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim) {
-	v.log.Info("separating PVC using only sc provisioner")
-
 	replicationClassMatchFound := false
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1027,8 +1017,6 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
-	v.log.Info("separate PVC using peerClasses")
-
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
 		return err
@@ -1999,13 +1987,11 @@ func (v *VRGInstance) updateProtectedCGsForVolRep(pvcGroups *[]ramendrv1alpha1.G
 }
 
 func (v *VRGInstance) logAndSetConditions(conditionName string, subconditions ...*metav1.Condition) {
-	msg := fmt.Sprintf("merging %s condition", conditionName)
-	v.log.Info(msg, "subconditions", subconditions)
 	finalCondition := util.MergeConditions(util.SetStatusCondition,
 		&v.instance.Status.Conditions,
 		[]string{VRGConditionReasonUnused},
 		subconditions...)
-	msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+	msg := fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
 	v.log.Info(msg, "finalCondition", finalCondition)
 }
 
@@ -2214,16 +2200,11 @@ func filterVRGDependentObjects(reader client.Reader, obj client.Object, log logr
 	}
 
 	for _, vrg := range vrgs.Items {
-		log1 := log.WithValues("vrg", vrg.Name)
-
 		if vrg.Spec.ProtectedNamespaces == nil || len(*vrg.Spec.ProtectedNamespaces) == 0 {
 			continue
 		}
 
 		if slices.Contains(*vrg.Spec.ProtectedNamespaces, obj.GetNamespace()) {
-			log1.Info("Found VolumeReplicationGroup with matching namespace",
-				"vrg", vrg.Name, "namespace", obj.GetNamespace())
-
 			req = append(req, reconcile.Request{NamespacedName: types.NamespacedName{
 				Name:      vrg.Name,
 				Namespace: vrg.Namespace,
@@ -2311,8 +2292,6 @@ func (r *VolumeReplicationGroupReconciler) RGSMapFunc(ctx context.Context, obj c
 
 	rgs, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
 	if !ok {
-		log.Info("map function received not a replication group source resource")
-
 		return []reconcile.Request{}
 	}
 
