@@ -2455,7 +2455,7 @@ func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
 	var foundVMs []string
 
 	var err error
-	if foundVMs, err = util.ListVMsByLabelSelector(v.ctx, v.reconciler.APIReader, v.log,
+	if foundVMs, err = util.ListVMsByLabelSelector(v.ctx, v.reconciler.Client, v.log,
 		labelSelector,
 		vmNamespace,
 	); err != nil {
@@ -2489,7 +2489,7 @@ func (v *VRGInstance) CheckForVMConflictOnSecondary() error {
 
 	labelSelector := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]
 
-	if foundVMs, err := util.ListVMsByLabelSelector(v.ctx, v.reconciler.APIReader, v.log,
+	if foundVMs, err := util.ListVMsByLabelSelector(v.ctx, v.reconciler.Client, v.log,
 		labelSelector,
 		vmNamespaceList,
 	); len(foundVMs) > 0 || err != nil {
