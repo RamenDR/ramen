@@ -71,7 +71,7 @@ func (w Deployment) GetLabelSelector() *metav1.LabelSelector {
 func (w Deployment) GetChecks(namespace string) []*recipe.Check {
 	return []*recipe.Check{
 		{
-			Name:      "check-replicas",
+			Name:      "check-status",
 			Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
 		},
 	}
