@@ -167,7 +167,8 @@ enough resources:
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Version v0.18.0 or later is required. Tested with version v0.20.1.
+   Tested with version v0.22.0.
+   Version v0.21.2 or later is required.
 
 1. Install the `velero` tool
 
