@@ -30,8 +30,7 @@ func (a ApplicationSet) Deploy(ctx types.TestContext) error {
 	// Deploys the application on the first DR cluster (c1).
 	cluster := ctx.Env().C1
 
-	log.Infof("Deploying applicationset app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+	log.Infof("Deploying in cluster %q", cluster.Name)
 
 	if err := util.CreateNamespaceOnMangedClusters(ctx, ctx.AppNamespace()); err != nil {
 		return err
@@ -74,10 +73,9 @@ func (a ApplicationSet) Undeploy(ctx types.TestContext) error {
 		}
 
 		log.Debugf("Could not retrieve the cluster name: %s", err)
-		log.Infof("Undeploying applicationset app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+		log.Info("Undeploying")
 	} else {
-		log.Infof("Undeploying applicationset app \"%s/%s\" in cluster %q",
-			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+		log.Infof("Undeploying from cluster %q", cluster.Name)
 	}
 
 	if err := a.DeleteResources(ctx); err != nil {
