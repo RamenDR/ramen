@@ -22,7 +22,7 @@ templates:
           device_ownership_from_security_context: true
     network: "$network"
     cpus: 4
-    memory: "6g"
+    memory: "8g"
     extra_disks: 1
     disk_size: "50g"
     workers:
@@ -48,7 +48,7 @@ templates:
     container_runtime: containerd
     network: "$network"
     cpus: 2
-    memory: "4g"
+    memory: "6g"
     workers:
       - addons:
           - name: ocm-hub
