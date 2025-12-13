@@ -47,7 +47,7 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
+	log.Infof("Protecting workload in cluster %q", cluster.Name)
 
 	err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		placement, err := util.GetPlacement(ctx, managementNamespace, placementName)
@@ -114,10 +114,9 @@ func DisableProtection(ctx types.TestContext) error {
 		}
 
 		log.Debugf("Could not retrieve the cluster name: %s", err)
-		log.Infof("Unprotecting workload \"%s/%s\"", appNamespace, ctx.Workload().GetAppName())
+		log.Info("Unprotecting workload")
 	} else {
-		log.Infof("Unprotecting workload \"%s/%s\" in cluster %q",
-			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
+		log.Infof("Unprotecting workload in cluster %q", cluster.Name)
 	}
 
 	if err := annotateDRPCDoNotDeletePVC(ctx, name); err != nil {
@@ -163,8 +162,7 @@ func Failover(ctx types.TestContext) error {
 		return err
 	}
 
-	log.Infof("Failing over workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
+	log.Infof("Failing over workload from cluster %q to cluster %q", currentCluster.Name, targetCluster.Name)
 
 	err = failoverRelocate(ctx, ramen.ActionFailover, ramen.FailedOver, currentCluster, targetCluster)
 	if err != nil {
@@ -196,8 +194,7 @@ func Relocate(ctx types.TestContext) error {
 		return err
 	}
 
-	log.Infof("Relocating workload \"%s/%s\" from cluster %q to cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), currentCluster.Name, targetCluster.Name)
+	log.Infof("Relocating workload from cluster %q to cluster %q", currentCluster.Name, targetCluster.Name)
 
 	err = failoverRelocate(ctx, ramen.ActionRelocate, ramen.Relocated, currentCluster, targetCluster)
 	if err != nil {
@@ -220,10 +217,9 @@ func Purge(ctx types.TestContext) error {
 			return err
 		}
 
-		log.Infof("Purging workload \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+		log.Info("Purging workload")
 	} else {
-		log.Infof("Purging workload \"%s/%s\" in cluster %q",
-			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+		log.Infof("Purging workload in cluster %q", cluster.Name)
 	}
 
 	if err := deleteProtectionResources(ctx); err != nil {

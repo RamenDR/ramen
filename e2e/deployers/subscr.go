@@ -47,8 +47,7 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 	// Deploys the application on the first DR cluster (c1).
 	cluster := ctx.Env().C1
 
-	log.Infof("Deploying subscription app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+	log.Infof("Deploying in cluster %q", cluster.Name)
 
 	// create subscription namespace
 	err := util.CreateNamespace(ctx, ctx.Env().Hub, managementNamespace)
@@ -102,10 +101,9 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		}
 
 		log.Debugf("Could not retrieve the cluster name: %s", err)
-		log.Infof("Undeploying subscription app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+		log.Info("Undeploying")
 	} else {
-		log.Infof("Undeploying subscription app \"%s/%s\" in cluster %q",
-			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+		log.Infof("Undeploying from cluster %q", cluster.Name)
 	}
 
 	if err := s.DeleteResources(ctx); err != nil {

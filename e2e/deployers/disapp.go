@@ -41,7 +41,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
-	log.Infof("Deploying discovered app \"%s/%s\" in cluster %q", appNamespace, ctx.Workload().GetAppName(), cluster.Name)
+	log.Infof("Deploying in cluster %q", cluster.Name)
 
 	if err := util.CreateNamespaceOnMangedClusters(ctx, appNamespace); err != nil {
 		return err
@@ -83,10 +83,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 // Undeploy deletes the workload from the managed clusters.
 func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	log := ctx.Logger()
-	appNamespace := ctx.AppNamespace()
-
-	log.Infof("Undeploying discovered app \"%s/%s\" in clusters %q and %q",
-		appNamespace, ctx.Workload().GetAppName(), ctx.Env().C1.Name, ctx.Env().C2.Name)
+	log.Infof("Undeploying from clusters %q and %q", ctx.Env().C1.Name, ctx.Env().C2.Name)
 
 	if err := d.DeleteResources(ctx); err != nil {
 		return err

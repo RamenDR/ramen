@@ -31,7 +31,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
+	log.Infof("Protecting workload in cluster %q", cluster.Name)
 
 	// create placement
 	if err := createPlacementManagedByRamen(ctx, placementName, managementNamespace); err != nil {
