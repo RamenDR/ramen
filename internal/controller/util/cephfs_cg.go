@@ -104,13 +104,14 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	pvcsConsistencyGroupSelector metav1.LabelSelector,
 	namespace []string,
 	logger logr.Logger,
+	recipeName string,
 ) (string, error) {
 	volumeGroupSnapshotClasses, err := GetVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
 	if err != nil {
 		return "", err
 	}
 
-	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, namespace, false)
+	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, namespace, false, recipeName)
 	if err != nil {
 		return "", err
 	}
