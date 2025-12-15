@@ -399,7 +399,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
-// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;patch;delete
+// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;update;delete
 // +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachineinstances,verbs=get;list;watch
 // +kubebuilder:rbac:groups="cdi.kubevirt.io",resources=datavolumes,verbs=get;list;watch
 
@@ -693,10 +693,16 @@ func (v *VRGInstance) listPVCsOwnedByVrg() (*corev1.PersistentVolumeClaimList, e
 
 func (v *VRGInstance) listPVCsByPVCSelector(labelSelector metav1.LabelSelector,
 ) (*corev1.PersistentVolumeClaimList, error) {
+	recipeName := ""
+	if v.recipeElements.RecipeWithParams != nil {
+		recipeName = v.recipeElements.RecipeWithParams.Name
+	}
+
 	return util.ListPVCsByPVCSelector(v.ctx, v.reconciler.Client, v.log,
 		labelSelector,
 		v.recipeElements.PvcSelector.NamespaceNames,
 		v.instance.Spec.VolSync.Disabled,
+		recipeName,
 	)
 }
 
