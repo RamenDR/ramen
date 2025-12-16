@@ -922,7 +922,8 @@ func getPlacementOrPlacementRule(
 	drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) (client.Object, error) {
-	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef.Namespace+"/"+drpc.Spec.PlacementRef.Name)
+	log.Info("Getting user placement object, will try as PlacementRule first, then Placement",
+		"placementRef", drpc.Spec.PlacementRef.Namespace+"/"+drpc.Spec.PlacementRef.Name)
 
 	var usrPlacement client.Object
 
