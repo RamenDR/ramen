@@ -929,6 +929,8 @@ func getPlacementOrPlacementRule(
 
 	var err error
 
+	var placementType string
+
 	usrPlacement, err = getPlacementRule(ctx, k8sclient, drpc, log)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -939,6 +941,8 @@ func getPlacementOrPlacementRule(
 		if err != nil {
 			return nil, err
 		}
+
+		placementType = "PlacementRule"
 	} else {
 		// Assert that there is no Placement object in the same namespace and with the same name as the PlacementRule
 		_, err = getPlacement(ctx, k8sclient, drpc, log)
@@ -946,7 +950,11 @@ func getPlacementOrPlacementRule(
 			return nil, fmt.Errorf(
 				"can't proceed. PlacementRule and Placement CR with the same name exist on the same namespace")
 		}
+
+		placementType = "Placement"
 	}
+
+	log.Info("Found placement object of type" + " " + placementType)
 
 	return usrPlacement, nil
 }
