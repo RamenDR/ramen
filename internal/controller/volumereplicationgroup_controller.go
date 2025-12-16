@@ -1612,6 +1612,8 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 	pvcsVr := util.ObjectsMap(v.volRepPVCs...)
 	pvcsVs := util.ObjectsMap(v.volSyncPVCs...)
 
+	pvcsUnderDeselection := map[client.ObjectKey]struct{}{}
+
 	for i := range pvcsOwned.Items {
 		pvc := pvcsOwned.Items[i]
 		pvcNamespacedName := client.ObjectKeyFromObject(&pvc)
@@ -1624,6 +1626,8 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 			continue
 		}
 
+		pvcsUnderDeselection[pvcNamespacedName] = struct{}{}
+
 		if controllerutil.ContainsFinalizer(&pvc, PvcVRFinalizerProtected) {
 			v.pvcUnprotectVolRep(pvc, log1.WithName("VolRep"))
 		} else {
@@ -1631,13 +1635,14 @@ func (v *VRGInstance) pvcsDeselectedUnprotect() error {
 		}
 	}
 
-	v.cleanupProtectedPVCs(pvcsVr, pvcsVs, log)
+	v.cleanupProtectedPVCs(pvcsVr, pvcsVs, pvcsUnderDeselection, log)
 
 	return nil
 }
 
 func (v *VRGInstance) cleanupProtectedPVCs(
-	pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim, log logr.Logger,
+	pvcsVr, pvcsVs map[client.ObjectKey]corev1.PersistentVolumeClaim,
+	pvcsUnderDeselection map[client.ObjectKey]struct{}, log logr.Logger,
 ) {
 	if !v.ramenConfig.VolumeUnprotectionEnabled {
 		log.Info("Volume unprotection disabled")
@@ -1660,6 +1665,10 @@ func (v *VRGInstance) cleanupProtectedPVCs(
 		if _, ok := pvcsVs[pvcNamespacedName]; ok {
 			protectedPVCsFiltered = append(protectedPVCsFiltered, protectedPVC)
 
+			continue
+		}
+
+		if _, underDeselection := pvcsUnderDeselection[pvcNamespacedName]; underDeselection {
 			continue
 		}
 
