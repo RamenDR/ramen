@@ -922,7 +922,7 @@ func getPlacementOrPlacementRule(
 	drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) (client.Object, error) {
-	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
+	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef.Namespace+"/"+drpc.Spec.PlacementRef.Name)
 
 	var usrPlacement client.Object
 
@@ -953,7 +953,7 @@ func getPlacementOrPlacementRule(
 func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
+	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Namespace+"/"+drpc.Spec.PlacementRef.Name)
 
 	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
 	if plRuleNamespace == "" {
@@ -996,7 +996,7 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 func getPlacement(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
-	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
+	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Namespace+"/"+drpc.Spec.PlacementRef.Name)
 
 	plmntNamespace := drpc.Spec.PlacementRef.Namespace
 	if plmntNamespace == "" {
