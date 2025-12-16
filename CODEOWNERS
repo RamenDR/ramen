@@ -30,9 +30,10 @@
 /internal/controllers/vrg_recipe*.go        @raghavendra-talur @ShyamsundarR
 
 # Testing
-/test/                          @nirs @raghavendra-talur
-/ramendev/                      @nirs @raghavendra-talur
-/e2e/                           @nirs @raghavendra-talur
-/docs/testing.md                @nirs @raghavendra-talur
-/docs/devel-quick-start.md      @nirs @raghavendra-talur
-/docs/user-quick-start.md       @nirs @raghavendra-talur
+/test/                          @nirs @parikshithb @raghavendra-talur
+/ramendev/                      @nirs @parikshithb @raghavendra-talur
+/e2e/                           @nirs @parikshithb @raghavendra-talur
+/docs/devel-quick-start.md      @nirs @parikshithb @raghavendra-talur
+/docs/e2e.md                    @nirs @parikshithb @raghavendra-talur
+/docs/testing.md                @nirs @parikshithb @raghavendra-talur
+/docs/user-quick-start.md       @nirs @parikshithb @raghavendra-talur
