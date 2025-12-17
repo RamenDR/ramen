@@ -1843,6 +1843,8 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 
 	if len(pvcGroups) > 0 {
 		v.instance.Status.PVCGroups = pvcGroups
+	} else {
+		v.instance.Status.PVCGroups = nil
 	}
 
 	v.updateStatusState()
