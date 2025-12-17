@@ -251,7 +251,7 @@ rules:
   - delete
   - get
   - list
-  - patch
+  - update
   - watch
 - apiGroups:
   - multicluster.x-k8s.io
