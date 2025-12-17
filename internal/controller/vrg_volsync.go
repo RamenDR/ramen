@@ -262,7 +262,7 @@ func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) 
 		Namespace:          pvc.Namespace,
 		ProtectedByVolSync: true,
 		StorageClassName:   pvc.Spec.StorageClassName,
-		Annotations:        protectedPVCAnnotations(pvc),
+		Annotations:        PruneAnnotations(pvc.GetAnnotations()),
 		Labels:             pvc.Labels,
 		AccessModes:        pvc.Spec.AccessModes,
 		Resources:          pvc.Spec.Resources,
@@ -798,25 +798,6 @@ func (v VRGInstance) isVolSyncProtectedPVCConditionReady(conType string) bool {
 	}
 
 	return ready
-}
-
-// protectedPVCAnnotations return the annotations that we must propagate to the
-// destination cluster:
-//   - apps.open-cluster-management.io/* - required to make the protected PVC
-//     owned by OCM when DR is disabled. Copy all annnotations except the
-//     special "do-not-delete" annotation, used only on the source cluster
-//     during relocate.
-func protectedPVCAnnotations(pvc corev1.PersistentVolumeClaim) map[string]string {
-	res := map[string]string{}
-
-	for key, value := range pvc.Annotations {
-		if strings.HasPrefix(key, "apps.open-cluster-management.io/") &&
-			key != volsync.ACMAppSubDoNotDeleteAnnotation {
-			res[key] = value
-		}
-	}
-
-	return res
 }
 
 func (v *VRGInstance) isPVCDeletedForUnprotection(pvc *corev1.PersistentVolumeClaim) bool {

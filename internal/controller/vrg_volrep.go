@@ -2854,43 +2854,6 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 	return newVRGClusterDataProtectedCondition(v.instance.Generation, msg)
 }
 
-// pruneAnnotations takes a map of annotations and removes the annotations where the key start with:
-//   - pv.kubernetes.io
-//   - replication.storage.openshift.io
-//   - volumereplicationgroups.ramendr.openshift.io
-//
-// Parameters:
-//
-//	annotations: the map of annotations to prune
-//
-// Returns:
-//
-//	a new map containing only the remaining annotations
-func PruneAnnotations(annotations map[string]string) map[string]string {
-	if annotations == nil {
-		return map[string]string{}
-	}
-
-	result := make(map[string]string)
-
-	for key, value := range annotations {
-		switch {
-		case strings.HasPrefix(key, "pv.kubernetes.io"):
-			continue
-		case strings.HasPrefix(key, "replication.storage.openshift.io"):
-			continue
-		case strings.HasPrefix(key, "volumereplicationgroups.ramendr.openshift.io"):
-			continue
-		case strings.HasPrefix(key, "volsync.backube"):
-			continue
-		}
-
-		result[key] = value
-	}
-
-	return result
-}
-
 // Checks and requeues reconciler of VM resource cleanup.
 func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
 	if !v.isVMRecipeProtection() {
