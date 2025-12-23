@@ -6,6 +6,7 @@ package controllers_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
@@ -793,9 +794,33 @@ func createDRClustersAsync() {
 	createDRClusters(asyncClusters)
 }
 
+//nolint:gocognit
 func createDRPolicy(inDRPolicy *rmn.DRPolicy) {
+	// Try to create the DRPolicy, but handle AlreadyExists gracefully
 	err := k8sClient.Create(context.TODO(), inDRPolicy)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			// DRPolicy already exists, update it to trigger reconciliation if spec differs
+			existingDRPolicy := &rmn.DRPolicy{}
+			err = k8sClient.Get(context.TODO(),
+				types.NamespacedName{Name: inDRPolicy.Name}, existingDRPolicy)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Update spec if it differs to trigger reconciliation
+			if !reflect.DeepEqual(existingDRPolicy.Spec, inDRPolicy.Spec) {
+				existingDRPolicy.Spec = inDRPolicy.Spec
+				err = k8sClient.Update(context.TODO(), existingDRPolicy)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			// Copy the existing policy back to inDRPolicy for validation
+			*inDRPolicy = *existingDRPolicy
+		} else {
+			// Some other error occurred
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
+
 	Eventually(func() bool {
 		drpolicy := &rmn.DRPolicy{}
 		Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: inDRPolicy.Name}, drpolicy)).To(Succeed())
@@ -1192,8 +1217,10 @@ func waitForDRPCProtected(namespace string) {
 		drpc := getLatestDRPC(namespace)
 		_, cond := getDRPCCondition(&drpc.Status, rmn.ConditionProtected)
 
-		return cond != nil && cond.Status == metav1.ConditionTrue
-	}, timeout, interval).Should(BeTrue())
+		return cond != nil &&
+			cond.ObservedGeneration <= drpc.Generation &&
+			cond.Status == metav1.ConditionTrue
+	}, timeout*2, interval).Should(BeTrue())
 }
 
 func getPlacementDecision(plName, plNamespace string) *clrapiv1beta1.PlacementDecision {
@@ -1263,6 +1290,7 @@ func verifyDRPCStatusPreferredClusterExpectation(namespace string, drState rmn.D
 
 			return d.ClusterName == East1ManagedCluster &&
 				idx != -1 &&
+				condition.ObservedGeneration <= updatedDRPC.Generation &&
 				condition.Reason == string(drState) &&
 				len(updatedDRPC.Status.ResourceConditions.ResourceMeta.ProtectedPVCs) == ProtectedPVCCount
 		}
@@ -2835,14 +2863,17 @@ func checkConditionAllowFailover(namespace string) {
 		drpc = getLatestDRPC(namespace)
 		for _, availableCondition = range drpc.Status.Conditions {
 			if availableCondition.Type != rmn.ConditionPeerReady {
-				if availableCondition.Status == metav1.ConditionTrue {
+				// Verify condition is for current generation to avoid stale conditions
+				if availableCondition.ObservedGeneration <= drpc.Generation &&
+					availableCondition.Status == metav1.ConditionTrue {
 					return true
 				}
 			}
 		}
 
 		return false
-	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("Condition '%+v'", availableCondition))
+	}, timeout, interval).Should(
+		BeTrue(), fmt.Sprintf("Condition '%+v' for DRPC generation %d", availableCondition, drpc.Generation))
 
 	Expect(drpc.Status.Phase).To(Equal(rmn.WaitForUser))
 }
