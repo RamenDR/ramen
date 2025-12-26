@@ -41,6 +41,10 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
+	// Adds explicit visibility into the controller’s automatic cleanup workflow for VM/PVC
+	// resources after DR operations (e.g., failover/relocate). This condition helps operators
+	// and automation understand whether cleanup is in progress, blocked, or completed.
+	VRGConditionTypeAutoCleanup = "AutoCleanup"
 	// VolSync related conditions. These conditions are only applicable
 	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
@@ -87,6 +91,10 @@ const (
 
 	// Indicates no conflict in cluster data detected on both the primary and secondary cluster.
 	VRGConditionReasonNoConflictDetected = "NoConflictDetected"
+
+	VRGConditionReasonAutoCleanupProgressing = "Progressing"
+	VRGConditionReasonAutoCleanupNotFeasible = "NotFeasible"
+	VRGConditionReasonAutoCleanupCompleted   = "Completed"
 )
 
 const (
@@ -141,6 +149,14 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeAutoCleanup,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -510,4 +526,17 @@ func updateVRGNoClusterDataConflictCondition(observedGeneration int64,
 		Reason:             reason,
 		Message:            message,
 	}
+}
+
+func setVRGAutoCleanupCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	status metav1.ConditionStatus, reason, message string,
+) {
+	autoCleanupCondition := &metav1.Condition{
+		Type:               VRGConditionTypeAutoCleanup,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	}
+	util.SetStatusCondition(conditions, *autoCleanupCondition)
 }
