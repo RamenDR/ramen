@@ -190,11 +190,12 @@ func executeCommand(execPod *ExecPodSpec, hook *kubeobjects.HookSpec, scheme *ru
 		Name(execPod.PodName).
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
-			Command: execPod.Command,
-			Stdin:   false,
-			Stdout:  true,
-			Stderr:  true,
-			TTY:     false,
+			Command:   execPod.Command,
+			Container: execPod.Container,
+			Stdin:     false,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
 		}, paramCodec)
 
 	exec, err := remotecommand.NewSPDYExecutor(restCfg, "POST", request.URL())
