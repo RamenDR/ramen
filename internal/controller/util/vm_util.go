@@ -23,7 +23,7 @@ const (
 
 func ListVMsByLabelSelector(
 	ctx context.Context,
-	apiReader client.Reader,
+	k8sclient client.Client,
 	logger logr.Logger,
 	vmLabelSelector []string,
 	namespaces []string,
@@ -42,7 +42,7 @@ func ListVMsByLabelSelector(
 			}
 
 			vmList := &virtv1.VirtualMachineList{}
-			if err := apiReader.List(context.TODO(), vmList, listOptions...); err != nil {
+			if err := k8sclient.List(context.TODO(), vmList, listOptions...); err != nil {
 				return nil, err
 			}
 
@@ -61,7 +61,7 @@ func ListVMsByLabelSelector(
 
 func ListVMsByVMNamespace(
 	ctx context.Context,
-	apiReader client.Reader,
+	k8sclient client.Client,
 	log logr.Logger,
 	vmNamespaceList []string,
 	vmList []string,
@@ -73,7 +73,7 @@ func ListVMsByVMNamespace(
 			foundVM := &virtv1.VirtualMachine{}
 
 			vmLookUp := types.NamespacedName{Namespace: ns, Name: vm}
-			if err := apiReader.Get(ctx, vmLookUp, foundVM); err != nil {
+			if err := k8sclient.Get(ctx, vmLookUp, foundVM); err != nil {
 				if k8serrors.IsNotFound(err) {
 					continue
 				}
