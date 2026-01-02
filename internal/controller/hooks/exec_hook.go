@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -157,8 +158,18 @@ func getMatchingHook(hooks []*recipev1.Hook, hookName string) *recipev1.Hook {
 }
 
 func (e ExecHook) executeCommands(execPods []ExecPodSpec, log logr.Logger) (ExecPodSpec, error) {
+	restCfg, err := config.GetConfig()
+	if err != nil {
+		return ExecPodSpec{}, fmt.Errorf("error getting kubeconfig: %w", err)
+	}
+
+	coreClient, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return ExecPodSpec{}, fmt.Errorf("error creating kubernetes client: %w", err)
+	}
+
 	for _, execPod := range execPods {
-		err := executeCommand(&execPod, e.Hook, e.Scheme, log)
+		err := executeCommand(coreClient, restCfg, &execPod, e.Hook, e.Scheme, log)
 		if err != nil && getOpHookOnError(e.Hook) == defaultOnErrorValue {
 			log.Error(err, "error executing command on pod", "pod", execPod.PodName,
 				"namespace", execPod.Namespace, "command", execPod.Command)
@@ -170,17 +181,9 @@ func (e ExecHook) executeCommands(execPods []ExecPodSpec, log logr.Logger) (Exec
 	return ExecPodSpec{}, nil
 }
 
-func executeCommand(execPod *ExecPodSpec, hook *kubeobjects.HookSpec, scheme *runtime.Scheme, log logr.Logger) error {
-	restCfg, err := config.GetConfig()
-	if err != nil {
-		return fmt.Errorf("error getting kubeconfig: %w", err)
-	}
-
-	coreClient, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		return fmt.Errorf("error creating kubernetes client: %w", err)
-	}
-
+func executeCommand(coreClient *kubernetes.Clientset, restCfg *rest.Config, execPod *ExecPodSpec,
+	hook *kubeobjects.HookSpec, scheme *runtime.Scheme, log logr.Logger,
+) error {
 	buf := &bytes.Buffer{}
 	errBuf := &bytes.Buffer{}
 	paramCodec := runtime.NewParameterCodec(scheme)
@@ -229,7 +232,7 @@ func (e ExecHook) GetPodsToExecuteCommands(log logr.Logger) []ExecPodSpec {
 	if e.Hook.SinglePodOnly {
 		eps, err := e.getExecPodsForSinglePodOnly(log)
 		if err != nil {
-			log.Error(err, "error occurred while getting pods for non singlePodOnly")
+			log.Error(err, "error occurred while getting pods for singlePodOnly")
 		}
 
 		execPods = append(execPods, eps...)
