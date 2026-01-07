@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -135,92 +134,6 @@ func DeleteVMs(
 
 		log.Info("Deleted VM successfully", "namespace", ns, "name", vmName)
 	}
-
-	return nil
-}
-
-// TODO: Merge this function with IsPVCInUseByPod to avoid duplication.
-// Both functions perform similar checks, so refactor them into a single reusable utility.
-// This requires careful handling to ensure compatibility and correctness across all call sites.
-func IsUsedByVirtLauncherPod(ctx context.Context, c client.Client, obj client.Object,
-	log logr.Logger,
-) (client.Object, error) {
-	// Patch PVC only if its not exclusively owned by any controller
-	podList := &corev1.PodList{}
-	pvcName := obj.GetName()
-	pvcNamespace := obj.GetNamespace()
-
-	err := c.List(ctx, podList, client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
-		client.InNamespace(pvcNamespace))
-	if err != nil {
-		log.Error(err, "error getting pods list from protected namespace", "namespace", pvcNamespace)
-
-		return nil, err
-	}
-
-	if len(podList.Items) == 0 {
-		log.Info("Not is use by any pod")
-
-		return nil, nil
-	}
-
-	var vmName client.Object
-	for _, pod := range podList.Items {
-		vmName, err = IsOwnedByVM(ctx, c, &pod, log)
-		if err != nil {
-			// If not owned by this pod continue to check on the next pod(PV shared across VMs?)
-			continue
-		}
-	}
-
-	if vmName == nil {
-		return nil, nil
-	}
-
-	log.Info("Got the VM owning the PVC", "PVC", pvcName,
-		"set to owned by VM", vmName.GetName(), "VM kind", vmName.GetObjectKind())
-
-	return vmName, nil
-}
-
-// This allows VM to declare as owner of PVC and has a dependency on the object without specifying it as a controller.
-func UpdatePvcWithVMOwnerRef(
-	ctx context.Context,
-	c client.Client,
-	ownerVM client.Object,
-	pvcName, pvcNamespace string,
-	log logr.Logger,
-) error {
-	pvcLookupKey := types.NamespacedName{Namespace: pvcNamespace, Name: pvcName}
-
-	pvc := &corev1.PersistentVolumeClaim{}
-	if err := c.Get(ctx, pvcLookupKey, pvc); err != nil {
-		log.Error(err, "Failed to get PVC", "namespace", pvcNamespace, "PVCname", pvcName)
-
-		return err
-	}
-
-	needsUpdate, err := AddOwnerReference(pvc, ownerVM, c.Scheme())
-	if err != nil {
-		return fmt.Errorf("failed to add owner reference: %w", err)
-	}
-
-	if !needsUpdate {
-		log.Info("PVC already has the desired owner reference; no update needed",
-			"PVC name", pvc.GetName(), "Owned by VM", ownerVM.GetName())
-
-		return nil
-	}
-
-	if err := c.Update(ctx, pvc); err != nil {
-		log.Error(err, "Failed to update PVC with owner reference",
-			"namespace", pvcNamespace, "PVCname", pvcName)
-
-		return fmt.Errorf("failed to update PVC with owner reference: %w", err)
-	}
-
-	log.Info("Successfully updated PVC with owner reference to VM",
-		"PVC name", pvc.GetName(), "Owned by VM", ownerVM.GetName())
 
 	return nil
 }
