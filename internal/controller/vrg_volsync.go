@@ -210,7 +210,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		)
 
 		rgs, finalSyncComplete, err := cephfsCGHandler.CreateOrUpdateReplicationGroupSource(
-			pvc.Namespace, v.instance.Spec.RunFinalSync,
+			pvc.Namespace, *pvc.Spec.StorageClassName, v.instance.Spec.RunFinalSync,
 		)
 		if err != nil {
 			v.log.Info("Failed to CreateOrUpdateReplicationGroupSource", "err", err)
