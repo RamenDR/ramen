@@ -64,6 +64,7 @@ type VSCGHandler interface {
 
 	CreateOrUpdateReplicationGroupSource(
 		replicationGroupSourceNamespace string,
+		storageClassName string,
 		runFinalSync bool,
 	) (*ramendrv1alpha1.ReplicationGroupSource, bool, error)
 
@@ -154,6 +155,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 //nolint:funlen,gocognit,cyclop,gocyclo
 func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceNamespace string,
+	storageClassName string,
 	runFinalSync bool,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
 	replicationGroupSourceName := c.cgName
@@ -198,13 +200,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		return nil, !finalSyncComplete, err
 	}
 
-	namespaces := []string{c.instance.Namespace}
-	if c.instance.Spec.ProtectedNamespaces != nil && len(*c.instance.Spec.ProtectedNamespaces) != 0 {
-		namespaces = *c.instance.Spec.ProtectedNamespaces
-	}
-
 	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(c.ctx, c.Client,
-		c.volumeGroupSnapshotClassSelector, *c.volumeGroupSnapshotSource, namespaces, c.logger)
+		c.volumeGroupSnapshotClassSelector, storageClassName, c.logger)
 	if err != nil {
 		log.Error(err, "Failed to get VGSClass name")
 		// If final sync is requested, ensure final sync cleanup is run regardless of the error
