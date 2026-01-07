@@ -2898,6 +2898,10 @@ func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
 		return false
 	}
 
+	if v.IsVMAutoCleanUpNotFeasible() {
+		return false
+	}
+
 	if v.ShouldCleanupVMForSecondary() {
 		v.log.Info("Requeuing until VM cleanup is complete")
 		setVRGAutoCleanupCondition(&v.instance.Status.Conditions,
@@ -2913,6 +2917,18 @@ func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
 // Checks if there are conflicting protected resources across managed clusters
 func (v *VRGInstance) isResourceConflict() bool {
 	if err := v.validateVMsForStandaloneProtection(); err != nil {
+		return true
+	}
+
+	return false
+}
+
+func (v *VRGInstance) IsVMAutoCleanUpNotFeasible() bool {
+	autoCleanupCondition := rmnutil.FindCondition(v.instance.Status.Conditions, VRGConditionTypeAutoCleanup)
+	if autoCleanupCondition.Status == metav1.ConditionFalse &&
+		autoCleanupCondition.Reason == VRGConditionReasonAutoCleanupNotFeasible {
+		v.log.Info("Automated cleanup of VM resource not feasible, skipping further processing.")
+
 		return true
 	}
 
