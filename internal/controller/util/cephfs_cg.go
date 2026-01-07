@@ -101,8 +101,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	ctx context.Context,
 	k8sClient client.Client,
 	volumeGroupSnapshotClassSelector metav1.LabelSelector,
-	pvcsConsistencyGroupSelector metav1.LabelSelector,
-	namespace []string,
+	storageClassName string,
 	logger logr.Logger,
 ) (string, error) {
 	volumeGroupSnapshotClasses, err := GetVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
@@ -110,37 +109,28 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 		return "", err
 	}
 
-	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, namespace, false)
-	if err != nil {
+	storageClass := &storagev1.StorageClass{}
+
+	if err := k8sClient.Get(ctx,
+		types.NamespacedName{Name: storageClassName},
+		storageClass,
+	); err != nil {
 		return "", err
-	}
-
-	storageClassProviders := []string{}
-
-	for _, pvc := range pvcs.Items {
-		storageClass := &storagev1.StorageClass{}
-
-		if err := k8sClient.Get(ctx,
-			types.NamespacedName{Name: *pvc.Spec.StorageClassName},
-			storageClass,
-		); err != nil {
-			return "", err
-		}
-
-		storageClassProviders = append(storageClassProviders, storageClass.Provisioner)
 	}
 
 	var matchedVolumeGroupSnapshotClassName string
 
 	for _, volumeGroupSnapshotClass := range volumeGroupSnapshotClasses {
-		if VolumeGroupSnapshotClassMatchStorageProviders(volumeGroupSnapshotClass, storageClassProviders) {
+		if storageClass.Provisioner == volumeGroupSnapshotClass.Driver {
 			matchedVolumeGroupSnapshotClassName = volumeGroupSnapshotClass.Name
+
+			break
 		}
 	}
 
 	if matchedVolumeGroupSnapshotClassName == "" {
 		noVSCFoundErr := fmt.Errorf("unable to find matching volumegroupsnapshotclass for storage provisioner %s",
-			storageClassProviders)
+			storageClass.Provisioner)
 		logger.Error(noVSCFoundErr, "No VolumeGroupSnapshotClass found")
 
 		return "", noVSCFoundErr
@@ -171,18 +161,6 @@ func GetVolumeGroupSnapshotClasses(
 	}
 
 	return vgscList.Items, nil
-}
-
-func VolumeGroupSnapshotClassMatchStorageProviders(
-	volumeGroupSnapshotClass groupsnapv1beta1.VolumeGroupSnapshotClass, storageClassProviders []string,
-) bool {
-	for _, storageClassProvider := range storageClassProviders {
-		if storageClassProvider == volumeGroupSnapshotClass.Driver {
-			return true
-		}
-	}
-
-	return false
 }
 
 func IsRDExist(rdspec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
