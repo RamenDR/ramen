@@ -2990,8 +2990,6 @@ type pvcProcessResult struct {
 // or decides to skip/retry cleanup based on current state.
 func (v *VRGInstance) validatePVCOwnershipOnVMs() bool {
 	protectedPVCs := v.collectProtectedPVCs()
-	protectedVMs := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
-	protectedVMSet := toSet(protectedVMs)
 
 	// Map PVC name → VM for patching later
 	pvcToVM := make(map[string]*metav1.PartialObjectMetadata)
@@ -3007,7 +3005,7 @@ func (v *VRGInstance) validatePVCOwnershipOnVMs() bool {
 			continue
 		}
 
-		res := v.verifyVMPVCOwnershipAndUsage(&protectedPVCs[i], protectedVMSet)
+		res := v.verifyVMPVCOwnershipAndUsage(&protectedPVCs[i])
 		if res.skip {
 			skipCleanup = true
 
@@ -3030,10 +3028,6 @@ func (v *VRGInstance) validatePVCOwnershipOnVMs() bool {
 		return false
 	}
 
-	// Patch PVCs outside the loop
-	if v.patchPVCsOwnerRefs(pvcToVM) {
-		retryCleanup = true
-	}
 	// return true if no retry needed, return false if retry required
 	return !retryCleanup
 }
@@ -3049,39 +3043,17 @@ func (v *VRGInstance) collectProtectedPVCs() []corev1.PersistentVolumeClaim {
 
 // verifyVMPVCOwnershipAndUsage decides what to do with a single PVC:
 // - If it already has an OwnerReference, validate it.
-// - Else, check if used by virt-launcher, and whether VM is protected.
 // Returns mapping info or flags indicating skip/retry.
 func (v *VRGInstance) verifyVMPVCOwnershipAndUsage(
 	pvc *corev1.PersistentVolumeClaim,
-	protectedVMSet map[string]struct{},
 ) pvcProcessResult {
 	log := logWithPvcName(v.log, pvc)
 
-	if len(pvc.OwnerReferences) > 0 {
-		return v.handleExistingOwnerRef(pvc, log)
-	}
-
-	vm, decision := v.resolveOwnerFromVirtLauncher(pvc, log)
-	if decision.skip || decision.retry || vm == nil {
-		return decision
-	}
-
-	// 3) Ensure VM is among protected VMs; else skip cleanup.
-	if !v.isProtectedVM(vm.GetName(), protectedVMSet) {
-		log.Info("Skipping cleanup, PVC not used by protected VM", "pvc", pvc.Name, "vm", vm.GetName())
-
+	if len(pvc.OwnerReferences) == 0 {
 		return pvcProcessResult{skip: true}
 	}
 
-	// 4) Success: return VM metadata for patching.
-	pom, ok := vm.(*metav1.PartialObjectMetadata)
-	if !ok {
-		log.Info("VirtualMachine(VM) map function received non-VM resource")
-
-		return pvcProcessResult{}
-	}
-
-	return pvcProcessResult{vm: pom}
+	return v.handleExistingOwnerRef(pvc, log)
 }
 
 // handleExistingOwnerRef validates PVC ownerReferences chain and returns skip on invalid.
@@ -3111,67 +3083,6 @@ func (v *VRGInstance) handleExistingOwnerRef(
 	}
 
 	return pvcProcessResult{vm: pom}
-}
-
-// resolveOwnerFromVirtLauncher tries to map PVC usage to a virt-launcher pod's VM.
-func (v *VRGInstance) resolveOwnerFromVirtLauncher(
-	pvc *corev1.PersistentVolumeClaim,
-	log logr.Logger,
-) (client.Object, pvcProcessResult) {
-	ownerVMMetadata, err := rmnutil.IsUsedByVirtLauncherPod(v.ctx, v.reconciler.Client, pvc, log)
-	if err != nil {
-		// Transient resolution error → ask for retry
-		return nil, pvcProcessResult{retry: true}
-	}
-
-	if ownerVMMetadata == nil {
-		// No virt-launcher usage found → manual cleanup
-		return nil, pvcProcessResult{skip: true}
-	}
-
-	// Ensure the reported object is a VM PartialObjectMetadata
-	vm, ok := ownerVMMetadata.(*metav1.PartialObjectMetadata)
-	if !ok {
-		log.Info("VirtualMachine(VM) map function received non-VM resource")
-
-		return nil, pvcProcessResult{}
-	}
-
-	return vm, pvcProcessResult{}
-}
-
-// isProtectedVM checks membership in the protected set.
-func (v *VRGInstance) isProtectedVM(vmName string, protectedVMSet map[string]struct{}) bool {
-	_, ok := protectedVMSet[vmName]
-
-	return ok
-}
-
-// patchPVCsOwnerRefs applies VM OwnerReference to PVCs and returns true if any patch failed.
-func (v *VRGInstance) patchPVCsOwnerRefs(pvcToVM map[string]*metav1.PartialObjectMetadata) bool {
-	var patchError bool
-
-	for pvcName, vm := range pvcToVM {
-		err := rmnutil.UpdatePvcWithVMOwnerRef(v.ctx, v.reconciler.Client, vm, pvcName, vm.Namespace, v.log)
-		if err != nil {
-			v.log.Error(err, "Failed to patch PVC owner reference",
-				"pvcName", pvcName,
-				"vm", vm.GetName())
-
-			patchError = true
-		}
-	}
-
-	return patchError
-}
-
-func toSet(items []string) map[string]struct{} {
-	m := make(map[string]struct{}, len(items))
-	for _, it := range items {
-		m[it] = struct{}{}
-	}
-
-	return m
 }
 
 // skip VM cleanup if cleanup is already in progress or cleanup just completed.
