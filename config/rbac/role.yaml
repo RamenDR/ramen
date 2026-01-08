@@ -209,6 +209,7 @@ rules:
 - apiGroups:
   - csiaddons.openshift.io
   resources:
+  - csiaddonsnodes
   - networkfenceclasses
   verbs:
   - get
