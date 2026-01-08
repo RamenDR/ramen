@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -1023,7 +1024,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 		// to wait on user to clean up. For non-discovered apps, we can set the
 		// progression to clearing placement.
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setDiscoveredAppGCProgression(homeCluster)
 		} else {
 			// clear current user PlacementRule's decision
 			d.setProgression(rmn.ProgressionClearingPlacement)
@@ -1043,7 +1044,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 
 	if !result {
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setDiscoveredAppGCProgression(homeCluster)
 		} else {
 			d.setProgression(rmn.ProgressionRunningFinalSync)
 		}
@@ -1292,7 +1293,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setDiscoveredAppGCProgression(clusterToSkip)
 		} else {
 			d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
 		}
@@ -2162,7 +2163,7 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 	// So set the progression to wait on user to clean up.
 	// If not discovered apps, then we can set the progression to cleaning up.
 	if isDiscoveredApp(d.instance) {
-		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		d.setDiscoveredAppGCProgression(clusterToSkip)
 	}
 
 	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
@@ -2482,6 +2483,7 @@ failoverProgressions are used to indicate progression during failover action pro
 		ProgressionEnsuringVolSyncSetup,
 		ProgressionSettingupVolsyncDest,
 		ProgressionWaitForReadiness,
+		ProgressionCleanupReadiness,
 		ProgressionUpdatedPlacement,
 		ProgressionCompleted,
 		ProgressionCleaningUp,
@@ -2499,6 +2501,7 @@ relocateProgressions are used to indicate progression during relocate action pro
 		rmn.ProgressionFinalSyncComplete,
 		rmn.ProgressionEnsuringVolumesAreSecondary,
 		rmn.ProgressionWaitOnUserToCleanUp,
+		rmn.ProgressionCleanupReadiness,
 	}
 
 	postRelocateProgressions := {
@@ -2749,4 +2752,126 @@ func getCallerFunction(ancestorLevel int) string {
 	}
 
 	return strings.TrimPrefix(details.Name(), "github.com/ramendr/ramen/internal/controller.")
+}
+
+func (d *DRPCInstance) isVMRecipeInUse() bool {
+	if d.instance == nil ||
+		d.instance.Spec.KubeObjectProtection == nil ||
+		d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+		return false
+	}
+
+	if d.instance.Spec.KubeObjectProtection.RecipeRef.Name != recipecore.VMRecipeName {
+		return false
+	}
+
+	return true
+}
+
+func (d *DRPCInstance) isPreparingForFinalSync(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg == nil {
+		return false
+	}
+
+	if vrg.Spec.PrepareForFinalSync || vrg.Status.FinalSyncComplete || vrg.Status.PrepareForFinalSyncComplete {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isVMAutoCleanupFeasible(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg == nil {
+		return false
+	}
+
+	autoCleanupCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeAutoCleanup)
+	if autoCleanupCondition == nil {
+		return false
+	}
+
+	if autoCleanupCondition.Reason == VRGConditionReasonAutoCleanupProgressing {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isVMAutoCleanupCompleted(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg == nil {
+		return false
+	}
+
+	autoCleanupCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeAutoCleanup)
+	if autoCleanupCondition == nil {
+		return false
+	}
+
+	// VM cleanup completed, PVC/VR/VGR cleanup is in progress
+	if autoCleanupCondition.Reason == VRGConditionReasonAutoCleanupCompleted {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) getCleanupSecondaryVRG(clusterName string) *rmn.VolumeReplicationGroup {
+	if len(d.vrgs) == 0 {
+		return nil
+	}
+
+	var vrg *rmn.VolumeReplicationGroup
+
+	if v, ok := d.vrgs[clusterName]; ok && v != nil {
+		vrg = v
+	}
+
+	if d.isSourceVRGForAction(clusterName) {
+		for _, managedCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if clusterName == managedCluster {
+				continue
+			}
+
+			if alternateVRG, ok := d.vrgs[managedCluster]; ok && alternateVRG != nil {
+				vrg = alternateVRG
+
+				break
+			}
+		}
+	}
+
+	return vrg
+}
+
+func (d *DRPCInstance) isSourceVRGForAction(clusterName string) bool {
+	spec := d.instance.Spec
+
+	return (spec.PreferredCluster == clusterName && spec.Action == rmn.ActionRelocate) ||
+		(spec.FailoverCluster == clusterName && spec.Action == rmn.ActionFailover)
+}
+
+// setDiscoveredAppGCProgression determines and sets the garbage collection progression state for
+// discovered application
+// garbage collection (GC) based on the discovered VM recipe and the VRG's auto-cleanup status.
+func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
+	if d.isVMRecipeInUse() {
+		switch {
+		case d.isPreparingForFinalSync(clusterName): // for relocation only
+			d.log.V(1).Info("Setting progression - PreparingFinalSync")
+			d.setProgression(rmn.ProgressionPreparingFinalSync)
+		case d.isVMAutoCleanupFeasible(clusterName):
+			d.log.V(1).Info("Setting progression - CleanUpReadiness")
+			d.setProgression(rmn.ProgressionCleanupReadiness)
+		case d.isVMAutoCleanupCompleted(clusterName):
+			d.log.V(1).Info("Setting progression - Cleaning Up")
+			d.setProgression(rmn.ProgressionCleaningUp)
+		default:
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		}
+	} else {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+	}
 }
