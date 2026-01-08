@@ -6,21 +6,21 @@ apiVersion: recipe.ramendr.io/v1alpha1
 kind: Recipe
 metadata:
   name: disapp-deploy-rbd
-  namespace: disapp-deploy-rbd
+  namespace: test-disapp-deploy-rbd
 spec:
   groups:
     - name: rg1
       type: resource
       backupRef: rg1
       includedNamespaces:
-        - disapp-deploy-rbd
+        - test-disapp-deploy-rbd
       labelSelector:
         matchLabels:
           appname: busybox
   hooks:
     - name: exec-hook
       type: exec
-      namespace: disapp-deploy-rbd
+      namespace: test-disapp-deploy-rbd
       nameSelector: busybox
       selectResource: deployment
       timeout: 300

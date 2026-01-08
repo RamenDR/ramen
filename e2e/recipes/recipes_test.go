@@ -118,7 +118,8 @@ func TestGenerateWithNoChecks(t *testing.T) {
 		t.Fatalf("error creating deployer: %v", err)
 	}
 
-	parent := app.NewContext(context.Background(), &config.Config{}, &types.Env{}, zap.NewExample().Sugar())
+	cfg := loadConfig(t)
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
 	testContext := test.NewContext(parent, workload, deploy)
 
 	_, err = recipes.Generate(&testContext, recipeConfig)
@@ -144,7 +145,8 @@ func TestGenerateWithNoOperations(t *testing.T) {
 		t.Fatalf("error creating deployer: %v", err)
 	}
 
-	parent := app.NewContext(context.Background(), &config.Config{}, &types.Env{}, zap.NewExample().Sugar())
+	cfg := loadConfig(t)
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
 	testContext := test.NewContext(parent, workload, deploy)
 
 	_, err = recipes.Generate(&testContext, recipeConfig)
@@ -207,10 +209,28 @@ func loadExpectedRecipe(t *testing.T, filename string) *recipe.Recipe {
 	return r
 }
 
+func loadConfig(t *testing.T) *config.Config {
+	t.Helper()
+
+	options := config.Options{
+		Workloads: workloads.AvailableNames(),
+		Deployers: deployers.AvailableTypes(),
+	}
+
+	cfg, err := config.ReadConfig("testdata/config.yaml", options)
+	if err != nil {
+		t.Fatalf("error loading config: %v", err)
+	}
+
+	return cfg
+}
+
 func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 	t.Helper()
 
-	workload, err := createWorkload()
+	cfg := loadConfig(t)
+
+	workload, err := createWorkload(cfg)
 	if err != nil {
 		t.Fatalf("error creating workload: %v", err)
 	}
@@ -220,20 +240,16 @@ func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 		t.Fatalf("error creating deployer: %v", err)
 	}
 
-	parent := app.NewContext(context.Background(), &config.Config{}, &types.Env{}, zap.NewExample().Sugar())
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
 	tc := test.NewContext(parent, workload, deployer)
 
 	return &tc
 }
 
-func createWorkload() (types.Workload, error) {
-	pvcSpec := config.PVCSpec{
-		Name:             "rbd",
-		StorageClassName: "test-sc",
-		AccessModes:      "ReadWriteOnce",
-	}
+func createWorkload(cfg *config.Config) (types.Workload, error) {
+	pvcSpec := cfg.PVCSpecs[0]
 
-	return workloads.New("deploy", "main", pvcSpec)
+	return workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
 }
 
 func createDeployer(rc *config.Recipe) (types.Deployer, error) {
