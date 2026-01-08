@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,6 +42,26 @@ type Classes struct {
 	VolumeGroupReplicationClasses []string
 	VolumeGroupSnapshotClasses    []string
 	NetworkFenceClasses           []string
+	storageAccessDetails          []ramen.StorageAccessDetail
+}
+
+func ensureNamespaceExists(ctx context.Context, k8sClient client.Client, namespace string) {
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+
+	// try to create, ignore error if ns already exists.
+	err := k8sClient.Create(ctx, ns)
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	// wait for ns to be ready
+	Eventually(func() error {
+		return k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, ns)
+	}, timeout, interval).Should(Succeed())
 }
 
 func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig, classes Classes,
@@ -58,25 +79,27 @@ func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig
 		g.Expect(drClusterConfig.Status.VolumeGroupReplicationClasses).To(ConsistOf(classes.VolumeGroupReplicationClasses))
 		g.Expect(drClusterConfig.Status.VolumeGroupSnapshotClasses).To(ConsistOf(classes.VolumeGroupSnapshotClasses))
 		g.Expect(drClusterConfig.Status.NetworkFenceClasses).To(ConsistOf(classes.NetworkFenceClasses))
+		g.Expect(drClusterConfig.Status.StorageAccessDetails).To(ConsistOf(classes.storageAccessDetails))
 	}, timeout, interval).Should(Succeed())
 }
 
 var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 	var (
-		ctx                    context.Context
-		cancel                 context.CancelFunc
-		cfg                    *rest.Config
-		testEnv                *envtest.Environment
-		k8sClient              client.Client
-		apiReader              client.Reader
-		drCConfig              *ramen.DRClusterConfig
-		baseSC, sc1, sc2       *storagev1.StorageClass
-		baseVSC, vsc1, vsc2    *snapv1.VolumeSnapshotClass
-		baseVRC, vrc1, vrc2    *volrep.VolumeReplicationClass
-		baseVGRC, vgrc1, vgrc2 *volrep.VolumeGroupReplicationClass
-		baseVGSC, vgsc1, vgsc2 *groupsnapv1beta1.VolumeGroupSnapshotClass
-		baseNFC, nfc1, nfc2    *csiaddonsv1alpha1.NetworkFenceClass
-		classes                Classes
+		ctx                               context.Context
+		cancel                            context.CancelFunc
+		cfg                               *rest.Config
+		testEnv                           *envtest.Environment
+		k8sClient                         client.Client
+		apiReader                         client.Reader
+		drCConfig                         *ramen.DRClusterConfig
+		baseSC, sc1, sc2                  *storagev1.StorageClass
+		baseVSC, vsc1, vsc2               *snapv1.VolumeSnapshotClass
+		baseVRC, vrc1, vrc2               *volrep.VolumeReplicationClass
+		baseVGRC, vgrc1, vgrc2            *volrep.VolumeGroupReplicationClass
+		baseVGSC, vgsc1, vgsc2            *groupsnapv1beta1.VolumeGroupSnapshotClass
+		baseNFC, nfc1, nfc2               *csiaddonsv1alpha1.NetworkFenceClass
+		baseCSIAddonsNode, csiAddonsNode1 *csiaddonsv1alpha1.CSIAddonsNode
+		classes                           Classes
 	)
 
 	BeforeAll(func() {
@@ -108,6 +131,8 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).NotTo(HaveOccurred())
+
+		ensureNamespaceExists(context.TODO(), k8sClient, ramenNamespace)
 
 		By("starting the DRClusterConfig reconciler")
 
@@ -238,6 +263,18 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 					"csiaddons.openshift.io/networkfence-secret-namespace": "rook-ceph",
 				},
 				Provisioner: "fake.ramen.com",
+			},
+		}
+
+		baseCSIAddonsNode = &csiaddonsv1alpha1.CSIAddonsNode{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "baseCSIAddonNode",
+				Namespace: ramenNamespace,
+			},
+			Spec: csiaddonsv1alpha1.CSIAddonsNodeSpec{
+				Driver: csiaddonsv1alpha1.CSIAddonsNodeDriver{
+					Name: "fake.ramen.com",
+				},
 			},
 		}
 	})
@@ -777,13 +814,81 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				)
 			})
 		})
-		When("a NetworkFenceClass is deleted", func() {
+		When("there are multiple NetworkFenceClasses and one of them is deleted", func() {
 			It("removes the associated NetworkFenceClass from DRClusterConfig Status", func() {
 				By("deleting a NetworkFenceClass")
 
 				Expect(k8sClient.Delete(context.TODO(), nfc2)).To(Succeed())
 
 				classes.NetworkFenceClasses = []string{nfc1.Name}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("a NetworkFenceClass is deleted", func() {
+			It("removes the associated NetworkFenceClass from DRClusterConfig Status", func() {
+				By("deleting a NetworkFenceClass")
+
+				Expect(k8sClient.Delete(context.TODO(), nfc1)).To(Succeed())
+
+				classes.NetworkFenceClasses = []string{}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+
+		When("there is a NetworkFenceClass created", func() {
+			It("updates DRClusterConfig Status with StorageAccessDetails", func() {
+				By("creating a NetworkFenceClass")
+				nfc1 = baseNFC.DeepCopy()
+				nfc1.Name = "nfc1"
+				Expect(k8sClient.Create(context.TODO(), nfc1)).To(Succeed())
+
+				// create and update CSIAddonsNode and its status in tests as
+				// CSI Reconciler is not running in test env
+				csiAddonsNode1 = baseCSIAddonsNode.DeepCopy()
+				csiAddonsNode1.Name = "csiaddonsnode-1"
+				Expect(k8sClient.Create(context.TODO(), csiAddonsNode1)).To(Succeed())
+
+				csiAddonsNode1.Status = csiaddonsv1alpha1.CSIAddonsNodeStatus{
+					NetworkFenceClientStatus: []csiaddonsv1alpha1.NetworkFenceClientStatus{
+						{
+							NetworkFenceClassName: nfc1.Name,
+							ClientDetails: []csiaddonsv1alpha1.ClientDetail{
+								{
+									Id:    "id1",
+									Cidrs: []string{"192.169.0.1/22"},
+								},
+							},
+						},
+					},
+				}
+
+				Expect(k8sClient.Status().Update(context.TODO(), csiAddonsNode1)).To(Succeed())
+
+				classes.NetworkFenceClasses = []string{nfc1.Name}
+				classes.storageAccessDetails = []ramen.StorageAccessDetail{
+					{
+						StorageProvisioner: "fake.ramen.com",
+						CIDRs:              []string{"192.169.0.1/22"},
+					},
+				}
 
 				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(

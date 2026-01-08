@@ -253,7 +253,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
-	err := r.UpdateSupportedClasses(ctx, drCConfig)
+	err := r.UpdateStatus(ctx, drCConfig)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
 		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
@@ -278,9 +278,9 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	return ctrl.Result{}, nil
 }
 
-// UpdateSupportedClasses updates DRClusterConfig status with a list of storage related classes that are marked for DR
+// UpdateStatus updates DRClusterConfig status with a list of storage related classes that are marked for DR
 // support. The list is sorted alphabetically to avoid out of order listing and status updates due to the same
-func (r *DRClusterConfigReconciler) UpdateSupportedClasses(
+func (r *DRClusterConfigReconciler) UpdateStatus(
 	ctx context.Context,
 	drCConfig *ramen.DRClusterConfig,
 ) error {
@@ -331,6 +331,13 @@ func (r *DRClusterConfigReconciler) UpdateSupportedClasses(
 
 	drCConfig.Status.NetworkFenceClasses = nfClases
 	slices.Sort(drCConfig.Status.NetworkFenceClasses)
+
+	storageAccessDetails, err := r.listStorageAccessDetails(ctx)
+	if err != nil {
+		return err
+	}
+
+	drCConfig.Status.StorageAccessDetails = storageAccessDetails
 
 	return nil
 }
@@ -455,6 +462,74 @@ func (r *DRClusterConfigReconciler) listDRSupportedNFCs(ctx context.Context) ([]
 	return nfcs, nil
 }
 
+// listMatchingNFCClientStatus returns a list of listMatchingNFCClientStatus which refer to networkFenceClass
+func (r *DRClusterConfigReconciler) listMatchingNFCClientStatus(ctx context.Context) (
+	[]csiaddonsv1alpha1.NetworkFenceClientStatus, error,
+) {
+	csiNFClientStatus := []csiaddonsv1alpha1.NetworkFenceClientStatus{}
+
+	nfcs, err := r.listDRSupportedNFCs(ctx)
+	if err != nil {
+		return csiNFClientStatus, err
+	}
+
+	csiAddonsNodeList := &csiaddonsv1alpha1.CSIAddonsNodeList{}
+	if err := r.Client.List(ctx, csiAddonsNodeList); err != nil {
+		return csiNFClientStatus, fmt.Errorf("failed to list CSIAddonsNodes, %w", err)
+	}
+
+	for i := range csiAddonsNodeList.Items {
+		if len(csiAddonsNodeList.Items[i].Status.NetworkFenceClientStatus) == 0 {
+			continue
+		}
+
+		nfClientStatuses := csiAddonsNodeList.Items[i].Status.NetworkFenceClientStatus
+
+		// consider only the NetworkFenceClientStatus which match the NFC Name
+		for _, nfClientStatus := range nfClientStatuses {
+			for _, nfc := range nfcs {
+				if nfClientStatus.NetworkFenceClassName == nfc {
+					csiNFClientStatus = append(csiNFClientStatus, nfClientStatus)
+				}
+			}
+		}
+	}
+
+	return csiNFClientStatus, nil
+}
+
+func (r *DRClusterConfigReconciler) listStorageAccessDetails(ctx context.Context) ([]ramen.StorageAccessDetail, error) {
+	nfcClientStatus, err := r.listMatchingNFCClientStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	provisionerCIDRs := make(map[string][]string)
+
+	for _, status := range nfcClientStatus {
+		nf := &csiaddonsv1alpha1.NetworkFenceClass{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: status.NetworkFenceClassName}, nf); err != nil {
+			r.Log.Info("failed to get NetworkFenceClass", "name", status.NetworkFenceClassName, "error", err)
+
+			continue
+		}
+
+		for _, cl := range status.ClientDetails {
+			provisionerCIDRs[nf.Spec.Provisioner] = append(provisionerCIDRs[nf.Spec.Provisioner], cl.Cidrs...)
+		}
+	}
+
+	storageAccessDetails := []ramen.StorageAccessDetail{}
+	for provisioner, cidrs := range provisionerCIDRs {
+		storageAccessDetails = append(storageAccessDetails, ramen.StorageAccessDetail{
+			StorageProvisioner: provisioner,
+			CIDRs:              cidrs,
+		})
+	}
+
+	return storageAccessDetails, nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	drccMapFn := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
@@ -504,5 +579,6 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&groupsnapv1beta1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
+		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn).
 		Complete(r)
 }
