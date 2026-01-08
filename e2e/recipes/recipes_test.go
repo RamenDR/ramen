@@ -228,7 +228,7 @@ func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 
 func createWorkload() (types.Workload, error) {
 	pvcSpec := config.PVCSpec{
-		Name:             "busybox-pvc",
+		Name:             "rbd",
 		StorageClassName: "test-sc",
 		AccessModes:      "ReadWriteOnce",
 	}
