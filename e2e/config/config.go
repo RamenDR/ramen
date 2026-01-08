@@ -538,7 +538,7 @@ func resourceName(url string) string {
 }
 
 func init() {
-	// Matches one of more forbidden characters, so we can replace them with single replacement character.
+	// Matches one or more forbidden characters, so we can replace them with single replacement character.
 	resourceNameForbiddenCharacters = regexp.MustCompile(`[^\w]+`)
 
 	// Set viper defaults for config values.
