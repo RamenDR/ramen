@@ -6,11 +6,14 @@ package recipes_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ramendr/ramen/e2e/app"
 	"github.com/ramendr/ramen/e2e/config"
@@ -28,48 +31,12 @@ func TestGenerateWithNoHooks(t *testing.T) {
 	}
 	testContext := createTestContext(t, recipeConfig)
 
-	expectedRecipe := &recipe.Recipe{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Recipe",
-			APIVersion: "recipe.ramendr.io/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testContext.Name(),
-			Namespace: testContext.AppNamespace(),
-		},
-		Spec: recipe.RecipeSpec{
-			Groups: []*recipe.Group{
-				{
-					Name:      "rg1",
-					Type:      "resource",
-					BackupRef: "rg1",
-					IncludedNamespaces: []string{
-						testContext.AppNamespace(),
-					},
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"appname": "busybox",
-						},
-					},
-				},
-			},
-			Workflows: []*recipe.Workflow{
-				{
-					Name:     "backup",
-					Sequence: []map[string]string{{"group": "rg1"}},
-				},
-				{
-					Name:     "restore",
-					Sequence: []map[string]string{{"group": "rg1"}},
-				},
-			},
-		},
-	}
-
 	actualRecipe, err := recipes.Generate(testContext, recipeConfig)
 	if err != nil {
 		t.Fatalf("error generating recipe: %v", err)
 	}
+
+	expectedRecipe := loadExpectedRecipe(t, "generate-no-hooks.yaml")
 
 	diff := helpers.UnifiedDiff(t, actualRecipe, expectedRecipe)
 	if diff != "" {
@@ -82,79 +49,14 @@ func TestGenerateWithOnlyCheckHooks(t *testing.T) {
 		Type:      "generate",
 		CheckHook: true,
 	}
-
 	testContext := createTestContext(t, recipeConfig)
-
-	group := map[string]string{"group": "rg1"}
-	replicasCheckHook := map[string]string{"hook": "check-hook/check-replicas"}
-	availableCheckHook := map[string]string{"hook": "check-hook/check-available"}
-
-	expectedRecipe := &recipe.Recipe{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Recipe",
-			APIVersion: "recipe.ramendr.io/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testContext.Name(),
-			Namespace: testContext.AppNamespace(),
-		},
-		Spec: recipe.RecipeSpec{
-			Groups: []*recipe.Group{
-				{
-					Name:      "rg1",
-					Type:      "resource",
-					BackupRef: "rg1",
-					IncludedNamespaces: []string{
-						testContext.AppNamespace(),
-					},
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"appname": "busybox",
-						},
-					},
-				},
-			},
-			Hooks: []*recipe.Hook{
-				{
-					Name:      "check-hook",
-					Type:      "check",
-					Namespace: testContext.AppNamespace(),
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"appname": "busybox",
-						},
-					},
-					SelectResource: testContext.Workload().GetSelectResource(),
-					Timeout:        300,
-					Chks: []*recipe.Check{
-						{
-							Name:      "check-replicas",
-							Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
-						},
-						{
-							Name:      "check-available",
-							Condition: "{$.spec.replicas} == {$.status.availableReplicas}",
-						},
-					},
-				},
-			},
-			Workflows: []*recipe.Workflow{
-				{
-					Name:     "backup",
-					Sequence: []map[string]string{replicasCheckHook, availableCheckHook, group},
-				},
-				{
-					Name:     "restore",
-					Sequence: []map[string]string{group, replicasCheckHook, availableCheckHook},
-				},
-			},
-		},
-	}
 
 	actualRecipe, err := recipes.Generate(testContext, recipeConfig)
 	if err != nil {
 		t.Fatalf("error generating recipe: %v", err)
 	}
+
+	expectedRecipe := loadExpectedRecipe(t, "generate-only-check-hooks.yaml")
 
 	diff := helpers.UnifiedDiff(t, actualRecipe, expectedRecipe)
 	if diff != "" {
@@ -167,75 +69,14 @@ func TestGenerateWithOnlyExecHooks(t *testing.T) {
 		Type:     "generate",
 		ExecHook: true,
 	}
-
 	testContext := createTestContext(t, recipeConfig)
-
-	group := map[string]string{"group": "rg1"}
-	lsExecHook := map[string]string{"hook": "exec-hook/ls"}
-	echoExecHook := map[string]string{"hook": "exec-hook/echo"}
-
-	expectedRecipe := &recipe.Recipe{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Recipe",
-			APIVersion: "recipe.ramendr.io/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testContext.Name(),
-			Namespace: testContext.AppNamespace(),
-		},
-		Spec: recipe.RecipeSpec{
-			Groups: []*recipe.Group{
-				{
-					Name:      "rg1",
-					Type:      "resource",
-					BackupRef: "rg1",
-					IncludedNamespaces: []string{
-						testContext.AppNamespace(),
-					},
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"appname": "busybox",
-						},
-					},
-				},
-			},
-			Hooks: []*recipe.Hook{
-				{
-					Name:           "exec-hook",
-					Type:           "exec",
-					Namespace:      testContext.AppNamespace(),
-					NameSelector:   testContext.Workload().GetAppName(),
-					SelectResource: testContext.Workload().GetSelectResource(),
-					Timeout:        300,
-					Ops: []*recipe.Operation{
-						{
-							Name:    "ls",
-							Command: "/bin/sh -c ls",
-						},
-						{
-							Name:    "echo",
-							Command: "/bin/sh -c echo 'Hello'",
-						},
-					},
-				},
-			},
-			Workflows: []*recipe.Workflow{
-				{
-					Name:     "backup",
-					Sequence: []map[string]string{lsExecHook, echoExecHook, group},
-				},
-				{
-					Name:     "restore",
-					Sequence: []map[string]string{group, lsExecHook, echoExecHook},
-				},
-			},
-		},
-	}
 
 	actualRecipe, err := recipes.Generate(testContext, recipeConfig)
 	if err != nil {
 		t.Fatalf("error generating recipe: %v", err)
 	}
+
+	expectedRecipe := loadExpectedRecipe(t, "generate-only-exec-hooks.yaml")
 
 	diff := helpers.UnifiedDiff(t, actualRecipe, expectedRecipe)
 	if diff != "" {
@@ -249,111 +90,14 @@ func TestGenerateWithCheckAndExecHooks(t *testing.T) {
 		CheckHook: true,
 		ExecHook:  true,
 	}
-
 	testContext := createTestContext(t, recipeConfig)
-
-	group := map[string]string{"group": "rg1"}
-	lsExecHook := map[string]string{"hook": "exec-hook/ls"}
-	echoExecHook := map[string]string{"hook": "exec-hook/echo"}
-	replicasCheckHook := map[string]string{"hook": "check-hook/check-replicas"}
-	availableCheckHook := map[string]string{"hook": "check-hook/check-available"}
-
-	expectedRecipe := &recipe.Recipe{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Recipe",
-			APIVersion: "recipe.ramendr.io/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      testContext.Name(),
-			Namespace: testContext.AppNamespace(),
-		},
-		Spec: recipe.RecipeSpec{
-			Groups: []*recipe.Group{
-				{
-					Name:      "rg1",
-					Type:      "resource",
-					BackupRef: "rg1",
-					IncludedNamespaces: []string{
-						testContext.AppNamespace(),
-					},
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"appname": "busybox",
-						},
-					},
-				},
-			},
-			Hooks: []*recipe.Hook{
-				{
-					Name:      "check-hook",
-					Type:      "check",
-					Namespace: testContext.AppNamespace(),
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"appname": "busybox",
-						},
-					},
-					SelectResource: testContext.Workload().GetSelectResource(),
-					Timeout:        300,
-					Chks: []*recipe.Check{
-						{
-							Name:      "check-replicas",
-							Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
-						},
-						{
-							Name:      "check-available",
-							Condition: "{$.spec.replicas} == {$.status.availableReplicas}",
-						},
-					},
-				},
-				{
-					Name:           "exec-hook",
-					Type:           "exec",
-					Namespace:      testContext.AppNamespace(),
-					NameSelector:   testContext.Workload().GetAppName(),
-					SelectResource: testContext.Workload().GetSelectResource(),
-					Timeout:        300,
-					Ops: []*recipe.Operation{
-						{
-							Name:    "ls",
-							Command: "/bin/sh -c ls",
-						},
-						{
-							Name:    "echo",
-							Command: "/bin/sh -c echo 'Hello'",
-						},
-					},
-				},
-			},
-			Workflows: []*recipe.Workflow{
-				{
-					Name: "backup",
-					Sequence: []map[string]string{
-						replicasCheckHook,
-						availableCheckHook,
-						lsExecHook,
-						echoExecHook,
-						group,
-					},
-				},
-				{
-					Name: "restore",
-					Sequence: []map[string]string{
-						group,
-						lsExecHook,
-						echoExecHook,
-						replicasCheckHook,
-						availableCheckHook,
-					},
-				},
-			},
-		},
-	}
 
 	actualRecipe, err := recipes.Generate(testContext, recipeConfig)
 	if err != nil {
 		t.Fatalf("error generating recipe: %v", err)
 	}
+
+	expectedRecipe := loadExpectedRecipe(t, "generate-check-and-exec-hooks.yaml")
 
 	diff := helpers.UnifiedDiff(t, actualRecipe, expectedRecipe)
 	if diff != "" {
@@ -367,17 +111,14 @@ func TestGenerateWithNoChecks(t *testing.T) {
 		CheckHook: true,
 	}
 
+	cfg := loadConfig(t)
 	workload := &NoHooks{}
+	deployer := createDeployer(t, recipeConfig)
 
-	deploy, err := createDeployer(recipeConfig)
-	if err != nil {
-		t.Fatalf("error creating deployer: %v", err)
-	}
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
+	testContext := test.NewContext(parent, workload, deployer)
 
-	parent := app.NewContext(context.Background(), &config.Config{}, &types.Env{}, zap.NewExample().Sugar())
-	testContext := test.NewContext(parent, workload, deploy)
-
-	_, err = recipes.Generate(&testContext, recipeConfig)
+	_, err := recipes.Generate(&testContext, recipeConfig)
 	if err == nil {
 		t.Fatalf("expected error when generating recipe with nil checks and operations, got nil")
 	}
@@ -393,17 +134,14 @@ func TestGenerateWithNoOperations(t *testing.T) {
 		ExecHook: true,
 	}
 
+	cfg := loadConfig(t)
 	workload := &NoHooks{}
+	deployer := createDeployer(t, recipeConfig)
 
-	deploy, err := createDeployer(recipeConfig)
-	if err != nil {
-		t.Fatalf("error creating deployer: %v", err)
-	}
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
+	testContext := test.NewContext(parent, workload, deployer)
 
-	parent := app.NewContext(context.Background(), &config.Config{}, &types.Env{}, zap.NewExample().Sugar())
-	testContext := test.NewContext(parent, workload, deploy)
-
-	_, err = recipes.Generate(&testContext, recipeConfig)
+	_, err := recipes.Generate(&testContext, recipeConfig)
 	if err == nil {
 		t.Fatalf("expected error when generating recipe with nil checks and operations, got nil")
 	}
@@ -445,36 +183,69 @@ func (w *NoHooks) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) 
 
 // Helpers
 
+func loadExpectedRecipe(t *testing.T, filename string) *recipe.Recipe {
+	t.Helper()
+
+	path := filepath.Join("testdata", filename)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("error reading expected recipe file %q: %v", path, err)
+	}
+
+	r := &recipe.Recipe{}
+	if err := yaml.Unmarshal(data, r); err != nil {
+		t.Fatalf("error unmarshaling expected recipe from %q: %v", path, err)
+	}
+
+	return r
+}
+
+func loadConfig(t *testing.T) *config.Config {
+	t.Helper()
+
+	options := config.Options{
+		Workloads: workloads.AvailableNames(),
+		Deployers: deployers.AvailableTypes(),
+	}
+
+	cfg, err := config.ReadConfig("testdata/config.yaml", options)
+	if err != nil {
+		t.Fatalf("error loading config: %v", err)
+	}
+
+	return cfg
+}
+
 func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 	t.Helper()
 
-	workload, err := createWorkload()
-	if err != nil {
-		t.Fatalf("error creating workload: %v", err)
-	}
+	cfg := loadConfig(t)
+	workload := createWorkload(t, cfg)
+	deployer := createDeployer(t, rc)
 
-	deployer, err := createDeployer(rc)
-	if err != nil {
-		t.Fatalf("error creating deployer: %v", err)
-	}
-
-	parent := app.NewContext(context.Background(), &config.Config{}, &types.Env{}, zap.NewExample().Sugar())
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
 	tc := test.NewContext(parent, workload, deployer)
 
 	return &tc
 }
 
-func createWorkload() (types.Workload, error) {
-	pvcSpec := config.PVCSpec{
-		Name:             "busybox-pvc",
-		StorageClassName: "test-sc",
-		AccessModes:      "ReadWriteOnce",
+func createWorkload(t *testing.T, cfg *config.Config) types.Workload {
+	t.Helper()
+
+	pvcSpec := cfg.PVCSpecs[0]
+
+	workload, err := workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
+	if err != nil {
+		t.Fatalf("error creating workload: %v", err)
 	}
 
-	return workloads.New("deploy", "main", pvcSpec)
+	return workload
 }
 
-func createDeployer(rc *config.Recipe) (types.Deployer, error) {
+func createDeployer(t *testing.T, rc *config.Recipe) types.Deployer {
+	t.Helper()
+
 	deployConfig := config.Deployer{
 		Name:        "disapp",
 		Type:        "disapp",
@@ -482,5 +253,10 @@ func createDeployer(rc *config.Recipe) (types.Deployer, error) {
 		Recipe:      rc,
 	}
 
-	return deployers.New(deployConfig)
+	deployer, err := deployers.New(deployConfig)
+	if err != nil {
+		t.Fatalf("error creating deployer: %v", err)
+	}
+
+	return deployer
 }
