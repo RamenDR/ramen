@@ -111,18 +111,14 @@ func TestGenerateWithNoChecks(t *testing.T) {
 		CheckHook: true,
 	}
 
-	workload := &NoHooks{}
-
-	deploy, err := createDeployer(recipeConfig)
-	if err != nil {
-		t.Fatalf("error creating deployer: %v", err)
-	}
-
 	cfg := loadConfig(t)
-	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
-	testContext := test.NewContext(parent, workload, deploy)
+	workload := &NoHooks{}
+	deployer := createDeployer(t, recipeConfig)
 
-	_, err = recipes.Generate(&testContext, recipeConfig)
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
+	testContext := test.NewContext(parent, workload, deployer)
+
+	_, err := recipes.Generate(&testContext, recipeConfig)
 	if err == nil {
 		t.Fatalf("expected error when generating recipe with nil checks and operations, got nil")
 	}
@@ -138,18 +134,14 @@ func TestGenerateWithNoOperations(t *testing.T) {
 		ExecHook: true,
 	}
 
-	workload := &NoHooks{}
-
-	deploy, err := createDeployer(recipeConfig)
-	if err != nil {
-		t.Fatalf("error creating deployer: %v", err)
-	}
-
 	cfg := loadConfig(t)
-	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
-	testContext := test.NewContext(parent, workload, deploy)
+	workload := &NoHooks{}
+	deployer := createDeployer(t, recipeConfig)
 
-	_, err = recipes.Generate(&testContext, recipeConfig)
+	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
+	testContext := test.NewContext(parent, workload, deployer)
+
+	_, err := recipes.Generate(&testContext, recipeConfig)
 	if err == nil {
 		t.Fatalf("expected error when generating recipe with nil checks and operations, got nil")
 	}
@@ -229,16 +221,8 @@ func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 	t.Helper()
 
 	cfg := loadConfig(t)
-
-	workload, err := createWorkload(cfg)
-	if err != nil {
-		t.Fatalf("error creating workload: %v", err)
-	}
-
-	deployer, err := createDeployer(rc)
-	if err != nil {
-		t.Fatalf("error creating deployer: %v", err)
-	}
+	workload := createWorkload(t, cfg)
+	deployer := createDeployer(t, rc)
 
 	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
 	tc := test.NewContext(parent, workload, deployer)
@@ -246,13 +230,22 @@ func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 	return &tc
 }
 
-func createWorkload(cfg *config.Config) (types.Workload, error) {
+func createWorkload(t *testing.T, cfg *config.Config) types.Workload {
+	t.Helper()
+
 	pvcSpec := cfg.PVCSpecs[0]
 
-	return workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
+	workload, err := workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
+	if err != nil {
+		t.Fatalf("error creating workload: %v", err)
+	}
+
+	return workload
 }
 
-func createDeployer(rc *config.Recipe) (types.Deployer, error) {
+func createDeployer(t *testing.T, rc *config.Recipe) types.Deployer {
+	t.Helper()
+
 	deployConfig := config.Deployer{
 		Name:        "disapp",
 		Type:        "disapp",
@@ -260,5 +253,10 @@ func createDeployer(rc *config.Recipe) (types.Deployer, error) {
 		Recipe:      rc,
 	}
 
-	return deployers.New(deployConfig)
+	deployer, err := deployers.New(deployConfig)
+	if err != nil {
+		t.Fatalf("error creating deployer: %v", err)
+	}
+
+	return deployer
 }
