@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: recipe.ramendr.io/v1alpha1
+kind: Recipe
+metadata:
+  name: disapp-deploy-busybox-pvc
+  namespace: disapp-deploy-busybox-pvc
+spec:
+  groups:
+    - name: rg1
+      type: resource
+      backupRef: rg1
+      includedNamespaces:
+        - disapp-deploy-busybox-pvc
+      labelSelector:
+        matchLabels:
+          appname: busybox
+  hooks:
+    - name: check-hook
+      type: check
+      namespace: disapp-deploy-busybox-pvc
+      labelSelector:
+        matchLabels:
+          appname: busybox
+      selectResource: deployment
+      timeout: 300
+      chks:
+        - name: check-replicas
+          condition: "{$.spec.replicas} == {$.status.readyReplicas}"
+        - name: check-available
+          condition: "{$.spec.replicas} == {$.status.availableReplicas}"
+    - name: exec-hook
+      type: exec
+      namespace: disapp-deploy-busybox-pvc
+      nameSelector: busybox
+      selectResource: deployment
+      timeout: 300
+      ops:
+        - name: ls
+          command: "/bin/sh -c ls"
+        - name: echo
+          command: "/bin/sh -c echo 'Hello'"
+  workflows:
+    - name: backup
+      sequence:
+        - hook: check-hook/check-replicas
+        - hook: check-hook/check-available
+        - hook: exec-hook/ls
+        - hook: exec-hook/echo
+        - group: rg1
+    - name: restore
+      sequence:
+        - group: rg1
+        - hook: exec-hook/ls
+        - hook: exec-hook/echo
+        - hook: check-hook/check-replicas
+        - hook: check-hook/check-available
