@@ -223,10 +223,10 @@ func (s ScaleHook) scaleResource(resource Resource, operation string, log logr.L
 	case ScaleSync:
 		return s.SyncResource(resource, log)
 	default:
-		return fmt.Errorf("unsupported scale operation: hook=%s, namespace=%s, operation=%s, resource=%s",
+		return fmt.Errorf("unsupported scale operation=%q: hook=%q namespace=%q resource=%q",
+			operation,
 			s.Hook.Name,
 			s.Hook.Namespace,
-			s.Hook.Scale.Operation,
 			resource.GetObjectMeta().GetName(),
 		)
 	}
