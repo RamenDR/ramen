@@ -1,0 +1,160 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: csiaddonsnodes.csiaddons.openshift.io
+spec:
+  conversion:
+    strategy: None
+  group: csiaddons.openshift.io
+  names:
+    kind: CSIAddonsNode
+    listKind: CSIAddonsNodeList
+    plural: csiaddonsnodes
+    singular: csiaddonsnode
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.namespace
+      name: namespace
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.driver.name
+      name: DriverName
+      type: string
+    - jsonPath: .spec.driver.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .spec.driver.nodeID
+      name: NodeID
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: CSIAddonsNode is the Schema for the csiaddonsnode API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CSIAddonsNodeSpec defines the desired state of CSIAddonsNode
+            properties:
+              driver:
+                description: |-
+                  Driver is the information of the CSI Driver existing on a node.
+                  If the driver is uninstalled, this can become empty.
+                properties:
+                  endpoint:
+                    description: |-
+                      EndPoint is url that contains the ip-address to which the CSI-Addons
+                      side-car listens to.
+                    type: string
+                  name:
+                    description: |-
+                      Name is the name of the CSI driver that this object refers to.
+                      This must be the same name returned by the CSI-Addons GetIdentity()
+                      call for that driver. The name of the driver is in the format:
+                      `example.csi.ceph.com`
+                    type: string
+                    x-kubernetes-validations:
+                    - message: name is immutable
+                      rule: self == oldSelf
+                  nodeID:
+                    description: |-
+                      NodeID is the ID of the node to identify on which node the side-car
+                      is running.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: nodeID is immutable
+                      rule: self == oldSelf
+                required:
+                - endpoint
+                - name
+                - nodeID
+                type: object
+            required:
+            - driver
+            type: object
+          status:
+            description: CSIAddonsNodeStatus defines the observed state of CSIAddonsNode
+            properties:
+              capabilities:
+                description: A list of capabilities advertised by the sidecar
+                items:
+                  type: string
+                type: array
+              message:
+                description: |-
+                  Message is a human-readable message indicating details about why the CSIAddonsNode
+                  is in this state.
+                type: string
+              networkFenceClientStatus:
+                description: NetworkFenceClientStatus contains the status of the clients
+                  required for fencing.
+                items:
+                  description: NetworkFenceClientStatus contains the status of the
+                    clients required for fencing.
+                  properties:
+                    ClientDetails:
+                      items:
+                        description: ClientDetail contains the details of the client
+                          required for fencing.
+                        properties:
+                          cidrs:
+                            description: Cidrs is the list of CIDR blocks that are
+                              fenced.
+                            items:
+                              type: string
+                            type: array
+                          id:
+                            description: Id is the unique identifier of the client
+                              where it belongs to.
+                            type: string
+                        required:
+                        - cidrs
+                        - id
+                        type: object
+                      type: array
+                    networkFenceClassName:
+                      type: string
+                  required:
+                  - ClientDetails
+                  - networkFenceClassName
+                  type: object
+                type: array
+              reason:
+                description: |-
+                  Reason is a brief CamelCase string that describes any failure and is meant
+                  for machine parsing and tidy display in the CLI.
+                type: string
+              state:
+                description: |-
+                  State represents the state of the CSIAddonsNode object.
+                  It informs whether or not the CSIAddonsNode is Connected
+                  to the CSI Driver.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
