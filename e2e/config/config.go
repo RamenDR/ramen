@@ -204,12 +204,6 @@ func ReadConfig(configFile string, options Options) (*Config, error) {
 }
 
 func readConfig(configFile string, config *Config) error {
-	viper.SetDefault("Repo.URL", defaultGitURL)
-	viper.SetDefault("Repo.Branch", defaultGitBranch)
-	viper.SetDefault("DRPolicy", defaultDRPolicyName)
-	viper.SetDefault("ClusterSet", DefaultClusterSetName)
-	viper.SetDefault("NamespacePrefix", defaultNamespacePrefix)
-
 	viper.SetConfigFile(configFile)
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -546,4 +540,11 @@ func resourceName(url string) string {
 func init() {
 	// Matches one of more forbidden characters, so we can replace them with single replacement character.
 	resourceNameForbiddenCharacters = regexp.MustCompile(`[^\w]+`)
+
+	// Set viper defaults for config values.
+	viper.SetDefault("Repo.URL", defaultGitURL)
+	viper.SetDefault("Repo.Branch", defaultGitBranch)
+	viper.SetDefault("DRPolicy", defaultDRPolicyName)
+	viper.SetDefault("ClusterSet", DefaultClusterSetName)
+	viper.SetDefault("NamespacePrefix", defaultNamespacePrefix)
 }
