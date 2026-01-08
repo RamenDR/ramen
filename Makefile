@@ -433,3 +433,8 @@ ifeq ($(DOCKERCMD),docker)
 else
 	@echo "docker-buildx is supported only with docker"
 endif
+
+# Add codespell target, Usage - make codespell
+.PHONY: codespell
+codespell:
+	codespell --config .codespellrc
