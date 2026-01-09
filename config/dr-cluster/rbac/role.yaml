@@ -307,6 +307,7 @@ rules:
   - list
   - watch
   - patch
+  - update
   - delete
 - apiGroups:
   - kubevirt.io
