@@ -139,50 +139,6 @@ func DeleteVMs(
 	return nil
 }
 
-// TODO: Merge this function with IsPVCInUseByPod to avoid duplication.
-// Both functions perform similar checks, so refactor them into a single reusable utility.
-// This requires careful handling to ensure compatibility and correctness across all call sites.
-func IsUsedByVirtLauncherPod(ctx context.Context, c client.Client, obj client.Object,
-	log logr.Logger,
-) (client.Object, error) {
-	// Patch PVC only if its not exclusively owned by any controller
-	podList := &corev1.PodList{}
-	pvcName := obj.GetName()
-	pvcNamespace := obj.GetNamespace()
-
-	err := c.List(ctx, podList, client.MatchingFields{PodVolumePVCClaimIndexName: pvcName},
-		client.InNamespace(pvcNamespace))
-	if err != nil {
-		log.Error(err, "error getting pods list from protected namespace", "namespace", pvcNamespace)
-
-		return nil, err
-	}
-
-	if len(podList.Items) == 0 {
-		log.Info("Not is use by any pod")
-
-		return nil, nil
-	}
-
-	var vmName client.Object
-	for _, pod := range podList.Items {
-		vmName, err = IsOwnedByVM(ctx, c, &pod, log)
-		if err != nil {
-			// If not owned by this pod continue to check on the next pod(PV shared across VMs?)
-			continue
-		}
-	}
-
-	if vmName == nil {
-		return nil, nil
-	}
-
-	log.Info("Got the VM owning the PVC", "PVC", pvcName,
-		"set to owned by VM", vmName.GetName(), "VM kind", vmName.GetObjectKind())
-
-	return vmName, nil
-}
-
 // This allows VM to declare as owner of PVC and has a dependency on the object without specifying it as a controller.
 func UpdatePvcWithVMOwnerRef(
 	ctx context.Context,
