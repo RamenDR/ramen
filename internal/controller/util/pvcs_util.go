@@ -9,8 +9,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +20,10 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/internal/controller/core"
 )
 
 const (
@@ -33,6 +36,10 @@ const (
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
 	SuffixForFinalsyncPVC = "-for-finalsync"
+
+	annImportEndpoint = "cdi.kubevirt.io/storage.import.endpoint"
+	annPopulatorKind  = "cdi.kubevirt.io/storage.populator.kind"
+	expectedKind      = "VolumeImportSource"
 )
 
 // nolint:funlen
@@ -43,6 +50,7 @@ func ListPVCsByPVCSelector(
 	pvcLabelSelector metav1.LabelSelector,
 	namespaces []string,
 	volSyncDisabled bool,
+	recipeName string,
 ) (*corev1.PersistentVolumeClaimList, error) {
 	// convert metav1.LabelSelector to a labels.Selector
 	pvcSelector, err := metav1.LabelSelectorAsSelector(&pvcLabelSelector)
@@ -97,10 +105,11 @@ func ListPVCsByPVCSelector(
 
 	var pvcs []corev1.PersistentVolumeClaim
 
-	for _, pvc := range pvcList.Items {
-		if slices.Contains(namespaces, pvc.Namespace) {
-			pvcs = append(pvcs, pvc)
-		}
+	nsSet := sets.New[string](namespaces...)
+
+	pvcs, err = filterPVCs(ctx, k8sClient, pvcList.Items, nsSet, recipeName, logger)
+	if err != nil {
+		return nil, err
 	}
 
 	logger.Info(fmt.Sprintf("Returning %d PVCs in namespace(s) %v", len(pvcs), namespaces))
@@ -396,4 +405,113 @@ func sortJSON(v interface{}) interface{} {
 
 func GetTmpPVCNameForFinalSync(pvcName string) string {
 	return fmt.Sprintf("%s%s", pvcName, SuffixForFinalsyncPVC)
+}
+
+// IsTemporaryImportPVC determines whether the given PVC is the CDI-created
+// "prime" import PVC used in the VM recipe workflow to rebind a target PVC.
+// It validates that:
+//   - The PVC name follows the expected pattern (starts with "prime" and does not contain "scratch").
+//   - The associated recipe name is exactly "vm-recipe".
+//   - The PVC was created via CDI VolumeImportSource annotations, not DataSourceRef or DataSource.
+//   - The PVC//   - The PVC includes CDI import annotations and is owned by another PVC, indicating it is part of
+func IsTemporaryImportPVC(pvc *corev1.PersistentVolumeClaim, recipeName string) bool {
+	// Collapse initial guards into a single boolean
+	pvcName := pvc.GetName()
+	ok := pvc != nil &&
+		recipeName == core.VMRecipeName &&
+		strings.HasPrefix(pvcName, "prime") &&
+		!strings.Contains(pvcName, "scratch")
+
+	if !ok {
+		return false
+	}
+
+	if !isAnnotationBasedCDIImport(pvc) {
+		return false
+	}
+
+	for _, owner := range pvc.GetOwnerReferences() {
+		if owner.Kind == "PersistentVolumeClaim" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isAnnotationBasedCDIImport(pvc *corev1.PersistentVolumeClaim) bool {
+	anns := pvc.GetAnnotations()
+
+	return anns != nil &&
+		anns[annImportEndpoint] != "" &&
+		anns[annPopulatorKind] == expectedKind &&
+		pvc.Spec.DataSourceRef == nil &&
+		pvc.Spec.DataSource == nil
+}
+
+// If a temporary importer prime PVC related to VM is found, it attempts to update its label and skips it from the result.
+func filterPVCs(
+	ctx context.Context,
+	k8sClient client.Client,
+	items []corev1.PersistentVolumeClaim,
+	nsSet sets.Set[string],
+	recipeName string,
+	log logr.Logger,
+) ([]corev1.PersistentVolumeClaim, error) {
+	out := make([]corev1.PersistentVolumeClaim, 0, len(items))
+
+	for i := range items {
+		pvc := items[i]
+
+		if !nsSet.Has(pvc.Namespace) {
+			continue
+		}
+
+		if IsTemporaryImportPVC(&pvc, recipeName) {
+			err := UpdateVMRecipePvcLabel(ctx, k8sClient, &pvc, log)
+			if err != nil {
+				log.Error(err, "Failed to unset VM recipe PVC label selector",
+					"recipe", recipeName, "labelKey", core.VMLabelSelector)
+
+				return nil, fmt.Errorf(
+					"failed to unset vm recipe pvc label selector %q on %s/%s for recipe %q: %w",
+					core.VMLabelSelector, pvc.Namespace, pvc.Name, recipeName, err,
+				)
+			}
+
+			log.V(1).Info("Successfully unset VM recipe label selector on temporary import PVC",
+				"recipe", recipeName,
+				"labelKey", core.VMLabelSelector,
+			)
+
+			continue
+		}
+
+		out = append(out, pvc)
+	}
+
+	return out, nil
+}
+
+func UpdateVMRecipePvcLabel(ctx context.Context, c client.Client,
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+) error {
+	if pvc.Labels == nil {
+		return nil
+	}
+
+	if len(pvc.Labels[core.VMLabelSelector]) > 0 {
+		delete(pvc.Labels, core.VMLabelSelector)
+		delete(pvc.Labels, LabelOwnerNamespaceName)
+		delete(pvc.Labels, LabelOwnerName)
+		delete(pvc.Labels, ConsistencyGroupLabel)
+		log.Info("Unsetting vm label selector from pvc", pvc.Name,
+			core.VMLabelSelector,
+		)
+
+		return c.Update(ctx, pvc)
+	}
+
+	return nil
 }
