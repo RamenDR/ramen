@@ -468,17 +468,18 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		restoredPVC := tmpRestoredPVC
 		logger.Info("Create replication source for restored PVC", "RestoredPVC", restoredPVC.RestoredPVCName)
 
-		pvcName := strings.TrimSuffix(restoredPVC.SourcePVCName, util.SuffixForFinalsyncPVC)
+		originalPVCName := strings.TrimSuffix(restoredPVC.SourcePVCName, util.SuffixForFinalsyncPVC)
 
 		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      pvcName,
+				Name:      originalPVCName,
 				Namespace: replicationSourceNamepspace,
 			},
 		}
 
-		rdService, err := h.resolveRDService(&restoredPVC, vrg, replicationSourceNamepspace, isSubmarinerEnabled, logger)
+		rdService, err := h.resolveRDService(originalPVCName, restoredPVC.RestoredPVCName,
+			vrg, replicationSourceNamepspace, isSubmarinerEnabled, logger)
 		if err != nil {
 			return nil, false, err
 		}
@@ -533,25 +534,25 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 }
 
 func (h *volumeGroupSourceHandler) resolveRDService(
-	restoredPVC *RestoredPVC,
+	originalPVCName, restoredPVCName string,
 	vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	rsNS string,
 	isSubmarinerEnabled bool,
 	logger logr.Logger,
 ) (string, error) {
 	if isSubmarinerEnabled {
-		return getRemoteServiceNameForRDFromPVCName(restoredPVC.SourcePVCName, rsNS), nil
+		return getRemoteServiceNameForRDFromPVCName(originalPVCName, rsNS), nil
 	}
 
 	logger.Info("Non submariner", "rsspec", vrg.Spec.VolSync.RSSpec)
 
 	for _, rs := range vrg.Spec.VolSync.RSSpec {
-		if fmt.Sprintf(RestorePVCinCGNameFormat, rs.ProtectedPVC.Name) == restoredPVC.RestoredPVCName {
+		if fmt.Sprintf(RestorePVCinCGNameFormat, rs.ProtectedPVC.Name) == restoredPVCName {
 			return rs.RsyncTLS.Address, nil
 		}
 	}
 
-	return "", fmt.Errorf("no matching RSSpec for restored PVC %q", restoredPVC.RestoredPVCName)
+	return "", fmt.Errorf("no matching RSSpec for restored PVC %q", restoredPVCName)
 }
 
 // CheckReplicationSourceForRestoredPVCsCompleted check if all replication source are completed

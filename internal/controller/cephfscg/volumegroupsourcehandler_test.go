@@ -171,13 +171,39 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 				context.Background(), "maunal",
 				[]cephfscg.RestoredPVC{{
 					SourcePVCName:      "source",
-					RestoredPVCName:    "resource",
+					RestoredPVCName:    "vs-source",
 					VolumeSnapshotName: "vs",
 				}},
 				rgs, vrg, true)
 			Expect(err).To(BeNil())
 			Expect(srcCreatedOrUpdated).To(BeTrue())
 			Expect(len(rsList)).To(Equal(1))
+
+			rsList2, srcCreatedOrUpdated2, err2 := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
+				context.Background(), "manual",
+				[]cephfscg.RestoredPVC{{
+					SourcePVCName:      "source-for-finalsync",
+					RestoredPVCName:    "vs-source-for-finalsync",
+					VolumeSnapshotName: "vs",
+				}},
+				rgs, vrg, true)
+
+			Expect(err2).To(BeNil())
+			Expect(srcCreatedOrUpdated2).To(BeTrue())
+			Expect(len(rsList2)).To(Equal(1))
+
+			obj := rsList2[0]
+			rs := &volsyncv1alpha1.ReplicationSource{}
+
+			err3 := k8sClient.Get(context.TODO(),
+				types.NamespacedName{
+					Name:      obj.Name,
+					Namespace: obj.Namespace,
+				}, rs)
+			Expect(err3).To(BeNil())
+			Expect(rs.Name).To(Equal("source"))
+			Expect(*rs.Spec.RsyncTLS.Address).
+				To(Equal("volsync-rsync-tls-dst-source.default.svc.clusterset.local"))
 		})
 	})
 
