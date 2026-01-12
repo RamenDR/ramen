@@ -248,11 +248,12 @@ rules:
   resources:
   - virtualmachines
   verbs:
-  - delete
   - get
   - list
-  - patch
   - watch
+  - patch
+  - update
+  - delete
 - apiGroups:
   - multicluster.x-k8s.io
   resources:
