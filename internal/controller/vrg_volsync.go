@@ -985,6 +985,18 @@ func (v *VRGInstance) aggregateVolSyncClusterDataConflictCondition() *metav1.Con
 	return noClusterDataConflictCondition
 }
 
+func (v *VRGInstance) aggregateVolSyncAutoCleanupCondition() *metav1.Condition {
+	autoCleanupCondition := &metav1.Condition{
+		Status:             metav1.ConditionFalse,
+		Type:               VRGConditionTypeAutoCleanup,
+		Reason:             VRGConditionReasonUnused,
+		ObservedGeneration: v.instance.Generation,
+		Message:            "Automated cleanup not applicable for VolSync scheme.",
+	}
+
+	return autoCleanupCondition
+}
+
 func (v *VRGInstance) getCGLablelFromPVC(pvc *corev1.PersistentVolumeClaim, finalSync bool) (string, bool) {
 	cgLabelVal, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	if ok && cgLabelVal != "" {
