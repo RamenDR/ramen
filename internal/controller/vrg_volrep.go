@@ -2857,6 +2857,10 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 // Checks and requeues reconciler of VM resource cleanup.
 func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
 	if !v.isVMRecipeProtection() {
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Status.ObservedGeneration,
+			metav1.ConditionFalse,
+			VRGConditionReasonUnused, "AutoCleanup is not applicable for protection schemes other than vm-recipe.")
+
 		return false
 	}
 
@@ -2879,11 +2883,26 @@ func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
 	if !v.IsDRActionInProgress() {
 		v.log.Info("Skip resource cleanup; reconcile as secondary")
 
+		if len(v.volSyncPVCs) > 0 {
+			setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Status.ObservedGeneration,
+				metav1.ConditionFalse,
+				VRGConditionReasonUnused, "Applications containing VolSync-protected volumes are excluded from AutoCleanup.")
+
+			return false
+		}
+
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Status.ObservedGeneration,
+			metav1.ConditionTrue,
+			VRGConditionReasonUnused, "No disaster recovery operation in progress.")
+
 		return false
 	}
 
 	if v.ShouldCleanupVMForSecondary() {
 		v.log.Info("Requeuing until VM cleanup is complete")
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions,
+			v.instance.Status.ObservedGeneration, metav1.ConditionTrue,
+			VRGConditionReasonAutoCleanupProgressing, "VM resource cleanup is in progress")
 
 		return true
 	}
@@ -2910,10 +2929,6 @@ func (v *VRGInstance) isResourceConflict() bool {
 func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
 	v.log.Info(
 		"DR action progressing",
-		"component", "VRGController",
-		"action", "reconcile",
-		"vrgName", v.instance.GetName(),
-		"namespace", v.instance.GetNamespace(),
 		"desiredState", v.instance.Spec.ReplicationState,
 		"currentState", v.instance.Status.State,
 	)
@@ -2932,6 +2947,9 @@ func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
 			"vmList", vmList,
 			"namespaceList", vmNamespaceList,
 		)
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions,
+			v.instance.Status.ObservedGeneration, metav1.ConditionTrue,
+			VRGConditionReasonAutoCleanupCompleted, "VM resource cleanup completed")
 
 		return false
 	}
@@ -2941,6 +2959,10 @@ func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
 	yes = v.validatePVCOwnershipOnVMs()
 	if !yes {
 		v.log.Info("VMs not eligible for automated cleanup")
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions,
+			v.instance.Status.ObservedGeneration, metav1.ConditionFalse,
+			VRGConditionReasonAutoCleanupNotFeasible,
+			"skipping automatic cleanup; protected resources not fully VM-owned.")
 
 		return yes
 	}
@@ -2952,13 +2974,9 @@ func (v *VRGInstance) ShouldCleanupVMForSecondary() bool {
 		v.log.Error(err, "Failed to delete VMs",
 			"vmList", vmList,
 		)
-
-		// return false
 	}
 
 	return true
-
-	// return false
 }
 
 // pvcProcessResult captures the decision for a single PVC.

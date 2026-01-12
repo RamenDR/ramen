@@ -399,7 +399,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
-// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;patch;delete
+// +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;patch;update;delete
 // +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachineinstances,verbs=get;list;watch
 // +kubebuilder:rbac:groups="cdi.kubevirt.io",resources=datavolumes,verbs=get;list;watch
 
@@ -2047,10 +2047,18 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
+	var (
+		volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
+		volSyncAutoCleanup                                                            *metav1.Condition
+	)
+
 	if v.instance.Spec.Sync == nil {
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
+
 		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
+		if len(v.volSyncPVCs) > 0 {
+			volSyncAutoCleanup = v.aggregateVolSyncAutoCleanupCondition()
+		}
 	}
 
 	v.updateVRGDataReadyCondition()
@@ -2068,6 +2076,10 @@ func (v *VRGInstance) updateVRGConditions() {
 		volSyncClusterDataConflict,
 		v.aggregateVRGNoClusterDataConflictCondition(),
 	)
+
+	v.logAndSetConditions(VRGConditionTypeAutoCleanup, volSyncAutoCleanup,
+		v.aggregateVRGAutoCleanupCondition())
+
 	v.updateVRGLastGroupSyncTime()
 	v.updateVRGLastGroupSyncDuration()
 	v.updateLastGroupSyncBytes()
@@ -2411,6 +2423,15 @@ func (v *VRGInstance) validateVMsForStandaloneProtection() error {
 func (v *VRGInstance) IsDRActionInProgress() bool {
 	spec := v.instance.Spec
 	status := v.instance.Status
+	drAction := v.instance.Spec.Action
+	desiredState := status.State
+
+	initialDeploy := len(drAction) == 0 && desiredState == ramendrv1alpha1.UnknownState
+
+	if initialDeploy { // Avoid considering initial deployment as DR action in progress
+		return false
+	}
+
 	isRepStateSecondary := spec.ReplicationState == ramendrv1alpha1.Secondary
 	switchedToSecondary := status.State == ramendrv1alpha1.SecondaryState
 
@@ -2695,4 +2716,41 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 	}
 
 	return result
+}
+
+func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
+	cur := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeAutoCleanup)
+	if !v.isVMRecipeProtection() ||
+		len(v.volSyncPVCs) > 0 {
+		return cur
+	}
+
+	inProgress := v.IsDRActionInProgress()
+
+	var desired metav1.Condition
+
+	desired.Type = VRGConditionTypeAutoCleanup
+	desired.ObservedGeneration = v.instance.Generation
+
+	if !inProgress {
+		desired.Status = metav1.ConditionTrue
+		desired.Reason = VRGConditionReasonUnused
+		desired.Message = "No DR action in progress; no resource cleanup required"
+
+		v.log.Info("DR action not in progress; setting AutoCleanup=Unused")
+	} else {
+		v.log.Info("DR action in progress; keeping/setting AutoCleanup to reflect progress")
+
+		if cur != nil {
+			desired.Status = cur.Status
+			desired.Reason = cur.Reason
+			desired.Message = cur.Message
+		} else {
+			desired.Status = metav1.ConditionUnknown
+			desired.Reason = "Progressing"
+			desired.Message = "DR action in progress; auto cleanup status unknown"
+		}
+	}
+
+	return &desired
 }
