@@ -223,8 +223,10 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 
 		setVRGConditionTypeVolSyncRepSourceSetupComplete(&protectedPVC.Conditions, v.instance.Generation, "Ready")
 
-		protectedPVC.LastSyncTime = rgs.Status.LastSyncTime
-		protectedPVC.LastSyncDuration = rgs.Status.LastSyncDuration
+		if rgs != nil {
+			protectedPVC.LastSyncTime = rgs.Status.LastSyncTime
+			protectedPVC.LastSyncDuration = rgs.Status.LastSyncDuration
+		}
 
 		return v.instance.Spec.RunFinalSync && !finalSyncComplete
 	}

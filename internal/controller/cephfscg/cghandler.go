@@ -217,7 +217,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		log.Info("Running final sync for ReplicationGroupSource")
 		// Handle final sync for each PVC by retaining its PV and creating a temporary PVC
 		// used exclusively for the final synchronization process.
-		requeue, err := c.ensureFinalSyncSetup(replicationGroupSourceName, replicationGroupSourceNamespace, log)
+		rgs, requeue, err := c.ensureFinalSyncSetup(replicationGroupSourceName, replicationGroupSourceNamespace, log)
 		if err != nil {
 			log.Error(err, "Failed to process temporary PVCs for final sync")
 
@@ -227,7 +227,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		if requeue {
 			log.Info("Requeuing to allow temporary PVCs for final sync to be setup")
 
-			return nil, !finalSyncComplete, nil
+			return rgs, !finalSyncComplete, nil
 		}
 	}
 
@@ -551,12 +551,13 @@ func ToPointerSlice[T any](items []T) []*T {
 //
 // The function returns (true, err) when reconciliation should be requeued
 // It returns (false, nil) when final sync setup is complete and no requeue is needed.
-func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.Logger) (bool, error) {
+func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.Logger,
+) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
 	const requeue = true
 
 	rgs, err := GetRGS(c.ctx, c.Client, rgsName, rgsNamespace, log)
 	if err != nil {
-		return true, err
+		return nil, true, err
 	}
 
 	requeueResult := false
@@ -573,20 +574,20 @@ func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.
 
 			log.Error(err, "Failed to retrieve application PVC", "pvcName", rs.Name)
 
-			return requeue, err
+			return rgs, requeue, err
 		}
 
 		if !util.ResourceIsDeleted(srcPVC) {
 			log.Info("Final sync will not run until application PVC is deleted",
 				"namespace", srcPVC.Namespace, "name", srcPVC.Name)
 
-			return requeue, nil
+			return rgs, requeue, nil
 		}
 
 		if IsPrepareForFinalSyncTriggered(rgs) {
 			result, err := c.ensureTmpPVCForFinalSync(srcPVC, log)
 			if err != nil {
-				return true, err
+				return rgs, true, err
 			}
 
 			requeueResult = requeueResult || result
@@ -594,7 +595,7 @@ func (c *cgHandler) ensureFinalSyncSetup(rgsName, rgsNamespace string, log logr.
 	}
 
 	// All replication sources are ready, no need to requeue
-	return requeueResult, nil
+	return rgs, requeueResult, nil
 }
 
 func (c *cgHandler) ensureTmpPVCForFinalSync(srcPVC *corev1.PersistentVolumeClaim, log logr.Logger) (bool, error) {
