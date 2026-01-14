@@ -129,12 +129,12 @@ func updateDRClusterConfigMWStatus(k8sClient client.Client, apiReader client.Rea
 }
 
 func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key types.NamespacedName) {
-	mw := &workv1.ManifestWork{}
-
+	// Wait for ManifestWork to exist and be stable
 	Eventually(func() bool {
+		mw := &workv1.ManifestWork{}
 		err := apiReader.Get(context.TODO(), key, mw)
 
-		return err == nil
+		return err == nil && mw.ResourceVersion != ""
 	}, timeout, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to get manifest %s for DRCluster %s", key.Name, key.Namespace))
 
@@ -160,6 +160,9 @@ func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key typ
 	}
 
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		// Always get a fresh copy of the MW to avoid UID mismatches from concurrent updates
+		mw := &workv1.ManifestWork{}
+
 		err := apiReader.Get(context.TODO(), key, mw)
 		if err != nil {
 			return err
