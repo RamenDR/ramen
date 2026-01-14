@@ -166,7 +166,40 @@ func (v *VRGInstance) isVGRandVGRCArchivedAlready(vgr *volrep.VolumeGroupReplica
 		return false
 	}
 
+	// Both annotations are present and correct. Now check if S3 data actually exists.
+	// If S3 data is missing (e.g., due to S3 profile change), we should return false to
+	// trigger re-upload.
+	if !v.isVGRAndVGRCDataInS3(vgr, log) {
+		log.Info("VGR/VGRC data not found in S3 stores, will trigger re-upload", "vgr", vgr.Name)
+
+		return false
+	}
+
 	return true
+}
+
+// isVGRAndVGRCDataInS3 checks if VGR and VGRC data exists in any of the configured S3 stores.
+// This is used to detect when S3 profile has changed and data needs to be re-uploaded.
+// Returns true only if data is found in at least one S3 store.
+func (v *VRGInstance) isVGRAndVGRCDataInS3(vgr *volrep.VolumeGroupReplication, log logr.Logger) bool {
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		log.Error(err, "Failed to get VGRC for checking S3 data existence")
+
+		return false
+	}
+
+	keyPrefix := v.s3KeyPrefix()
+	vgrNamespacedName := types.NamespacedName{Namespace: vgr.Namespace, Name: vgr.Name}
+	vgrNamespacedNameString := vgrNamespacedName.String()
+
+	// Keys that should exist if data has been uploaded
+	expectedKeys := []string{
+		TypedObjectKey(keyPrefix, vgrc.Name, volrep.VolumeGroupReplicationContent{}),
+		TypedObjectKey(keyPrefix, vgrNamespacedNameString, volrep.VolumeGroupReplication{}),
+	}
+
+	return v.isDataInS3Stores(keyPrefix, expectedKeys, log, "VGR/VGRC")
 }
 
 // Upload VGRCs and VGRs to the list of S3 stores in the VRG spec
