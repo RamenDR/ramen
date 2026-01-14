@@ -249,46 +249,40 @@ var _ = Describe("CephfsCg", func() {
 			}, timeout, interval).Should(BeNil())
 		})
 		Describe("GetVolumeGroupSnapshotClassFromPVCsStorageClass", func() {
-			It("Should be failed", func() {
-				volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-					context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
-				Expect(volumeGroupSnapshotClassName).To(Equal(""))
-				Expect(err).NotTo(BeNil())
-				Expect(err.Error()).To(ContainSubstring("unable to find matching volumegroupsnapshotclass for storage provisioner"))
-			})
 			Context("There is pvc and storage class", func() {
+				var pvc *corev1.PersistentVolumeClaim
+
 				BeforeEach(func() {
-					CreateSC(SCName)
-					CreatePVC(PVCName, SCName)
+					pvc = CreatePVC(PVCName, SCName)
 				})
 				AfterEach(func() {
 					DeletePVC(PVCName)
 					DeleteSC(SCName)
 				})
+				It("Should be failed", func() {
+					CreateSC(SCName, "testProvisioner1")
+					pvc := CreatePVC(PVCName, SCName)
+
+					volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
+						context.Background(), k8sClient, metav1.LabelSelector{}, pvc, testLogger)
+					Expect(volumeGroupSnapshotClassName).To(Equal(""))
+					Expect(err).NotTo(BeNil())
+					Expect(err.Error()).
+						To(ContainSubstring("unable to find matching volumegroupsnapshotclass for storage provisioner"))
+				})
 				It("should be run as expected", func() {
+					CreateSC(SCName, "testProvisioner")
 					volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "testxxxx"}},
-						metav1.LabelSelector{}, []string{"default"}, testLogger)
+						pvc, testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
 					Expect(err).NotTo(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, []string{"default"}, testLogger)
-					Expect(volumeGroupSnapshotClassName).To(Equal(""))
-					Expect(err).NotTo(BeNil())
-
-					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
-					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
-					Expect(err).To(BeNil())
-
-					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient,
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"testpvc": "testpvc"}}, []string{"default"}, testLogger)
+						pvc, testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
 					Expect(err).To(BeNil())
 				})
@@ -301,38 +295,6 @@ var _ = Describe("CephfsCg", func() {
 				Expect(err).To(BeNil())
 				Expect(len(volumeGroupSnapshotClasses)).To(Equal(1))
 			})
-		})
-	})
-	Describe("VolumeGroupSnapshotClassMatchStorageProviders", func() {
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}, nil,
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}, []string{"test1"},
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{}, []string{"test1"},
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be true", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}, []string{"test"},
-			)
-			Expect(match).To(BeTrue())
 		})
 	})
 
@@ -549,12 +511,12 @@ var (
 	SCName  = "test"
 )
 
-func CreateSC(scName string) {
+func CreateSC(scName string, provName string) {
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scName,
 		},
-		Provisioner: "testProvisioner",
+		Provisioner: provName,
 	}
 
 	Eventually(func() error {
@@ -564,7 +526,7 @@ func CreateSC(scName string) {
 	}, timeout, interval).Should(BeNil())
 }
 
-func CreatePVC(pvcName, scName string) {
+func CreatePVC(pvcName, scName string) *corev1.PersistentVolumeClaim {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pvc",
@@ -590,6 +552,8 @@ func CreatePVC(pvcName, scName string) {
 
 		return client.IgnoreAlreadyExists(err)
 	}, timeout, interval).Should(BeNil())
+
+	return pvc
 }
 
 func DeletePVC(pvcName string) {
