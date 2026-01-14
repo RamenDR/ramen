@@ -440,6 +440,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations/finalizers
+  - replicationsources/finalizers
+  verbs:
+  - update
+- apiGroups:
   - work.open-cluster-management.io
   resources:
   - manifestworks
