@@ -5,6 +5,7 @@ import errno
 import json
 import logging
 import os
+import platform
 import sys
 import time
 
@@ -12,6 +13,8 @@ from packaging.version import Version
 
 from drenv import commands
 from drenv import containerd
+
+MINIKUBE = "minikube"
 
 EXTRA_CONFIG = [
     # When enabled, tells the Kubelet to pull images one at a time. This slows
@@ -117,6 +120,11 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
 
     if local_registry:
         args.append(f"--insecure-registry={LOCAL_REGISTRY}")
+
+    # Enable running amd64 images on Apple silicon. We can remove this when we
+    # have arm64 images for all dependencies.
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        args.append("--rosetta")
 
     # TODO: Use --interactive=false when the bug is fixed.
     # https://github.com/kubernetes/minikube/issues/19518
@@ -357,7 +365,7 @@ def _minikube_file(*names):
 
 
 def _run(command, *args, profile=None, output=None):
-    cmd = ["minikube", command]
+    cmd = [MINIKUBE, command]
     if profile:
         cmd.extend(("--profile", profile))
     if output:
@@ -367,7 +375,7 @@ def _run(command, *args, profile=None, output=None):
 
 
 def _watch(command, *args, profile=None, timeout=None):
-    cmd = ["minikube", command, "--profile", profile]
+    cmd = [MINIKUBE, command, "--profile", profile]
     cmd.extend(args)
     logging.debug("[%s] Running %s", profile, cmd)
     for line in commands.watch(*cmd, timeout=timeout):
