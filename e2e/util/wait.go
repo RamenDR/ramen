@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -138,6 +139,27 @@ func waitForResourceDelete(ctx types.Context, cluster *types.Cluster, obj client
 			return fmt.Errorf("%s %q not deleted in cluster %q: %w", kind, resourceName, cluster.Name, err)
 		}
 	}
+}
+
+func WaitForRecipeDeleteOnManagedClusters(ctx types.TestContext, r *recipe.Recipe) error {
+	env := ctx.Env()
+
+	for _, cluster := range env.ManagedClusters() {
+		recipe := &recipe.Recipe{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      r.Name,
+				Namespace: r.Namespace,
+			},
+		}
+
+		err := waitForResourceDelete(ctx, cluster, recipe)
+		if err != nil {
+			return fmt.Errorf("failed to wait for Recipe %q deletion in cluster %q: %w",
+				ctx.Name(), cluster.Name, err)
+		}
+	}
+
+	return nil
 }
 
 // getKind extracts resource type name from the object
