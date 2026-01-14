@@ -73,22 +73,14 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 }
 
 func prepareRecipeRef(recipeType, name, applicationNamespace, managementNamespace string) *ramen.RecipeRef {
-	var recipeRef *ramen.RecipeRef
-
 	switch recipeType {
 	case "generate", "workload":
-		recipeRef = &ramen.RecipeRef{
-			Name:      name,
-			Namespace: applicationNamespace,
-		}
+		return &ramen.RecipeRef{Name: name, Namespace: applicationNamespace}
 	case "vm":
-		recipeRef = &ramen.RecipeRef{
-			Name:      "vm-recipe",
-			Namespace: managementNamespace,
-		}
+		return &ramen.RecipeRef{Name: "vm-recipe", Namespace: managementNamespace}
 	}
 
-	return recipeRef
+	return nil
 }
 
 // nolint:funlen,cyclop
