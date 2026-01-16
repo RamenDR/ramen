@@ -149,7 +149,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		// Initialize --- DRCluster
 		drCluster1 = &ramen.DRCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: drCluster1Name},
-			Spec:       ramen.DRClusterSpec{S3ProfileName: "NoS3", Region: "east"},
+			Spec:       ramen.DRClusterSpec{S3ProfileName: "", Region: "east"},
 		}
 
 		Expect(k8sClient.Create(context.TODO(), drCluster1)).To(Succeed())
