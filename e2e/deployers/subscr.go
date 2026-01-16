@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 
@@ -149,6 +150,11 @@ func (s Subscription) WaitForResourcesDelete(ctx types.TestContext) error {
 
 func (s Subscription) IsDiscovered() bool {
 	return false
+}
+
+// GetRecipe returns nil as Subscription deployer does not use Recipe.
+func (s Subscription) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error) {
+	return nil, nil
 }
 
 func init() {
