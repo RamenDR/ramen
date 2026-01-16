@@ -8,13 +8,17 @@ import (
 	"os"
 	"time"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
+
 	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/recipes"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
 
 type DiscoveredApp struct {
 	DeployerSpec config.Deployer
+	disappRecipe *recipe.Recipe
 }
 
 func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
@@ -116,6 +120,26 @@ func (d DiscoveredApp) WaitForResourcesDelete(ctx types.TestContext) error {
 
 func (d DiscoveredApp) IsDiscovered() bool {
 	return true
+}
+
+// GetRecipe returns the recipe associated with the deployer
+func (d *DiscoveredApp) GetRecipe(ctx types.TestContext) *recipe.Recipe {
+	if d.disappRecipe != nil {
+		return d.disappRecipe
+	}
+
+	if d.shouldGenerateRecipe() {
+		r, err := recipes.Generate(ctx, d.DeployerSpec.Recipe)
+		if err == nil {
+			d.disappRecipe = r
+		}
+	}
+
+	return d.disappRecipe
+}
+
+func (d DiscoveredApp) shouldGenerateRecipe() bool {
+	return d.DeployerSpec.Recipe != nil && d.DeployerSpec.Recipe.Type == "generate"
 }
 
 func DeleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
