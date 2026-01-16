@@ -340,7 +340,7 @@ func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*
 			d.resetRDSpec(srcVRGView, &dstVRG)
 
 			if d.instance.Spec.VolSyncSpec != nil {
-				d.updateMoverConfig(&dstVRG)
+				d.updateRSSpecMoverConfig(&dstVRG)
 			}
 		}
 

@@ -185,6 +185,8 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 	replicationSources, srcCreatedOrUpdated, err := m.VolumeGroupHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 		ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(),
 		restoredPVCs, m.ReplicationGroupSource, m.Vrg, m.VSHandler.IsSubmarinerEnabled())
+	// ctx, m.ReplicationGroupSource.Status.LastSyncStartTime.String(), restoredPVCs, m.ReplicationGroupSource,
+	/*m.VSHandler.MoverConfig*/ //)
 	if err != nil {
 		m.Logger.Error(err, "Failed to create replication source")
 

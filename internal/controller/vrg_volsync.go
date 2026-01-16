@@ -407,11 +407,11 @@ func (v *VRGInstance) reconcileRDSpecForDeletionOrReplication() bool {
 }
 
 func (v *VRGInstance) GetVRGMoverConfig(name, namespace string) *ramendrv1alpha1.MoverConfig {
-	if len(v.instance.Spec.VolSync.MoverConfig) > 0 {
-		for _, moverConfig := range v.instance.Spec.VolSync.MoverConfig {
-			if moverConfig.PVCName == name &&
-				moverConfig.PVCNameSpace == namespace {
-				return &moverConfig
+	if len(v.instance.Spec.VolSync.RSSpec) > 0 {
+		for _, rsSpec := range v.instance.Spec.VolSync.RSSpec {
+			if rsSpec.ProtectedPVC.Name == name &&
+				rsSpec.ProtectedPVC.Namespace == namespace {
+				return rsSpec.MoverConfig
 			}
 		}
 	}

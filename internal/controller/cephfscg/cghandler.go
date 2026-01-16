@@ -50,6 +50,7 @@ func NewVSCGHandler(
 	cgHandler.volumeSnapshotClassSelector = instance.Spec.Async.VolumeSnapshotClassSelector
 	cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
 	cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
+	// cgHandler.moverConfig = instance.Spec.VolSync.MoverConfig
 
 	return cgHandler
 }
@@ -93,6 +94,7 @@ type cgHandler struct {
 	cgName string
 
 	logger logr.Logger
+	// moverConfig []ramendrv1alpha1.MoverConfig
 }
 
 func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
@@ -152,6 +154,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceNamespace string,
 	runFinalSync bool,
+	// volSyncSpec *ramendrv1alpha1.VolSyncSpec,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
 	replicationGroupSourceName := c.cgName
 
@@ -276,6 +279,8 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		rgs.Spec.VolumeGroupSnapshotClassName = volumeGroupSnapshotClassName
 		rgs.Spec.VolumeGroupSnapshotSource = c.volumeGroupSnapshotSource
+
+		// rgs.Spec.rsSpecs = volSyncSpec.RDSpec
 
 		return nil
 	})

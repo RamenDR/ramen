@@ -1858,18 +1858,19 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 	// VolSync's DataMover requires the PodSecurityContext to be configured in order to successfully synchronize
 	// data for workloads that have complex Security Context Constraints (SCC) settings.
 	// Populate ReplicationSource and ReplicationDestination specs with MoverSecurityContext and MoverServiceAccount
-	if d.instance.Spec.VolSyncSpec != nil && d.drType == DRTypeAsync {
-		d.updateMoverConfig(vrg)
+	if d.instance.Spec.VolSyncSpec != nil && d.drType == DRTypeAsync &&
+		len(d.instance.Spec.VolSyncSpec.RSSpec) > 0 {
+		d.updateRSSpecMoverConfig(vrg)
 	}
 }
 
 // Checks if MoverConfig exists in the spec
-func (d *DRPCInstance) updateMoverConfig(vrg *rmn.VolumeReplicationGroup) {
-	if len(d.instance.Spec.VolSyncSpec.MoverConfig) == 0 {
+func (d *DRPCInstance) updateRSSpecMoverConfig(vrg *rmn.VolumeReplicationGroup) {
+	if len(d.instance.Spec.VolSyncSpec.RSSpec) == 0 {
 		return
 	}
 
-	vrg.Spec.VolSync.MoverConfig = append([]rmn.MoverConfig(nil), d.instance.Spec.VolSyncSpec.MoverConfig...)
+	vrg.Spec.VolSync.RSSpec = append([]rmn.VolSyncReplicationSourceSpec(nil), d.instance.Spec.VolSyncSpec.RSSpec...)
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {

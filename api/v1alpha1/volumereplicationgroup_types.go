@@ -97,6 +97,9 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -110,6 +113,8 @@ type VolSyncReplicationSourceSpec struct {
 	// to the replication destination (RD).
 	//+optional
 	RsyncTLS *RsyncTLSConfig `json:"rsyncTLS,omitempty"`
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
@@ -127,7 +132,7 @@ type VolSyncSpec struct {
 	Disabled bool `json:"disabled,omitempty"`
 
 	//+optional
-	MoverConfig []MoverConfig `json:"moverConfig,omitempty"`
+	// MoverConfig []MoverConfig `json:"moverConfig,omitempty"`
 }
 
 type MoverConfig struct {
@@ -143,15 +148,15 @@ type MoverConfig struct {
 	// Labels that should be added to data mover pods
 	// These will be in addition to any labels that VolSync may add
 
-	// PVCName is a required field and must not be empty
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	PVCName string `json:"pvcName,omitempty"`
+	// // PVCName is a required field and must not be empty
+	// // +kubebuilder:validation:Required
+	// // +kubebuilder:validation:MinLength=1
+	// PVCName string `json:"pvcName,omitempty"`
 
-	// PVCNameSpace is a required field and must not be empty
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	PVCNameSpace string `json:"pvcNamespace,omitempty"`
+	// // PVCNameSpace is a required field and must not be empty
+	// // +kubebuilder:validation:Required
+	// // +kubebuilder:validation:MinLength=1
+	// PVCNameSpace string `json:"pvcNamespace,omitempty"`
 }
 
 // VRGAction which will be either a Failover or Relocate
