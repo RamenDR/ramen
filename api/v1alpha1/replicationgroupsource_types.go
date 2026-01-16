@@ -17,6 +17,9 @@ type ReplicationGroupSourceSpec struct {
 
 	// +required
 	VolumeGroupSnapshotSource *metav1.LabelSelector `json:"volumeGroupSnapshotSource,omitempty"`
+
+	//+optional
+	RSSpec []VolSyncReplicationSourceSpec `json:"rsSpecs,omitempty"`
 }
 
 // ReplicationSourceTriggerSpec defines when a volume will be synchronized with

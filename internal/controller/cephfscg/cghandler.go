@@ -51,6 +51,8 @@ func NewVSCGHandler(
 	cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
 	cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
 
+	cgHandler.moverConfig = append([]ramendrv1alpha1.MoverConfig(nil), instance.Spec.VolSync.MoverConfig...)
+
 	return cgHandler
 }
 
@@ -92,7 +94,8 @@ type cgHandler struct {
 
 	cgName string
 
-	logger logr.Logger
+	logger      logr.Logger
+	moverConfig []ramendrv1alpha1.MoverConfig
 }
 
 func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
@@ -276,6 +279,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		rgs.Spec.VolumeGroupSnapshotClassName = volumeGroupSnapshotClassName
 		rgs.Spec.VolumeGroupSnapshotSource = c.volumeGroupSnapshotSource
+		rgs.Spec.RSSpec = c.populateRSSMoverConfig()
 
 		return nil
 	})
@@ -294,6 +298,24 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	}
 
 	return rgs, !finalSyncComplete, nil
+}
+
+// populateRSSMoverConfig builds the RsSpecs MoverConfig list for RGS from the VRG spec.
+func (c *cgHandler) populateRSSMoverConfig() []ramendrv1alpha1.VolSyncReplicationSourceSpec {
+	vrssArray := make([]ramendrv1alpha1.VolSyncReplicationSourceSpec, 0, len(c.moverConfig))
+	for _, moverConfig := range c.moverConfig {
+		vrss := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			MoverConfig: &ramendrv1alpha1.MoverConfig{
+				MoverSecurityContext: moverConfig.MoverSecurityContext,
+				MoverServiceAccount:  moverConfig.MoverServiceAccount,
+				PVCName:              moverConfig.PVCName,
+				PVCNameSpace:         moverConfig.PVCNameSpace,
+			},
+		}
+		vrssArray = append(vrssArray, vrss)
+	}
+
+	return vrssArray
 }
 
 func (c *cgHandler) GetLatestImageFromRGD(rgd *ramendrv1alpha1.ReplicationGroupDestination, pvcName string,
