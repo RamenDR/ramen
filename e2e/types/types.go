@@ -56,6 +56,9 @@ type Deployer interface {
 	DeleteResources(TestContext) error
 	// WaitForResourcesDelete waits for all workload resources to be deleted
 	WaitForResourcesDelete(TestContext) error
+
+	// GetRecipe returns the recipe associated with the deployer
+	GetRecipe(TestContext) *recipe.Recipe
 }
 
 // nolint:interfacebloat
