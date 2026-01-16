@@ -49,6 +49,7 @@ type VolumeGroupSourceHandler interface {
 		owner metav1.Object,
 		vrg *ramendrv1alpha1.VolumeReplicationGroup,
 		isSubmarinerEnabled bool,
+		// moverConfig []ramendrv1alpha1.MoverConfig,
 	) ([]*corev1.ObjectReference, bool, error)
 
 	CheckReplicationSourceForRestoredPVCsCompleted(
@@ -470,18 +471,19 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 
 		pvcName := strings.TrimSuffix(restoredPVC.SourcePVCName, util.SuffixForFinalsyncPVC)
 
-		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
+		replicationSourceNamespace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pvcName,
-				Namespace: replicationSourceNamepspace,
+				Namespace: replicationSourceNamespace,
 			},
 		}
 
-		rdService, err := h.resolveRDService(&restoredPVC, vrg, replicationSourceNamepspace, isSubmarinerEnabled, logger)
+		rdService, err := h.resolveRDService(&restoredPVC, vrg, replicationSourceNamespace, isSubmarinerEnabled, logger)
 		if err != nil {
 			return nil, false, err
 		}
+		// rdService := getRemoteServiceNameForRDFromPVCName(pvcName, replicationSourceNamespace)
 
 		op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, replicationSource, func() error {
 			if err := ctrl.SetControllerReference(owner, replicationSource, h.Client.Scheme()); err != nil {
@@ -504,6 +506,16 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 
 				KeySecret: &h.VolsyncKeySecretName,
 				Address:   &rdService,
+			}
+
+			moverConfigVal := util.GetVRGMoverConfig(pvcName, replicationSourceNamespace, vrg.Spec.VolSync.RSSpec)
+			if moverConfigVal != nil {
+				mc := volsyncv1alpha1.MoverConfig{
+					MoverSecurityContext: moverConfigVal.MoverSecurityContext,
+					MoverServiceAccount:  moverConfigVal.MoverServiceAccount,
+				}
+
+				replicationSource.Spec.RsyncTLS.MoverConfig = mc
 			}
 
 			return nil

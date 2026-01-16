@@ -51,6 +51,8 @@ func NewVSCGHandler(
 	cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
 	cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
 
+	cgHandler.moverConfig = append([]ramendrv1alpha1.MoverConfig(nil), instance.Spec.VolSync.MoverConfig...)
+
 	return cgHandler
 }
 
@@ -92,7 +94,8 @@ type cgHandler struct {
 
 	cgName string
 
-	logger logr.Logger
+	logger      logr.Logger
+	moverConfig []ramendrv1alpha1.MoverConfig
 }
 
 func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
@@ -152,6 +155,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	replicationGroupSourceNamespace string,
 	runFinalSync bool,
+	// volSyncSpec *ramendrv1alpha1.VolSyncSpec,
 ) (*ramendrv1alpha1.ReplicationGroupSource, bool, error) {
 	replicationGroupSourceName := c.cgName
 
@@ -276,6 +280,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		rgs.Spec.VolumeGroupSnapshotClassName = volumeGroupSnapshotClassName
 		rgs.Spec.VolumeGroupSnapshotSource = c.volumeGroupSnapshotSource
+		rgs.Spec.RsSpecs = c.PopulateRSSMoverConfig()
 
 		return nil
 	})
@@ -294,6 +299,25 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	}
 
 	return rgs, !finalSyncComplete, nil
+}
+
+func (c *cgHandler) PopulateRSSMoverConfig() []ramendrv1alpha1.VolSyncReplicationSourceSpec {
+	vrssArray := make([]ramendrv1alpha1.VolSyncReplicationSourceSpec, 0, len(c.moverConfig))
+	for _, moverConfig := range c.moverConfig {
+		vrss := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+				Namespace: moverConfig.PVCNameSpace,
+				Name:      moverConfig.PVCName,
+			},
+			MoverConfig: &ramendrv1alpha1.MoverConfig{
+				MoverSecurityContext: moverConfig.MoverSecurityContext,
+				MoverServiceAccount:  moverConfig.MoverServiceAccount,
+			},
+		}
+		vrssArray = append(vrssArray, vrss)
+	}
+
+	return vrssArray
 }
 
 func (c *cgHandler) GetLatestImageFromRGD(rgd *ramendrv1alpha1.ReplicationGroupDestination, pvcName string,
