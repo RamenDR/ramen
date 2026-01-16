@@ -56,6 +56,10 @@ type Deployer interface {
 	DeleteResources(TestContext) error
 	// WaitForResourcesDelete waits for all workload resources to be deleted
 	WaitForResourcesDelete(TestContext) error
+
+	// GetRecipe returns the recipe if the deployer is configured to use one.
+	// Returns nil if the deployer is not configured to use a recipe.
+	GetRecipe(TestContext) (*recipe.Recipe, error)
 }
 
 // nolint:interfacebloat
