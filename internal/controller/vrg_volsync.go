@@ -426,7 +426,9 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 
 	rdSpecsUsingCG := make(map[string]struct{})
 
-	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+	for index := range v.instance.Spec.VolSync.RDSpec {
+		rdSpec := v.instance.Spec.VolSync.RDSpec[index]
+
 		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
 		if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 			v.log.Info("RDSpec contains the CG label from the primary cluster", "Label", cgLabelVal)
@@ -441,6 +443,9 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 
 			key := fmt.Sprintf("%s-%s", rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 			rdSpecsUsingCG[key] = struct{}{}
+
+			rdSpec.MoverConfig = util.GetRSMoverConfig(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace,
+				v.instance.Spec.VolSync.MoverConfig)
 
 			groups[cgLabelVal] = append(groups[cgLabelVal], rdSpec)
 		}

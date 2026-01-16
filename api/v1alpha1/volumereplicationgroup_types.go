@@ -97,6 +97,9 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -110,6 +113,8 @@ type VolSyncReplicationSourceSpec struct {
 	// to the replication destination (RD).
 	//+optional
 	RsyncTLS *RsyncTLSConfig `json:"rsyncTLS,omitempty"`
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or

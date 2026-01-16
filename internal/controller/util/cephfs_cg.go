@@ -340,3 +340,17 @@ func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 
 	return volumeSnapshots, nil
 }
+
+func GetRSMoverConfig(name, namespace string, moverConfigArr []ramendrv1alpha1.MoverConfig,
+) *ramendrv1alpha1.MoverConfig {
+	if len(moverConfigArr) > 0 {
+		for _, mc := range moverConfigArr {
+			if mc.PVCName == name &&
+				mc.PVCNameSpace == namespace {
+				return &mc
+			}
+		}
+	}
+
+	return nil
+}

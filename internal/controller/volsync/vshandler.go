@@ -82,6 +82,7 @@ type VSHandler struct {
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 	vrgInAdminNamespace         bool
 	workloadStatus              string
+	moverConfig                 []ramendrv1alpha1.MoverConfig
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
@@ -102,6 +103,13 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 	if asyncSpec != nil {
 		vsHandler.schedulingInterval = asyncSpec.SchedulingInterval
 		vsHandler.volumeSnapshotClassSelector = asyncSpec.VolumeSnapshotClassSelector
+	}
+
+	vrg, ok := owner.(*ramendrv1alpha1.VolumeReplicationGroup)
+	if !ok {
+		log.Info("VolumeReplicationGroup(PVC) map function received non-VRG resource")
+	} else {
+		vsHandler.moverConfig = append([]ramendrv1alpha1.MoverConfig(nil), vrg.Spec.VolSync.MoverConfig...)
 	}
 
 	return vsHandler

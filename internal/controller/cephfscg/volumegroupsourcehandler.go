@@ -470,16 +470,16 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 
 		originalPVCName := strings.TrimSuffix(restoredPVC.SourcePVCName, util.SuffixForFinalsyncPVC)
 
-		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
+		replicationSourceNamespace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      originalPVCName,
-				Namespace: replicationSourceNamepspace,
+				Namespace: replicationSourceNamespace,
 			},
 		}
 
 		rdService, err := h.resolveRDService(originalPVCName, restoredPVC.RestoredPVCName,
-			vrg, replicationSourceNamepspace, isSubmarinerEnabled, logger)
+			vrg, replicationSourceNamespace, isSubmarinerEnabled, logger)
 		if err != nil {
 			return nil, false, err
 		}
@@ -505,6 +505,14 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 
 				KeySecret: &h.VolsyncKeySecretName,
 				Address:   &rdService,
+			}
+
+			moverConfigVal := util.GetRSMoverConfig(originalPVCName, replicationSourceNamespace, vrg.Spec.VolSync.MoverConfig)
+			if moverConfigVal != nil {
+				replicationSource.Spec.RsyncTLS.MoverConfig = volsyncv1alpha1.MoverConfig{
+					MoverSecurityContext: moverConfigVal.MoverSecurityContext,
+					MoverServiceAccount:  moverConfigVal.MoverServiceAccount,
+				}
 			}
 
 			return nil
