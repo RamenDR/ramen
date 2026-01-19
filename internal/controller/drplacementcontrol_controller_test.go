@@ -115,11 +115,6 @@ var (
 
 	drClusters = []rmn.DRCluster{}
 
-	cidrs = [][]string{
-		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
-		{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
-	}
-
 	asyncDRPolicy = &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: AsyncDRPolicyName,
