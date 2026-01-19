@@ -26,6 +26,10 @@ const (
 	CGEnabled                = "unsupported_consistency_grouping_enabled"
 )
 
+const (
+	InvalidCIDRsDetected = "invalid_cidrs_detected"
+)
+
 type SyncTimeMetrics struct {
 	LastSyncTime prometheus.Gauge
 }
@@ -47,6 +51,10 @@ type WorkloadProtectionMetrics struct {
 }
 type CGEnabledMetrics struct {
 	CGEnabled prometheus.Gauge
+}
+
+type InvalidCIDRsDetectedMetrics struct {
+	InvalidCIDRsDetected prometheus.Gauge
 }
 
 type SyncMetrics struct {
@@ -100,6 +108,11 @@ var (
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
+	}
+
+	invalidCIDRsLabels = []string{
+		ObjType, // Name of the type of the resource [DRCluster]
+		ObjName, // Name of the resoure [DRCluster-name]
 	}
 )
 
@@ -156,6 +169,15 @@ var (
 			Help:      "Unsupported consistency grouping enabled status",
 		},
 		cgEnabledMetricLabels,
+	)
+
+	invalidCIDRsDetected = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      InvalidCIDRsDetected,
+			Namespace: metricNamespace,
+			Help:      "Invalid CIDRs Detected status",
+		},
+		invalidCIDRsLabels,
 	)
 )
 
@@ -273,6 +295,24 @@ func DeleteCGEnabledMetric(labels prometheus.Labels) bool {
 	return cgEnabled.Delete(labels)
 }
 
+// InvalidCIDRsDetected Metric reports if CIDRs configured are valid for fencing
+func InvalidCIDRsDetectedMetricLabels(drc *rmn.DRCluster) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType: "DRCluster",
+		ObjName: drc.Name,
+	}
+}
+
+func NewInvalidCIDRsDetectedMetric(labels prometheus.Labels) InvalidCIDRsDetectedMetrics {
+	return InvalidCIDRsDetectedMetrics{
+		InvalidCIDRsDetected: invalidCIDRsDetected.With(labels),
+	}
+}
+
+func DeleteInvalidCIDRsDetectedMetric(labels prometheus.Labels) bool {
+	return invalidCIDRsDetected.Delete(labels)
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
@@ -281,4 +321,5 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
 	metrics.Registry.MustRegister(cgEnabled)
+	metrics.Registry.MustRegister(invalidCIDRsDetected)
 }
