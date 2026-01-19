@@ -1028,4 +1028,72 @@ var _ = Describe("DRClusterController", func() {
 			deleteDRClusterNamespaces()
 		})
 	})
+
+	// InvalidCIDRsDetected tests
+	Context("InvalidCIDRsDetected Tests", func() {
+		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
+			createOtherDRClusters()
+			drcluster = drclusters[0].DeepCopy()
+		})
+
+		When("provided CIDRs match detected StorageAccessDetails", func() {
+			It("reports validated with reason Succeeded", func() {
+				NFClassAvailable = true
+				defer func() { NFClassAvailable = false }()
+
+				drcluster.Spec.CIDRs = cidrs[0]
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonValidated),
+					Ignore(),
+					ramen.DRClusterValidated,
+					false,
+				)
+			})
+		})
+
+		When("provided CIDRs do not match detected StorageAccessDetails", func() {
+			It("reports NOT validated with reason ValidationFailed", func() {
+				NFClassAvailable = true
+				defer func() { NFClassAvailable = false }()
+
+				drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // CIDR not in StorageAccessDetails
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(controllers.ReasonValidationFailed),
+					ContainSubstring("undetected CIDRs specified"),
+					ramen.DRClusterValidated,
+					false,
+				)
+			})
+		})
+
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+			})
+		})
+
+		Specify("Delete other DRClusters", func() {
+			deleteOtherDRClusters()
+		})
+
+		Specify("Delete namespaces named the same as DRClusters", func() {
+			deleteDRClusterNamespaces()
+		})
+	})
 })
