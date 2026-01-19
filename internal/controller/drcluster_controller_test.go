@@ -27,11 +27,19 @@ import (
 
 var NFClassAvailable bool
 
+var cidrs = [][]string{
+	{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
+	{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
+	{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
+
+	{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
+}
+
 var baseNF = &csiaddonsv1alpha1.NetworkFence{
 	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 	ObjectMeta: metav1.ObjectMeta{Name: strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0"}, "-")},
 	Spec: csiaddonsv1alpha1.NetworkFenceSpec{
-		Cidrs:      []string{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"},
+		Cidrs:      cidrs[0],
 		FenceState: csiaddonsv1alpha1.Fenced,
 	},
 }
@@ -69,6 +77,12 @@ func generateDRCC() *ramen.DRClusterConfig {
 	drcc := baseDRCConfig.DeepCopy()
 	drcc.Status.StorageClasses = []string{"sc1"}
 	drcc.Status.NetworkFenceClasses = []string{"nfc1"}
+	drcc.Status.StorageAccessDetails = []ramen.StorageAccessDetail{
+		{
+			StorageProvisioner: "fake.ramen.com",
+			CIDRs:              cidrs[0],
+		},
+	}
 
 	return drcc
 }
@@ -204,14 +218,6 @@ var _ = Describe("DRClusterController", func() {
 				Namespace: clusterName,
 			},
 			manifestWork))).To(BeTrue())
-	}
-
-	cidrs := [][]string{
-		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
-		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
-
-		{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
-		{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
 	}
 
 	drclusters := []ramen.DRCluster{}
@@ -526,7 +532,7 @@ var _ = Describe("DRClusterController", func() {
 		When("provided CIDR value is incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
 				By("creating a new DRCluster with an invalid CIDR")
-				drcluster.Spec.CIDRs = cidrs[1]
+				drcluster.Spec.CIDRs = cidrs[3]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				objectConditionExpectEventually(
 					apiReader,
@@ -588,7 +594,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided CIDR value is changed to be incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
-				drcluster.Spec.CIDRs = cidrs[1]
+				drcluster.Spec.CIDRs = cidrs[3]
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
