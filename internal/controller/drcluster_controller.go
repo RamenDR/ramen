@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
@@ -81,6 +82,10 @@ const (
 const (
 	NetworkFencePrefix = "network-fence"
 )
+
+type DRClusterMetrics struct {
+	InvalidCIDRsDetectedMetrics
+}
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -418,10 +423,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalseAndUpdate("DrClustersDeployFailed", err))
 	}
 
-	if err = validateCIDRsFormat(u.object, u.log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
-			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
-	}
+	drclusterMetrics := createDRClusterMetricsInstance(u.object)
 
 	requeue, err = u.clusterFenceHandle()
 	if err != nil {
@@ -443,6 +445,11 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 			"failed to ensure DRClusterConfig: %w",
 			u.validatedSetFalseAndUpdate("DRClusterConfigInProgress", err),
 		)
+	}
+
+	if err = u.validateCIDRs(drclusterMetrics.InvalidCIDRsDetectedMetrics, u.log); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
+			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
 	}
 
 	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
@@ -495,6 +502,66 @@ func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluste
 	return nil
 }
 
+func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics {
+	invalidCIDRsDetectedMetricLabels := InvalidCIDRsDetectedMetricLabels(drcluster)
+	invalidCIDRsDetectedMetrics := NewInvalidCIDRsDetectedMetric(invalidCIDRsDetectedMetricLabels)
+
+	return DRClusterMetrics{
+		InvalidCIDRsDetectedMetrics: invalidCIDRsDetectedMetrics,
+	}
+}
+
+func (u *drclusterInstance) validateCIDRsDetected() error {
+	drcConfig, err := u.getDRCCFromCluster(u.object)
+	if err != nil {
+		return err
+	}
+
+	// Skip CIDR detection validation if StorageAccessDetails is not available.
+	// StorageAccessDetails is populated by DRClusterConfig controller when matching
+	// NetworkFenceClasses are detected in the managed cluster. Return nil to
+	// maintain backward compatibility with clusters that don't have this data yet.
+	if len(drcConfig.Status.StorageAccessDetails) == 0 {
+		return nil
+	}
+
+	storageAccessDetails := drcConfig.Status.StorageAccessDetails
+	cidrsFromDRCC := sets.NewString()
+
+	for _, sAD := range storageAccessDetails {
+		cidrsFromDRCC = cidrsFromDRCC.Insert(sAD.CIDRs...)
+	}
+
+	cidrsFromDRCluster := sets.NewString(u.object.Spec.CIDRs...)
+
+	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
+	if len(undetectedCIDRs) > 0 {
+		return fmt.Errorf("undetected CIDRs specified %s", strings.Join(undetectedCIDRs, ", "))
+	}
+
+	return nil
+}
+
+func (u *drclusterInstance) validateCIDRs(metrics InvalidCIDRsDetectedMetrics, log logr.Logger) error {
+	err := validateCIDRsFormat(u.object, log)
+	if err != nil {
+		metrics.InvalidCIDRsDetected.Set(1)
+
+		return err
+	}
+
+	err = u.validateCIDRsDetected()
+	if err != nil {
+		metrics.InvalidCIDRsDetected.Set(1)
+
+		return err
+	}
+
+	metrics.InvalidCIDRsDetected.Set(float64(0))
+
+	return nil
+}
+
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
@@ -539,7 +606,7 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	}
 
 	if len(invalidCidrs) > 0 {
-		return fmt.Errorf("invalid CIDRs specified %s", strings.Join(invalidCidrs, ", "))
+		return fmt.Errorf("invalid CIDRs format specified %s", strings.Join(invalidCidrs, ", "))
 	}
 
 	return nil
@@ -850,14 +917,24 @@ func (u *drclusterInstance) findMatchingNFClasses(
 	return nfClasses
 }
 
-// getNFClassesFromDRClusterConfig retrieves the DRClusterConfig for the given DRCluster
-// and extracts StorageClasses and NetworkFenceClass resources to process network fencing
-func (u *drclusterInstance) getNFClassesFromDRClusterConfig(cluster *ramen.DRCluster,
-) ([]string, error) {
+// getDRCCFromCluster retrieves the DRClusterConfig for the given DRCluster
+func (u *drclusterInstance) getDRCCFromCluster(cluster *ramen.DRCluster) (*ramen.DRClusterConfig, error) {
 	annotations := make(map[string]string)
 	annotations[AllDRPolicyAnnotation] = cluster.GetName()
 
 	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(cluster.GetName(), annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	return drcConfig, nil
+}
+
+// getNFClassesFromDRClusterConfig retrieves the DRClusterConfig for the given DRCluster
+// and extracts StorageClasses and NetworkFenceClass resources to process network fencing
+func (u *drclusterInstance) getNFClassesFromDRClusterConfig(cluster *ramen.DRCluster,
+) ([]string, error) {
+	drcConfig, err := u.getDRCCFromCluster(cluster)
 	if err != nil {
 		return nil, err
 	}
