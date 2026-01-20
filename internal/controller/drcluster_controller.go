@@ -632,6 +632,9 @@ func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result,
 		}
 	}
 
+	invalidCIDRsLabels := InvalidCIDRsDetectedMetricLabels(u.object)
+	DeleteInvalidCIDRsDetectedMetric(invalidCIDRsLabels)
+
 	if err := u.finalizerRemove(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
 	}
