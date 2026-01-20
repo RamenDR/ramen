@@ -63,60 +63,32 @@ The above picture shows the interfaces that are used in Ramen today.
 
 ## End-to-end tests
 
-The end-to-end testing framework isn't implemented yet. However, we have a basic
-test that you can use to test the basic flows of Ramen. `basic-test` requires
-the python virtual environment to be activated.
+The end-to-end testing framework provides comprehensive testing capabilities
+for various DR scenarios using predefined workloads and deployment methods.
 
-Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
-Before running the tests, you need to deploy a channel pointing this
-repo:
+Please refer to the [e2e testing documentation](e2e.md) for detailed
+instructions on:
 
-```sh
-kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel?ref=main --context hub
-```
+- Setting up the test environment
+- Running validation tests
+- Executing specific DR test scenarios
+- Understanding test results and debugging failures
 
-> [!NOTE]
-> To test applications from your repo, you need to deploy a channel
-> pointing to your repo.
+For step-by-step manual testing and debugging, see the
+[Step-by-step DR workflow testing](e2e.md#step-by-step-dr-workflow-testing)
+section which provides individual control over each DR operation.
 
-To run basic tests using regional-dr environment run:
+The e2e framework validates operations including:
 
-```sh
-test/basic-test/run test/envs/regional-dr.yaml
-```
+1. Deploying applications with persistent volumes
+1. Enabling DR for applications
+1. Failing over applications to other clusters
+1. Relocating applications back to original clusters
+1. Disabling DR for applications
+1. Undeploying applications
 
-This test does these operations:
-
-1. Deploys a busybox application
-1. Enables DR for the application
-1. Fails over the application to the other cluster
-1. Relocates the application back to the original cluster
-1. Disables DR for the application
-1. Undeploys the application
-
-If needed, you can run one or more steps form this test, for example to
-deploy and enable DR run:
-
-```sh
-env=$PWD/test/envs/regional-dr.yaml
-test/basic-test/deploy $env
-test/basic-test/enable-dr $env
-```
-
-At this point you can run run manually failover, relocate one or more
-times as needed:
-
-```sh
-for i in $(seq 3); do
-    test/basic-test/relocate $env
-done
-```
-
-To clean up run:
-
-```sh
-test/basic-test/undeploy $env
-```
+The framework supports multiple deployers (appset, subscr, disapp) and
+storage types (rbd, cephfs) with comprehensive validation and reporting.
 
 For more info on writing such tests see
 [test/README.md](../test/README.md).

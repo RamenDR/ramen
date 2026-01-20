@@ -897,125 +897,18 @@ make black-reformat
 
 ## Writing environment tests
 
-The `drenv` python package provides a `test` helper module to make
-writing good environment test easy.
+For comprehensive testing, use the e2e test framework which provides
+structured test scenarios with proper validation and reporting. The e2e
+framework is implemented in Go and provides robust testing capabilities
+for DR scenarios.
 
-To create a new test, create a new directory in the test directory:
+See the [e2e testing documentation](../docs/e2e.md) for detailed
+instructions on:
 
-```
-mkdir my-test
-```
+- Setting up test environments
+- Running validation tests
+- Executing specific DR test scenarios
+- Understanding test results and debugging failures
 
-The directory can have one or more scripts as needed. The simplest test
-will have only a `run` script, and a configuration file:
-
-```
-$ ls -1 my-test
-config.yaml
-run
-```
-
-The test must be runnable from any directory:
-
-```
-$ my-test/run
-...
-$ cd my-test
-$ ./run
-...
-```
-
-### Writing complicated tests
-
-A more complicated test may have several steps. To keep the test simple
-and easy understand and debug, separate each step in a test scrip that
-can run by a developer manually. The `run` script will run all the steps
-in the right order.
-
-```
-$ ls -1 basic-test/
-config.yaml
-deploy
-failover
-kustomization.yaml
-relocate
-run
-undeploy
-```
-
-A developer can run one or more steps:
-
-```
-$ basic-test/deploy dr1; basic-test/failover dr2
-...
-```
-
-Debug the system or the test, and continue:
-
-```
-$ basic-test/relocate dr1; basic-test/undeploy
-...
-```
-
-Or run all the steps at once:
-
-```
-$ basic-test/run
-...
-```
-
-### Writing a test script
-
-A test script starts with importing the `drenv.test` module:
-
-```python
-from drenv import test
-```
-
-The first thing is to start the test:
-
-```python
-test.start("deploy", __file__)
-```
-
-This sets up the process for a new test:
-
-- change directory to the parent directory of `__file__`
-- load the configuration file from the test directory
-- create a logger named "deploy" using standard log format
-- create an arguments parser with the default options
-- installs a hook for logging unhandled exception to the test log
-
-If the test needs additional arguments it can add them using the same
-arguments accepted by the standard library `argparse` module:
-
-```python
-test.add_argument("cluster", help="Cluster name to deploy on.")
-```
-
-Finally the test parses the arguments:
-
-```python
-args = test.parse_args()
-```
-
-If the command line arguments included the `-v' or '--verbose` option
-the test logger level is increased to debug level automatically.
-
-To access the test configuration, use:
-
-```python
-my_value = test.config["my-key"]
-```
-
-During the test, log important messages using:
-
-```python
-test.info("Starting deploy")
-```
-
-To log debug messages use:
-
-```python
-test.debug("Got reply: %s", reply)
-```
+For simple environment testing and addon validation, you can create
+custom scripts that use the `drenv` command-line tool directly.

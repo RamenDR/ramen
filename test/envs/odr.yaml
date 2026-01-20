@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Environment for testing an external OpenShift Regional-DR setup using
-# basic-test.  Assuming that you used `oc login` to get all the clusters in a
+# e2e tests. Assuming that you used `oc login` to get all the clusters in a
 # kubeconfig file used by the test.
 ---
 name: perf123

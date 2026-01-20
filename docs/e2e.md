@@ -221,3 +221,158 @@ tests using a specific one. Example usage:
 ```sh
 ./run.sh -config my_config.yaml
 ```
+
+### Step-by-step DR workflow testing
+
+For manual testing and debugging, you can run individual DR operations step by step.
+This approach is useful when you need to:
+
+- Debug issues at specific stages of the DR workflow
+- Manually verify the state between DR operations
+- Test partial DR flows for development purposes
+- Understand the detailed behavior of each DR operation
+
+> [!IMPORTANT]
+> The step-by-step workflow requires manual cleanup if stopped mid-process.
+> Always ensure you complete the full workflow or manually clean up resources.
+
+### Prerequisites
+
+Before running step-by-step tests, ensure your clusters are properly configured:
+
+1. **Deploy a channel** pointing to the application repository:
+
+   ```sh
+   kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel?ref=main --context hub
+   ```
+
+1. **Configure your environment** with the e2e config file as described in the
+   [configuration section](#preparing-a-configyaml-file).
+
+### Step-by-step workflow
+
+The following example demonstrates a complete DR workflow using a specific test configuration.
+Replace the test name with your desired configuration from the available tests.
+
+#### 1. Deploy the application
+
+Deploy your workload to the primary cluster:
+
+```sh
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox/Deploy
+```
+
+This operation:
+
+- Deploys a busybox application with RBD storage using subscription deployer
+- Creates necessary namespaces and resources
+- Waits for the application to be running on the primary cluster
+
+#### 2. Enable DR protection
+
+Enable DR for the deployed application:
+
+```sh
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox/Enable
+```
+
+This operation:
+
+- Creates a DRPlacementControl (DRPC) resource
+- Configures volume replication for persistent volumes
+- Waits for the protection to be established and stable
+- Verifies the application is properly protected
+
+#### 3. Perform failover
+
+Failover the application to the secondary cluster:
+
+```sh
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox/Failover
+```
+
+This operation:
+
+- Initiates failover action in the DRPC
+- Moves the application from primary to secondary cluster
+- Restores persistent volumes on the target cluster
+- Waits for the application to be running on the secondary cluster
+
+#### 4. Relocate back to primary
+
+Relocate the application back to the primary cluster:
+
+```sh
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox/Relocate
+```
+
+This operation:
+
+- Initiates relocate action in the DRPC
+- Moves the application from secondary back to primary cluster
+- Ensures data synchronization before the move
+- Waits for the application to be running on the primary cluster
+
+#### 5. Disable DR protection
+
+Disable DR protection for the application:
+
+```sh
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox/Disable
+```
+
+This operation:
+
+- Removes the DRPlacementControl resource
+- Cleans up volume replication configurations
+- Ensures the application continues running without protection
+
+#### 6. Undeploy the application
+
+Clean up by removing the application:
+
+```sh
+./run.sh -test.run TestDR/subscr-deploy-rbd-busybox/Undeploy
+```
+
+This operation:
+
+- Removes all application resources
+- Cleans up namespaces and persistent volumes
+- Ensures complete cleanup of the test environment
+
+### Customizing the workflow
+
+You can adapt this workflow for different configurations by changing the test name:
+
+- **Different deployers**: Replace `subscr` with `appset` or `disapp`
+- **Different storage**: Replace `rbd` with `cephfs`
+- **Different workloads**: Currently `deploy` is the primary workload available
+
+Examples:
+
+```sh
+# ApplicationSet with CephFS storage
+./run.sh -test.run TestDR/appset-deploy-cephfs-busybox/Deploy
+
+# Discovered Application with RBD storage
+./run.sh -test.run TestDR/disapp-deploy-rbd-busybox/Enable
+```
+
+#### Monitoring and debugging
+
+Between each step, you can inspect the cluster state:
+
+```sh
+# Check DRPC status
+kubectl get drpc -A
+
+# Check VolumeReplication status
+kubectl get volumereplication -A
+
+# Check application pods
+kubectl get pods -n <app-namespace>
+
+# Check placement decisions
+kubectl get placementdecisions -A
+```
