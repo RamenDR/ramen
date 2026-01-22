@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
@@ -532,12 +533,31 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 		}
 	}
 
+	needsUpdate := false
+
 	if mcv.Spec.Scope != viewscope {
 		// Expected once when uprading ramen if scope format or details have changed.
 		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s scope %s to %s",
 			key, mcv.Spec.Scope.Name, viewscope.Name))
 
 		mcv.Spec.Scope = viewscope
+		needsUpdate = true
+	}
+
+	mergedAnnotations := make(map[string]string)
+	maps.Copy(mergedAnnotations, mcv.Annotations)
+	maps.Copy(mergedAnnotations, meta.Annotations)
+
+	// Check if annotations actually changed.
+	if !maps.Equal(mcv.Annotations, mergedAnnotations) {
+		// Expected once when uprading ramen if annotations have changed.
+		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s annotations %s to %s",
+			key, mcv.Annotations, mergedAnnotations))
+		mcv.Annotations = mergedAnnotations
+		needsUpdate = true
+	}
+
+	if needsUpdate {
 		if err := m.Update(context.TODO(), mcv); err != nil {
 			return nil, fmt.Errorf("failed to update ManagedClusterView: %w", err)
 		}
