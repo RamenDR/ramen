@@ -102,7 +102,7 @@ func TestExecuteWithNoSelector(t *testing.T) {
 	assert.Error(t, err, "either nameSelector or labelSelector should be provided to get resources")
 }
 
-func TestGetPodsToExecuteCommandsUsingLabelSelector(t *testing.T) {
+func TestGetPodsUsingLabelSelector(t *testing.T) {
 	fakeClient := setup(t)
 	pod := getPodSpec("test-pod")
 
@@ -122,7 +122,9 @@ func TestGetPodsToExecuteCommandsUsingLabelSelector(t *testing.T) {
 
 	log := zap.New(zap.UseDevMode(true))
 
-	pods := eHook.GetPodsToExecuteCommands(log)
+	lister := hooks.NewPodLister(eHook)
+	pods, err := lister.GetPods(log)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pods))
 
 	expectedPodSpec := hooks.ExecPodSpec{
@@ -134,7 +136,7 @@ func TestGetPodsToExecuteCommandsUsingLabelSelector(t *testing.T) {
 	assert.Equal(t, expectedPodSpec, pods[0])
 }
 
-func TestGetPodsToExecuteCommandsUsingNameSelector(t *testing.T) {
+func TestGetPodsUsingNameSelector(t *testing.T) {
 	fakeClient := setup(t)
 	pod := getPodSpec("test-pod")
 
@@ -152,7 +154,9 @@ func TestGetPodsToExecuteCommandsUsingNameSelector(t *testing.T) {
 
 	log := zap.New(zap.UseDevMode(true))
 
-	pods := eHook.GetPodsToExecuteCommands(log)
+	lister := hooks.NewPodLister(eHook)
+	pods, err := lister.GetPods(log)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pods))
 
 	expectedPodSpec := hooks.ExecPodSpec{
@@ -164,7 +168,7 @@ func TestGetPodsToExecuteCommandsUsingNameSelector(t *testing.T) {
 	assert.Equal(t, expectedPodSpec, pods[0])
 }
 
-func TestGetPodsToExecuteCommandsForSinglePodOnly(t *testing.T) {
+func TestGetPodsForSinglePodOnly(t *testing.T) {
 	fakeClient := setup(t)
 	pod := getPodSpec("test-pod")
 
@@ -187,7 +191,9 @@ func TestGetPodsToExecuteCommandsForSinglePodOnly(t *testing.T) {
 
 	log := zap.New(zap.UseDevMode(true))
 
-	pods := eHook.GetPodsToExecuteCommands(log)
+	lister := hooks.NewPodLister(eHook)
+	pods, err := lister.GetPods(log)
+	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pods))
 
 	expectedPodSpec := hooks.ExecPodSpec{
