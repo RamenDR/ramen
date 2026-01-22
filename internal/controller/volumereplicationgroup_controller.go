@@ -602,6 +602,8 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.dataError(err, "Failed to add finalizer to VolumeReplicationGroup", true)
 	}
 
+	v.updateVRGAutoCleanupCondition()
+
 	switch {
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
 		return v.processAsPrimary()
@@ -2042,6 +2044,34 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 	)
 }
 
+func (v *VRGInstance) updateVRGAutoCleanupCondition() {
+	switch {
+	case !v.isDiscoveredApp():
+		// gitOps managed apps
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			metav1.ConditionFalse, VRGConditionReasonUnused,
+			"Automated Cleanup not applicable: GitOps manages the application's resource lifecycle.")
+	case !v.isVMRecipeProtection():
+		// all other discovered apps protection except vm-recipe
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			metav1.ConditionFalse, VRGConditionReasonUnused,
+			"Automated cleanup is not supported for this application's protection configuration.")
+	case len(v.volSyncPVCs) > 0:
+		// discovered app with cephfs volumes
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			metav1.ConditionFalse, VRGConditionReasonUnused,
+			"Automated cleanup not applicable for VMs with volumes protected by VolSync.")
+	default:
+		// discovered app with vm-recipe
+		if !v.IsDRActionInProgress() {
+			// no DR action progressing
+			setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+				metav1.ConditionTrue, VRGConditionReasonUnused,
+				"Automated cleanup is supported, but no DR action is in progress and no cleanup is currently required.")
+		}
+	}
+}
+
 // updateVRGConditions updates three summary conditions VRGConditionTypeDataReady,
 // VRGConditionTypeClusterDataProtected and VRGConditionDataProtected at the VRG
 // level based on the corresponding PVC level conditions in the VRG:
@@ -2049,18 +2079,12 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	var (
-		volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
-		volSyncAutoCleanup                                                            *metav1.Condition
-	)
+	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
 
 	if v.instance.Spec.Sync == nil {
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
 
 		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
-		if len(v.volSyncPVCs) > 0 {
-			volSyncAutoCleanup = v.aggregateVolSyncAutoCleanupCondition()
-		}
 	}
 
 	v.updateVRGDataReadyCondition()
@@ -2079,7 +2103,7 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.aggregateVRGNoClusterDataConflictCondition(),
 	)
 
-	v.logAndSetConditions(VRGConditionTypeAutoCleanup, volSyncAutoCleanup,
+	v.logAndSetConditions(VRGConditionTypeAutoCleanup,
 		v.aggregateVRGAutoCleanupCondition())
 
 	v.updateVRGLastGroupSyncTime()
@@ -2755,4 +2779,8 @@ func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 	}
 
 	return &desired
+}
+
+func (v *VRGInstance) isDiscoveredApp() bool {
+	return v.instance.Spec.ProtectedNamespaces != nil && len(*v.instance.Spec.ProtectedNamespaces) > 0
 }
