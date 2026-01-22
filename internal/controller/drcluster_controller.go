@@ -511,9 +511,21 @@ func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics
 	}
 }
 
+// validateCIDRsDetected ensures all CIDRs in DRCluster spec are detected
+// in StorageAccessDetails from DRClusterConfig status.
+//
+// Validation is skipped if DRClusterConfig is not found or StorageAccessDetails is empty.
+// The watch on ManagedClusterView/ManifestWork will trigger reconciliation when these
+// become available. Returns an error if any CIDRs in spec are not found in the detected set.
 func (u *drclusterInstance) validateCIDRsDetected() error {
 	drcConfig, err := u.getDRCCFromCluster(u.object)
 	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// skip when DRClusterConfig not crated. Watch on MCV
+			// will trigger DRCluster reconcillation when DRClusterConfig created
+			return nil
+		}
+
 		return err
 	}
 
@@ -923,7 +935,7 @@ func (u *drclusterInstance) findMatchingNFClasses(
 // getDRCCFromCluster retrieves the DRClusterConfig for the given DRCluster
 func (u *drclusterInstance) getDRCCFromCluster(cluster *ramen.DRCluster) (*ramen.DRClusterConfig, error) {
 	annotations := make(map[string]string)
-	annotations[AllDRPolicyAnnotation] = cluster.GetName()
+	annotations[DRClusterNameAnnotation] = cluster.GetName()
 
 	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(cluster.GetName(), annotations)
 	if err != nil {

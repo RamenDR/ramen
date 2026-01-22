@@ -534,6 +534,8 @@ var _ = Describe("DRClusterController", func() {
 				By("creating a new DRCluster with an invalid CIDR")
 				drcluster.Spec.CIDRs = cidrs[3]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
@@ -543,13 +545,13 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated,
 					false,
 				)
-				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 			})
 		})
 		When("provided CIDR value is changed to be correct", func() {
 			It("reports validated", func() {
 				drcluster.Spec.CIDRs = cidrs[0]
 				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 				objectConditionExpectEventually(
 					apiReader,
