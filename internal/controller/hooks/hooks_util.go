@@ -83,9 +83,15 @@ func getFilteredObjectsBasedOnTypeAndNameSelector(objList client.ObjectList, nam
 		objs = filterDeployments(v.Items, nameSelector)
 	case *appsv1.StatefulSetList:
 		objs = filterStatefulSets(v.Items, nameSelector)
+	case *appsv1.DaemonSetList:
+		objs = filterDaemonSets(v.Items, nameSelector)
 	}
 
 	return objs
+}
+
+func filterDaemonSets(objs []appsv1.DaemonSet, nameSelector string) []client.Object {
+	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
 }
 
 func filterStatefulSets(objs []appsv1.StatefulSet, nameSelector string) []client.Object {
@@ -117,6 +123,8 @@ func filterObjectsSameAsNameSelector[T client.Object](objs []T, nameSelector str
 }
 
 // Based on the type of resource, slice of objects is returned.
+//
+//nolint:cyclop
 func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 	objs := make([]client.Object, 0)
 
@@ -136,6 +144,10 @@ func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 	case *appsv1.StatefulSetList:
 		for _, ss := range v.Items {
 			objs = append(objs, &ss)
+		}
+	case *appsv1.DaemonSetList:
+		for _, ds := range v.Items {
+			objs = append(objs, &ds)
 		}
 	}
 
@@ -160,6 +172,8 @@ func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, nameSelector strin
 		objs = getMatchingDeployments(v, re)
 	case *appsv1.StatefulSetList:
 		objs = getMatchingStatefulSets(v, re)
+	case *appsv1.DaemonSetList:
+		objs = getMatchingDaemonSets(v, re)
 	}
 
 	return objs
@@ -251,6 +265,10 @@ func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []c
 
 func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
 	return getRegexMatchingObjects(toPointerSlice(ssList.Items), re)
+}
+
+func getMatchingDaemonSets(dsList *appsv1.DaemonSetList, re *regexp.Regexp) []client.Object {
+	return getRegexMatchingObjects(toPointerSlice(dsList.Items), re)
 }
 
 func getRegexMatchingObjects[T client.Object](items []T, re *regexp.Regexp) []client.Object {
