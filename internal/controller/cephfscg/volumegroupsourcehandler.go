@@ -541,7 +541,7 @@ func (h *volumeGroupSourceHandler) resolveRDService(
 	logger logr.Logger,
 ) (string, error) {
 	if isSubmarinerEnabled {
-		return getRemoteServiceNameForRDFromPVCName(originalPVCName, rsNS), nil
+		return util.GetRemoteServiceNameForRDFromPVCName(originalPVCName, rsNS), nil
 	}
 
 	logger.Info("Non submariner", "rsspec", vrg.Spec.VolSync.RSSpec)

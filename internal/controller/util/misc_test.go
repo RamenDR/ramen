@@ -44,4 +44,11 @@ var _ = Describe("misc", func() {
 	errs := validation.NameIsDNSSubdomain(validResourceName, false)
 
 	Expect(errs).To(BeEmpty(), "expected a valid DNS subdomain name, got errors: %v", errs)
+
+	shortenedPVCName := util.GetLocalServiceNameForRD("long-pvc-name-50-chars-00000000000000000000000000000000000000")
+
+	Expect(shortenedPVCName).Should(Equal("volsync-rsync-tls-dst-6e0c095d"))
+
+	originalPVCName := util.GetLocalServiceNameForRD("normal-pvc-name")
+	Expect(originalPVCName).Should(Equal("volsync-rsync-tls-dst-normal-pvc-name"))
 })
