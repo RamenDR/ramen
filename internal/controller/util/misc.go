@@ -469,3 +469,27 @@ func GenerateCombinedName(name, storageID string) string {
 	// e.g. "nameHash.storageID"
 	return nameHash + labelSeparator + storageID
 }
+
+func GetReplicationDestinationName(pvcName string) string {
+	return pvcName // Use PVC name as name of ReplicationDestination
+}
+
+func GetLocalReplicationName(pvcName string) string {
+	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
+}
+
+// Service name that VolSync will create locally in the same namespace as the ReplicationDestination
+func getLocalServiceNameForRDFromPVCName(pvcName string) string {
+	return GetLocalServiceNameForRD(GetReplicationDestinationName(pvcName))
+}
+
+func GetLocalServiceNameForRD(rdName string) string {
+	// This is the name VolSync will use for the service
+	return GetServiceName("volsync-rsync-tls-dst-", rdName)
+}
+
+// This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
+// a ServiceExport is created for the service on the cluster that has the ReplicationDestination
+func GetRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
+	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
+}
