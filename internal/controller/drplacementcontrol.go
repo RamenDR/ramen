@@ -1817,6 +1817,7 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DoNotDeletePVCAnnotation:              d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		rmnutil.EnableDiffAnnotation:          d.instance.GetAnnotations()[rmnutil.EnableDiffAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
 	}
 
