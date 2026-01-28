@@ -126,6 +126,10 @@ type Test struct {
 	Workload string `json:"workload"`
 	Deployer string `json:"deployer"`
 	PVCSpec  string `json:"pvcSpec"`
+	// Group is an optional field to group related tests (e.g., "single-s3-store")
+	// Tests without a group are run by default in the main TestDR
+	// Tests with a group can be run selectively by dedicated test functions
+	Group string `json:"group,omitempty"`
 }
 
 // Config keeps configuration for e2e tests.
