@@ -78,8 +78,6 @@ func ListPVCsByPVCSelector(
 		updatedPVCSelector = updatedPVCSelector.Add(*notCreatedByRamen)
 	}
 
-	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", updatedPVCSelector)
-
 	listOptions := []client.ListOption{
 		client.MatchingLabelsSelector{
 			Selector: updatedPVCSelector,
@@ -93,8 +91,6 @@ func ListPVCsByPVCSelector(
 		return nil, fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
 	}
 
-	logger.Info(fmt.Sprintf("Found %d PVCs using label selector %v", len(pvcList.Items), updatedPVCSelector))
-
 	var pvcs []corev1.PersistentVolumeClaim
 
 	for _, pvc := range pvcList.Items {
@@ -103,7 +99,8 @@ func ListPVCsByPVCSelector(
 		}
 	}
 
-	logger.Info(fmt.Sprintf("Returning %d PVCs in namespace(s) %v", len(pvcs), namespaces))
+	logger.Info(fmt.Sprintf("Found %d PVCs using label selector %v in namespace(s) %v",
+		len(pvcs), updatedPVCSelector, namespaces))
 
 	pvcList.Items = pvcs
 
