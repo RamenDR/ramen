@@ -130,6 +130,128 @@ var _ = Describe("Replicationgroupdestination", func() {
 				}, timeout, interval).Should(BeElementOf(true, nil))
 			})
 		})
+		Context("When diff sync is enabled", func() {
+			testStorageProvisioner := internalController.DefaultCephFSCSIDriverName
+
+			BeforeEach(func() {
+				CreateStorageClass()
+				CreateVolumeSnapshotClass()
+				CreateVS(vsName, "", "")
+				UpdateVS(vsName)
+			})
+			Context("External spec creation with StorageProvisioner set", func() {
+				It("Should create ReplicationDestination with External spec", func() {
+					rgd := newDiffSyncRGD(testStorageProvisioner)
+
+					replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
+						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+							&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+							"Direct", false,
+						), testLogger,
+					)
+
+					pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
+					err := k8sClient.Create(
+						context.Background(),
+						&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pskSecretName, Namespace: "default"}},
+					)
+					Expect(client.IgnoreAlreadyExists(err)).To(BeNil())
+
+					Eventually(func() error {
+						_, err := replicationGroupDestinationMachine.Synchronize(context.Background())
+
+						return err
+					}, timeout, interval).Should(BeNil())
+
+					rd := &volsyncv1alpha1.ReplicationDestination{}
+
+					Eventually(func() error {
+						return k8sClient.Get(context.Background(),
+							types.NamespacedName{Name: protectedPVCName, Namespace: "default"}, rd)
+					}, timeout, interval).Should(BeNil())
+
+					Expect(rd.Spec.External).ToNot(BeNil())
+					Expect(rd.Spec.RsyncTLS).To(BeNil())
+					Expect(rd.Spec.External.Parameters).To(HaveKeyWithValue("copyMethod", "Snapshot"))
+					Expect(rd.Spec.External.Parameters).To(HaveKey("keySecret"))
+					Expect(rd.Spec.External.Parameters).To(HaveKey("destinationPVC"))
+					Expect(rd.Spec.External.Parameters).To(HaveKeyWithValue("storageClassName", scName))
+					Expect(rd.Spec.External.Parameters).To(HaveKeyWithValue("volumeSnapshotClassName", vscName))
+				})
+			})
+			Context("Provider fallback when StorageProvisioner is empty", func() {
+				It("Should resolve provider from StorageClass", func() {
+					rgd := newDiffSyncRGD("")
+
+					replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
+						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+							&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+							"Direct", false,
+						), testLogger,
+					)
+
+					pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
+					err := k8sClient.Create(
+						context.Background(),
+						&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pskSecretName, Namespace: "default"}},
+					)
+					Expect(client.IgnoreAlreadyExists(err)).To(BeNil())
+
+					Eventually(func() error {
+						_, err := replicationGroupDestinationMachine.Synchronize(context.Background())
+
+						return err
+					}, timeout, interval).Should(BeNil())
+
+					rd := &volsyncv1alpha1.ReplicationDestination{}
+
+					Eventually(func() error {
+						return k8sClient.Get(context.Background(),
+							types.NamespacedName{Name: protectedPVCName, Namespace: "default"}, rd)
+					}, timeout, interval).Should(BeNil())
+
+					Expect(rd.Spec.External).ToNot(BeNil())
+					Expect(rd.Spec.RsyncTLS).To(BeNil())
+				})
+			})
+			Context("getDestinationPVCName with External spec", func() {
+				It("Should create RD with External spec and correct provider", func() {
+					rgd := newDiffSyncRGD(testStorageProvisioner)
+
+					replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
+						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+							&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+							"Direct", false,
+						), testLogger,
+					)
+
+					pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
+					err := k8sClient.Create(
+						context.Background(),
+						&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: pskSecretName, Namespace: "default"}},
+					)
+					Expect(client.IgnoreAlreadyExists(err)).To(BeNil())
+
+					Eventually(func() error {
+						_, err := replicationGroupDestinationMachine.Synchronize(context.Background())
+
+						return err
+					}, timeout, interval).Should(BeNil())
+
+					rd := &volsyncv1alpha1.ReplicationDestination{}
+
+					Eventually(func() error {
+						return k8sClient.Get(context.Background(),
+							types.NamespacedName{Name: protectedPVCName, Namespace: "default"}, rd)
+					}, timeout, interval).Should(BeNil())
+
+					Expect(rd.Spec.External).ToNot(BeNil())
+					Expect(rd.Spec.RsyncTLS).To(BeNil())
+					Expect(rd.Spec.External.Provider).To(Equal(testStorageProvisioner))
+					Expect(rd.Spec.External.Parameters).To(HaveKeyWithValue("destinationPVC", protectedPVCName))
+				})
+			})
+		})
 	})
 })
 
@@ -187,4 +309,47 @@ func UpdateRplicationDestination(pvcName string) error {
 	testLogger.Info("rd is successfully to update")
 
 	return nil
+}
+
+func newDiffSyncRGD(testStorageProvisioner string) *ramendrv1alpha1.ReplicationGroupDestination {
+	metaTime := metav1.NewTime(time.Now())
+	protectedPVC := ramendrv1alpha1.ProtectedPVC{
+		Name:               protectedPVCName,
+		Namespace:          "default",
+		ProtectedByVolSync: true,
+		StorageClassName:   &scName,
+		AccessModes:        []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany},
+		Resources: corev1.VolumeResourceRequirements{
+			Limits: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceStorage: *resource.NewQuantity(1, resource.BinarySI),
+			},
+			Requests: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceStorage: *resource.NewQuantity(1, resource.BinarySI),
+			},
+		},
+	}
+
+	if testStorageProvisioner != "" {
+		protectedPVC.StorageIdentifiers = ramendrv1alpha1.StorageIdentifiers{StorageProvisioner: testStorageProvisioner}
+	}
+
+	return &ramendrv1alpha1.ReplicationGroupDestination{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rgdName,
+			Namespace: "default",
+			UID:       "123",
+			Labels:    map[string]string{util.VRGOwnerNameLabel: vrgName},
+			Annotations: map[string]string{
+				util.EnableDiffAnnotation: "true",
+			},
+		},
+		Spec: ramendrv1alpha1.ReplicationGroupDestinationSpec{
+			RDSpecs: []ramendrv1alpha1.VolSyncReplicationDestinationSpec{{
+				ProtectedPVC: protectedPVC,
+			}},
+		},
+		Status: ramendrv1alpha1.ReplicationGroupDestinationStatus{
+			LastSyncStartTime: &metaTime,
+		},
+	}
 }
