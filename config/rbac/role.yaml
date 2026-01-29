@@ -144,6 +144,7 @@ rules:
   - get
   - list
   - watch
+  - delete
 - apiGroups:
   - cdi.kubevirt.io
   resources:
