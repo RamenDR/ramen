@@ -90,11 +90,11 @@ enough resources:
 1. Install minikube - on Fedora you can use::
 
    ```
-   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
    minikube version
    ```
 
-   Tested with version v1.37.0.
+   Tested with version v1.38.0.
 
 1. Install the `kubectl` tool
 
