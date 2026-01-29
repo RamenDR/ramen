@@ -169,8 +169,6 @@ provision:
       kind: KubeletConfiguration
       apiVersion: kubelet.config.k8s.io/v1beta1
       cgroupDriver: systemd
-      featureGates:
-        StatefulSetAutoDeletePVC: true
       EOF
 
       # We ignore NumCPU preflight error for running a minimal cluster in
