@@ -144,6 +144,8 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 
 	v.log.Info(fmt.Sprintf("Reconciling VolRep as Secondary. %d VolRepPVCs", len(v.volRepPVCs)))
 
+	readyPVCs := []*corev1.PersistentVolumeClaim{}
+
 	for idx := range v.volRepPVCs {
 		pvc := &v.volRepPVCs[idx]
 		log := logWithPvcName(v.log, pvc)
@@ -205,12 +207,20 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 			continue
 		}
 
+		readyPVCs = append(readyPVCs, pvc)
+	}
+
+	v.reconcileVolGroupRepsAsSecondary(&requeue, groupPVCs)
+
+	// Process cleanup only after all PVCs and groups have been reconciled
+	for idx := range readyPVCs {
+		pvc := readyPVCs[idx]
+		log := logWithPvcName(v.log, pvc)
+
 		if v.undoPVCFinalizersAndPVRetention(pvc, log) {
 			requeue = true
 		}
 	}
-
-	v.reconcileVolGroupRepsAsSecondary(&requeue, groupPVCs)
 
 	return requeue
 }
