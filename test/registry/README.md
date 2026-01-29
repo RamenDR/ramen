@@ -75,8 +75,8 @@ sudo systemctl start registry.service
 1. Configure podman to allow insecure local registry
 
    ```
-   cat registry/host.lima.internal.conf | podman machine ssh \
-       "sudo tee /etc/containers/registries.conf.d/host.lima.internal.conf > /dev/null"
+   cat registry/host.minikube.internal.conf | podman machine ssh \
+       "sudo tee /etc/containers/registries.conf.d/host.minikube.internal.conf > /dev/null"
    ```
 
 1. Restart podman machine to apply the changes
@@ -91,18 +91,6 @@ sudo systemctl start registry.service
    ```
    ./start
    ```
-
-### Mirroring k8s images to the local registry
-
-To mirror k8s images to the local registry run:
-
-```
-./mirror-k8s
-```
-
-This pulls the images used by `kubeadm init` to podman, and push them to the
-local registry. You must run this before start the drenv with the
-`--local-registry` option.
 
 ## Testing the registry
 
@@ -140,10 +128,6 @@ spec:
     registry:
       url: "docker://host.minikube.internal:5050/nirsof/cirros:0.6.2-1"
 ```
-
-> [!NOTE]
-> For macOS the registry address is `host.lima.internal:5050` instead of
-> `host.minikube.internal`.
 
 ## Managing the registry container
 
