@@ -162,8 +162,7 @@ environment.
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.11.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ## Setup on macOS
@@ -225,8 +224,7 @@ environment.
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.11.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 1. Install `socket_vmnet`
