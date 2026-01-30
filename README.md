@@ -5,98 +5,112 @@ SPDX-License-Identifier: Apache-2.0
 
 # Ramen
 
-Ramen is an [open-cluster-management (OCM)](https://open-cluster-management.io/concepts/architecture/)
-[placement](https://open-cluster-management.io/concepts/placement/) extension
-that provides **OpenShift-native Disaster Recovery** capabilities for
+Ramen is an
+[open-cluster-management (OCM)](https://open-cluster-management.io/docs/concepts/architecture/)
+[placement](https://open-cluster-management.io/docs/concepts/content-placement/placement/)
+extension that provides **Kubernetes-native Disaster Recovery** for
 [workloads](https://kubernetes.io/docs/concepts/workloads/) and their
-persistent data across a set of OCM managed clusters. Ramen provides
-cloud-native interfaces to orchestrate the placement of workloads and their
-data on PersistentVolumes, which include:
+persistent data across a pair of OCM managed clusters. Ramen orchestrates,
+workload protection and placement on managed clusters through:
 
-- **Relocate**: Planned migration of workloads to a
-  peer cluster for maintenance or optimization
-- **Failover**: Unplanned recovery of workloads to
-  a peer cluster due to cluster loss or failure
-- **Failback**: Restoring workloads to the
-  original cluster after recovery from a disaster
+- **Relocate**: Planned migration to a peer cluster for maintenance,
+  optimization, or failback
+- **Failover**: Unplanned recovery to a peer cluster after cluster loss or
+  failure
 
-Ramen relies on storage plugins providing support for the CSI
-[storage replication addon](https://github.com/csi-addons/volume-replication-operator),
-of which [ceph-csi](https://github.com/ceph/ceph-csi/) is a sample implementation.
+## Persistent Data Protection
 
-## Workload Protection Methods
+Ramen supports several approaches for replicating persistent data across
+clusters:
 
-Ramen supports multiple approaches to protect and replicate applications across clusters:
+### Storage Vendor Assisted Replication
 
-### GitOps-based Protection (Recommended)
+Ramen uses storage plugins that implement the CSI
+[storage replication specification](https://github.com/csi-addons/spec/tree/main/replication)
+and csi-addons `Volume[Group]Replication`
+[APIs](https://github.com/csi-addons/kubernetes-csi-addons/tree/main/api/replication.storage/v1alpha1)
+to orchestrate volume replication and recovery across clusters.
 
-Applications deployed via **GitOps** (e.g., ArgoCD ApplicationSets)
-are automatically protected by replicating their Git-based configuration.
-This is the most common deployment pattern for
-cloud-native applications.
+[Ceph-csi](https://github.com/ceph/ceph-csi/) is one such plugin that
+implements the csi-addons APIs.
+
+### Volsync Based Replication
+
+For storage that supports Kubernetes `Volume[Group]Snapshots` APIs, Ramen uses
+the [volsync](https://volsync.readthedocs.io/en/stable/) rsync plugin to
+transfer periodic snapshots to peer clusters.
+
+### Highly Available Storage Backends
+
+When storage is already highly available and requires no replication, Ramen
+manages only workload resources. It ensures access guarantees through the
+csi-addon
+[fencing specification](https://github.com/csi-addons/spec/tree/main/fence)
+and and csi-addons
+[NetworkFence](https://github.com/csi-addons/kubernetes-csi-addons/blob/main/docs/networkfence.md)
+APIs.
+
+**NOTE:** This differs from synchronously replicated storage systems, which
+still require replication state management and therefore would use [Storage Vendor
+Assisted Replication](#storage-vendor-assisted-replication).
+
+## Workload Resource Protection
+
+Ramen supports several approaches for protecting and replicating application
+resources across clusters:
+
+### GitOps Based Protection (Recommended)
+
+Applications deployed via **GitOps** (e.g., ArgoCD ApplicationSets) with
+OCM-[managed](https://open-cluster-management.io/docs/scenarios/integration-with-argocd/)
+Placements work directly with Ramen's placement orchestration. This is the
+most common deployment pattern for cloud-native applications.
 
 ### Discovered Applications
 
-Ramen can discover and protect existing applications deployed
-through traditional methods (e.g., kubectl, Helm).
-The system automatically identifies application resources
-and their persistent volumes for protection.
+Ramen can also protect applications deployed through other methods (e.g.,
+kubectl, kustomize) by using [velero](https://velero.io/docs/main/) to
+automatically identify and back up application resources.
 
 ### Recipe-based Protection
 
-[Recipes](https://github.com/ramendr/recipe) provide
-vendor-supplied disaster recovery
-specifications for complex stateful
-applications. Recipes define:
+[Recipes](docs/recipe.md) define vendor-supplied workflows for capturing and
+recovering complex stateful applications. They specify:
 
-- Application-specific capture workflows (e.g., database quiesce operations)
+- Application-specific capture workflows
 - Recovery workflows with proper sequencing
-- Custom hooks for pre/post DR operations
+- Custom hooks for pre/post actions
+
+Recipes extend [discovered applications](#discovered-applications) protection
+by enabling multi-step workflows beyond simple backup and restore.
 
 **Target Audience:**
 
-- **Software Vendors**: Create recipes to
-  accompany their products, ensuring proper
-  DR protection out-of-the-box
-- **Advanced Users**: Write custom
-  recipes when vendors haven't provided
-  them for specific applications
+- **Software Vendors**: Ship recipes with their products for out-of-the-box
+  protection
+- **Advanced Users**: Write custom recipes for applications without vendor
+  support
 
-Recipes complement volume replication by
-capturing application-specific state and
-metadata that goes beyond simple PVC
-snapshots.
+## Getting Started
 
-For details regarding use-cases for Ramen see the [motivation](docs/motivation.md)
-guide.
-
-## Getting Started and Documentation
-
-For installation, see the [install](docs/install.md) guide.
-
-For configuration, see the [configure](docs/configure.md) guide.
-
-For usage of Ramen to orchestrate placement of workloads, see the [usage](docs/usage.md)
-guide.
+- [Installation guide](docs/install.md)
+- [Configuration guide](docs/configure.md)
+- [Usage guide](docs/usage.md)
 
 ## Contributing
 
-We welcome contributions. See [contributing](CONTRIBUTING.md) guide to get
-started.
-
-## Report a Bug
-
-For filing bugs, suggesting improvements, or requesting new features, please
-open an [issue](https://github.com/ramendr/ramen/issues).
+We welcome contributions. See the [contributing guide](CONTRIBUTING.md) to get
+started, or open an [issue](https://github.com/ramendr/ramen/issues) to report
+bugs, suggest improvements, or request features.
 
 ## Project Status
 
-The entire project is under development, and hence all APIs supported by Ramen
-are currently **alpha**. There are no releases as yet.
+Ramen is under active development. All APIs are currently **alpha** with no
+stable releases yet.
 
-- **Alpha:** The API may change in incompatible ways in a later software
-  release without notice, recommended for use only in short-lived testing
-  clusters, due to increased risk of bugs and lack of long-term support.
+- **Alpha**: APIs may change incompatibly between releases. Recommended only
+  for short-lived testing clusters due to potential bugs and lack of long-term
+  support.
 
 ## Licensing
 
