@@ -1436,7 +1436,7 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 
 	// Expect(getManifestWorkCount(toCluster1)).Should(Equal(2)) // MWs for VRG+ROLES
 	if !isSyncDR {
-		Expect(getManifestWorkCount(fromCluster)).Should(BeElementOf(3, 4)) // DRClusters + NS MW + VRG MW
+		Expect(getManifestWorkCount(fromCluster)).Should(BeElementOf(3, 4)) // DRCluster + NS + VRG + NF MW(optional)
 	} else {
 		// By the time this check is made, the NetworkFence CR in the
 		// cluster from where the application is migrated might not have
