@@ -425,8 +425,11 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 	groups := map[string][]ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
 
 	rdSpecsUsingCG := make(map[string]struct{})
+	mcIdx := v.moverConfigIndex()
 
-	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
+	for index := range v.instance.Spec.VolSync.RDSpec {
+		rdSpec := v.instance.Spec.VolSync.RDSpec[index]
+
 		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
 		if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
 			v.log.Info("RDSpec contains the CG label from the primary cluster", "Label", cgLabelVal)
@@ -442,6 +445,15 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 			key := fmt.Sprintf("%s-%s", rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 			rdSpecsUsingCG[key] = struct{}{}
 
+			if mc, ok := mcIdx[key]; ok {
+				rdSpec.MoverConfig = &mc
+				v.log.Info("Applied matching MoverConfig to RDSpec",
+					"pvc", rdSpec.ProtectedPVC.Name, "ns", rdSpec.ProtectedPVC.Namespace)
+			} else {
+				v.log.Info("No matching MoverConfig found; leaving RDSpec.MoverConfig as-is",
+					"pvc", rdSpec.ProtectedPVC.Name, "ns", rdSpec.ProtectedPVC.Namespace)
+			}
+
 			groups[cgLabelVal] = append(groups[cgLabelVal], rdSpec)
 		}
 	}
@@ -449,6 +461,16 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 	requeue, err := v.createOrUpdateReplicationDestinations(groups)
 
 	return rdSpecsUsingCG, requeue, err
+}
+
+func (v *VRGInstance) moverConfigIndex() map[string]ramendrv1alpha1.MoverConfig {
+	idx := make(map[string]ramendrv1alpha1.MoverConfig, len(v.instance.Spec.VolSync.MoverConfig))
+	for _, mc := range v.instance.Spec.VolSync.MoverConfig {
+		key := fmt.Sprintf("%s-%s", mc.PVCNameSpace, mc.PVCName)
+		idx[key] = mc
+	}
+
+	return idx
 }
 
 func (v *VRGInstance) reconcileNonCG(rdSpecsUsingCG map[string]struct{}) (bool, error) {

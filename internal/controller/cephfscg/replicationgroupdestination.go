@@ -292,9 +292,8 @@ func (m *rgdMachine) CreateReplicationDestinations(
 			util.AddAnnotation(rd, volsync.OwnerNameAnnotation, m.ReplicationGroupDestination.Name)
 			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
 
-			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{
-				Manual: manual,
-			}
+			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{Manual: manual}
+
 			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 				ServiceType: m.VSHandler.GetRsyncServiceType(),
 				KeySecret:   &pskSecretName,
@@ -306,6 +305,7 @@ func (m *rgdMachine) CreateReplicationDestinations(
 					VolumeSnapshotClassName: &volumeSnapshotClassName,
 					DestinationPVC:          dstPVC,
 				},
+				MoverConfig: setMoverConfig(rdSpec),
 			}
 
 			return nil
@@ -317,4 +317,12 @@ func (m *rgdMachine) CreateReplicationDestinations(
 	}
 
 	return rd, nil
+}
+
+// setMoverConfig copies MoverConfig from RGD to each RD for each PVC.
+func setMoverConfig(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) volsyncv1alpha1.MoverConfig {
+	return volsyncv1alpha1.MoverConfig{
+		MoverSecurityContext: rdSpec.MoverConfig.MoverSecurityContext,
+		MoverServiceAccount:  rdSpec.MoverConfig.MoverServiceAccount,
+	}
 }
