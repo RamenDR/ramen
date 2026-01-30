@@ -19,6 +19,9 @@ _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 # POSIX to 512 but is 4096 on Linux. See pipe(7).
 _PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 
+# Default buffer size for reading from child process.
+_READ_BUF = 32 * 1024
+
 
 class Error(Exception):
 
@@ -195,7 +198,7 @@ def watch(
         raise Error(args, error, exitcode=p.returncode)
 
 
-def stream(proc, input=None, bufsize=32 << 10, timeout=None):
+def stream(proc, input=None, timeout=None):
     """
     Stream data from process stdout and stderr.
 
@@ -254,7 +257,7 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
                             key.fileobj.close()
                 else:
                     # Stream data from child process to caller.
-                    data = os.read(key.fd, bufsize)
+                    data = os.read(key.fd, _READ_BUF)
                     if not data:
                         sel.unregister(key.fileobj)
                         key.fileobj.close()
