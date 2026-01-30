@@ -148,7 +148,9 @@ def configure(profile, existing=False):
     if not existing:
         if profile["containerd"]:
             logging.info("[%s] Configuring containerd", profile["name"])
-            containerd.configure(sys.modules[__name__], profile)
+            containerd.configure(
+                sys.modules[__name__], profile["name"], profile["containerd"]
+            )
         _configure_sysctl(profile["name"])
         _configure_systemd_resolved(profile["name"])
         _copy_registry_mirrors(profile["name"])
