@@ -5,10 +5,10 @@ import os
 import platform
 import selectors
 import subprocess
-import textwrap
 import time
 
 from . import shutdown
+from . import yaml
 
 OUT = "out"
 ERR = "err"
@@ -21,7 +21,6 @@ _PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 
 
 class Error(Exception):
-    INDENT = 3 * " "
 
     def __init__(self, command, error, exitcode=None, output=None):
         self.command = command
@@ -36,26 +35,15 @@ class Error(Exception):
         self.__cause__ = None
         return self.with_traceback(exc.__traceback__)
 
-    def _indent(self, s):
-        return textwrap.indent(s, self.INDENT)
-
     def __str__(self):
-        lines = [
-            "Command failed:\n",
-            self._indent(f"command: {self.command}\n"),
-        ]
-
+        info = {"command": list(self.command)}
         if self.exitcode is not None:
-            lines.append(self._indent(f"exitcode: {self.exitcode}\n"))
-
+            info["exitcode"] = self.exitcode
         if self.output:
-            output = self._indent(self.output.rstrip())
-            lines.append(self._indent(f"output:\n{output}\n"))
-
-        error = self._indent(self.error.rstrip())
-        lines.append(self._indent(f"error:\n{error}\n"))
-
-        return "".join(lines)
+            info["output"] = self.output.rstrip()
+        if self.error:
+            info["error"] = self.error.rstrip()
+        return yaml.safe_dump({"command failed": info}).rstrip()
 
 
 class Timeout(Error):
