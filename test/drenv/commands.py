@@ -160,7 +160,7 @@ def watch(
         error = bytearray()
         partial = bytearray()
 
-        for src, data in stream(p, input=input, timeout=timeout):
+        for _, src, data in _stream(p, input=input, timeout=timeout):
             if src is ERR:
                 error += data
             else:
@@ -198,53 +198,52 @@ def watch(
         raise Error(args, error, exitcode=p.returncode)
 
 
-def stream(proc, input=None, timeout=None):
+def _stream(*procs, input=None, timeout=None):
     """
-    Stream data from process stdout and stderr.
+    Stream data from one or more processes stdout and stderr.
 
-    proc is a subprocess.Popen instance created with stdout=subprocess.PIPE and
-    stderr=subprocess.PIPE. If only one stream is used don't use this, stream
-    directly from the single pipe.
+    Each proc is a subprocess.Popen instance created with stdout=subprocess.PIPE
+    and/or stderr=subprocess.PIPE.
 
-    If input is not None, proc must be created with stdin=subprocess.PIPE and
-    the pipe must be open.
+    If input is not None, the first process must be created with
+    stdin=subprocess.PIPE, and input is written to the first process stdin.
 
-    Yields either (OUT, data) or (ERR, data) read from proc stdout and stderr.
-    Returns when both streams are closed.
+    Yields (proc, src, data) tuples where src is OUT or ERR.
+    Returns when all streams are closed.
     """
     if timeout is None:
         deadline = None
     else:
         deadline = time.monotonic() + timeout
 
+    first = procs[0]
     if input:
-        if proc.stdin is None:
-            raise RuntimeError("Cannot stream input: proc.stdin is None")
-        if proc.stdin.closed:
-            raise RuntimeError("Cannot stream input: proc.stdin is closed")
-    elif proc.stdin:
+        if first.stdin is None:
+            raise RuntimeError("Cannot stream input: first process stdin is None")
+        if first.stdin.closed:
+            raise RuntimeError("Cannot stream input: first process stdin is closed")
+    elif first.stdin:
         try:
-            proc.stdin.close()
+            first.stdin.close()
         except BrokenPipeError:
             pass
 
-    # Use only if input is not None, but it helps pylint.
-    input_view = ""
+    input_view = memoryview(input.encode()) if input else None
     input_offset = 0
 
     with _Selector() as sel:
-        for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
-            if f and not f.closed:
-                sel.register(f, selectors.EVENT_READ, src)
+        for proc in procs:
+            for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
+                if f and not f.closed:
+                    sel.register(f, selectors.EVENT_READ, (proc, src))
         if input:
-            sel.register(proc.stdin, selectors.EVENT_WRITE)
-            input_view = memoryview(input.encode())
+            sel.register(first.stdin, selectors.EVENT_WRITE)
 
         while sel.get_map():
             remaining = _remaining_time(deadline)
             for key, event in sel.select(remaining):
-                if key.fileobj is proc.stdin:
-                    # Stream data from caller to child process.
+                if key.fileobj is first.stdin:
+                    # Stream data from caller to first process.
                     chunk = input_view[input_offset : input_offset + _PIPE_BUF]
                     try:
                         input_offset += os.write(key.fd, chunk)
@@ -263,7 +262,8 @@ def stream(proc, input=None, timeout=None):
                         key.fileobj.close()
                         continue
 
-                    yield key.data, data
+                    proc, src = key.data
+                    yield proc, src, data
 
 
 def _select_stdin(input=None, stdin=None):
