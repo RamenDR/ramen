@@ -151,6 +151,7 @@ def configure(profile, existing=False):
             containerd.configure(sys.modules[__name__], profile)
         _configure_sysctl(profile["name"])
         _configure_systemd_resolved(profile["name"])
+        _copy_registry_mirrors(profile["name"])
 
     if existing:
         _wait_for_fresh_status(profile)
@@ -318,6 +319,57 @@ def _configure_systemd_resolved(name):
 
 def _systemd_resolved_drenv_conf():
     return _minikube_file("etc", "systemd", "resolved.conf.d", "99-drenv.conf")
+
+
+def _copy_registry_mirrors(name):
+    """
+    Copy containerd registry mirror configuration to the cluster.
+    """
+    src = _package_path("containerd", "certs.d")
+    dst = "/etc/containerd/certs.d"
+    logging.debug("[%s] Copying registry mirror configuration", name)
+    _copy_dir(name, src, dst)
+
+
+def _copy_dir(name, src, dst):
+    """
+    Copy a directory recursively to the cluster.
+
+    minikube cp does not support recursive directory copying, so we use tar
+    piped over ssh: tar the source directory locally, pipe to minikube ssh,
+    and untar on the guest. This is the same approach used by kubectl cp.
+    """
+    ssh(name, f"sudo mkdir -p {dst}")
+    commands.pipeline(
+        [
+            "tar",
+            "--directory",
+            src,
+            "--create",
+            "--file=-",
+            ".",
+        ],
+        [
+            "minikube",
+            "ssh",
+            "--profile",
+            name,
+            "--",
+            "sudo",
+            "tar",
+            "--directory",
+            dst,
+            "--extract",
+            "--file=-",
+        ],
+    )
+
+
+def _package_path(*names):
+    """
+    Return a path to a file or directory in this package.
+    """
+    return os.path.join(os.path.dirname(__file__), *names)
 
 
 def _write_file(path, data):
