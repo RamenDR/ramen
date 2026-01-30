@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Registry mirror configuration for containerd.
+# See https://github.com/containerd/containerd/blob/main/docs/hosts.md
+
+server = "https://gcr.io"
+
+[host."http://host.minikube.internal:5055"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://gcr.io"]
+  capabilities = ["pull", "resolve"]
