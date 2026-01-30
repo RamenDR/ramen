@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import collections
 import os
 import platform
 import selectors
@@ -12,6 +13,8 @@ from . import yaml
 
 OUT = "out"
 ERR = "err"
+
+Failure = collections.namedtuple("Failure", ["command", "exitcode", "error"])
 
 _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 
@@ -47,6 +50,30 @@ class Error(Exception):
         if self.error:
             info["error"] = self.error.rstrip()
         return yaml.safe_dump({"command failed": info}).rstrip()
+
+
+class PipelineError(Error):
+    """
+    Error raised when one or more commands in a pipeline fail.
+    """
+
+    def __init__(self, failures):
+        """
+        failures is a list of (command, exitcode, error) tuples.
+        """
+        self.failures = failures
+
+    def __str__(self):
+        items = []
+        for failure in self.failures:
+            item = {
+                "command": list(failure.command),
+                "exitcode": failure.exitcode,
+            }
+            if failure.error:
+                item["error"] = failure.error.rstrip()
+            items.append(item)
+        return yaml.safe_dump({"pipeline failed": items}).rstrip()
 
 
 class Timeout(Error):
@@ -196,6 +223,97 @@ def watch(
     if p.returncode != 0:
         error = error.decode(errors="replace")
         raise Error(args, error, exitcode=p.returncode)
+
+
+def pipeline(*commands, input=None, decode=True, timeout=None):
+    """
+    Run commands as a pipeline, piping stdout of each command to stdin of the
+    next.
+
+    If input is not None, it is written to the first command's stdin.
+
+    Returns the output of the last command.
+
+    Raises:
+    - PipelineError if any command in the pipeline fails.
+    - Timeout if the pipeline did not complete within the specified timeout.
+
+    Example:
+        pipeline(
+            ["grep", "pattern"],
+            ["sort"],
+            input="line1\nline2\n",
+        )
+    """
+    if len(commands) < 2:
+        raise ValueError("pipeline requires at least 2 commands")
+
+    procs = []
+
+    with shutdown.guard():
+        prev = None
+        for cmd in commands:
+            if prev:
+                stdin = prev.stdout
+            else:
+                stdin = _select_stdin(input=input)
+
+            try:
+                p = subprocess.Popen(
+                    cmd,
+                    stdin=stdin,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            except OSError as e:
+                for proc in procs:
+                    proc.kill()
+                for proc in procs:
+                    proc.wait()
+                raise PipelineError([Failure(cmd, None, f"Could not execute: {e}")])
+
+            # Close our reference so the previous process gets SIGPIPE if this
+            # one exits.
+            if prev:
+                prev.stdout.close()
+
+            procs.append(p)
+            prev = p
+
+    # Collect output and stderr from all processes concurrently to avoid
+    # deadlock when a process blocks on stderr write.
+    output = bytearray()
+    errors = {proc: bytearray() for proc in procs}
+
+    try:
+        for proc, src, data in _stream(*procs, input=input, timeout=timeout):
+            if src is OUT:
+                output += data
+            else:
+                errors[proc] += data
+    except StreamTimeout as e:
+        for proc in procs:
+            proc.kill()
+        raise Timeout(commands, "Pipeline timed out").with_exception(e)
+    except BaseException:
+        for proc in procs:
+            proc.kill()
+        raise
+    finally:
+        for proc in procs:
+            proc.wait()
+
+    # Collect all failures.
+    failures = []
+    for proc in procs:
+        if proc.returncode != 0:
+            error = errors[proc].decode(errors="replace")
+            failures.append(Failure(proc.args, proc.returncode, error))
+
+    if failures:
+        raise PipelineError(failures)
+
+    return output.decode() if decode else bytes(output)
 
 
 def _stream(*procs, input=None, timeout=None):
