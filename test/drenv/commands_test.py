@@ -498,6 +498,216 @@ command failed:
     assert str(e) == expected
 
 
+# Pipeline tests.
+
+
+def test_pipeline_output():
+    out = commands.pipeline(
+        ["echo", "out"],
+        ["cat"],
+        ["cat"],
+    )
+    assert out == "out\n"
+
+
+def test_pipeline_no_output():
+    out = commands.pipeline(
+        ["true"],
+        ["true"],
+    )
+    assert out == ""
+
+
+def test_pipeline_first_output_ignored():
+    # Only the last command's stdout is returned.
+    out = commands.pipeline(
+        ["echo", "ignored"],
+        ["true"],
+    )
+    assert out == ""
+
+
+def test_pipeline_first_fail():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["false"],
+            ["true"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["false"],
+            exitcode=1,
+            error="",
+        ),
+    ]
+
+
+def test_pipeline_second_fail():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["true"],
+            ["false"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["false"],
+            exitcode=1,
+            error="",
+        ),
+    ]
+
+
+def test_pipeline_output_stderr():
+    out = commands.pipeline(
+        ["sh", "-c", "echo out; echo err1 >&2"],
+        ["sh", "-c", "cat; echo err2 >&2"],
+    )
+    assert out == "out\n"
+
+
+def test_pipeline_no_output_stderr():
+    out = commands.pipeline(
+        ["sh", "-c", "echo err >&2"],
+        ["true"],
+    )
+    assert out == ""
+
+
+def test_pipeline_first_fail_stderr():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["sh", "-c", "echo err >&2; exit 1"],
+            ["true"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["sh", "-c", "echo err >&2; exit 1"],
+            exitcode=1,
+            error="err\n",
+        ),
+    ]
+
+
+def test_pipeline_second_fail_stderr():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["true"],
+            ["sh", "-c", "echo err >&2; exit 1"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["sh", "-c", "echo err >&2; exit 1"],
+            exitcode=1,
+            error="err\n",
+        ),
+    ]
+
+
+def test_pipeline_both_fail():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["sh", "-c", "echo err1 >&2; exit 1"],
+            ["sh", "-c", "echo err2 >&2; exit 2"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["sh", "-c", "echo err1 >&2; exit 1"],
+            exitcode=1,
+            error="err1\n",
+        ),
+        commands.Failure(
+            command=["sh", "-c", "echo err2 >&2; exit 2"],
+            exitcode=2,
+            error="err2\n",
+        ),
+    ]
+
+
+def test_pipeline_timeout():
+    with pytest.raises(commands.Timeout):
+        commands.pipeline(
+            ["sleep", "10"],
+            ["sleep", "10"],
+            timeout=0.0,
+        )
+
+
+def test_pipeline_input():
+    out = commands.pipeline(
+        ["cat"],
+        ["cat"],
+        ["cat"],
+        input="meow",
+    )
+    assert out == "meow"
+
+
+def test_pipeline_no_decode():
+    out = commands.pipeline(
+        ["echo", "out"],
+        ["cat"],
+        decode=False,
+    )
+    assert out == b"out\n"
+
+
+def test_pipeline_incomplete_output():
+    # First command produces invalid tar data, second command fails parsing it.
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["echo", "not-valid-tar-data"],
+            ["tar", "--extract", "--file=-"],
+        )
+    assert len(e.value.failures) == 1
+    assert e.value.failures[0].exitcode != 0
+
+
+def test_pipeline_tar(tmpdir):
+    # Create source directory with a file.
+    src = tmpdir.mkdir("src")
+    src.join("file").write("content")
+
+    # Create destination directory.
+    dst = tmpdir.mkdir("dst")
+
+    # Copy using tar pipeline.
+    commands.pipeline(
+        ["tar", "--create", "--file=-", "--directory", str(src), "."],
+        ["tar", "--extract", "--file=-", "--directory", str(dst)],
+    )
+
+    # Verify the file was copied.
+    assert dst.join("file").read() == "content"
+
+
+# Formatting pipeline errors.
+
+
+def test_pipeline_error():
+    failures = [
+        commands.Failure(command=("cmd1", "arg1"), exitcode=1, error="err 1\nerr 2\n"),
+        commands.Failure(command=("cmd2", "arg2"), exitcode=2, error="err 3\nerr 4\n"),
+    ]
+    e = commands.PipelineError(failures)
+    expected = """\
+pipeline failed:
+- command:
+  - cmd1
+  - arg1
+  exitcode: 1
+  error: |-
+    err 1
+    err 2
+- command:
+  - cmd2
+  - arg2
+  exitcode: 2
+  error: |-
+    err 3
+    err 4"""
+    assert str(e) == expected
+
+
 @contextmanager
 def run(*args, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
     p = subprocess.Popen(args, stdin=stdin, stdout=stdout, stderr=stderr)
