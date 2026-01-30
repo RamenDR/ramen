@@ -13,6 +13,8 @@ from packaging.version import Version
 
 from drenv import commands
 from drenv import containerd
+from drenv import patch
+from drenv import registry
 
 from . import dns
 
@@ -43,6 +45,7 @@ def setup():
     """
     version = _version()
     logging.debug("[minikube] Using minikube version %s", version)
+    registry.setup()
     _setup_sysctl(version)
     _setup_systemd_resolved(version)
 
@@ -51,6 +54,7 @@ def cleanup():
     """
     Cleanup files added by setup().
     """
+    registry.cleanup()
     _cleanup_file(_systemd_resolved_drenv_conf())
     _cleanup_file(_sysctl_drenv_conf())
 
@@ -150,13 +154,16 @@ def configure(profile, existing=False, dns_mode="auto"):
     dns.configure(sys.modules[__name__], profile, dns_mode)
 
     if not existing:
-        if profile["containerd"]:
-            logging.info("[%s] Configuring containerd", profile["name"])
-            containerd.configure(
-                sys.modules[__name__], profile["name"], profile["containerd"]
-            )
+        _copy_registry_mirrors(profile["name"])
+        _configure_containerd(profile)
         _configure_sysctl(profile["name"])
         _configure_systemd_resolved(profile["name"])
+        if not registry.cache_running():
+            logging.warning(
+                "[%s] Registry cache is not running, image pulls will be slow. "
+                "Run 'drenv setup' to start the cache.",
+                profile["name"],
+            )
 
     if existing:
         _wait_for_fresh_status(profile)
@@ -324,6 +331,83 @@ def _configure_systemd_resolved(name):
 
 def _systemd_resolved_drenv_conf():
     return _minikube_file("etc", "systemd", "resolved.conf.d", "99-drenv.conf")
+
+
+def _configure_containerd(profile):
+    """
+    Configure containerd with registry mirrors and any profile-specific config.
+    """
+    # Always configure registry mirrors path.
+    registry_config = {
+        "plugins": {
+            "io.containerd.cri.v1.images": {
+                "registry": {
+                    "config_path": "/etc/containerd/certs.d",
+                },
+            },
+        },
+    }
+
+    # Merge with profile's containerd config if any.
+    profile_config = profile.get("containerd") or {}
+    config = patch.merge(registry_config, profile_config)
+
+    logging.info("[%s] Configuring containerd", profile["name"])
+    containerd.configure(sys.modules[__name__], profile["name"], config)
+
+
+def _copy_registry_mirrors(name):
+    """
+    Copy containerd registry mirror configuration to the cluster.
+    """
+    src = _package_path("containerd", "certs.d")
+    dst = "/etc/containerd/certs.d"
+    logging.debug("[%s] Copying registry mirror configuration", name)
+    _copy_dir(name, src, dst)
+
+
+def _copy_dir(name, src, dst):
+    """
+    Copy a directory recursively to the cluster.
+
+    minikube cp does not support recursive directory copying, and minikube ssh
+    does not forward stdin in pipelines. We use native ssh with tar piped over
+    stdin. This is the same approach used by kubectl cp.
+    """
+    ssh(name, f"sudo mkdir -p {dst}")
+
+    ip = _run("ip", profile=name).strip()
+    key = _run("ssh-key", profile=name).strip()
+
+    commands.pipeline(
+        [
+            "tar",
+            "--directory",
+            src,
+            "--create",
+            "--file=-",
+            ".",
+        ],
+        [
+            "ssh",
+            f"-oIdentityFile={key}",
+            "-oUser=docker",
+            "-oStrictHostKeyChecking=no",
+            "-oUserKnownHostsFile=/dev/null",
+            "-oLogLevel=ERROR",
+            ip,
+            # ssh joins arguments with spaces and runs through remote shell.
+            # Using a single string to make the remote command explicit.
+            f"sudo tar --directory {dst} --extract --file=-",
+        ],
+    )
+
+
+def _package_path(*names):
+    """
+    Return a path to a file or directory in this package.
+    """
+    return os.path.join(os.path.dirname(__file__), *names)
 
 
 def _write_file(path, data):
