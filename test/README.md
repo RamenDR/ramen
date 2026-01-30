@@ -34,11 +34,11 @@ environment.
 1. Install minikube, for example on RHEL/CentOS/Fedora:
 
    ```
-   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
    minikube version
    ```
 
-   Tested with version v1.37.0.
+   Tested with version v1.38.0.
 
 1. Install the `kubectl` tool
 
@@ -162,11 +162,13 @@ environment.
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.11.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-## Setup on macOS
+## Setup on macOS 26+
+
+> [!IMPORTANT]
+> Older macOS are not supported.
 
 1. Install the [Homebrew package manager](https://brew.sh/)
 
@@ -179,15 +181,22 @@ environment.
        helm \
        kubectl \
        kustomize \
-       qemu \
-       lima \
+       minikube \
        minio-mc \
+       qemu \
        velero \
        virtctl
    ```
 
-   lima version 2.0.0 or later is required, latest version is
-   recommended. Tested with lima version 2.0.2.
+   minikube version 1.38.0 or later is required, latest version is recommended.
+   Tested with minikube version 1.38.0.
+
+1. Install `vmnet-helper`
+
+   ```
+   brew tap nirs/vmnet-helper
+   brew install vmnet-helper
+   ```
 
 1. Install the `clusteradm` tool
 
@@ -225,30 +234,8 @@ environment.
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.11.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
-
-1. Install `socket_vmnet`
-
-   > [!IMPORTANT]
-   > You must install the socket_vmnet launchd service, we don't manage
-   > socket_vment with Lima.
-
-   ```
-   VERSION="$(curl -fsSL https://api.github.com/repos/lima-vm/socket_vmnet/releases/latest | jq -r .tag_name)"
-   FILE="socket_vmnet-${VERSION:1}-$(uname -m).tar.gz"
-   SERVICE_ID="io.github.lima-vm.socket_vmnet"
-   curl -OSL "https://github.com/lima-vm/socket_vmnet/releases/download/${VERSION}/${FILE}"
-   sudo tar Cxzvf / "${FILE}" opt/socket_vmnet
-   sudo cp "/opt/socket_vmnet/share/doc/socket_vmnet/launchd/$SERVICE_ID.plist" "/Library/LaunchDaemons/$SERVICE_ID.plist"
-   sudo launchctl bootstrap system "/Library/LaunchDaemons/$SERVICE_ID.plist"
-   sudo launchctl enable system/$SERVICE_ID
-   sudo launchctl kickstart -kp system/$SERVICE_ID
-   /opt/socket_vmnet/bin/socket_vmnet --version
-   ```
-
-   For more info see [Installing socket_vmnet from binary](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-binary)
 
 ## Testing that drenv is healthy
 
