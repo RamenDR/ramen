@@ -466,33 +466,35 @@ def test_run_cwd(tmpdir):
 
 
 def test_error():
-    e = commands.Error(("arg1", "arg2"), exitcode=2, error="err 1\nerr 2\n")
+    e = commands.Error(["arg1", "arg2"], exitcode=2, error="err 1\nerr 2\n")
     expected = """\
-Command failed:
-   command: ('arg1', 'arg2')
-   exitcode: 2
-   error:
-      err 1
-      err 2
-"""
+command failed:
+  command:
+  - arg1
+  - arg2
+  exitcode: 2
+  error: |-
+    err 1
+    err 2"""
     assert str(e) == expected
 
 
 def test_error_with_output():
     e = commands.Error(
-        ("arg1", "arg2"), exitcode=3, error="err 1\nerr 2\n", output="out 1\nout 2\n"
+        ["arg1", "arg2"], exitcode=3, error="err 1\nerr 2\n", output="out 1\nout 2\n"
     )
     expected = """\
-Command failed:
-   command: ('arg1', 'arg2')
-   exitcode: 3
-   output:
-      out 1
-      out 2
-   error:
-      err 1
-      err 2
-"""
+command failed:
+  command:
+  - arg1
+  - arg2
+  exitcode: 3
+  output: |-
+    out 1
+    out 2
+  error: |-
+    err 1
+    err 2"""
     assert str(e) == expected
 
 
