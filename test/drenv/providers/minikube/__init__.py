@@ -337,10 +337,15 @@ def _configure_containerd(profile):
     """
     Configure containerd with registry mirrors and any profile-specific config.
     """
-    # Always configure registry mirrors path.
     registry_config = {
         "plugins": {
             "io.containerd.cri.v1.images": {
+                # Configure registry mirrors path and limit concurrent
+                # downloads.  We limit concurrent downloads to 3 per image (the
+                # containerd/Docker default) to avoid overwhelming the local
+                # registry cache. With serial pulls and 3 clusters, this means
+                # at most 9 concurrent downloads from the cache.
+                "max_concurrent_downloads": 3,
                 "registry": {
                     "config_path": "/etc/containerd/certs.d",
                 },
