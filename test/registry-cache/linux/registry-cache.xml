@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+<service>
+  <short>Registry Cache</short>
+  <description>Pull-through cache for container registries used by minikube clusters.</description>
+  <port protocol="tcp" port="5051-5055"/>
+</service>
