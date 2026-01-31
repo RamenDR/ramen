@@ -48,3 +48,11 @@ spec:
           annotations:
             description: "Unsupported consistency grouping is enabled for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})."
             alert_type: "DisasterRecovery"
+        - alert: InvalidCIDRsDetected
+          expr: ramen_invalid_cidrs_detected == 1
+          for: 5s
+          labels:
+            severity: critical
+          annotations:
+            description: "Invalid or undetected CIDRs Specified (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
+            alert_type: "DisasterRecovery"
