@@ -18,15 +18,7 @@ from drenv import registry
 
 MINIKUBE = "minikube"
 
-EXTRA_CONFIG = [
-    # When enabled, tells the Kubelet to pull images one at a time. This slows
-    # down concurrent image pulls and cause timeouts when using slow network.
-    # Defaults to true becasue it is not safe with docker daemon with version
-    # < 1.9 or an Aufs storage backend.
-    # https://github.com/kubernetes/kubernetes/issues/10959
-    # Speeds up regional-dr start by 20%.
-    "kubelet.serialize-image-pulls=false"
-]
+EXTRA_CONFIG = []
 
 LOCAL_REGISTRY = "host.minikube.internal:5050"
 
