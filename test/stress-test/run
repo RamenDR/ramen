@@ -125,14 +125,13 @@ def run(name, args):
     elapsed = time.monotonic() - start
     passed = cp.returncode == 0
 
-    if not passed:
-        drenv(
-            "gather",
-            args.envfile,
-            log,
-            name_prefix=args.name_prefix,
-            directory=os.path.join(args.outdir, name + ".gather"),
-        )
+    drenv(
+        "gather",
+        args.envfile,
+        log,
+        name_prefix=args.name_prefix,
+        directory=os.path.join(args.outdir, name + ".gather"),
+    )
 
     if passed or not args.exit_first:
         drenv(
