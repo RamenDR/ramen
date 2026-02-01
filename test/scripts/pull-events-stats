@@ -10,7 +10,7 @@ caching images.
 
 Usage:
 
-    pull-events-stats gather.rdr/ [options]
+    pull-events-stats [options] gather.rdr/ [gather2.rdr/ ...]
 
 Example - slowest pulls across all clusters:
 
@@ -45,7 +45,15 @@ Example - summary statistics:
     $ scripts/pull-events-stats test/gather.rdr --summary
     Pull events:        117
     Total size:         14774 MiB
-    Total pull time:    1206.1s
+    Total pull time:    1206.1 s
+    Weighted bandwidth: 12.2 MiB/s
+
+Example - aggregate multiple runs:
+
+    $ scripts/pull-events-stats --summary out/*.gather
+    Pull events:        1170
+    Total size:         147740 MiB
+    Total pull time:    12061.0 s
     Weighted bandwidth: 12.2 MiB/s
 
 More examples:
@@ -140,7 +148,11 @@ DEFAULT_COLUMNS = "time,cluster,namespace,pod,image,size,pull-time,total-time,ba
 
 def main():
     args = parse_args()
-    events = find_pull_events(args.gather_dir)
+
+    # Collect events from all gather directories.
+    events = []
+    for gather_dir in args.gather_dirs:
+        events.extend(find_pull_events(gather_dir))
 
     if args.cluster:
         events = [e for e in events if e.cluster == args.cluster]
@@ -178,9 +190,11 @@ def parse_args():
         epilog=__doc__,
     )
     parser.add_argument(
-        "gather_dir",
+        "gather_dirs",
         type=Path,
-        help="Path to gather.rdr directory",
+        nargs="+",
+        metavar="GATHER_DIR",
+        help="Path to gather.rdr directory (one or more)",
     )
     parser.add_argument(
         "--sort",
@@ -237,8 +251,9 @@ def parse_args():
 
     args = parser.parse_args()
 
-    if not args.gather_dir.exists():
-        parser.error(f"{args.gather_dir} does not exist")
+    for gather_dir in args.gather_dirs:
+        if not gather_dir.exists():
+            parser.error(f"{gather_dir} does not exist")
 
     return args
 
@@ -417,13 +432,13 @@ def print_summary(events: list[PullEvent], format: str) -> None:
         print("|--------|-------|")
         print(f"| Pull events | {pull_count} |")
         print(f"| Total size | {total_size_mib:.0f} MiB |")
-        print(f"| Total pull time | {total_pull_time_s:.1f}s |")
+        print(f"| Total pull time | {total_pull_time_s:.1f} s |")
         print(f"| Weighted bandwidth | {weighted_bandwidth_mbs:.1f} MiB/s |")
     else:
         # Table format.
         print(f"Pull events:        {pull_count}")
         print(f"Total size:         {total_size_mib:.0f} MiB")
-        print(f"Total pull time:    {total_pull_time_s:.1f}s")
+        print(f"Total pull time:    {total_pull_time_s:.1f} s")
         print(f"Weighted bandwidth: {weighted_bandwidth_mbs:.1f} MiB/s")
 
 
@@ -538,7 +553,7 @@ def bandwidth_mbs(event):
 
 def format_time(ms: int) -> str:
     """Format milliseconds as seconds."""
-    return f"{ms / 1000:.3f}s"
+    return f"{ms / 1000:.3f} s"
 
 
 def format_size(bytes_: int) -> str:
