@@ -1,0 +1,498 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+r"""
+Analyze image pull events from kubectl-gather output.
+
+This is useful for understanding image pull performance and working on
+caching images.
+
+Usage:
+
+    pull-events-stats gather.rdr/ [options]
+
+Example - slowest pulls across all clusters:
+
+    $ scripts/pull-events-stats test/gather.rdr \
+        --top 5 \
+        --sort pull-time \
+        --output cluster,image,size,pull-time,bandwidth
+    Cluster | Image                           |    Size | Pull Time | Bandwidth
+    ---------------------------------------------------------------------------
+    dr1     | quay.io/cephcsi/cephcsi:v3.15.0 | 972 MiB |   58.384s |  17 MiB/s
+    dr1     | quay.io/cephcsi/cephcsi:v3.15.0 | 972 MiB |   58.371s |  17 MiB/s
+    dr2     | quay.io/cephcsi/cephcsi:v3.15.0 | 972 MiB |   45.882s |  21 MiB/s
+    dr2     | quay.io/cephcsi/cephcsi:v3.15.0 | 972 MiB |   45.502s |  21 MiB/s
+    dr1     | quay.io/cephcsi/cephcsi:v3.15.0 | 972 MiB |   39.015s |  25 MiB/s
+
+Example - which pods pulled a specific image?
+
+    $ scripts/pull-events-stats test/gather.rdr \
+        --image quay.io/cephcsi/cephcsi:v3.15.0 \
+        --cluster dr1 \
+        --sort pull-time \
+        --output namespace,pod,pull-time,bandwidth
+    Namespace | Pod                                           | Pull Time | Bandwidth
+    ---------------------------------------------------------------------------------
+    rook-ceph | csi-cephfsplugin-hg22z                        |   27.765s |  33 MiB/s
+    rook-ceph | csi-rbdplugin-9ptzn                           |   27.703s |  33 MiB/s
+    rook-ceph | csi-rbdplugin-provisioner-7dbbbd8dd4-hnjgd    |   21.120s |  44 MiB/s
+    rook-ceph | csi-cephfsplugin-provisioner-795c476bdb-8w55q |   21.061s |  44 MiB/s
+
+More examples:
+
+    # Show all pulls in chronological order
+    pull-events-stats gather.rdr/ --top 0
+
+    # Show pulls grouped by image, then by time
+    pull-events-stats gather.rdr/ --sort=image,timestamp
+
+    # Show pulls grouped by cluster, then by time
+    pull-events-stats gather.rdr/ --sort=cluster,timestamp
+
+    # Show top 20 slowest pulls across all clusters
+    pull-events-stats gather.rdr/ --sort=pull-time
+
+    # Filter by cluster
+    pull-events-stats gather.rdr/ --cluster=dr1
+
+    # Filter by image name pattern
+    pull-events-stats gather.rdr/ --image=ceph
+
+    # Output as CSV for further analysis
+    pull-events-stats gather.rdr/ --format=csv
+"""
+
+import argparse
+import csv
+import pickle
+import re
+import sys
+from collections import namedtuple
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+# Immutable event data - stored in cache.
+PullEvent = namedtuple(
+    "PullEvent",
+    [
+        "cluster",
+        "namespace",
+        "pod",
+        "image",
+        "pull_time_ms",
+        "total_time_ms",
+        "size_bytes",
+        "timestamp",
+    ],
+)
+
+CACHE_FILE = ".pull-events.pickle"
+
+# Pattern to parse the pull event note.
+# Example: 'Successfully pulled image "quay.io/foo:v1" in 10.745s (55.002s including waiting). Image size: 86212232 bytes.'
+PULL_PATTERN = re.compile(
+    r'Successfully pulled image "([^"]+)" in ([0-9.]+(?:ms|s)) '
+    r"\(([0-9.]+(?:ms|s)) including waiting\)\. "
+    r"Image size: (\d+) bytes\."
+)
+
+# Sort key definitions: name -> sort function.
+# Negative values for descending order by default.
+SORT_KEYS = {
+    "timestamp": lambda e: e.timestamp,
+    "pull-time": lambda e: -e.pull_time_ms,
+    "total-time": lambda e: -e.total_time_ms,
+    "size": lambda e: -e.size_bytes,
+    "bandwidth": lambda e: -bandwidth_mbs(e),
+    "image": lambda e: e.image,
+    "cluster": lambda e: e.cluster,
+    "namespace": lambda e: e.namespace,
+}
+
+# Column definitions: name -> (header, formatter, alignment).
+# Alignment: "<" left, ">" right.
+COLUMNS = {
+    "time": ("Time", lambda e: format_timestamp(e.timestamp), "<"),
+    "cluster": ("Cluster", lambda e: e.cluster, "<"),
+    "namespace": ("Namespace", lambda e: e.namespace, "<"),
+    "pod": ("Pod", lambda e: e.pod, "<"),
+    "image": ("Image", lambda e: e.image, "<"),
+    "size": ("Size", lambda e: format_size(e.size_bytes), ">"),
+    "pull-time": ("Pull Time", lambda e: format_time(e.pull_time_ms), ">"),
+    "total-time": ("Total Time", lambda e: format_time(e.total_time_ms), ">"),
+    "bandwidth": ("Bandwidth", lambda e: format_bandwidth(bandwidth_mbs(e)), ">"),
+}
+
+DEFAULT_COLUMNS = "time,cluster,namespace,pod,image,size,pull-time,total-time,bandwidth"
+
+
+def main():
+    args = parse_args()
+    events = find_pull_events(args.gather_dir)
+
+    if args.cluster:
+        events = [e for e in events if e.cluster == args.cluster]
+    if args.namespace:
+        events = [e for e in events if e.namespace == args.namespace]
+    if args.image:
+        events = [e for e in events if args.image in e.image]
+
+    events = sort_events(events, args.sort, args.reverse)
+
+    if args.top > 0:
+        events = events[: args.top]
+
+    if args.format == "table":
+        print_table(events, args.output)
+    elif args.format == "csv":
+        print_csv(events, args.output)
+    elif args.format == "markdown":
+        print_markdown(events, args.output)
+
+
+# Parsing arguments.
+
+
+def parse_args():
+    """Parse and validate command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Analyze image pull events from kubectl-gather output.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "gather_dir",
+        type=Path,
+        help="Path to gather.rdr directory",
+    )
+    parser.add_argument(
+        "--sort",
+        type=sortkeys,
+        default=sortkeys("timestamp"),
+        metavar="KEYS",
+        help="Sort by comma-separated keys: timestamp, pull-time, total-time, "
+        "size, bandwidth, image, cluster, namespace (default: timestamp)",
+    )
+    parser.add_argument(
+        "-r",
+        "--reverse",
+        action="store_true",
+        help="Reverse sort order",
+    )
+    parser.add_argument(
+        "--cluster",
+        help="Filter by cluster name",
+    )
+    parser.add_argument(
+        "--namespace",
+        help="Filter by namespace",
+    )
+    parser.add_argument(
+        "--image",
+        help="Filter by image name (substring match)",
+    )
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Show only top N results (default: 20, use 0 for all)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["table", "csv", "markdown"],
+        default="table",
+        help="Output format (default: table)",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=columns,
+        default=columns(DEFAULT_COLUMNS),
+        metavar="COLS",
+        help=f"Comma-separated columns to display: {','.join(COLUMNS)} (default: {DEFAULT_COLUMNS})",
+    )
+
+    args = parser.parse_args()
+
+    if not args.gather_dir.exists():
+        parser.error(f"{args.gather_dir} does not exist")
+
+    return args
+
+
+def sortkeys(s):
+    """Parse and validate comma-separated sort keys."""
+    keys = [k.strip() for k in s.split(",")]
+    for key in keys:
+        if key not in SORT_KEYS:
+            raise argparse.ArgumentTypeError(
+                f"Unknown sort key '{key}'. Available: {', '.join(SORT_KEYS)}"
+            )
+    return keys
+
+
+def columns(s):
+    """Parse and validate comma-separated column names."""
+    cols = [c.strip() for c in s.split(",")]
+    for col in cols:
+        if col not in COLUMNS:
+            raise argparse.ArgumentTypeError(
+                f"Unknown column '{col}'. Available: {', '.join(COLUMNS)}"
+            )
+    return cols
+
+
+# Reading gathered events.
+
+
+def find_pull_events(gather_dir: Path) -> list[PullEvent]:
+    """Find all pull events in the gather directory."""
+    # Try loading from cache first.
+    events = load_cache(gather_dir)
+    if events is not None:
+        return events
+
+    # Parse YAML files and build cache.
+    events = []
+
+    # Pattern: {cluster}/namespaces/{namespace}/events.k8s.io/events/{event}.yaml
+    pattern = "*/namespaces/*/events.k8s.io/events/*.yaml"
+
+    for event_file in gather_dir.glob(pattern):
+        # Extract cluster and namespace from path.
+        # Path: gather_dir / cluster / namespaces / namespace / events.k8s.io / events / file.yaml
+        parts = event_file.relative_to(gather_dir).parts
+        cluster = parts[0]
+        namespace = parts[2]
+
+        event = parse_event_file(event_file, cluster, namespace)
+        if event:
+            events.append(event)
+
+    save_cache(gather_dir, events)
+    return events
+
+
+# Sorting.
+
+
+def sort_events(
+    events: list[PullEvent], keys: list[str], reverse: bool
+) -> list[PullEvent]:
+    """Sort events by the specified keys."""
+
+    def sort_key(e):
+        return tuple(SORT_KEYS[k](e) for k in keys)
+
+    return sorted(events, key=sort_key, reverse=reverse)
+
+
+# Printing output.
+
+
+def print_table(events: list[PullEvent], columns: list[str]) -> None:
+    """Print events as a formatted table."""
+    if not events:
+        print("No pull events found.")
+        return
+
+    # Get column info.
+    headers = [COLUMNS[col][0] for col in columns]
+    formatters = [COLUMNS[col][1] for col in columns]
+    aligns = [COLUMNS[col][2] for col in columns]
+
+    # Build rows.
+    rows = []
+    for e in events:
+        rows.append([fmt(e) for fmt in formatters])
+
+    # Calculate column widths.
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    # Print header.
+    header_line = " | ".join(
+        f"{h:{aligns[i]}{widths[i]}}" for i, h in enumerate(headers)
+    )
+    print(header_line)
+    print("-" * len(header_line))
+
+    # Print rows.
+    for row in rows:
+        print(
+            " | ".join(f"{cell:{aligns[i]}{widths[i]}}" for i, cell in enumerate(row))
+        )
+
+
+def print_csv(events: list[PullEvent], columns: list[str]) -> None:
+    """Print events as CSV."""
+    # Get headers and formatters for selected columns.
+    headers = [COLUMNS[col][0] for col in columns]
+    formatters = [COLUMNS[col][1] for col in columns]
+
+    writer = csv.writer(sys.stdout)
+    writer.writerow(headers)
+
+    for e in events:
+        writer.writerow([fmt(e) for fmt in formatters])
+
+
+def print_markdown(events: list[PullEvent], columns: list[str]) -> None:
+    """Print events as markdown table."""
+    if not events:
+        print("No pull events found.")
+        return
+
+    # Get headers and formatters for selected columns.
+    headers = [COLUMNS[col][0] for col in columns]
+    formatters = [COLUMNS[col][1] for col in columns]
+
+    # Print header.
+    print("| " + " | ".join(headers) + " |")
+    print("|" + "|".join("---" for _ in headers) + "|")
+
+    # Print rows.
+    for e in events:
+        cells = [fmt(e) for fmt in formatters]
+        print("| " + " | ".join(cells) + " |")
+
+
+# Managing cached events.
+
+
+def load_cache(gather_dir: Path) -> list[PullEvent] | None:
+    """Load events from cache if exists."""
+    cache_path = gather_dir / CACHE_FILE
+    if not cache_path.exists():
+        return None
+
+    with open(cache_path, "rb") as f:
+        return pickle.load(f)
+
+
+def save_cache(gather_dir: Path, events: list[PullEvent]) -> None:
+    """Save events to cache."""
+    with open(gather_dir / CACHE_FILE, "wb") as f:
+        pickle.dump(events, f)
+
+
+# Parsing events.
+
+
+def parse_event_file(path: Path, cluster: str, namespace: str) -> PullEvent | None:
+    """Parse a single event file and return PullEvent if it's a pull event."""
+    try:
+        with open(path) as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        print(f"Warning: Failed to parse {path}: {e}", file=sys.stderr)
+        return None
+
+    # Check if this is a Pulled event.
+    if data.get("reason") != "Pulled":
+        return None
+
+    note = data.get("note", "")
+    parsed = parse_pull_note(note)
+    if not parsed:
+        return None
+
+    image, pull_time_ms, total_time_ms, size_bytes = parsed
+
+    # Get pod name from regarding field.
+    regarding = data.get("regarding", {})
+    pod = regarding.get("name", "unknown")
+
+    # Get timestamp from metadata.
+    metadata = data.get("metadata", {})
+    ts_str = metadata.get("creationTimestamp", "")
+    try:
+        timestamp = parse_timestamp(ts_str)
+    except Exception:
+        timestamp = datetime.min
+
+    return PullEvent(
+        cluster=cluster,
+        namespace=namespace,
+        pod=pod,
+        image=image,
+        pull_time_ms=pull_time_ms,
+        total_time_ms=total_time_ms,
+        size_bytes=size_bytes,
+        timestamp=timestamp,
+    )
+
+
+def parse_pull_note(note: str) -> tuple[str, int, int, int] | None:
+    """
+    Parse pull event note and return (image, pull_time_ms, total_time_ms, size_bytes).
+    Returns None if the note doesn't match the expected pattern.
+    """
+    match = PULL_PATTERN.search(note)
+    if not match:
+        return None
+
+    image = match.group(1)
+    pull_time_ms = parse_time_ms(match.group(2))
+    total_time_ms = parse_time_ms(match.group(3))
+    size_bytes = int(match.group(4))
+
+    return image, pull_time_ms, total_time_ms, size_bytes
+
+
+def parse_timestamp(ts_str: str) -> datetime:
+    """Parse Kubernetes timestamp string to datetime."""
+    # Format: 2026-01-31T02:17:20Z
+    return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+
+
+def parse_time_ms(time_str: str) -> int:
+    """Parse time string to milliseconds."""
+    if time_str.endswith("ms"):
+        return int(float(time_str[:-2]))
+    elif time_str.endswith("s"):
+        return int(float(time_str[:-1]) * 1000)
+    else:
+        raise ValueError(f"Unknown time format: {time_str}")
+
+
+# Formatting values.
+
+
+def bandwidth_mbs(event):
+    """Bandwidth in MiB/s based on pull time."""
+    if event.pull_time_ms == 0:
+        return 0
+    return event.size_bytes / 1024 / 1024 / (event.pull_time_ms / 1000)
+
+
+def format_time(ms: int) -> str:
+    """Format milliseconds as seconds."""
+    return f"{ms / 1000:.3f}s"
+
+
+def format_size(bytes_: int) -> str:
+    """Format bytes as human-readable size."""
+    mb = bytes_ / 1024 / 1024
+    return f"{mb:.0f} MiB"
+
+
+def format_bandwidth(mbs: float) -> str:
+    """Format bandwidth as MiB/s."""
+    return f"{mbs:.0f} MiB/s"
+
+
+def format_timestamp(ts: datetime) -> str:
+    """Format timestamp for display."""
+    return ts.strftime("%H:%M:%S")
+
+
+if __name__ == "__main__":
+    main()
