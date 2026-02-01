@@ -56,6 +56,21 @@ Example - aggregate multiple runs:
     Total pull time:    12061.0 s
     Weighted bandwidth: 12.2 MiB/s
 
+Example - compare before/after runs:
+
+    $ scripts/pull-events-stats --compare out/before/*.gather out/after/*.gather
+    Metric               | before             | after              |   Change
+    -------------------------------------------------------------------------
+    Runs                 |                 10 |                 10 |        -
+    Pull events          |               1197 |               1266 |    1.06x
+    Total size           |         154312 MiB |         187094 MiB |    1.21x
+    Total pull time      |           11590.1s |            5272.4s |    0.45x
+    Weighted bandwidth   |         13.3 MiB/s |         35.5 MiB/s |    2.67x
+
+    Directories are grouped by the first unique path component after stripping
+    any common prefix. For example, out/before/*.gather and out/after/*.gather
+    are grouped as "before" and "after".
+
 More examples:
 
     # Show all pulls in chronological order
@@ -85,7 +100,7 @@ import csv
 import pickle
 import re
 import sys
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from datetime import datetime
 from pathlib import Path
 
@@ -148,6 +163,10 @@ DEFAULT_COLUMNS = "time,cluster,namespace,pod,image,size,pull-time,total-time,ba
 
 def main():
     args = parse_args()
+
+    if args.compare:
+        print_comparison(args.gather_dirs, args.format)
+        return
 
     # Collect events from all gather directories.
     events = []
@@ -239,6 +258,11 @@ def parse_args():
         "--summary",
         action="store_true",
         help="Show summary statistics (pull events, total size, total time, weighted bandwidth)",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Compare summary statistics grouped by parent directory",
     )
     parser.add_argument(
         "-o",
@@ -440,6 +464,128 @@ def print_summary(events: list[PullEvent], format: str) -> None:
         print(f"Total size:         {total_size_mib:.0f} MiB")
         print(f"Total pull time:    {total_pull_time_s:.1f} s")
         print(f"Weighted bandwidth: {weighted_bandwidth_mbs:.1f} MiB/s")
+
+
+def common_prefix_length(paths_parts: list[tuple[str, ...]]) -> int:
+    """
+    Return the length of the common prefix of path parts.
+
+    Example:
+        >>> common_prefix_length([("out", "before", "run1"), ("out", "after", "run2")])
+        1
+    """
+    if not paths_parts:
+        return 0
+    # Check each position: do all paths have the same component?
+    min_len = min(len(p) for p in paths_parts)
+    for i in range(min_len):
+        part = paths_parts[0][i]
+        if not all(p[i] == part for p in paths_parts):
+            return i
+    return min_len
+
+
+def print_comparison(gather_dirs: list[Path], format: str) -> None:
+    """Print comparison of summary statistics grouped by first unique path component."""
+    # Find common prefix to strip (e.g., "out/" when all paths are under "out/").
+    prefix_len = common_prefix_length([d.parts for d in gather_dirs])
+
+    # Group directories by first component after the common prefix.
+    groups = defaultdict(list)
+    for gather_dir in gather_dirs:
+        # Strip common prefix and use first remaining component as group name.
+        assert prefix_len < len(gather_dir.parts), f"Path too short: {gather_dir}"
+        group = gather_dir.parts[prefix_len]
+        groups[group].append(gather_dir)
+
+    if len(groups) != 2:
+        print("Error: --compare requires exactly 2 groups of directories.")
+        sys.exit(1)
+
+    # Compute stats for each group.
+    stats = []
+    for group_name, dirs in sorted(groups.items()):
+        events = []
+        for gather_dir in dirs:
+            events.extend(find_pull_events(gather_dir))
+
+        pull_count = len(events)
+        total_size_bytes = sum(e.size_bytes for e in events)
+        total_pull_time_ms = sum(e.pull_time_ms for e in events)
+
+        if total_pull_time_ms > 0:
+            weighted_bandwidth_mbs = (
+                total_size_bytes / 1024 / 1024 / (total_pull_time_ms / 1000)
+            )
+        else:
+            weighted_bandwidth_mbs = 0
+
+        stats.append(
+            {
+                "name": group_name,
+                "runs": len(dirs),
+                "pull_count": pull_count,
+                "total_size_mib": total_size_bytes / 1024 / 1024,
+                "total_pull_time_s": total_pull_time_ms / 1000,
+                "weighted_bandwidth_mbs": weighted_bandwidth_mbs,
+            }
+        )
+
+    # Print comparison table with metrics as rows and groups as columns.
+    s1, s2 = stats[0], stats[1]
+
+    def ratio(old, new):
+        if old == 0:
+            return 1.0
+        return new / old
+
+    changes = {
+        "runs": "-",
+        "pull_count": f"{ratio(s1['pull_count'], s2['pull_count']):.2f}x",
+        "total_size_mib": f"{ratio(s1['total_size_mib'], s2['total_size_mib']):.2f}x",
+        "total_pull_time_s": f"{ratio(s1['total_pull_time_s'], s2['total_pull_time_s']):.2f}x",
+        "weighted_bandwidth_mbs": f"{ratio(s1['weighted_bandwidth_mbs'], s2['weighted_bandwidth_mbs']):.2f}x",
+    }
+
+    # Define rows: (label, key, format_func)
+    rows = [
+        ("Runs", "runs", lambda v: f"{v}"),
+        ("Pull events", "pull_count", lambda v: f"{v}"),
+        ("Total size", "total_size_mib", lambda v: f"{v:.0f} MiB"),
+        ("Total pull time", "total_pull_time_s", lambda v: f"{v:.1f} s"),
+        ("Weighted bandwidth", "weighted_bandwidth_mbs", lambda v: f"{v:.1f} MiB/s"),
+    ]
+
+    if format == "csv":
+        writer = csv.writer(sys.stdout)
+        writer.writerow(["Metric", s1["name"], s2["name"], "Change"])
+        for label, key, fmt in rows:
+            writer.writerow([label, fmt(s1[key]), fmt(s2[key]), changes[key]])
+    elif format == "markdown":
+        print(f"| Metric | {s1['name']} | {s2['name']} | Change |")
+        print(
+            "|--------|"
+            + "-" * (len(s1["name"]) + 2)
+            + "|"
+            + "-" * (len(s2["name"]) + 2)
+            + "|--------|"
+        )
+        for label, key, fmt in rows:
+            print(f"| {label} | {fmt(s1[key])} | {fmt(s2[key])} | {changes[key]} |")
+    else:
+        # Table format.
+        col1_width = max(len(s1["name"]), 10)
+        col2_width = max(len(s2["name"]), 10)
+
+        header = f"{'Metric':<20} | {s1['name']:>{col1_width}} | {s2['name']:>{col2_width}} | {'Change':>8}"
+        print(header)
+        print("-" * len(header))
+        for label, key, fmt in rows:
+            v1 = fmt(s1[key])
+            v2 = fmt(s2[key])
+            print(
+                f"{label:<20} | {v1:>{col1_width}} | {v2:>{col2_width}} | {changes[key]:>8}"
+            )
 
 
 # Managing cached events.
