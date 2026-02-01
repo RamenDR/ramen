@@ -40,6 +40,14 @@ Example - which pods pulled a specific image?
     rook-ceph | csi-rbdplugin-provisioner-7dbbbd8dd4-hnjgd    |   21.120s |  44 MiB/s
     rook-ceph | csi-cephfsplugin-provisioner-795c476bdb-8w55q |   21.061s |  44 MiB/s
 
+Example - summary statistics:
+
+    $ scripts/pull-events-stats test/gather.rdr --summary
+    Pull events:        117
+    Total size:         14774 MiB
+    Total pull time:    1206.1s
+    Weighted bandwidth: 12.2 MiB/s
+
 More examples:
 
     # Show all pulls in chronological order
@@ -143,6 +151,11 @@ def main():
 
     events = sort_events(events, args.sort, args.reverse)
 
+    if args.summary:
+        # Summary uses all events, ignoring --top limit.
+        print_summary(events, args.format)
+        return
+
     if args.top > 0:
         events = events[: args.top]
 
@@ -207,6 +220,11 @@ def parse_args():
         choices=["table", "csv", "markdown"],
         default="table",
         help="Output format (default: table)",
+    )
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Show summary statistics (pull events, total size, total time, weighted bandwidth)",
     )
     parser.add_argument(
         "-o",
@@ -362,6 +380,51 @@ def print_markdown(events: list[PullEvent], columns: list[str]) -> None:
     for e in events:
         cells = [fmt(e) for fmt in formatters]
         print("| " + " | ".join(cells) + " |")
+
+
+def print_summary(events: list[PullEvent], format: str) -> None:
+    """Print summary statistics for pull events."""
+    if not events:
+        print("No pull events found.")
+        return
+
+    # Calculate summary statistics.
+    pull_count = len(events)
+    total_size_bytes = sum(e.size_bytes for e in events)
+    total_pull_time_ms = sum(e.pull_time_ms for e in events)
+
+    # Weighted bandwidth: total size / total time.
+    if total_pull_time_ms > 0:
+        weighted_bandwidth_mbs = (
+            total_size_bytes / 1024 / 1024 / (total_pull_time_ms / 1000)
+        )
+    else:
+        weighted_bandwidth_mbs = 0
+
+    # Format values.
+    total_size_mib = total_size_bytes / 1024 / 1024
+    total_pull_time_s = total_pull_time_ms / 1000
+
+    if format == "csv":
+        writer = csv.writer(sys.stdout)
+        writer.writerow(["Metric", "Value"])
+        writer.writerow(["Pull events", pull_count])
+        writer.writerow(["Total size (MiB)", f"{total_size_mib:.0f}"])
+        writer.writerow(["Total pull time (s)", f"{total_pull_time_s:.1f}"])
+        writer.writerow(["Weighted bandwidth (MiB/s)", f"{weighted_bandwidth_mbs:.1f}"])
+    elif format == "markdown":
+        print("| Metric | Value |")
+        print("|--------|-------|")
+        print(f"| Pull events | {pull_count} |")
+        print(f"| Total size | {total_size_mib:.0f} MiB |")
+        print(f"| Total pull time | {total_pull_time_s:.1f}s |")
+        print(f"| Weighted bandwidth | {weighted_bandwidth_mbs:.1f} MiB/s |")
+    else:
+        # Table format.
+        print(f"Pull events:        {pull_count}")
+        print(f"Total size:         {total_size_mib:.0f} MiB")
+        print(f"Total pull time:    {total_pull_time_s:.1f}s")
+        print(f"Weighted bandwidth: {weighted_bandwidth_mbs:.1f} MiB/s")
 
 
 # Managing cached events.
