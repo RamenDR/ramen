@@ -52,13 +52,10 @@ jobs:
 
       - name: Install kubectl
         run: |
-          version="$(curl --fail --silent --show-error --location \
-                     https://dl.k8s.io/release/stable.txt)"
-          echo "installing kubectl '$version'"
-
+          set -e -o pipefail
+          version="$(minikube config defaults kubernetes-version -o json | jq -r '.[0]')"
           curl --fail --silent --show-error --location --remote-name \
               "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
-
           sudo install kubectl /usr/local/bin/
           kubectl version --client --output=yaml
 
