@@ -64,3 +64,6 @@ ramendev/build
 
 # Ginkgo-related test files
 ginkgo.report
+
+# Output files
+out/
