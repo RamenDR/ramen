@@ -521,7 +521,7 @@ func (u *drclusterInstance) validateCIDRsDetected() error {
 	drcConfig, err := u.getDRCCFromCluster(u.object)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			// skip when DRClusterConfig not crated. Watch on MCV
+			// skip when DRClusterConfig not created. Watch on MCV
 			// will trigger DRCluster reconcillation when DRClusterConfig created
 			return nil
 		}
@@ -913,13 +913,13 @@ func (u *drclusterInstance) findMatchingNFClasses(
 		for _, sc := range storageClasses {
 			storageID := sc.GetLabels()[StorageIDLabel]
 
-			nfClassAnnoations, ok := nfc.GetAnnotations()[StorageIDLabel]
+			nfClassAnnotations, ok := nfc.GetAnnotations()[StorageIDLabel]
 			if !ok {
 				continue
 			}
 
 			if sc.Provisioner == nfc.Spec.Provisioner &&
-				slices.Contains(strings.Split(nfClassAnnoations, ","), storageID) {
+				slices.Contains(strings.Split(nfClassAnnotations, ","), storageID) {
 				nfClasses = append(nfClasses, nfc.GetName())
 			}
 		}
@@ -990,7 +990,7 @@ func (u *drclusterInstance) clusterFence() (bool, error) {
 
 	nfClasses, err := u.getNFClassesFromDRClusterConfig(&peerCluster)
 	if err != nil {
-		return true, fmt.Errorf("faled to get NetworkFenceClasses: %w", err)
+		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
 	}
 
 	for _, nfClass := range nfClasses {
@@ -1044,7 +1044,7 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 
 	nfClasses, err := u.getNFClassesFromDRClusterConfig(&peerCluster)
 	if err != nil {
-		return true, fmt.Errorf("faled to get NetworkFenceClasses: %w", err)
+		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
 	}
 
 	for _, nfClass := range nfClasses {
