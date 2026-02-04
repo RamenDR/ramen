@@ -27,11 +27,19 @@ import (
 
 var NFClassAvailable bool
 
+var cidrs = [][]string{
+	{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
+	{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
+	{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
+
+	{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
+}
+
 var baseNF = &csiaddonsv1alpha1.NetworkFence{
 	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 	ObjectMeta: metav1.ObjectMeta{Name: strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0"}, "-")},
 	Spec: csiaddonsv1alpha1.NetworkFenceSpec{
-		Cidrs:      []string{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"},
+		Cidrs:      cidrs[0],
 		FenceState: csiaddonsv1alpha1.Fenced,
 	},
 }
@@ -69,6 +77,12 @@ func generateDRCC() *ramen.DRClusterConfig {
 	drcc := baseDRCConfig.DeepCopy()
 	drcc.Status.StorageClasses = []string{"sc1"}
 	drcc.Status.NetworkFenceClasses = []string{"nfc1"}
+	drcc.Status.StorageAccessDetails = []ramen.StorageAccessDetail{
+		{
+			StorageProvisioner: "fake.ramen.com",
+			CIDRs:              cidrs[0],
+		},
+	}
 
 	return drcc
 }
@@ -204,14 +218,6 @@ var _ = Describe("DRClusterController", func() {
 				Namespace: clusterName,
 			},
 			manifestWork))).To(BeTrue())
-	}
-
-	cidrs := [][]string{
-		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
-		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
-
-		{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
-		{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
 	}
 
 	drclusters := []ramen.DRCluster{}
@@ -393,18 +399,18 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
-		When("fenced", func() {
-			It("reports validated with reason Succeeded and ignores S3Profile errors", func() {
-				By("fencing an existing DRCluster with an invalid S3Profile")
+		When("fenced with invalid S3Profile", func() {
+			It("reports NOT validated with reason s3ListFailed and does not process fencing", func() {
+				By("updating DRCluster to ManuallyFenced with an invalid S3Profile")
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
-					metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced),
+					metav1.ConditionFalse,
+					Equal("s3ListFailed"),
 					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
+					ramen.DRClusterValidated,
 					false,
 				)
 			})
@@ -526,8 +532,10 @@ var _ = Describe("DRClusterController", func() {
 		When("provided CIDR value is incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
 				By("creating a new DRCluster with an invalid CIDR")
-				drcluster.Spec.CIDRs = cidrs[1]
+				drcluster.Spec.CIDRs = cidrs[3]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
@@ -537,13 +545,13 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated,
 					false,
 				)
-				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 			})
 		})
 		When("provided CIDR value is changed to be correct", func() {
 			It("reports validated", func() {
 				drcluster.Spec.CIDRs = cidrs[0]
 				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 				objectConditionExpectEventually(
 					apiReader,
@@ -588,7 +596,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided CIDR value is changed to be incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
-				drcluster.Spec.CIDRs = cidrs[1]
+				drcluster.Spec.CIDRs = cidrs[3]
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
@@ -742,8 +750,8 @@ var _ = Describe("DRClusterController", func() {
 			drcluster = drclusters[0].DeepCopy()
 		})
 
-		When("provided Fencing value is Fenced and the s3 validation fails", func() {
-			It("reports fenced with reason Fencing success but validated condition should be false", func() {
+		When("provided fencing value is Fenced with invalid S3Profile", func() {
+			It("reports NOT validated with reason s3ListFailed and does not process fencing", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -751,10 +759,10 @@ var _ = Describe("DRClusterController", func() {
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
-					metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced),
+					metav1.ConditionFalse,
+					Equal("s3ListFailed"),
 					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
+					ramen.DRClusterValidated,
 					false,
 				)
 			})
@@ -765,16 +773,16 @@ var _ = Describe("DRClusterController", func() {
 		// we need to remove the change the fenced status to "", so that ramen will not
 		// look for the peer cluster in this situtaion
 		When("provided Fencing value is empty", func() {
-			It("reports validated with status fencing as Unfenced", func() {
+			It("reports NOT validated with reason s3ListFailed and fencing is cleared", func() {
 				drcluster.Spec.ClusterFence = ""
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
 					metav1.ConditionFalse,
-					Equal(controllers.DRClusterConditionReasonClean),
+					Equal("s3ListFailed"),
 					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
+					ramen.DRClusterValidated,
 					false,
 				)
 			})
@@ -1007,6 +1015,74 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+			})
+		})
+
+		Specify("Delete other DRClusters", func() {
+			deleteOtherDRClusters()
+		})
+
+		Specify("Delete namespaces named the same as DRClusters", func() {
+			deleteDRClusterNamespaces()
+		})
+	})
+
+	// InvalidCIDRsDetected tests
+	Context("InvalidCIDRsDetected Tests", func() {
+		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
+			createOtherDRClusters()
+			drcluster = drclusters[0].DeepCopy()
+		})
+
+		When("provided CIDRs match detected StorageAccessDetails", func() {
+			It("reports validated with reason Succeeded", func() {
+				NFClassAvailable = true
+				defer func() { NFClassAvailable = false }()
+
+				drcluster.Spec.CIDRs = cidrs[0]
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonValidated),
+					Ignore(),
+					ramen.DRClusterValidated,
+					false,
+				)
+			})
+		})
+
+		When("provided CIDRs do not match detected StorageAccessDetails", func() {
+			It("reports NOT validated with reason ValidationFailed", func() {
+				NFClassAvailable = true
+				defer func() { NFClassAvailable = false }()
+
+				drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // CIDR not in StorageAccessDetails
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(controllers.ReasonValidationFailed),
+					ContainSubstring("undetected CIDRs specified"),
+					ramen.DRClusterValidated,
+					false,
+				)
+			})
+		})
+
 		When("deleting a DRCluster", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
