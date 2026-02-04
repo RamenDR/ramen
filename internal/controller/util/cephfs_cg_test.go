@@ -250,45 +250,45 @@ var _ = Describe("CephfsCg", func() {
 		})
 		Describe("GetVolumeGroupSnapshotClassFromPVCsStorageClass", func() {
 			It("Should be failed", func() {
+				CreateSC(SCName, "testProvisioner1")
 				volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-					context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
+					context.Background(), k8sClient, metav1.LabelSelector{}, "test", testLogger)
 				Expect(volumeGroupSnapshotClassName).To(Equal(""))
 				Expect(err).NotTo(BeNil())
 				Expect(err.Error()).To(ContainSubstring("unable to find matching volumegroupsnapshotclass for storage provisioner"))
+				DeleteSC(SCName)
 			})
 			Context("There is pvc and storage class", func() {
 				BeforeEach(func() {
-					CreateSC(SCName)
-					CreatePVC(PVCName, SCName)
+					CreateSC(SCName, "testProvisioner")
 				})
 				AfterEach(func() {
-					DeletePVC(PVCName)
 					DeleteSC(SCName)
 				})
 				It("should be run as expected", func() {
 					volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "testxxxx"}},
-						metav1.LabelSelector{}, []string{"default"}, testLogger)
+						"", testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
 					Expect(err).NotTo(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, []string{"default"}, testLogger)
+						"testxxxx", testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
 					Expect(err).NotTo(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
+						context.Background(), k8sClient, metav1.LabelSelector{}, "test", testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
 					Expect(err).To(BeNil())
 
 					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 						context.Background(), k8sClient,
 						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"testpvc": "testpvc"}}, []string{"default"}, testLogger)
+						"test", testLogger)
 					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
 					Expect(err).To(BeNil())
 				})
@@ -301,38 +301,6 @@ var _ = Describe("CephfsCg", func() {
 				Expect(err).To(BeNil())
 				Expect(len(volumeGroupSnapshotClasses)).To(Equal(1))
 			})
-		})
-	})
-	Describe("VolumeGroupSnapshotClassMatchStorageProviders", func() {
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}, nil,
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}, []string{"test1"},
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{}, []string{"test1"},
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be true", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}, []string{"test"},
-			)
-			Expect(match).To(BeTrue())
 		})
 	})
 
@@ -549,12 +517,12 @@ var (
 	SCName  = "test"
 )
 
-func CreateSC(scName string) {
+func CreateSC(scName string, provisioner string) {
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: scName,
 		},
-		Provisioner: "testProvisioner",
+		Provisioner: provisioner,
 	}
 
 	Eventually(func() error {
