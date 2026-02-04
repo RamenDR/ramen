@@ -100,9 +100,8 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     )
 
 
-def configure(profile, existing=False):
-    # Cluster is configured when created.
-    pass
+def configure(profile, existing=False, dns_mode="auto"):
+    logging.info("[%s] Skipping configure for lima cluster", profile["name"])
 
 
 def stop(profile):
