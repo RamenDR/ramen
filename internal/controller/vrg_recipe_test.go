@@ -13,8 +13,10 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	gomegatypes "github.com/onsi/gomega/types"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -245,6 +247,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	vrgCreate := func() error {
 		return k8sClient.Create(ctx, vrg)
 	}
+
 	vrgGet := func() error {
 		return apiReader.Get(ctx, types.NamespacedName{Namespace: vrg.Namespace, Name: vrg.Name}, vrg)
 	}
@@ -608,6 +611,287 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 					})
 				})
 			})
+		})
+	})
+})
+
+var _ = Describe("VolumeReplicationGroupVMRecipe", func() {
+	const (
+		scName          = "a"
+		vrcName         = "b"
+		provisionerName = "x"
+		vrInterval      = "0m"
+		nsCount         = 3
+	)
+	var (
+		storageIDs     = []string{"sid-1"}
+		replicationIDs = []string{"repl-1", "repl-2", "repl-3"}
+	)
+
+	var vrg *ramen.VolumeReplicationGroup
+
+	var (
+		nsNames [nsCount]string
+		pvcs    [nsCount]*corev1.PersistentVolumeClaim
+	)
+
+	var veleroDeployment *appsv1.Deployment
+	createVeleroDeployment := func() {
+		veleroDeployment = &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "velero",
+				Namespace: "velero",
+			},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "velero"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "velero"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "velero", Image: "velero/velero:latest"},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, veleroDeployment)).To(Succeed())
+	}
+
+	updateVeleroDeployment := func() {
+		veleroDeployment = &appsv1.Deployment{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "velero",
+			Namespace: "velero",
+		}, veleroDeployment)
+		Expect(err).NotTo(HaveOccurred())
+		veleroDeployment.Spec.Template.Spec.InitContainers = append(veleroDeployment.Spec.Template.Spec.InitContainers,
+			corev1.Container{
+				Name:  "kubevirt-kubevirt-velero-plugin",
+				Image: "quay.io/kubevirt/kubevirt-velero-plugin:v0.8.0",
+			},
+		)
+
+		err = k8sClient.Update(ctx, veleroDeployment)
+		Expect(err).NotTo(HaveOccurred())
+
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "velero",
+			Namespace: "velero",
+		}, veleroDeployment)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(veleroDeployment.Spec.Template.Spec.InitContainers).Should(ContainElement(MatchFields(IgnoreExtras, Fields{
+			"Name": Equal("kubevirt-kubevirt-velero-plugin"),
+		}),
+		))
+	}
+
+	vrgVMRecipeDefine := func(namespaceName string) {
+		vrg = &ramen.VolumeReplicationGroup{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespaceName, Name: "a"},
+			Spec: ramen.VolumeReplicationGroupSpec{
+				S3Profiles:       []string{controllers.NoS3StoreAvailable},
+				ReplicationState: ramen.Primary,
+				Sync: &ramen.VRGSyncSpec{
+					PeerClasses: []ramen.PeerClass{
+						{
+							ReplicationID:    replicationIDs[0],
+							StorageID:        storageIDs,
+							StorageClassName: scName,
+						},
+					},
+				},
+				KubeObjectProtection: &ramen.KubeObjectProtectionSpec{
+					RecipeRef: &ramen.RecipeRef{
+						Namespace: ramenNamespace,
+						Name:      "vm-recipe",
+					},
+					RecipeParameters: map[string][]string{
+						"K8S_RESOURCE_SELECTOR": {"protected-by-ramendr"},
+						"PVC_RESOURCE_SELECTOR": {"protected-by-ramendr"},
+						"PROTECTED_VMS":         {"vm-test"},
+					},
+				},
+				ProtectedNamespaces: &[]string{
+					"ns-envtest",
+				},
+			},
+		}
+	}
+
+	var err error
+	var (
+		scLabels = func() map[string]string {
+			return map[string]string{
+				controllers.StorageIDLabel: storageIDs[0],
+			}
+		}
+		vrcLabels = func() map[string]string {
+			return map[string]string{
+				controllers.ReplicationIDLabel: replicationIDs[0],
+				controllers.StorageIDLabel:     storageIDs[0],
+			}
+		}
+	)
+	scCreateAndDeferDelete := func() {
+		sc := &storagev1.StorageClass{
+			ObjectMeta:  metav1.ObjectMeta{Name: scName, Labels: scLabels()},
+			Provisioner: provisionerName,
+		}
+		Expect(k8sClient.Create(ctx, sc)).To(Succeed())
+		DeferCleanup(k8sClient.Delete, ctx, sc)
+	}
+
+	vrcCreateAndDeferDelete := func() {
+		vrc := &volrep.VolumeReplicationClass{
+			ObjectMeta: metav1.ObjectMeta{Name: vrcName, Labels: vrcLabels()},
+			Spec: volrep.VolumeReplicationClassSpec{
+				Provisioner: provisionerName,
+				Parameters: map[string]string{
+					"schedulingInterval": vrInterval,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, vrc)).To(Succeed())
+		DeferCleanup(k8sClient.Delete, ctx, vrc)
+	}
+
+	nsCreate := func() *corev1.Namespace {
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{GenerateName: vrgTestNamespaceBase},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+		return ns
+	}
+	nsDelete := func(ns *corev1.Namespace) error {
+		return k8sClient.Delete(ctx, ns)
+	}
+
+	pvcCreate := func(namespaceName string) *corev1.PersistentVolumeClaim {
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespaceName,
+				Name:      "a",
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("1Mi"),
+					},
+				},
+				StorageClassName: func() *string {
+					s := scName
+
+					return &s
+				}(),
+			},
+		}
+		Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+
+		return pvc
+	}
+	pvcDelete := func(pvc *corev1.PersistentVolumeClaim) error {
+		return k8sClient.Delete(ctx, pvc)
+	}
+
+	installCRDFromStruct := func() {
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "virtualmachines.kubevirt.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "kubevirt.io",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Kind:   "VirtualMachine",
+					Plural: "virtualmachines",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{
+						Name:    "v1",
+						Served:  true,
+						Storage: true,
+						Schema: &apiextensionsv1.CustomResourceValidation{
+							OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+								Type: "object",
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(context.TODO(), crd)).To(Succeed())
+		DeferCleanup(k8sClient.Delete, ctx, crd)
+	}
+
+	BeforeEach(func() {
+		scCreateAndDeferDelete()
+		vrcCreateAndDeferDelete()
+		for i := range nsNames {
+			ns := nsCreate()
+			DeferCleanup(nsDelete, ns)
+			nsNames[i] = ns.Name
+			pvcs[i] = pvcCreate(ns.Name)
+			DeferCleanup(pvcDelete, pvcs[i])
+		}
+		ramenConfig.RamenOpsNamespace = ramenNamespace
+		ramenConfig.KubeObjectProtection.VeleroNamespaceName = "velero"
+		configMapUpdate()
+		createVeleroDeployment()
+		configMapUpdate()
+		installCRDFromStruct()
+	})
+	AfterEach(func() {
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, vrg)).To(Succeed())
+		})
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, veleroDeployment)).To(Succeed())
+		})
+	})
+	Context("VRG in an admin namespace with one protected namespace", func() {
+		It("Validation should fail when kubevirt-velero-plugin is not enabled", func() {
+			vrgVMRecipeDefine(ramenNamespace)
+			Expect(k8sClient.Create(ctx, vrg)).To(Succeed())
+			recipeVrg := &ramen.VolumeReplicationGroup{}
+			Eventually(func() bool {
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name: "a", Namespace: ramenNamespace,
+				}, recipeVrg)
+
+				condition := meta.FindStatusCondition(recipeVrg.Status.Conditions, controllers.VRGConditionTypeDataReady)
+				if condition == nil {
+					return false
+				}
+
+				return err == nil && condition.Status == metav1.ConditionFalse &&
+					condition.Reason == controllers.VRGConditionReasonError &&
+					strings.Contains(condition.Message, controllers.KubevirtVeleroPluginName+" is disabled")
+			}, vrgtimeout, vrginterval).Should(BeTrue(),
+				"while waiting for get VRG.Status.ConditionType.DataReady  %s/%s", recipeVrg.Name, recipeVrg.Namespace)
+		})
+
+		It("Validation succeeds when kubevirt-velero-plugin is enabled", func() {
+			updateVeleroDeployment()
+			vrgVMRecipeDefine(ramenNamespace)
+			Expect(k8sClient.Create(ctx, vrg)).To(Succeed())
+			recipeVrg := &ramen.VolumeReplicationGroup{}
+			Eventually(func() bool {
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Name: "a", Namespace: ramenNamespace,
+				}, recipeVrg)
+
+				condition := meta.FindStatusCondition(recipeVrg.Status.Conditions, controllers.VRGConditionTypeDataReady)
+				if condition == nil {
+					return false
+				}
+
+				return err == nil && condition.Status == metav1.ConditionTrue
+			}, vrgtimeout, vrginterval).Should(BeTrue(),
+				"while waiting for get VRG.Status.ConditionType.DataReady  %s/%s", recipeVrg.Name, recipeVrg.Namespace)
 		})
 	})
 })

@@ -1407,9 +1407,6 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		ProtectedPVCs:   extractProtectedPVCNames(vrg),
 	}
 
-	drpc.Status.ResourceConditions.Conditions = assignConditionsWithConflictCheck(
-		vrgs, vrg, VRGConditionTypeNoClusterDataConflict)
-
 	if vrg.Status.PVCGroups != nil {
 		drpc.Status.ResourceConditions.ResourceMeta.PVCGroups = vrg.Status.PVCGroups
 	}
@@ -1424,7 +1421,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.LastKubeObjectProtectionTime = &vrg.Status.KubeObjectProtection.CaptureToRecoverFrom.EndTime
 	}
 
-	updateDRPCProtectedCondition(drpc, vrg, clusterName)
+	updateDRPCProtectedCondition(drpc, vrg, clusterName, vrgs)
 }
 
 // getVRG retrieves a VRG either from the provided map or fetches it from the managed cluster/S3 store.
@@ -1483,85 +1480,6 @@ func extractProtectedPVCNames(vrg *rmn.VolumeReplicationGroup) []string {
 	}
 
 	return protectedPVCs
-}
-
-// findConflictCondition selects the appropriate condition from VRGs based on the conflict type.
-func findConflictCondition(vrgs map[string]*rmn.VolumeReplicationGroup, conflictType string) *metav1.Condition {
-	var selectedCondition *metav1.Condition
-
-	for _, vrg := range vrgs {
-		condition := meta.FindStatusCondition(vrg.Status.Conditions, conflictType)
-		if condition != nil && condition.Status == metav1.ConditionFalse {
-			// Prioritize primary VRG's condition if available
-			if isVRGPrimary(vrg) {
-				return condition // Exit early if primary VRG condition is found
-			}
-
-			// Assign the first non-primary VRG's condition if no primary found yet
-			if selectedCondition == nil {
-				selectedCondition = condition
-			}
-		}
-	}
-
-	return selectedCondition
-}
-
-// assignConditionsWithConflictCheck assigns conditions from a given VRG while prioritizing conflict conditions.
-func assignConditionsWithConflictCheck(vrgs map[string]*rmn.VolumeReplicationGroup,
-	vrg *rmn.VolumeReplicationGroup, conflictType string,
-) []metav1.Condition {
-	conditions := &vrg.Status.Conditions
-	conflictCondition := findConflictCondition(vrgs, conflictType)
-
-	// Ensure the conflict condition is present in the conditions list
-	if conflictCondition != nil {
-		setConflictStatusCondition(conditions, *conflictCondition)
-	}
-
-	return *conditions
-}
-
-func setConflictStatusCondition(existingConditions *[]metav1.Condition,
-	newCondition metav1.Condition,
-) metav1.Condition {
-	if existingConditions == nil {
-		existingConditions = &[]metav1.Condition{}
-	}
-
-	existingCondition := rmnutil.FindCondition(*existingConditions, newCondition.Type)
-	if existingCondition == nil {
-		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
-		*existingConditions = append(*existingConditions, newCondition)
-
-		return newCondition
-	}
-
-	if existingCondition.Status != newCondition.Status ||
-		existingCondition.Reason != newCondition.Reason {
-		existingCondition.Status = newCondition.Status
-		existingCondition.Reason = newCondition.Reason
-		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
-	}
-
-	defaultValue := "none"
-	if newCondition.Reason == "" {
-		newCondition.Reason = defaultValue
-	}
-
-	if newCondition.Message == "" {
-		newCondition.Message = defaultValue
-	}
-
-	existingCondition.Reason = newCondition.Reason
-	existingCondition.Message = newCondition.Message
-	// TODO: Why not update lastTranTime if the above change?
-
-	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
-		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
-	}
-
-	return *existingCondition
 }
 
 // clusterForVRGStatus determines which cluster's VRG should be inspected for status updates to DRPC

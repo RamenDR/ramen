@@ -181,6 +181,9 @@ test-vrg-vs: generate manifests envtest ## Run VolumeReplicationGroupVolSync tes
 test-vrg-recipe: generate manifests envtest ## Run VolumeReplicationGroupRecipe tests.
 	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupRecipe
 
+test-vrg-vmrecipe: generate manifests envtest
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VolumeReplicationGroupVMRecipe
+
 test-vrg-kubeobjects: generate manifests envtest ## Run VolumeReplicationGroupKubeObjects tests.
 	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus VRG_KubeObjectProtection
 
