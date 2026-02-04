@@ -425,11 +425,6 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 
 	drclusterMetrics := createDRClusterMetricsInstance(u.object)
 
-	requeue, err = u.clusterFenceHandle()
-	if err != nil {
-		u.log.Info("Error during processing fencing", "error", err)
-	}
-
 	if reason, err := validateS3Profile(u.ctx, r.APIReader, r.ObjectStoreGetter, u.object, u.namespacedName.String(),
 		u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
@@ -450,6 +445,11 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	if err = u.validateCIDRs(drclusterMetrics.InvalidCIDRsDetectedMetrics, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
 			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
+	}
+
+	requeue, err = u.clusterFenceHandle()
+	if err != nil {
+		u.log.Info("Error during processing fencing", "error", err)
 	}
 
 	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
