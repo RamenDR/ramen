@@ -1,0 +1,8 @@
+Category: com.apple.system_extension.network_extension
+2 extension(s)
+--- com.apple.system_extension.network_extension (Go to 'System Settings > General > Login Items & Extensions > Network Extensions' to modify these system extension(s))
+enabled	active	teamID	bundleID (version)	name	[state]
+ 	*	DE8Y96K9QP	com.cisco.anyconnect.macos.acsockext (5.1.3.14/5.1.3.14)	Cisco Secure Client - Socket Filter Extension	[activated enabled]
+--- com.apple.system_extension.endpoint_security (Go to 'System Settings > General > Login Items & Extensions > Endpoint Security Extensions' to modify these system extension(s))
+enabled	active	teamID	bundleID (version)	name	[state]
+*	 	X9E956P446	com.crowdstrike.falcon.Agent (7.30/202.02)	Falcon Sensor	[activated enabled]
