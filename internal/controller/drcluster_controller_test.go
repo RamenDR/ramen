@@ -399,18 +399,18 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
-		When("fenced", func() {
-			It("reports validated with reason Succeeded and ignores S3Profile errors", func() {
-				By("fencing an existing DRCluster with an invalid S3Profile")
+		When("fenced with invalid S3Profile", func() {
+			It("reports NOT validated with reason s3ListFailed and does not process fencing", func() {
+				By("updating DRCluster to ManuallyFenced with an invalid S3Profile")
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
-					metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced),
+					metav1.ConditionFalse,
+					Equal("s3ListFailed"),
 					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
+					ramen.DRClusterValidated,
 					false,
 				)
 			})
@@ -750,8 +750,8 @@ var _ = Describe("DRClusterController", func() {
 			drcluster = drclusters[0].DeepCopy()
 		})
 
-		When("provided Fencing value is Fenced and the s3 validation fails", func() {
-			It("reports fenced with reason Fencing success but validated condition should be false", func() {
+		When("provided fencing value is Fenced with invalid S3Profile", func() {
+			It("reports NOT validated with reason s3ListFailed and does not process fencing", func() {
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -759,10 +759,10 @@ var _ = Describe("DRClusterController", func() {
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
-					metav1.ConditionTrue,
-					Equal(controllers.DRClusterConditionReasonFenced),
+					metav1.ConditionFalse,
+					Equal("s3ListFailed"),
 					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
+					ramen.DRClusterValidated,
 					false,
 				)
 			})
@@ -773,16 +773,16 @@ var _ = Describe("DRClusterController", func() {
 		// we need to remove the change the fenced status to "", so that ramen will not
 		// look for the peer cluster in this situtaion
 		When("provided Fencing value is empty", func() {
-			It("reports validated with status fencing as Unfenced", func() {
+			It("reports NOT validated with reason s3ListFailed and fencing is cleared", func() {
 				drcluster.Spec.ClusterFence = ""
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
 					metav1.ConditionFalse,
-					Equal(controllers.DRClusterConditionReasonClean),
+					Equal("s3ListFailed"),
 					Ignore(),
-					ramen.DRClusterConditionTypeFenced,
+					ramen.DRClusterValidated,
 					false,
 				)
 			})
