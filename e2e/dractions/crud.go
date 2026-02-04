@@ -189,7 +189,7 @@ func createPlacementManagedByRamen(ctx types.TestContext, name, namespace string
 }
 
 func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, placementName,
-	appname, protectedNamespace string,
+	appname, protectedNamespace string, recipeRef *ramen.RecipeRef,
 ) *ramen.DRPlacementControl {
 	kubeObjectProtectionSpec := &ramen.KubeObjectProtectionSpec{
 		KubeObjectSelector: &metav1.LabelSelector{
@@ -201,6 +201,7 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 				},
 			},
 		},
+		RecipeRef: recipeRef,
 	}
 	drpc := &ramen.DRPlacementControl{
 		TypeMeta: metav1.TypeMeta{
