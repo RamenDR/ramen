@@ -14,6 +14,8 @@ from packaging.version import Version
 from drenv import commands
 from drenv import containerd
 
+from . import dns
+
 MINIKUBE = "minikube"
 
 EXTRA_CONFIG = [
@@ -138,13 +140,15 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     )
 
 
-def configure(profile, existing=False):
+def configure(profile, existing=False, dns_mode="auto"):
     """
     Load configuration done in setup() before the minikube cluster was
     started.
 
     Must be called after the cluster is started, before running any addon.
     """
+    dns.configure(sys.modules[__name__], profile, dns_mode)
+
     if not existing:
         if profile["containerd"]:
             logging.info("[%s] Configuring containerd", profile["name"])
