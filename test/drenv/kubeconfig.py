@@ -64,7 +64,7 @@ def remove(profile, target=DEFAULT_CONFIG):
         if not modified:
             return
 
-        data = yaml.dump(config)
+        data = yaml.safe_dump(config)
         _write(target, data)
 
 
