@@ -389,7 +389,7 @@ def do_resume(args):
 
 def do_dump(args):
     env = load_env(args)
-    yaml.dump(env, sys.stdout)
+    yaml.safe_dump(env, sys.stdout)
 
 
 def execute(func, profiles, name, max_workers=None, **options):
