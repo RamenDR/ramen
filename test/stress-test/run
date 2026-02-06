@@ -6,6 +6,7 @@
 import argparse
 import json
 import os
+import statistics
 import subprocess
 import sys
 import time
@@ -56,6 +57,7 @@ def main():
             break
 
     update_progress(test["stats"], last=True)
+    compute_final_stats(test)
     write_output(test, args.outdir)
 
 
@@ -102,6 +104,27 @@ def update_stats(stats, result):
         stats["failed"] += 1
 
     stats["rate"] = stats["passed"] / stats["done"] * 100
+
+
+def compute_final_stats(test):
+    """
+    Compute statistics from successful runs only.
+
+    Failed runs are excluded since they may be very short (early failure) or
+    very long (timeout at the last step).
+    """
+    times = [r["time"] for r in test["results"] if r["passed"]]
+    if not times:
+        return
+
+    stats = test["stats"]
+    stats["mean"] = statistics.mean(times)
+    stats["median"] = statistics.median(times)
+    stats["min"] = min(times)
+    stats["max"] = max(times)
+    # Standard deviation measures variation, which is undefined for a single value.
+    if len(times) >= 2:
+        stats["stdev"] = statistics.stdev(times)
 
 
 def update_progress(stats, last=False):
