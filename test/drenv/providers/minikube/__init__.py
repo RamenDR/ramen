@@ -158,7 +158,7 @@ def configure(profile, existing=False, dns_mode="auto"):
         _configure_containerd(profile)
         _configure_sysctl(profile["name"])
         _configure_systemd_resolved(profile["name"])
-        if not registry.cache_running():
+        if not registry.cache_is_running():
             logging.warning(
                 "[%s] Registry cache is not running, image pulls will be slow. "
                 "Run 'drenv setup' to start the cache.",

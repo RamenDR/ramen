@@ -10,8 +10,8 @@ registries. This speeds up image pulls and reduces network traffic.
 
 The cache is managed automatically by drenv:
 
-- `drenv setup`: Creates and starts registry cache containers
-- `drenv cleanup`: Stops and removes registry cache containers
+- `drenv setup`: Creates or updates registry cache containers
+- `drenv cleanup`: Keeps registry cache containers running
 
 ## Architecture
 
@@ -76,6 +76,41 @@ sequenceDiagram
 | 5054 | ghcr.io |
 | 5055 | gcr.io |
 
+## Container lifecycle
+
+### Setup
+
+During `drenv setup`, each registry cache container is checked:
+
+1. If the container is not running, it is created
+1. If the container is running with the current configuration, it is kept
+1. If the container is running with outdated configuration, it is recreated
+
+Configuration changes are detected using a hash of the container command line
+stored as a label (`drenv.config`). This ensures containers are recreated when
+the image, environment variables, or other settings change.
+
+To check the current configuration hash:
+
+```
+podman inspect drenv-cache-quay-io --format '{{.Config.Labels.DrenvConfig}}'
+```
+
+### Cleanup
+
+During `drenv cleanup`, registry cache containers are **not** removed. They
+persist across environment runs to maintain the in-memory metadata cache,
+which significantly improves performance.
+
+To manually remove all registry cache containers:
+
+```
+podman rm --force $(podman ps -aq --filter name=drenv-cache)
+```
+
+Note: This only removes containers. Cached data in volumes is preserved and
+will be used when containers are recreated.
+
 ## Initial setup - Linux
 
 Allow access to registry cache ports in the libvirt zone:
@@ -132,10 +167,10 @@ Cached data is stored in podman volumes named `drenv-cache-*`:
 podman volume ls --filter name=drenv-cache
 ```
 
-To remove all cached data:
+To remove all cached data (containers and volumes):
 
 ```
-drenv cleanup <envfile>
+podman rm --force $(podman ps -aq --filter name=drenv-cache)
 podman volume rm $(podman volume ls -q --filter name=drenv-cache)
 ```
 
