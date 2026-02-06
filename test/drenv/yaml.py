@@ -18,8 +18,8 @@ def safe_load_all(stream):
     return yaml.safe_load_all(stream)
 
 
-def dump(data, stream=None):
-    return yaml.dump(data, stream=stream, sort_keys=False)
+def safe_dump(data, stream=None):
+    return yaml.safe_dump(data, stream=stream, sort_keys=False)
 
 
 def _str_presenter(dumper, data):
@@ -36,5 +36,4 @@ def _str_presenter(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
 
-yaml.add_representer(str, _str_presenter)
 yaml.representer.SafeRepresenter.add_representer(str, _str_presenter)

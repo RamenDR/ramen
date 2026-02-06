@@ -1,17 +1,20 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import collections
 import os
 import platform
 import selectors
 import subprocess
-import textwrap
 import time
 
 from . import shutdown
+from . import yaml
 
 OUT = "out"
 ERR = "err"
+
+Failure = collections.namedtuple("Failure", ["command", "exitcode", "error"])
 
 _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 
@@ -19,9 +22,11 @@ _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 # POSIX to 512 but is 4096 on Linux. See pipe(7).
 _PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 
+# Default buffer size for reading from child process.
+_READ_BUF = 32 * 1024
+
 
 class Error(Exception):
-    INDENT = 3 * " "
 
     def __init__(self, command, error, exitcode=None, output=None):
         self.command = command
@@ -36,26 +41,39 @@ class Error(Exception):
         self.__cause__ = None
         return self.with_traceback(exc.__traceback__)
 
-    def _indent(self, s):
-        return textwrap.indent(s, self.INDENT)
+    def __str__(self):
+        info = {"command": list(self.command)}
+        if self.exitcode is not None:
+            info["exitcode"] = self.exitcode
+        if self.output:
+            info["output"] = self.output.rstrip()
+        if self.error:
+            info["error"] = self.error.rstrip()
+        return yaml.safe_dump({"command failed": info}).rstrip()
+
+
+class PipelineError(Error):
+    """
+    Error raised when one or more commands in a pipeline fail.
+    """
+
+    def __init__(self, failures):
+        """
+        failures is a list of (command, exitcode, error) tuples.
+        """
+        self.failures = failures
 
     def __str__(self):
-        lines = [
-            "Command failed:\n",
-            self._indent(f"command: {self.command}\n"),
-        ]
-
-        if self.exitcode is not None:
-            lines.append(self._indent(f"exitcode: {self.exitcode}\n"))
-
-        if self.output:
-            output = self._indent(self.output.rstrip())
-            lines.append(self._indent(f"output:\n{output}\n"))
-
-        error = self._indent(self.error.rstrip())
-        lines.append(self._indent(f"error:\n{error}\n"))
-
-        return "".join(lines)
+        items = []
+        for failure in self.failures:
+            item = {
+                "command": list(failure.command),
+                "exitcode": failure.exitcode,
+            }
+            if failure.error:
+                item["error"] = failure.error.rstrip()
+            items.append(item)
+        return yaml.safe_dump({"pipeline failed": items}).rstrip()
 
 
 class Timeout(Error):
@@ -169,7 +187,7 @@ def watch(
         error = bytearray()
         partial = bytearray()
 
-        for src, data in stream(p, input=input, timeout=timeout):
+        for _, src, data in _stream(p, input=input, timeout=timeout):
             if src is ERR:
                 error += data
             else:
@@ -207,53 +225,143 @@ def watch(
         raise Error(args, error, exitcode=p.returncode)
 
 
-def stream(proc, input=None, bufsize=32 << 10, timeout=None):
+def pipeline(*commands, input=None, decode=True, timeout=None):
     """
-    Stream data from process stdout and stderr.
+    Run commands as a pipeline, piping stdout of each command to stdin of the
+    next.
 
-    proc is a subprocess.Popen instance created with stdout=subprocess.PIPE and
-    stderr=subprocess.PIPE. If only one stream is used don't use this, stream
-    directly from the single pipe.
+    If input is not None, it is written to the first command's stdin.
 
-    If input is not None, proc must be created with stdin=subprocess.PIPE and
-    the pipe must be open.
+    Returns the output of the last command.
 
-    Yields either (OUT, data) or (ERR, data) read from proc stdout and stderr.
-    Returns when both streams are closed.
+    Raises:
+    - PipelineError if any command in the pipeline fails.
+    - Timeout if the pipeline did not complete within the specified timeout.
+
+    Example:
+        pipeline(
+            ["grep", "pattern"],
+            ["sort"],
+            input="line1\nline2\n",
+        )
+    """
+    if len(commands) < 2:
+        raise ValueError("pipeline requires at least 2 commands")
+
+    procs = []
+
+    with shutdown.guard():
+        prev = None
+        for cmd in commands:
+            if prev:
+                stdin = prev.stdout
+            else:
+                stdin = _select_stdin(input=input)
+
+            try:
+                p = subprocess.Popen(
+                    cmd,
+                    stdin=stdin,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            except OSError as e:
+                for proc in procs:
+                    proc.kill()
+                for proc in procs:
+                    proc.wait()
+                raise PipelineError([Failure(cmd, None, f"Could not execute: {e}")])
+
+            # Close our reference so the previous process gets SIGPIPE if this
+            # one exits.
+            if prev:
+                prev.stdout.close()
+
+            procs.append(p)
+            prev = p
+
+    # Collect output and stderr from all processes concurrently to avoid
+    # deadlock when a process blocks on stderr write.
+    output = bytearray()
+    errors = {proc: bytearray() for proc in procs}
+
+    try:
+        for proc, src, data in _stream(*procs, input=input, timeout=timeout):
+            if src is OUT:
+                output += data
+            else:
+                errors[proc] += data
+    except StreamTimeout as e:
+        for proc in procs:
+            proc.kill()
+        raise Timeout(commands, "Pipeline timed out").with_exception(e)
+    except BaseException:
+        for proc in procs:
+            proc.kill()
+        raise
+    finally:
+        for proc in procs:
+            proc.wait()
+
+    # Collect all failures.
+    failures = []
+    for proc in procs:
+        if proc.returncode != 0:
+            error = errors[proc].decode(errors="replace")
+            failures.append(Failure(proc.args, proc.returncode, error))
+
+    if failures:
+        raise PipelineError(failures)
+
+    return output.decode() if decode else bytes(output)
+
+
+def _stream(*procs, input=None, timeout=None):
+    """
+    Stream data from one or more processes stdout and stderr.
+
+    Each proc is a subprocess.Popen instance created with stdout=subprocess.PIPE
+    and/or stderr=subprocess.PIPE.
+
+    If input is not None, the first process must be created with
+    stdin=subprocess.PIPE, and input is written to the first process stdin.
+
+    Yields (proc, src, data) tuples where src is OUT or ERR.
+    Returns when all streams are closed.
     """
     if timeout is None:
         deadline = None
     else:
         deadline = time.monotonic() + timeout
 
+    first = procs[0]
     if input:
-        if proc.stdin is None:
-            raise RuntimeError("Cannot stream input: proc.stdin is None")
-        if proc.stdin.closed:
-            raise RuntimeError("Cannot stream input: proc.stdin is closed")
-    elif proc.stdin:
+        if first.stdin is None:
+            raise RuntimeError("Cannot stream input: first process stdin is None")
+        if first.stdin.closed:
+            raise RuntimeError("Cannot stream input: first process stdin is closed")
+    elif first.stdin:
         try:
-            proc.stdin.close()
+            first.stdin.close()
         except BrokenPipeError:
             pass
 
-    # Use only if input is not None, but it helps pylint.
-    input_view = ""
+    input_view = memoryview(input.encode()) if input else None
     input_offset = 0
 
     with _Selector() as sel:
-        for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
-            if f and not f.closed:
-                sel.register(f, selectors.EVENT_READ, src)
+        for proc in procs:
+            for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
+                if f and not f.closed:
+                    sel.register(f, selectors.EVENT_READ, (proc, src))
         if input:
-            sel.register(proc.stdin, selectors.EVENT_WRITE)
-            input_view = memoryview(input.encode())
+            sel.register(first.stdin, selectors.EVENT_WRITE)
 
         while sel.get_map():
             remaining = _remaining_time(deadline)
             for key, event in sel.select(remaining):
-                if key.fileobj is proc.stdin:
-                    # Stream data from caller to child process.
+                if key.fileobj is first.stdin:
+                    # Stream data from caller to first process.
                     chunk = input_view[input_offset : input_offset + _PIPE_BUF]
                     try:
                         input_offset += os.write(key.fd, chunk)
@@ -266,13 +374,14 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
                             key.fileobj.close()
                 else:
                     # Stream data from child process to caller.
-                    data = os.read(key.fd, bufsize)
+                    data = os.read(key.fd, _READ_BUF)
                     if not data:
                         sel.unregister(key.fileobj)
                         key.fileobj.close()
                         continue
 
-                    yield key.data, data
+                    proc, src = key.data
+                    yield proc, src, data
 
 
 def _select_stdin(input=None, stdin=None):
