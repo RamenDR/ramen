@@ -14,7 +14,7 @@ def setup():
     logging.info("[external] Skipping setup for external provider")
 
 
-def cleanup():
+def cleanup(purge=False):
     logging.info("[external] Skipping cleanup for external provider")
 
 
@@ -45,7 +45,7 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     )
 
 
-def configure(profile, existing=False):
+def configure(profile, existing=False, dns_mode="auto"):
     logging.info("[%s] Skipping configure for external cluster", profile["name"])
 
 

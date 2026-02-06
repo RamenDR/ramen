@@ -16,32 +16,32 @@ from drenv import shutdown
 
 def test_stream_nothing():
     with run("true") as p:
-        stream = list(commands.stream(p))
+        stream = list(commands._stream(p))
     assert stream == []
 
 
 def test_stream_stdout():
     with run("echo", "-n", "output") as p:
-        stream = list(commands.stream(p))
-    assert stream == [(commands.OUT, b"output")]
+        stream = list(commands._stream(p))
+    assert stream == [(p, commands.OUT, b"output")]
 
 
 def test_stream_stderr():
     with run("sh", "-c", "printf error >&2") as p:
-        stream = list(commands.stream(p))
-    assert stream == [(commands.ERR, b"error")]
+        stream = list(commands._stream(p))
+    assert stream == [(p, commands.ERR, b"error")]
 
 
 def test_stream_both():
     with run("sh", "-c", "printf output; printf error >&2") as p:
-        stream = list(commands.stream(p))
-    assert stream == [(commands.OUT, b"output"), (commands.ERR, b"error")]
+        stream = list(commands._stream(p))
+    assert stream == [(p, commands.OUT, b"output"), (p, commands.ERR, b"error")]
 
 
 def test_stream_output_large():
     out = err = 0
     with run("dd", "if=/dev/zero", "bs=1M", "count=100", "status=none") as p:
-        for src, data in commands.stream(p):
+        for _, src, data in commands._stream(p):
             if src == commands.OUT:
                 out += len(data)
             else:
@@ -52,14 +52,14 @@ def test_stream_output_large():
 
 def test_stream_input_empty():
     with run("cat", stdin=subprocess.PIPE) as p:
-        stream = list(commands.stream(p, input=""))
+        stream = list(commands._stream(p, input=""))
     assert stream == []
 
 
 def test_stream_input():
     with run("cat", stdin=subprocess.PIPE) as p:
-        stream = list(commands.stream(p, input="input"))
-    assert stream == [(commands.OUT, b"input")]
+        stream = list(commands._stream(p, input="input"))
+    assert stream == [(p, commands.OUT, b"input")]
 
 
 def test_stream_input_large():
@@ -70,7 +70,7 @@ def test_stream_input_large():
     err = bytearray()
 
     with run("cat", stdin=subprocess.PIPE) as p:
-        for src, data in commands.stream(p, input=text):
+        for _, src, data in commands._stream(p, input=text):
             if src == commands.OUT:
                 out += data
             else:
@@ -83,14 +83,14 @@ def test_stream_input_large():
 def test_stream_input_no_stdin():
     with pytest.raises(RuntimeError):
         with run("cat", stdin=None) as p:
-            list(commands.stream(p, input="input"))
+            list(commands._stream(p, input="input"))
 
 
 def test_stream_input_stdin_closed():
     with pytest.raises(RuntimeError):
         with run("cat", stdin=subprocess.PIPE) as p:
             p.stdin.close()
-            list(commands.stream(p, input="input"))
+            list(commands._stream(p, input="input"))
 
 
 def test_stream_input_child_close_pipe():
@@ -99,41 +99,41 @@ def test_stream_input_child_close_pipe():
     # input was streamed.
     text = "A" * (1 << 20)
     with run("echo", "-n", "output", stdin=subprocess.PIPE) as p:
-        stream = list(commands.stream(p, input=text))
+        stream = list(commands._stream(p, input=text))
 
-    assert stream == [(commands.OUT, b"output")]
+    assert stream == [(p, commands.OUT, b"output")]
 
 
 def test_stream_no_stdout():
     # No reason to stream with one pipe, but it works.
     with run("sh", "-c", "printf error >&2", stdout=None) as p:
-        stream = list(commands.stream(p))
-    assert stream == [(commands.ERR, b"error")]
+        stream = list(commands._stream(p))
+    assert stream == [(p, commands.ERR, b"error")]
 
 
 def test_stream_no_stderr():
     # No reason to stream with one pipe, but it works.
     with run("sh", "-c", "printf output", stderr=None) as p:
-        stream = list(commands.stream(p))
-    assert stream == [(commands.OUT, b"output")]
+        stream = list(commands._stream(p))
+    assert stream == [(p, commands.OUT, b"output")]
 
 
 def test_stream_no_stdout_stderr():
     # No reason without pipes, but it works.
     with run("true", stdout=None, stderr=None) as p:
-        stream = list(commands.stream(p))
+        stream = list(commands._stream(p))
     assert stream == []
 
 
 def test_stream_timeout_expired():
     with run("true") as p:
         with pytest.raises(commands.StreamTimeout):
-            list(commands.stream(p, timeout=0.0))
+            list(commands._stream(p, timeout=0.0))
 
 
 def test_stream_timeout_not_expired():
     with run("true") as p:
-        stream = list(commands.stream(p, timeout=1.0))
+        stream = list(commands._stream(p, timeout=1.0))
     assert stream == []
 
 
@@ -468,13 +468,14 @@ def test_run_cwd(tmpdir):
 def test_error():
     e = commands.Error(("arg1", "arg2"), exitcode=2, error="err 1\nerr 2\n")
     expected = """\
-Command failed:
-   command: ('arg1', 'arg2')
-   exitcode: 2
-   error:
-      err 1
-      err 2
-"""
+command failed:
+  command:
+  - arg1
+  - arg2
+  exitcode: 2
+  error: |-
+    err 1
+    err 2"""
     assert str(e) == expected
 
 
@@ -483,16 +484,227 @@ def test_error_with_output():
         ("arg1", "arg2"), exitcode=3, error="err 1\nerr 2\n", output="out 1\nout 2\n"
     )
     expected = """\
-Command failed:
-   command: ('arg1', 'arg2')
-   exitcode: 3
-   output:
-      out 1
-      out 2
-   error:
-      err 1
-      err 2
-"""
+command failed:
+  command:
+  - arg1
+  - arg2
+  exitcode: 3
+  output: |-
+    out 1
+    out 2
+  error: |-
+    err 1
+    err 2"""
+    assert str(e) == expected
+
+
+# Pipeline tests.
+
+
+def test_pipeline_output():
+    out = commands.pipeline(
+        ["echo", "out"],
+        ["cat"],
+        ["cat"],
+    )
+    assert out == "out\n"
+
+
+def test_pipeline_no_output():
+    out = commands.pipeline(
+        ["true"],
+        ["true"],
+    )
+    assert out == ""
+
+
+def test_pipeline_first_output_ignored():
+    # Only the last command's stdout is returned.
+    out = commands.pipeline(
+        ["echo", "ignored"],
+        ["true"],
+    )
+    assert out == ""
+
+
+def test_pipeline_first_fail():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["false"],
+            ["true"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["false"],
+            exitcode=1,
+            error="",
+        ),
+    ]
+
+
+def test_pipeline_second_fail():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["true"],
+            ["false"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["false"],
+            exitcode=1,
+            error="",
+        ),
+    ]
+
+
+def test_pipeline_output_stderr():
+    out = commands.pipeline(
+        ["sh", "-c", "echo out; echo err1 >&2"],
+        ["sh", "-c", "cat; echo err2 >&2"],
+    )
+    assert out == "out\n"
+
+
+def test_pipeline_no_output_stderr():
+    out = commands.pipeline(
+        ["sh", "-c", "echo err >&2"],
+        ["true"],
+    )
+    assert out == ""
+
+
+def test_pipeline_first_fail_stderr():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["sh", "-c", "echo err >&2; exit 1"],
+            ["true"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["sh", "-c", "echo err >&2; exit 1"],
+            exitcode=1,
+            error="err\n",
+        ),
+    ]
+
+
+def test_pipeline_second_fail_stderr():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["true"],
+            ["sh", "-c", "echo err >&2; exit 1"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["sh", "-c", "echo err >&2; exit 1"],
+            exitcode=1,
+            error="err\n",
+        ),
+    ]
+
+
+def test_pipeline_both_fail():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["sh", "-c", "echo err1 >&2; exit 1"],
+            ["sh", "-c", "echo err2 >&2; exit 2"],
+        )
+    assert e.value.failures == [
+        commands.Failure(
+            command=["sh", "-c", "echo err1 >&2; exit 1"],
+            exitcode=1,
+            error="err1\n",
+        ),
+        commands.Failure(
+            command=["sh", "-c", "echo err2 >&2; exit 2"],
+            exitcode=2,
+            error="err2\n",
+        ),
+    ]
+
+
+def test_pipeline_timeout():
+    with pytest.raises(commands.Timeout):
+        commands.pipeline(
+            ["sleep", "10"],
+            ["sleep", "10"],
+            timeout=0.0,
+        )
+
+
+def test_pipeline_input():
+    out = commands.pipeline(
+        ["cat"],
+        ["cat"],
+        ["cat"],
+        input="meow",
+    )
+    assert out == "meow"
+
+
+def test_pipeline_no_decode():
+    out = commands.pipeline(
+        ["echo", "out"],
+        ["cat"],
+        decode=False,
+    )
+    assert out == b"out\n"
+
+
+def test_pipeline_incomplete_output():
+    # First command produces invalid tar data, second command fails parsing it.
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["echo", "not-valid-tar-data"],
+            ["tar", "--extract", "--file=-"],
+        )
+    assert len(e.value.failures) == 1
+    assert e.value.failures[0].exitcode != 0
+
+
+def test_pipeline_tar(tmpdir):
+    # Create source directory with a file.
+    src = tmpdir.mkdir("src")
+    src.join("file").write("content")
+
+    # Create destination directory.
+    dst = tmpdir.mkdir("dst")
+
+    # Copy using tar pipeline.
+    commands.pipeline(
+        ["tar", "--create", "--file=-", "--directory", str(src), "."],
+        ["tar", "--extract", "--file=-", "--directory", str(dst)],
+    )
+
+    # Verify the file was copied.
+    assert dst.join("file").read() == "content"
+
+
+# Formatting pipeline errors.
+
+
+def test_pipeline_error():
+    failures = [
+        commands.Failure(command=("cmd1", "arg1"), exitcode=1, error="err 1\nerr 2\n"),
+        commands.Failure(command=("cmd2", "arg2"), exitcode=2, error="err 3\nerr 4\n"),
+    ]
+    e = commands.PipelineError(failures)
+    expected = """\
+pipeline failed:
+- command:
+  - cmd1
+  - arg1
+  exitcode: 1
+  error: |-
+    err 1
+    err 2
+- command:
+  - cmd2
+  - arg2
+  exitcode: 2
+  error: |-
+    err 3
+    err 4"""
     assert str(e) == expected
 
 

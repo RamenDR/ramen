@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+Generate markdown report from stress test results.
+"""
+
+import argparse
+import io
+import json
+import os
+import statistics
+import sys
+
+
+def main():
+    args = parse_args()
+    test = load_test(args.directory)
+    report = format_report(test)
+    sys.stdout.write(report)
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Generate markdown report from stress test results"
+    )
+    p.add_argument(
+        "directory",
+        help="directory containing test.json",
+    )
+    return p.parse_args()
+
+
+def load_test(directory):
+    path = os.path.join(directory, "test.json")
+    with open(path) as f:
+        return json.load(f)
+
+
+def compute_stats(test):
+    """
+    Compute statistics from test results.
+
+    Statistics are computed from successful runs only. Failed runs are excluded
+    since they may be very short (early failure) or very long (timeout).
+    """
+    results = test["results"]
+    times = [r["time"] for r in results if r["passed"]]
+
+    stats = {
+        "done": len(results),
+        "passed": len(times),
+        "failed": len(results) - len(times),
+    }
+
+    stats["rate"] = stats["passed"] / stats["done"] * 100 if stats["done"] > 0 else 0.0
+    stats["time"] = sum(r["time"] for r in results)
+
+    if times:
+        stats["mean"] = statistics.mean(times)
+        stats["median"] = statistics.median(times)
+        stats["min"] = min(times)
+        stats["max"] = max(times)
+        # Standard deviation measures variation, which is undefined for a single value.
+        if len(times) >= 2:
+            stats["stdev"] = statistics.stdev(times)
+
+    return stats
+
+
+def format_report(test):
+    """Format test results as markdown."""
+    out = io.StringIO()
+
+    # Git info
+    git = test["git"]
+    out.write("## Stress Test Results\n")
+    out.write("\n")
+    out.write(f"- **Branch:** {git['branch']}\n")
+    out.write(f"- **Commit:** {git['commit']}\n")
+    out.write("\n")
+
+    # Config
+    config = test["config"]
+    out.write("### Configuration\n")
+    out.write("\n")
+    out.write(f"- **Environment:** {config['envfile']}\n")
+    out.write(f"- **Runs:** {config['runs']}\n")
+    if config["name-prefix"]:
+        out.write(f"- **Name prefix:** {config['name-prefix']}\n")
+    if config["exit-first"]:
+        out.write("- **Exit first:** yes\n")
+    out.write("\n")
+
+    # Compute stats from results
+    stats = compute_stats(test)
+    out.write("### Environment startup time\n")
+    out.write("\n")
+    out.write("| Metric | Value |\n")
+    out.write("|--------|-------|\n")
+
+    # Timing stats (only if we have successful runs)
+    if stats["passed"] > 0:
+        out.write(f"| Mean | {stats['mean']:.1f} s |\n")
+        out.write(f"| Median | {stats['median']:.1f} s |\n")
+        out.write(f"| Min | {stats['min']:.1f} s |\n")
+        out.write(f"| Max | {stats['max']:.1f} s |\n")
+        if "stdev" in stats:
+            out.write(f"| Std Dev | {stats['stdev']:.1f} s |\n")
+        else:
+            out.write("| Std Dev | - |\n")
+
+    # Run metadata
+    out.write(f"| Passed | {stats['passed']} |\n")
+    out.write(f"| Failed | {stats['failed']} |\n")
+    out.write(f"| Total time | {stats['time']:.1f} s |\n")
+
+    return out.getvalue()
+
+
+if __name__ == "__main__":
+    main()
