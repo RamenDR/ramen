@@ -50,11 +50,11 @@ def setup():
     _setup_systemd_resolved(version)
 
 
-def cleanup():
+def cleanup(purge=False):
     """
     Cleanup files added by setup().
     """
-    registry.cleanup()
+    registry.cleanup(purge=purge)
     _cleanup_file(_systemd_resolved_drenv_conf())
     _cleanup_file(_sysctl_drenv_conf())
 

@@ -65,15 +65,19 @@ def setup():
         _create_container(name, config, args)
 
 
-def cleanup():
+def cleanup(purge=False):
     """
-    Registry cache containers are not removed during cleanup.
+    Cleanup registry cache containers.
 
-    The containers persist across environment runs to maintain the in-memory
-    cache and improve performance. They are only recreated when the
-    configuration changes (detected via config hash label).
+    By default, containers are kept running to maintain the in-memory cache
+    and improve performance. Use purge=True to remove all containers.
     """
-    logging.debug("[registry] Keeping cache containers running")
+    if purge:
+        for registry in REGISTRIES:
+            name = _container_name(registry)
+            _remove_container(name)
+    else:
+        logging.debug("[registry] Keeping cache containers running")
 
 
 # Private functions

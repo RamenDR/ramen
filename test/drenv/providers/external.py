@@ -14,7 +14,7 @@ def setup():
     logging.info("[external] Skipping setup for external provider")
 
 
-def cleanup():
+def cleanup(purge=False):
     logging.info("[external] Skipping cleanup for external provider")
 
 

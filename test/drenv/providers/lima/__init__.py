@@ -48,7 +48,7 @@ def setup():
     pass
 
 
-def cleanup():
+def cleanup(purge=False):
     pass
 
 

@@ -12,6 +12,7 @@ The cache is managed automatically by drenv:
 
 - `drenv setup`: Creates or updates registry cache containers
 - `drenv cleanup`: Keeps registry cache containers running
+- `drenv cleanup --purge`: Removes registry cache containers
 
 ## Architecture
 
@@ -102,10 +103,10 @@ During `drenv cleanup`, registry cache containers are **not** removed. They
 persist across environment runs to maintain the in-memory metadata cache,
 which significantly improves performance.
 
-To manually remove all registry cache containers:
+To remove all registry cache containers:
 
 ```
-podman rm --force $(podman ps -aq --filter name=drenv-cache)
+drenv cleanup --purge envs/regional-dr.yaml
 ```
 
 Note: This only removes containers. Cached data in volumes is preserved and

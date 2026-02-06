@@ -143,7 +143,12 @@ def parse_args():
 
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
     add_command(sp, "setup", do_setup, help="setup host for drenv")
-    add_command(sp, "cleanup", do_cleanup, help="cleanup host")
+    p = add_command(sp, "cleanup", do_cleanup, help="cleanup host")
+    p.add_argument(
+        "--purge",
+        action="store_true",
+        help="remove registry cache containers",
+    )
 
     return parser.parse_args()
 
@@ -251,7 +256,7 @@ def do_cleanup(args):
     for name in set(p["provider"] for p in env["profiles"]):
         logging.info("[main] Cleaning up '%s' for drenv", name)
         provider = providers.get(name)
-        provider.cleanup()
+        provider.cleanup(purge=args.purge)
     ssh.cleanup()
 
 
