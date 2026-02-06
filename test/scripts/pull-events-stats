@@ -61,14 +61,14 @@ Example - summary statistics from a stress-test run (only successful runs):
 Example - compare stress-test runs (only successful runs):
 
     $ scripts/pull-events-stats --compare out/before out/after
-    Metric               |      before |       after |   Change
-    ----------------------------------------------------------
-    Pull events          |        1170 |        1053 |    0.90x
-    Total size           |  147740 MiB |  132966 MiB |    0.90x
-    Total pull time      |   11590.1 s |    4745.2 s |    0.41x
-    Weighted bandwidth   |  12.7 MiB/s |  28.0 MiB/s |    2.20x
-    Passed               |          10 |           9 |        -
-    Failed               |           0 |           1 |        -
+    Metric               |     before |      after |   Change
+    ---------------------------------------------------------
+    Pull events/run      |        120 |        127 |    1.06x
+    Total size/run       |  15431 MiB |  18706 MiB |    1.21x
+    Total pull time/run  |   1159.0 s |    522.9 s |    0.45x
+    Weighted bandwidth   | 13.3 MiB/s | 35.8 MiB/s |    2.69x
+    Passed               |         10 |          9 |        -
+    Failed               |          0 |          1 |        -
 
 More examples:
 
@@ -564,9 +564,14 @@ def print_summary_auto(directories: list[Path], format: str) -> None:
         writer.writerow(["Metric", "Value"])
         writer.writerow(["Pull events", pull_stats["pull_count"]])
         writer.writerow(["Total size (MiB)", f"{pull_stats['total_size_mib']:.0f}"])
-        writer.writerow(["Total pull time (s)", f"{pull_stats['total_pull_time_s']:.1f}"])
         writer.writerow(
-            ["Weighted bandwidth (MiB/s)", f"{pull_stats['weighted_bandwidth_mbs']:.1f}"]
+            ["Total pull time (s)", f"{pull_stats['total_pull_time_s']:.1f}"]
+        )
+        writer.writerow(
+            [
+                "Weighted bandwidth (MiB/s)",
+                f"{pull_stats['weighted_bandwidth_mbs']:.1f}",
+            ]
         )
         writer.writerow(["Passed", passed])
         writer.writerow(["Failed", failed])
@@ -576,7 +581,9 @@ def print_summary_auto(directories: list[Path], format: str) -> None:
         print(f"| Pull events | {pull_stats['pull_count']} |")
         print(f"| Total size | {pull_stats['total_size_mib']:.0f} MiB |")
         print(f"| Total pull time | {pull_stats['total_pull_time_s']:.1f} s |")
-        print(f"| Weighted bandwidth | {pull_stats['weighted_bandwidth_mbs']:.1f} MiB/s |")
+        print(
+            f"| Weighted bandwidth | {pull_stats['weighted_bandwidth_mbs']:.1f} MiB/s |"
+        )
         print(f"| Passed | {passed} |")
         print(f"| Failed | {failed} |")
     else:
@@ -620,6 +627,19 @@ def print_stress_test_comparison(directories: list[Path], format: str) -> None:
         pull_stats["name"] = directory.name
         pull_stats["passed"] = passed
         pull_stats["failed"] = failed
+
+        # Compute per-run values for fair comparison across different run counts.
+        if passed > 0:
+            pull_stats["pull_count_per_run"] = pull_stats["pull_count"] / passed
+            pull_stats["total_size_mib_per_run"] = pull_stats["total_size_mib"] / passed
+            pull_stats["total_pull_time_s_per_run"] = (
+                pull_stats["total_pull_time_s"] / passed
+            )
+        else:
+            pull_stats["pull_count_per_run"] = 0
+            pull_stats["total_size_mib_per_run"] = 0
+            pull_stats["total_pull_time_s_per_run"] = 0
+
         stats_list.append(pull_stats)
 
     s1, s2 = stats_list[0], stats_list[1]
@@ -632,17 +652,17 @@ def print_stress_test_comparison(directories: list[Path], format: str) -> None:
     changes = {
         "passed": "-",
         "failed": "-",
-        "pull_count": f"{ratio(s1['pull_count'], s2['pull_count']):.2f}x",
-        "total_size_mib": f"{ratio(s1['total_size_mib'], s2['total_size_mib']):.2f}x",
-        "total_pull_time_s": f"{ratio(s1['total_pull_time_s'], s2['total_pull_time_s']):.2f}x",
+        "pull_count_per_run": f"{ratio(s1['pull_count_per_run'], s2['pull_count_per_run']):.2f}x",
+        "total_size_mib_per_run": f"{ratio(s1['total_size_mib_per_run'], s2['total_size_mib_per_run']):.2f}x",
+        "total_pull_time_s_per_run": f"{ratio(s1['total_pull_time_s_per_run'], s2['total_pull_time_s_per_run']):.2f}x",
         "weighted_bandwidth_mbs": f"{ratio(s1['weighted_bandwidth_mbs'], s2['weighted_bandwidth_mbs']):.2f}x",
     }
 
     # Define rows: (label, key, format_func).
     rows = [
-        ("Pull events", "pull_count", lambda v: f"{v}"),
-        ("Total size", "total_size_mib", lambda v: f"{v:.0f} MiB"),
-        ("Total pull time", "total_pull_time_s", lambda v: f"{v:.1f} s"),
+        ("Pull events/run", "pull_count_per_run", lambda v: f"{v:.0f}"),
+        ("Total size/run", "total_size_mib_per_run", lambda v: f"{v:.0f} MiB"),
+        ("Total pull time/run", "total_pull_time_s_per_run", lambda v: f"{v:.1f} s"),
         ("Weighted bandwidth", "weighted_bandwidth_mbs", lambda v: f"{v:.1f} MiB/s"),
         ("Passed", "passed", lambda v: f"{v}"),
         ("Failed", "failed", lambda v: f"{v}"),
