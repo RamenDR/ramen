@@ -138,3 +138,40 @@ To remove all cached data:
 drenv cleanup <envfile>
 podman volume rm $(podman volume ls -q --filter name=drenv-cache)
 ```
+
+## Cache metrics
+
+Each registry cache exposes Prometheus metrics on an internal debug port
+to check the cache hit rate.
+
+To view cache hit/miss counts for a specific registry (e.g., quay.io):
+
+```
+podman exec drenv-cache-quay-io wget -qO- http://localhost:5001/metrics 2>/dev/null | grep registry_storage_cache
+```
+
+Example output:
+
+```
+registry_storage_cache_total{type="Hit"} 2052
+registry_storage_cache_total{type="Miss"} 454
+registry_storage_cache_total{type="Request"} 2506
+```
+
+To check all registries at once:
+
+```
+test/registry-cache/cache-stats
+```
+
+Example output:
+
+```
+| Registry | Hit | Miss | Request | Hit % |
+|----------|-----|------|---------|-------|
+| quay-io | 2276 | 505 | 2781 | 81% |
+| docker-io | 122 | 40 | 162 | 75% |
+| registry-k8s-io | 236 | 59 | 295 | 80% |
+| ghcr-io | 45 | 24 | 69 | 65% |
+| gcr-io | 0 | 0 | 0 | 0% |
+```

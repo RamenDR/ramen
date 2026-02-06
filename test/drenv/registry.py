@@ -78,6 +78,10 @@ def setup():
             f"{name}:/var/lib/registry",
             "--env",
             f"REGISTRY_PROXY_REMOTEURL={config['upstream']}",
+            "--env",
+            "REGISTRY_HTTP_DEBUG_ADDR=:5001",
+            "--env",
+            "REGISTRY_HTTP_DEBUG_PROMETHEUS_ENABLED=true",
             CACHE_IMAGE,
         ]
         for line in commands.watch(*cmd):

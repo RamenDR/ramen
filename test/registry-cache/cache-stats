@@ -1,0 +1,20 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Display cache hit/miss statistics for all registry caches.
+
+echo "| Registry | Hit | Miss | Request | Hit % |"
+echo "|----------|-----|------|---------|-------|"
+for reg in quay-io docker-io registry-k8s-io ghcr-io gcr-io; do
+    metrics=$(podman exec drenv-cache-$reg wget -qO- http://localhost:5001/metrics 2>/dev/null)
+    hit=$(echo "$metrics" | grep 'registry_storage_cache_total{type="Hit"}' | awk '{print $2}')
+    miss=$(echo "$metrics" | grep 'registry_storage_cache_total{type="Miss"}' | awk '{print $2}')
+    req=$(echo "$metrics" | grep 'registry_storage_cache_total{type="Request"}' | awk '{print $2}')
+    if [ -n "$req" ] && [ "$req" != "0" ]; then
+        pct=$((hit * 100 / req))
+    else
+        pct=0
+    fi
+    echo "| $reg | ${hit:-0} | ${miss:-0} | ${req:-0} | ${pct}% |"
+done
