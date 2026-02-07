@@ -25,6 +25,7 @@ def command(args):
     os.mkdir(args.outdir)
 
     test = {
+        "start_time": int(time.time()),
         "git": git_info(),
         "config": {
             "runs": args.runs,
@@ -57,6 +58,7 @@ def command(args):
 
     update_progress(test["stats"], last=True)
     compute_final_stats(test)
+    test["end_time"] = int(time.time())
     write_output(test, args.outdir)
 
 
@@ -110,9 +112,11 @@ def write_output(test, outdir):
 def run_test(name, args):
     log = os.path.join(args.outdir, name + ".log")
 
+    start_time = int(time.time())
     start = time.monotonic()
     cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix)
     elapsed = time.monotonic() - start
+    end_time = int(time.time())
     passed = cp.returncode == 0
 
     drenv(
@@ -136,6 +140,8 @@ def run_test(name, args):
         "name": name,
         "passed": passed,
         "time": elapsed,
+        "start_time": start_time,
+        "end_time": end_time,
     }
 
 
