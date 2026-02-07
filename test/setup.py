@@ -29,6 +29,7 @@ setuptools.setup(
         "PyYAML",
         "toml",
         "packaging",
+        "matplotlib",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",
