@@ -11,9 +11,12 @@ import os
 import statistics
 
 from . import failures
+from . import metrics
 
 
 def command(args):
+    metrics.collect(args.directory)
+
     test = load_test(args.directory)
     report = format_report(test)
     failure_report = failures.analyze(args.directory)
