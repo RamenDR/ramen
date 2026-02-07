@@ -134,3 +134,20 @@ out.4/021.log:drenv.commands.Error: Command failed:
 The clusters are running, hopefully in the same state when the run
 failed. Sometimes the cluster fixed itself after the failure, this
 usually means some timeout was too short.
+
+## Analyzing failures
+
+After a test run, use `analyze-failures` to generate a structured
+report of all failures:
+
+```
+stress-test/analyze-failures out
+```
+
+This creates `failures.md` in the output directory with:
+
+- **Summary**: Error counts by addon
+- **Detailed errors**: Full error messages with log file references
+
+The structured format makes it easy to identify the most common failure
+patterns and prioritize fixes.
