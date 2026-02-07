@@ -12,10 +12,12 @@ import statistics
 
 from . import failures
 from . import metrics
+from . import plot
 
 
 def command(args):
     metrics.collect(args.directory)
+    has_plots = plot.create_plots(args.directory)
 
     test = load_test(args.directory)
     report = format_report(test)
@@ -27,6 +29,9 @@ def command(args):
         if failure_report:
             f.write("\n")
             f.write(failure_report)
+        if has_plots:
+            f.write("\n## System Metrics\n\n")
+            f.write("See [metrics.md](metrics.md) for system metrics charts.\n")
 
     print(f"Report written to: {output_path}")
 
