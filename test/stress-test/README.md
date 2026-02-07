@@ -151,3 +151,15 @@ This creates `failures.md` in the output directory with:
 
 The structured format makes it easy to identify the most common failure
 patterns and prioritize fixes.
+
+## Collecting system metrics
+
+If you have Netdata running on the test host, collect system metrics
+for correlation with test failures:
+
+```
+stress-test/collect-metrics out
+```
+
+This reads the test time range from `test.json` and exports CPU, memory,
+disk I/O, and network metrics to `metrics/metrics.json` for analysis.
