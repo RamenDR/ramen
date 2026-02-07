@@ -163,3 +163,16 @@ stress-test/collect-metrics out
 
 This reads the test time range from `test.json` and exports CPU, memory,
 disk I/O, and network metrics to `metrics/metrics.json` for analysis.
+
+## Generating visual reports
+
+Generate plots and a metrics report from collected data:
+
+```
+stress-test/analyze-metrics out
+```
+
+This creates:
+
+- `metrics/*.png`: Individual metric plots
+- `metrics.md`: Consolidated report with all plots

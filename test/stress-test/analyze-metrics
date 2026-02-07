@@ -1,0 +1,478 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+# analyze-metrics
+
+Analyze collected Netdata metrics and generate visual reports.
+
+This script reads CSV files created by `collect-metrics` and generates:
+- PNG graphs for each metric
+- `metrics.md` report with all charts organized by category
+
+## Requirements
+
+matplotlib must be installed:
+
+    pip install matplotlib
+
+## Usage
+
+    ./analyze-metrics path/to/test-output-dir
+
+## Output
+
+Creates PNG files in the `metrics/` subdirectory:
+
+- `metrics/system_cpu.png`
+- `metrics/system_ram.png`
+- `metrics/system_load.png`
+- etc.
+
+Also generates `metrics.md` in the output directory with all charts
+organized by category (System, Memory, Disk, Network) for easy viewing
+in GitHub or any markdown renderer.
+
+## Embedding in Markdown
+
+    ![CPU Usage](metrics/system_cpu.png)
+
+Or view all charts at once by opening `metrics.md`.
+"""
+
+import argparse
+import csv
+import os
+import sys
+from datetime import datetime
+
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+except ImportError:
+    sys.exit("Error: matplotlib is required. Install with: pip install matplotlib")
+
+# Use matplotlib tab10 color scheme for all charts.
+_TAB10_COLORS = plt.cm.tab10.colors
+plt.rcParams["axes.prop_cycle"] = plt.cycler(color=_TAB10_COLORS)
+
+# Chart configurations: title, y-axis label, optional scale factor,
+# and chart style ("stacked", "filled", or "line" default).
+# Scale factor divides values for readability (e.g., KiB/s -> MiB/s).
+CHART_CONFIG = {
+    "system_cpu": {"title": "CPU Usage", "ylabel": "Percent", "style": "stacked"},
+    "system_ram": {"title": "Memory Usage", "ylabel": "MiB", "style": "stacked"},
+    "system_load": {"title": "System Load", "ylabel": "Load"},
+    "system_io": {
+        "title": "Disk I/O",
+        "ylabel": "MiB/s",
+        "scale": 1024,
+        "style": "filled",
+    },
+    "system_net": {
+        "title": "Network Traffic",
+        "ylabel": "Mbit/s",
+        "scale": 1000,
+        "style": "filled",
+    },
+    "system_ctxt": {
+        "title": "Context Switches",
+        "ylabel": "Switches/s",
+        "style": "filled",
+    },
+    "system_intr": {"title": "Interrupts", "ylabel": "Interrupts/s", "style": "filled"},
+    "system_processes": {
+        "title": "Processes",
+        "ylabel": "Processes",
+        "style": "filled",
+    },
+    "system_swap": {"title": "Swap Usage", "ylabel": "MiB"},
+    "mem_swap": {"title": "Swap Usage", "ylabel": "MiB", "style": "stacked"},
+    "mem_pgfaults": {"title": "Page Faults", "ylabel": "Faults/s"},
+}
+
+# Default configurations for chart name prefixes. Applied when no exact
+# match exists in CHART_CONFIG.
+PREFIX_DEFAULTS = {
+    "net_": {"ylabel": "Mbit/s", "scale": 1000, "style": "filled"},
+    "disk_": {"ylabel": "MiB/s", "scale": 1024, "style": "filled"},
+}
+
+# Stacked area chart column ordering, per OS where needed.
+# Each variant is a list of column names in visual order (top to bottom,
+# matching the chart output). Largest category at the bottom for a
+# stable baseline. The variant matching the most CSV columns is
+# selected automatically. Colors are assigned from tab10.
+
+# --- RAM ---
+
+# macOS variant.
+_RAM_MACOS = [
+    "free",  # unused, immediately available
+    "inactive",  # not recently used, reclaimable without I/O
+    "purgeable",  # can be freed immediately if needed
+    "speculative",  # pre-fetched pages that may be needed soon
+    "throttled",  # pages owned by throttled (background/app nap) processes
+    "compressor",  # compressed in RAM to avoid swapping (memory pressure)
+    "active",  # recently used by applications
+    "wired",  # kernel and driver memory, cannot be freed
+]
+
+# Linux variant.
+_RAM_LINUX = [
+    "free",  # unused, immediately available
+    "buffers",  # kernel buffer cache for block devices, reclaimable
+    "cached",  # page cache for files, reclaimable
+    "used",  # actively used by applications and kernel
+]
+
+# --- CPU ---
+# Largest category at the bottom for a stable baseline. On macOS that
+# is "user" (application code). On Linux VMs, "guest" dominates since
+# most CPU time goes to running virtual machines.
+
+# macOS: only user, system, nice are reported.
+_CPU_MACOS = [
+    "nice",  # low-priority user processes
+    "system",  # kernel and driver code
+    "user",  # application code
+]
+
+# Linux: full breakdown including virtualization categories.
+_CPU_LINUX = [
+    "guest_nice",  # running low-priority guest VMs
+    "steal",  # time stolen by hypervisor for other VMs
+    "irq",  # hardware interrupt handling
+    "softirq",  # deferred interrupt processing
+    "iowait",  # waiting for disk or network I/O
+    "nice",  # low-priority user processes
+    "user",  # application code
+    "system",  # kernel and driver code
+    "guest",  # running virtual CPUs for guest VMs
+]
+
+# --- Swap (same on all OSes) ---
+
+_SWAP = [
+    "free",  # available swap space
+    "used",  # swapped out to disk (high latency)
+]
+
+# Charts rendered as stacked area: chart_name -> list of OS variants.
+# The variant matching the most actual CSV columns is selected.
+STACKED_CHARTS = {
+    "system_ram": [_RAM_MACOS, _RAM_LINUX],
+    "system_cpu": [_CPU_MACOS, _CPU_LINUX],
+    "mem_swap": [_SWAP],
+}
+
+
+def generate_metrics_md(path, charts):
+    """
+    Generate a markdown file with all metric charts.
+
+    Creates a document with images organized by category:
+    - System (cpu, load, ram, io)
+    - Memory (swap, pgfaults)
+    - Disk
+    - Network (grouped by interface type)
+
+    Args:
+        path: Output path for metrics.md
+        charts: List of chart names (without extension)
+    """
+    # Categorize charts
+    system = []
+    memory = []
+    disk = []
+    network = []
+
+    for chart in sorted(charts):
+        if chart.startswith("system_"):
+            system.append(chart)
+        elif chart.startswith("mem_"):
+            memory.append(chart)
+        elif chart.startswith("disk_"):
+            disk.append(chart)
+        elif chart.startswith("net_"):
+            network.append(chart)
+
+    with open(path, "w") as f:
+        f.write("# System Metrics\n\n")
+
+        # System section
+        if system:
+            f.write("## System\n\n")
+            for chart in system:
+                title = _chart_title(chart)
+                f.write(f"### {title}\n\n")
+                f.write(f"![{title}](metrics/{chart}.png)\n\n")
+
+        # Memory section
+        if memory:
+            f.write("## Memory Details\n\n")
+            for chart in memory:
+                title = _chart_title(chart)
+                f.write(f"### {title}\n\n")
+                f.write(f"![{title}](metrics/{chart}.png)\n\n")
+
+        # Disk section
+        if disk:
+            f.write("## Disk\n\n")
+            for chart in disk:
+                title = _chart_title(chart)
+                f.write(f"### {title}\n\n")
+                f.write(f"![{title}](metrics/{chart}.png)\n\n")
+
+        # Network section
+        if network:
+            f.write("## Network\n\n")
+
+            for chart in network:
+                title = _chart_title(chart)
+                f.write(f"### {title}\n\n")
+                f.write(f"![{title}](metrics/{chart}.png)\n\n")
+
+
+def _get_config(chart_name):
+    """
+    Get chart configuration by exact name or prefix match.
+
+    Looks up CHART_CONFIG first, then falls back to PREFIX_DEFAULTS.
+    """
+    config = CHART_CONFIG.get(chart_name)
+    if config:
+        return config
+    for prefix, defaults in PREFIX_DEFAULTS.items():
+        if chart_name.startswith(prefix):
+            return defaults
+    return {}
+
+
+def _chart_title(chart_name):
+    """Convert chart name to human-readable title."""
+    config = _get_config(chart_name)
+    if "title" in config:
+        return config["title"]
+
+    # Generate title from name: system_cpu -> System CPU, net_en0 -> Network en0
+    parts = chart_name.split("_", 1)
+    if len(parts) == 2:
+        category, name = parts
+        category_map = {
+            "system": "System",
+            "mem": "Memory",
+            "disk": "Disk",
+            "net": "Network",
+        }
+        prefix = category_map.get(category, category.title())
+        return f"{prefix} {name}"
+    return chart_name.replace("_", " ").title()
+
+
+def main():
+    args = parse_args()
+
+    outdir = args.outdir
+    metrics_dir = os.path.join(outdir, "metrics")
+
+    if not os.path.isdir(outdir):
+        sys.exit(f"Error: Output directory not found: {outdir}")
+
+    if not os.path.isdir(metrics_dir):
+        sys.exit(
+            f"Error: Metrics directory not found: {metrics_dir}\n"
+            f"Run collect-metrics first: ./collect-metrics {outdir}"
+        )
+
+    # Find all CSV files
+    csv_files = sorted(f for f in os.listdir(metrics_dir) if f.endswith(".csv"))
+    if not csv_files:
+        sys.exit(f"Error: No CSV files found in {metrics_dir}")
+
+    print(f"Plotting {len(csv_files)} charts...")
+
+    created_charts = []
+    for csv_file in csv_files:
+        csv_path = os.path.join(metrics_dir, csv_file)
+        chart_name = csv_file.replace(".csv", "")
+        png_path = os.path.join(metrics_dir, chart_name + ".png")
+
+        try:
+            plot_chart(csv_path, png_path, chart_name)
+            print(f"  Created: {chart_name}.png")
+            created_charts.append(chart_name)
+        except Exception as e:
+            print(f"  Failed: {chart_name} - {e}")
+
+    print(f"Plots saved to: {metrics_dir}")
+
+    # Generate metrics.md with all charts
+    metrics_md_path = os.path.join(outdir, "metrics.md")
+    generate_metrics_md(metrics_md_path, created_charts)
+    print(f"Report: {metrics_md_path}")
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Generate graphs from collected Netdata metrics"
+    )
+    p.add_argument(
+        "outdir",
+        help="stress test output directory (must contain metrics/ from collect-metrics)",
+    )
+    return p.parse_args()
+
+
+def _select_variant(variants, columns):
+    """
+    Select the stacked chart variant matching the most CSV columns.
+
+    Each variant is a list of column names. We pick the one covering
+    the most actual columns, so macOS-specific columns select the
+    macOS variant, etc.
+    """
+    best = variants[0]
+    best_count = 0
+    for variant in variants:
+        count = sum(1 for col in columns if col in variant)
+        if count > best_count:
+            best = variant
+            best_count = count
+    return best
+
+
+def _apply_variant(variant, columns):
+    """
+    Order columns and assign colors for a stacked area chart.
+
+    Returns (ordered_columns, colors). Variants are in visual order
+    (top to bottom), reversed here for stackplot (bottom to top).
+    Colors are assigned from tab10.
+    """
+    ordered = {}
+
+    # Reverse: variants are top-to-bottom, stackplot needs bottom-to-top.
+    for name in reversed(variant):
+        if name in columns:
+            ordered[name] = columns[name]
+
+    # Add any remaining columns not in the variant.
+    for name in columns:
+        if name not in ordered:
+            ordered[name] = columns[name]
+
+    colors = [_TAB10_COLORS[i % len(_TAB10_COLORS)] for i in range(len(ordered))]
+
+    return ordered, colors
+
+
+def plot_chart(csv_path, png_path, chart_name):
+    """
+    Read a CSV file and create a PNG graph.
+
+    The CSV format from Netdata has:
+    - First column: Unix timestamp (named "time")
+    - Remaining columns: metric values
+
+    Args:
+        csv_path: Path to the input CSV file.
+        png_path: Path for the output PNG file.
+        chart_name: Name of the chart (used for title/labels).
+    """
+    # Read CSV data
+    times = []
+    columns = {}
+
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        headers = reader.fieldnames
+
+        if not headers or "time" not in headers:
+            raise ValueError("CSV missing 'time' column")
+
+        # Initialize columns
+        for header in headers:
+            if header != "time":
+                columns[header] = []
+
+        # Read data
+        for row in reader:
+            # Parse time - can be Unix timestamp or datetime string
+            time_str = row["time"]
+            try:
+                # Try Unix timestamp first
+                timestamp = float(time_str)
+                times.append(datetime.fromtimestamp(timestamp))
+            except ValueError:
+                # Try datetime string format: "2026-02-07 08:05:47"
+                times.append(datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S"))
+
+            # Read metric values
+            for header in headers:
+                if header != "time":
+                    try:
+                        columns[header].append(float(row[header]))
+                    except (ValueError, TypeError):
+                        columns[header].append(0.0)
+
+    if not times:
+        raise ValueError("CSV has no data rows")
+
+    # Get chart configuration
+    config = _get_config(chart_name)
+    title = _chart_title(chart_name)
+    ylabel = config.get("ylabel", "Value")
+    scale = config.get("scale", 1)
+
+    # Apply scale factor for readability (e.g., KiB/s -> MiB/s)
+    if scale != 1:
+        for label in columns:
+            columns[label] = [v / scale for v in columns[label]]
+
+    # Create the plot (24x8 for high resolution, scale down in markdown)
+    fig, ax = plt.subplots(figsize=(24, 8))
+
+    style = config.get("style", "line")
+
+    if style == "stacked":
+        variant = _select_variant(STACKED_CHARTS[chart_name], columns)
+        columns, colors = _apply_variant(variant, columns)
+        labels = list(columns.keys())
+        values = [columns[label] for label in labels]
+        ax.stackplot(times, values, labels=labels, colors=colors)
+    elif style == "filled":
+        for label, values in columns.items():
+            ax.fill_between(times, values, 0, label=label)
+            ax.axhline(y=0, color="black", linewidth=0.5)
+    else:
+        for label, values in columns.items():
+            ax.plot(times, values, label=label)
+
+    ax.set_title(title)
+    ax.set_xlabel("Time")
+    ax.set_ylabel(ylabel)
+    ax.grid(True, alpha=0.3)
+
+    # Disable scientific notation on y-axis for readability
+    ax.ticklabel_format(style="plain", axis="y")
+
+    # Format x-axis with readable time labels
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    fig.autofmt_xdate()
+
+    # Add legend if there are multiple columns
+    if len(columns) > 1:
+        ax.legend(loc="upper left", fontsize="small", ncol=min(len(columns), 4))
+
+    # Save the plot
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=100)
+    plt.close()
+
+
+if __name__ == "__main__":
+    main()
