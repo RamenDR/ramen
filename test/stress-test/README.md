@@ -176,3 +176,8 @@ This creates:
 
 - `metrics/*.png`: Individual metric plots
 - `metrics.md`: Consolidated report with all plots
+
+## Example output
+
+See the [example](example/) directory for complete output from a
+100-run stress test, including generated reports and visualizations.
