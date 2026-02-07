@@ -4,7 +4,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
+# report
+
 Generate markdown report from stress test results.
+
+## Usage
+
+    # Write to stdout
+    ./report path/to/test-output-dir
+
+    # Write to file
+    ./report path/to/test-output-dir -o test.md
+
+## Output
+
+Human-readable markdown report with:
+- Configuration (environment, runs, git info)
+- Summary (pass/fail, timing)
+- Timing statistics (mean, median, min, max, stdev)
+- Per-run results table
 """
 
 import argparse
@@ -19,7 +37,11 @@ def main():
     args = parse_args()
     test = load_test(args.directory)
     report = format_report(test)
-    sys.stdout.write(report)
+
+    output_path = os.path.join(args.directory, "test.md")
+    with open(output_path, "w") as f:
+        f.write(report)
+    print(f"Report written to: {output_path}")
 
 
 def parse_args():
@@ -63,61 +85,96 @@ def compute_stats(test):
         stats["median"] = statistics.median(times)
         stats["min"] = min(times)
         stats["max"] = max(times)
-        # Standard deviation measures variation, which is undefined for a single value.
         if len(times) >= 2:
             stats["stdev"] = statistics.stdev(times)
+
+    if stats["done"] > 0:
+        stats["time/run"] = stats["time"] / stats["done"]
 
     return stats
 
 
 def format_report(test):
     """Format test results as markdown."""
-    out = io.StringIO()
-
-    # Git info
-    git = test["git"]
-    out.write("## Stress Test Results\n")
-    out.write("\n")
-    out.write(f"- **Branch:** {git['branch']}\n")
-    out.write(f"- **Commit:** {git['commit']}\n")
-    out.write("\n")
-
-    # Config
-    config = test["config"]
-    out.write("### Configuration\n")
-    out.write("\n")
-    out.write(f"- **Environment:** {config['envfile']}\n")
-    out.write(f"- **Runs:** {config['runs']}\n")
-    if config["name-prefix"]:
-        out.write(f"- **Name prefix:** {config['name-prefix']}\n")
-    if config["exit-first"]:
-        out.write("- **Exit first:** yes\n")
-    out.write("\n")
-
-    # Compute stats from results
+    config = test.get("config", {})
+    git = test.get("git", {})
+    results = test.get("results", [])
     stats = compute_stats(test)
-    out.write("### Environment startup time\n")
+
+    out = io.StringIO()
+    out.write("# Stress Test Results\n\n")
+
+    # Configuration
+    out.write("## Configuration\n\n")
+    out.write(f"- **Environment**: `{config.get('envfile', 'N/A')}`\n")
+    out.write(f"- **Runs**: {config.get('runs', 'N/A')}\n")
+    if git:
+        out.write(f"- **Branch**: {git.get('branch', 'N/A')}\n")
+        out.write(f"- **Commit**: {git.get('commit', 'N/A')}\n")
     out.write("\n")
-    out.write("| Metric | Value |\n")
-    out.write("|--------|-------|\n")
 
-    # Timing stats (only if we have successful runs)
+    # Host
+    host = test.get("host")
+    if host:
+        out.write("## Host\n\n")
+        out.write(f"- **CPU**: {host.get('cpu', 'N/A')}\n")
+        out.write(f"- **CPU count**: {host.get('cpu_count', 'N/A')}\n")
+        if "memory_gb" in host:
+            out.write(f"- **Memory**: {host['memory_gb']} GiB\n")
+        out.write(f"- **OS**: {host.get('os', 'N/A')}\n")
+        out.write(f"- **Python**: {host.get('python', 'N/A')}\n")
+        out.write("\n")
+
+    # Summary
+    out.write("## Summary\n\n")
+    passed = stats["passed"]
+    failed = stats["failed"]
+    total = passed + failed
+    rate = stats["rate"]
+    out.write(f"- **Passed**: {passed}/{total} ({rate:.1f}%)\n")
+    out.write(f"- **Failed**: {failed}/{total}\n")
+    out.write(f"- **Total time**: {format_duration(stats['time'])}\n")
+    if "time/run" in stats:
+        out.write(f"- **Time per run**: {format_duration(stats['time/run'])}\n")
+    out.write("\n")
+
+    # Timing stats
     if stats["passed"] > 0:
-        out.write(f"| Mean | {stats['mean']:.1f} s |\n")
-        out.write(f"| Median | {stats['median']:.1f} s |\n")
-        out.write(f"| Min | {stats['min']:.1f} s |\n")
-        out.write(f"| Max | {stats['max']:.1f} s |\n")
+        out.write("## Timing (passed runs)\n\n")
+        out.write("| Metric | Value |\n")
+        out.write("|--------|-------|\n")
+        out.write(f"| Mean | {format_duration(stats['mean'])} |\n")
+        out.write(f"| Median | {format_duration(stats['median'])} |\n")
+        out.write(f"| Min | {format_duration(stats['min'])} |\n")
+        out.write(f"| Max | {format_duration(stats['max'])} |\n")
         if "stdev" in stats:
-            out.write(f"| Std Dev | {stats['stdev']:.1f} s |\n")
-        else:
-            out.write("| Std Dev | - |\n")
+            out.write(f"| Std Dev | {format_duration(stats['stdev'])} |\n")
+        out.write("\n")
 
-    # Run metadata
-    out.write(f"| Passed | {stats['passed']} |\n")
-    out.write(f"| Failed | {stats['failed']} |\n")
-    out.write(f"| Total time | {stats['time']:.1f} s |\n")
+    # Results table
+    out.write("## Results\n\n")
+    out.write("| Run | Status | Duration |\n")
+    out.write("|-----|--------|----------|\n")
+    for r in results:
+        status = "Passed" if r.get("passed") else "**Failed**"
+        duration = format_duration(r.get("time", 0))
+        out.write(f"| {r['name']} | {status} | {duration} |\n")
 
     return out.getvalue()
+
+
+def format_duration(seconds):
+    """Format duration in human-readable format (e.g., 7h 51m, 4m 42s)."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m {secs}s"
+    else:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
 
 
 if __name__ == "__main__":
