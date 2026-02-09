@@ -48,7 +48,7 @@ const (
 	FinalSyncTriggerString           string = "vrg-final-sync"
 	PrepareForFinalSyncTriggerString string = "PREPARE-FOR-FINAL-SYNC-STOP-SCHEDULING"
 
-	ManagedAnnotationKeysMarker string = "volsync.ramen.io/managed-annotation-keys"
+	ManagedAnnotationKeysMarker string = "ramendr.openshift.io/managed-annotation-keys"
 
 	SchedulingIntervalMinLength int = 2
 	CronSpecMaxDayOfMonth       int = 28
@@ -3079,6 +3079,9 @@ func (v *VSHandler) addBackOCMAnnotationsAndUpdate(obj client.Object, annotation
 			updatedAnnotations[key] = val
 		}
 	}
+
+	// Clean up the managed keys marker since we're switching clusters
+	delete(updatedAnnotations, ManagedAnnotationKeysMarker)
 
 	obj.SetAnnotations(updatedAnnotations)
 
