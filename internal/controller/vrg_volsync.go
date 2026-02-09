@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -11,8 +12,10 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
@@ -199,6 +202,19 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	if isCGEnabled {
 		if v.instance.Spec.PrepareForFinalSync {
 			v.log.Info("PrepareForFinalSync is true, so we will not run final sync for CG PVCs", "CG", cg)
+
+			return true // requeue
+		}
+
+		deleted, err := cleanupRGSMarkedForDeletion(v.ctx, v.reconciler.Client, cg, pvc.GetNamespace(), v.log)
+		if err != nil {
+			v.log.Error(err, "Failed to cleanup ReplicationGroupSource marked for deletion")
+
+			return true // requeue
+		}
+		// If the ReplicationGroupSource is marked for deletion, we will not be able to proceed with the reconciliation
+		if deleted {
+			v.log.Info("ReplicationGroupSource marked for deletion. We'll retry later.")
 
 			return true // requeue
 		}
@@ -830,6 +846,12 @@ func (v *VRGInstance) isPVCDeletedForUnprotection(pvc *corev1.PersistentVolumeCl
 	return true
 }
 
+func (v *VRGInstance) pvcsUnprotectVolSync(pvcs []corev1.PersistentVolumeClaim) {
+	for idx := range pvcs {
+		v.pvcUnprotectVolSync(pvcs[idx], v.log)
+	}
+}
+
 func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 	pvc corev1.PersistentVolumeClaim, log logr.Logger,
 ) (pvcDeleted bool) {
@@ -852,16 +874,19 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		return
 	}
 
-	_, ok := pvc.Labels[util.ConsistencyGroupLabel]
+	cg, ok := pvc.Labels[util.ConsistencyGroupLabel]
 	if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
-		// At this moment, we don't support unprotecting CG PVCs.
-		log.Info("Unprotecting CG PVCs is not supported", "PVC", pvc.Name)
+		log.Info("PVC has CG label. Deleting RGD in order to rebuild a new list", "Labels", pvc.Labels)
 
-		return
+		if err := markRGSResourceForDeletion(v.ctx, v.reconciler.Client, cg, pvc.Namespace); err != nil {
+			log.Error(err, "Failed to mark RGS for deletion", "CG", cg)
+
+			return
+		}
 	}
 
 	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
-	// This call is only from Primary cluster. delete ReplicationSource and related resources.
+	// This call is only from Primary cluster. delete ReplicationSource/CG and related resources.
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
 
@@ -1021,4 +1046,66 @@ func (v *VRGInstance) getCGLablelFromPVC(pvc *corev1.PersistentVolumeClaim, fina
 	v.log.Info("The CG label is not found", "PVC", pvc.Name)
 
 	return "", false
+}
+
+func markRGSResourceForDeletion(
+	ctx context.Context,
+	client client.Client,
+	name, namespace string,
+) error {
+	// Example: Add an annotation to mark the resource for deletion.
+	// Replace this logic with the actual deletion marking as needed.
+	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
+
+	err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rgs)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return err
+		}
+
+		return nil
+	}
+
+	if rgs.Annotations == nil {
+		rgs.Annotations = map[string]string{}
+	}
+
+	rgs.Annotations[util.MarkForDeletion] = "true"
+
+	return client.Update(ctx, rgs)
+}
+
+func cleanupRGSMarkedForDeletion(
+	ctx context.Context,
+	client client.Client,
+	name, namespace string,
+	log logr.Logger,
+) (bool, error) {
+	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
+
+	err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rgs)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return false, err
+		}
+
+		return false, nil
+	}
+
+	if rgs.Annotations[util.MarkForDeletion] == "true" {
+		// If CG is enabled, we need to delete the ReplicationGroupSource (RGS)
+		// so that we can rebuild the list of PVCs in the CG.
+		// This is needed to ensure that it does not cost much for the RGS to be rebuilt.
+		log.Info("Deleting RGS marked for deletion", "name", name)
+
+		if err := util.DeleteReplicationGroupSource(ctx, client, name, namespace); err != nil {
+			log.Error(err, "Failed to delete ReplicationGroupSource before creating ReplicationGroupDestination")
+
+			return false, err
+		}
+	} else {
+		return false, nil
+	}
+
+	return true, nil
 }
