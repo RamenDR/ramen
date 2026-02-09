@@ -1643,7 +1643,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	return fmt.Errorf("waiting for local final sync to complete")
 }
 
-//nolint:gocognit,nestif,cyclop
+//nolint:gocognit,nestif,cyclop,funlen
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	repState ramendrv1alpha1.ReplicationState,
 ) error {
@@ -1653,15 +1653,26 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		return err
 	}
 
+	v.log.Info("current RD list by owner", "count", len(currentRDListByOwner.Items))
+
+	groupsToRecreate := map[string]string{}
+
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
 
 		foundInSpecList := false
+		cgName := ""
 
 		for _, rdSpec := range rdSpecList {
+			if rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel] != "" {
+				cgName = rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
+			}
+
+			// Check if the ReplicationDestination is in the spec list
 			if rd.GetName() == util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name) &&
 				rd.GetNamespace() == rdSpec.ProtectedPVC.Namespace {
 				foundInSpecList = true
+				cgName = "" // Reset cgName if found in spec list
 
 				break
 			}
@@ -1678,6 +1689,10 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
 			} else {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+				// If this RD is part of a consistency group, we need to recreate the RGD
+				if cgName != "" {
+					groupsToRecreate[cgName] = rd.GetNamespace()
+				}
 			}
 
 			// Now delete the associated PVC if it exists and we are still secondary
@@ -1687,6 +1702,16 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 				if err != nil {
 					return err
 				}
+			}
+		}
+
+		for cgName, cgNamespace := range groupsToRecreate {
+			v.log.V(1).Info("Recreating RGD", "cgName", cgName)
+
+			if err := util.DeleteReplicationGroupDestination(v.ctx, v.client, cgName, cgNamespace); err != nil {
+				v.log.Error(err, "Failed to delete RGD")
+
+				return err
 			}
 		}
 	}
@@ -3109,6 +3134,7 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		DeleteLabel(VolSyncDoNotDeleteLabel).
 		DeleteLabel(util.LabelOwnerName).
 		DeleteLabel(util.LabelOwnerNamespaceName).
+		DeleteLabel(util.ConsistencyGroupLabel).
 		DeleteLabel(util.CreatedByRamenLabel).
 		RemoveFinalizer(PVCFinalizerProtected).
 		RemoveOwner(v.owner, v.client.Scheme()).
