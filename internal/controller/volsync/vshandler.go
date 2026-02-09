@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -46,6 +47,8 @@ const (
 
 	FinalSyncTriggerString           string = "vrg-final-sync"
 	PrepareForFinalSyncTriggerString string = "PREPARE-FOR-FINAL-SYNC-STOP-SCHEDULING"
+
+	ManagedAnnotationKeysMarker string = "volsync.ramen.io/managed-annotation-keys"
 
 	SchedulingIntervalMinLength int = 2
 	CronSpecMaxDayOfMonth       int = 28
@@ -1834,7 +1837,7 @@ func (v *VSHandler) handlePVCNotReady(
 	return existingRS, validateErr
 }
 
-//nolint:cyclop,funlen,gocognit
+//nolint:cyclop
 func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) error {
@@ -1878,13 +1881,8 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 
 		pvc.Spec.Resources.Requests = rdSpec.ProtectedPVC.Resources.Requests
 
-		if pvc.Labels == nil {
-			pvc.Labels = rdSpec.ProtectedPVC.Labels
-		} else {
-			for key, val := range rdSpec.ProtectedPVC.Labels {
-				pvc.Labels[key] = val
-			}
-		}
+		v.syncPVCLabels(pvc, rdSpec.ProtectedPVC.Labels)
+		v.syncPVCAnnotations(pvc, rdSpec.ProtectedPVC.Annotations)
 
 		return nil
 	})
@@ -1895,6 +1893,54 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	logger.V(1).Info("PVC created", "operation", op)
 
 	return nil
+}
+
+// syncPVCLabels synchronizes labels from ProtectedPVC to PVC.
+// It simply adds/updates labels without removing ones that are deleted from ProtectedPVC.
+func (v *VSHandler) syncPVCLabels(pvc *corev1.PersistentVolumeClaim, protectedLabels map[string]string) {
+	if pvc.Labels == nil {
+		pvc.Labels = make(map[string]string)
+	}
+
+	for key, val := range protectedLabels {
+		pvc.Labels[key] = val
+	}
+}
+
+// syncPVCAnnotations synchronizes annotations from ProtectedPVC to PVC, removing annotations that were
+// previously synced but are no longer in ProtectedPVC, while preserving PVC-specific annotations.
+func (v *VSHandler) syncPVCAnnotations(pvc *corev1.PersistentVolumeClaim, protectedAnnotations map[string]string) {
+	if pvc.Annotations == nil {
+		pvc.Annotations = make(map[string]string)
+	}
+
+	currentManagedKeys := make(map[string]bool)
+	// Track which keys we previously managed
+	if markerVal, exists := pvc.Annotations[ManagedAnnotationKeysMarker]; exists {
+		for _, key := range strings.Split(markerVal, ",") {
+			if key != "" {
+				currentManagedKeys[key] = true
+			}
+		}
+	}
+
+	// Remove annotations that we previously managed but are no longer in ProtectedPVC
+	for key := range currentManagedKeys {
+		if _, exists := protectedAnnotations[key]; !exists {
+			delete(pvc.Annotations, key)
+		}
+	}
+
+	// Add/update all annotations from ProtectedPVC
+	newManagedKeys := make([]string, 0, len(protectedAnnotations))
+	for key, val := range protectedAnnotations {
+		pvc.Annotations[key] = val
+		newManagedKeys = append(newManagedKeys, key)
+	}
+
+	// Store the new set of managed keys
+	sort.Strings(newManagedKeys)
+	pvc.Annotations[ManagedAnnotationKeysMarker] = strings.Join(newManagedKeys, ",")
 }
 
 //nolint:nestif
