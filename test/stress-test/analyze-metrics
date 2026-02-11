@@ -44,6 +44,7 @@ Or view all charts at once by opening `metrics.md`.
 
 import argparse
 import csv
+import json
 import os
 import sys
 from datetime import datetime
@@ -272,6 +273,69 @@ def _chart_title(chart_name):
     return chart_name.replace("_", " ").title()
 
 
+def load_runs(outdir):
+    """
+    Load test run data for the run overlay bar.
+
+    Reads test.json and returns run results with absolute timestamps.
+    Returns None if test.json is missing or results lack timestamps.
+    """
+    test_json_path = os.path.join(outdir, "test.json")
+    if not os.path.isfile(test_json_path):
+        return None
+
+    with open(test_json_path) as f:
+        test = json.load(f)
+
+    results = test.get("results", [])
+    if not results:
+        return None
+
+    # Need per-run timestamps to place runs on the time axis.
+    if "start_time" not in results[0] or "end_time" not in results[0]:
+        return None
+
+    return results
+
+
+def _plot_runs(ax, runs):
+    """
+    Draw a horizontal bar showing test runs with pass/fail colors.
+
+    Each run is a colored rectangle (green=passed, red=failed) with
+    run number labels. Labels are shown for every run when there is
+    space, or every 5th run otherwise. Failed runs are always labeled.
+    """
+    pass_color = "#4caf50"
+    fail_color = "#e53935"
+
+    for run in runs:
+        start = datetime.fromtimestamp(run["start_time"])
+        end = datetime.fromtimestamp(run["end_time"])
+        color = pass_color if run["passed"] else fail_color
+        ax.axvspan(start, end, color=color)
+
+    # Label every run if <= 20, otherwise every 5th. Always label failed.
+    label_every = 1 if len(runs) <= 50 else 5
+
+    for i, run in enumerate(runs):
+        if not run["passed"] or i % label_every == 0:
+            mid = datetime.fromtimestamp((run["start_time"] + run["end_time"]) / 2)
+            label = run["name"].lstrip("0") or "0"
+            ax.text(
+                mid,
+                0.5,
+                label,
+                ha="center",
+                va="center",
+                fontsize=7,
+                transform=ax.get_xaxis_transform(),
+            )
+
+    ax.set_yticks([])
+    ax.set_ylabel("Runs", fontsize=8)
+
+
 def main():
     args = parse_args()
 
@@ -292,6 +356,11 @@ def main():
     if not csv_files:
         sys.exit(f"Error: No CSV files found in {metrics_dir}")
 
+    # Load test results for run overlay bar.
+    runs = load_runs(outdir)
+    if runs:
+        print(f"Loaded {len(runs)} test runs for overlay.")
+
     print(f"Plotting {len(csv_files)} charts...")
 
     created_charts = []
@@ -301,7 +370,7 @@ def main():
         png_path = os.path.join(metrics_dir, chart_name + ".png")
 
         try:
-            plot_chart(csv_path, png_path, chart_name)
+            plot_chart(csv_path, png_path, chart_name, runs=runs)
             print(f"  Created: {chart_name}.png")
             created_charts.append(chart_name)
         except Exception as e:
@@ -369,7 +438,7 @@ def _apply_variant(variant, columns):
     return ordered, colors
 
 
-def plot_chart(csv_path, png_path, chart_name):
+def plot_chart(csv_path, png_path, chart_name, runs=None):
     """
     Read a CSV file and create a PNG graph.
 
@@ -381,6 +450,7 @@ def plot_chart(csv_path, png_path, chart_name):
         csv_path: Path to the input CSV file.
         png_path: Path for the output PNG file.
         chart_name: Name of the chart (used for title/labels).
+        runs: Optional list of test run dicts for the run overlay bar.
     """
     # Read CSV data
     times = []
@@ -432,8 +502,21 @@ def plot_chart(csv_path, png_path, chart_name):
         for label in columns:
             columns[label] = [v / scale for v in columns[label]]
 
-    # Create the plot (24x8 for high resolution, scale down in markdown)
-    fig, ax = plt.subplots(figsize=(24, 8))
+    # Create the plot (24x8 for high resolution, scale down in markdown).
+    # Add a thin run bar at the top when test run data is available.
+    if runs:
+        fig, (run_ax, ax) = plt.subplots(
+            2,
+            1,
+            figsize=(24, 8.5),
+            height_ratios=[1, 40],
+            sharex=True,
+        )
+        _plot_runs(run_ax, runs)
+        run_ax.set_title(title)
+    else:
+        fig, ax = plt.subplots(figsize=(24, 8))
+        ax.set_title(title)
 
     style = config.get("style", "line")
 
@@ -451,17 +534,34 @@ def plot_chart(csv_path, png_path, chart_name):
         for label, values in columns.items():
             ax.plot(times, values, label=label)
 
-    ax.set_title(title)
     ax.set_xlabel("Time")
     ax.set_ylabel(ylabel)
-    ax.grid(True, alpha=0.3)
+
+    if runs:
+        # Draw vertical grid lines at run boundaries instead of default.
+        for run in runs:
+            ax.axvline(
+                datetime.fromtimestamp(run["start_time"]),
+                color="grey",
+                linewidth=0.5,
+                alpha=0.3,
+            )
+        ax.grid(True, axis="y", alpha=0.3)
+    else:
+        ax.grid(True, alpha=0.3)
 
     # Disable scientific notation on y-axis for readability
     ax.ticklabel_format(style="plain", axis="y")
 
-    # Format x-axis with readable time labels
+    # Format x-axis with readable time labels.
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    if runs:
+        # Place time labels at run boundaries instead of default locations.
+        tick_times = [datetime.fromtimestamp(r["start_time"]) for r in runs]
+        tick_step = max(1, len(runs) // 20)
+        ax.set_xticks(tick_times[::tick_step])
+    else:
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
     fig.autofmt_xdate()
 
     # Add legend if there are multiple columns
