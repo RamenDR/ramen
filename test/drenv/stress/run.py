@@ -62,11 +62,11 @@ def command(args):
 
 def update_stats(stats, result):
     stats["done"] += 1
-    stats["time"] += result["time"]
-    stats["time/run"] = stats["time"] / stats["done"]
 
     if result["passed"]:
         stats["passed"] += 1
+        stats["time"] += result["time"]
+        stats["time/run"] = stats["time"] / stats["passed"]
     else:
         stats["failed"] += 1
 
