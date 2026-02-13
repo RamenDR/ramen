@@ -87,6 +87,8 @@ def compute_stats(test):
         stats["max"] = max(times)
         if len(times) >= 2:
             stats["stdev"] = statistics.stdev(times)
+        if len(times) >= 20:
+            stats["p95"] = statistics.quantiles(times, n=100)[94]
 
     if stats["done"] > 0:
         stats["time/run"] = stats["time"] / stats["done"]
@@ -149,6 +151,8 @@ def format_report(test):
         out.write(f"| Max | {format_duration(stats['max'])} |\n")
         if "stdev" in stats:
             out.write(f"| Std Dev | {format_duration(stats['stdev'])} |\n")
+        if "p95" in stats:
+            out.write(f"| p95 | {format_duration(stats['p95'])} |\n")
         out.write("\n")
 
     # Results table
