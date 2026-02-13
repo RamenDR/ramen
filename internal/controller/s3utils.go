@@ -23,6 +23,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -33,6 +34,30 @@ import (
 // let's reduce this timeout to a more reasonable duration.
 // TODO: Preferably, make the s3 timeout configurable
 var s3Timeout = time.Second * 12
+
+// S3FailoverMarker indicates a failover is in progress
+type S3FailoverMarker struct {
+	InitiatedBy   string      `json:"initiatedBy"`
+	InitiatedAt   metav1.Time `json:"initiatedAt"`
+	DRPCName      string      `json:"drpcName"`
+	DRPCNamespace string      `json:"drpcNamespace"`
+	// FailoverCluster is the target cluster that should become the new primary
+	FailoverCluster string        `json:"failoverCluster"`
+	Phase           FailoverPhase `json:"phase"` // "initiated", "recovering", "completed"
+	// Used to detect and prevent removal of newer markers by older operations
+	MarkerGeneration int64 `json:"markerGeneration"`
+	// SourceCluster is the cluster that was primary before failover
+	SourceCluster string `json:"sourceCluster,omitempty"`
+}
+
+type FailoverPhase string
+
+const (
+	failoverMarkerKey                     = ".failover-marker"
+	FailoverPhaseInitiated  FailoverPhase = "initiated"
+	FailoverPhaseRecovering FailoverPhase = "recovering"
+	FailoverPhaseCompleted  FailoverPhase = "completed"
+)
 
 // Example usage:
 // func example_code() {
@@ -97,6 +122,12 @@ type ObjectStorer interface {
 	DeleteObject(key string) error
 	DeleteObjects(key ...string) error
 	DeleteObjectsWithKeyPrefix(keyPrefix string) error
+	// Failover marker methods
+	CheckFailoverMarkerForVRG(pathPrefix string, currentCluster string) (shouldSuspend bool,
+		failoverCluster string, err error)
+	CreateFailoverMarkerForVRG(pathPrefix string, marker S3FailoverMarker) error
+	RemoveFailoverMarkerForVRG(pathPrefix, expectedCluster string, log logr.Logger) error
+	UpdateFailoverMarkerPhase(pathPrefix, expectedCluster string, phase FailoverPhase, log logr.Logger) error
 }
 
 // S3ObjectStoreGetter returns a concrete type that implements
@@ -714,4 +745,114 @@ func isAwsErrCodeNoSuchBucket(err error) bool {
 	}
 
 	return false
+}
+
+// Helper to check for NoSuchKey error
+func isAwsErrCodeNoSuchKey(err error) bool {
+	var aerr awserr.Error
+	if errors.As(err, &aerr) {
+		return aerr.Code() == s3.ErrCodeNoSuchKey
+	}
+
+	return false
+}
+
+// CheckFailoverMarkerForVRG checks if a failover marker exists
+func (s *s3ObjectStore) CheckFailoverMarkerForVRG(
+	pathPrefix string,
+	currentCluster string,
+) (shouldSuspend bool, failoverCluster string, err error) {
+	markerKey := pathPrefix + failoverMarkerKey
+
+	var marker S3FailoverMarker
+
+	err = s.DownloadObject(markerKey, &marker)
+	if err != nil {
+		if isAwsErrCodeNoSuchKey(err) {
+			return false, "", nil
+		}
+
+		return false, "", fmt.Errorf("failed to check failover marker: %w", err)
+	}
+
+	// Check if we are the failover target - if so, we can proceed
+	if marker.FailoverCluster == currentCluster {
+		return false, marker.FailoverCluster, nil
+	}
+
+	// Active failover marker from another cluster - SUSPEND writes
+	return true, marker.FailoverCluster, nil
+}
+
+// CreateFailoverMarkerForVRG creates a failover marker
+func (s *s3ObjectStore) CreateFailoverMarkerForVRG(pathPrefix string, marker S3FailoverMarker) error {
+	markerKey := pathPrefix + failoverMarkerKey
+
+	if err := s.UploadObject(markerKey, marker); err != nil {
+		return fmt.Errorf("failed to create failover marker: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveFailoverMarkerForVRG removes the failover marker
+func (s *s3ObjectStore) RemoveFailoverMarkerForVRG(pathPrefix, expectedCluster string, log logr.Logger) error {
+	markerKey := pathPrefix + failoverMarkerKey
+
+	var marker S3FailoverMarker
+	if err := s.DownloadObject(markerKey, &marker); err != nil {
+		if isAwsErrCodeNoSuchKey(err) {
+			return nil // Marker doesn't exist, nothing to update
+		}
+
+		return fmt.Errorf("failed to read marker for update: %w", err)
+	}
+
+	if marker.FailoverCluster != expectedCluster {
+		return fmt.Errorf("refusing to remove marker for different cluster: marker is for %s,"+
+			"current cluster is %s (generation: %d)",
+			marker.FailoverCluster, expectedCluster, marker.MarkerGeneration)
+	}
+
+	if err := s.DeleteObject(markerKey); err != nil {
+		return fmt.Errorf("failed to delete marker : %w", err)
+	}
+
+	return nil
+}
+
+// UpdateFailoverMarkerPhase updates the phase of an existing marker
+func (s *s3ObjectStore) UpdateFailoverMarkerPhase(pathPrefix, expectedCluster string,
+	newPhase FailoverPhase, log logr.Logger,
+) error {
+	markerKey := pathPrefix + failoverMarkerKey
+
+	var marker S3FailoverMarker
+	if err := s.DownloadObject(markerKey, &marker); err != nil {
+		if isAwsErrCodeNoSuchKey(err) {
+			return nil // Marker doesn't exist, nothing to update
+		}
+
+		return fmt.Errorf("failed to read marker for update: %w", err)
+	}
+
+	if marker.FailoverCluster != expectedCluster {
+		return fmt.Errorf("refusing to update marker for different cluster: marker is for %s, current cluster is %s",
+			marker.FailoverCluster, expectedCluster)
+	}
+
+	oldPhase := marker.Phase
+	marker.Phase = newPhase
+
+	if err := s.UploadObject(markerKey, marker); err != nil {
+		return fmt.Errorf("failed to update marker phase: %w", err)
+	}
+
+	log.Info("Updated failover marker phase",
+		"oldPhase", oldPhase,
+		"newPhase", newPhase,
+		"cluster", expectedCluster,
+		"generation", marker.MarkerGeneration)
+
+	return nil
 }
