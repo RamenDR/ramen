@@ -130,10 +130,14 @@ def _container_running(name):
 
 def _create_container(name, config):
     """Create and start a registry cache container."""
-    logging.info("[registry] Creating container %s on port %s", name, config["port"])
     cmd = _container_command(name, config)
     container_id = commands.run(*cmd).rstrip()
-    logging.info("[registry] Created container %s (id: %s)", name, container_id)
+    logging.info(
+        "[registry] Created container %s on port %s (id: %s)",
+        name,
+        config["port"],
+        container_id,
+    )
 
 
 def _remove_container(name):
