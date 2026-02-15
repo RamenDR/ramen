@@ -42,8 +42,8 @@ def main():
         logging.exception("Command failed")
         sys.exit(1)
     finally:
-        shutdown_executors()
-        terminate_process_group()
+        if shutdown_executors():
+            terminate_process_group()
 
 
 def parse_args():
@@ -193,6 +193,12 @@ def configure_logging(args):
 
 
 def shutdown_executors():
+    """
+    Shut down all executors and return True if any were shut down.
+
+    When executors are used, the caller should also terminate the process
+    group to clean up any child processes spawned by executor tasks.
+    """
     # Prevents adding new executors, starting new child processes, and aborts
     # running workers.
     shutdown.start()
@@ -203,6 +209,8 @@ def shutdown_executors():
     for name, executor in executors:
         logging.debug("[main] Shutting down executor %s", name)
         executor.shutdown(wait=False, cancel_futures=True)
+
+    return len(executors) > 0
 
 
 def add_executor(name, executor):
