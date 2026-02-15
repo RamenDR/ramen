@@ -21,6 +21,7 @@ from . import envfile
 from . import kubectl
 from . import providers
 from . import ramen
+from . import registry
 from . import shutdown
 from . import yaml
 from . import ssh
@@ -54,6 +55,8 @@ def parse_args():
         dest="command",
         required=True,
     )
+
+    # Environment commands.
 
     p = add_command(sp, "start", do_start, help="start an environment")
     p.add_argument(
@@ -141,11 +144,36 @@ def parse_args():
     add_command(sp, "resume", do_resume, help="resume virtual machines")
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
 
+    # Host commands.
+
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
     add_command(sp, "setup", do_setup, help="setup host for drenv")
     add_command(sp, "cleanup", do_cleanup, help="cleanup host")
 
+    # Registry cache commands.
+
+    add_registry_cache_commands(sp)
+
     return parser.parse_args()
+
+
+def add_registry_cache_commands(sp):
+    p = sp.add_parser("registry-cache", help="manage registry cache")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    p = add_command(
+        sp,
+        "stats",
+        do_registry_cache_stats,
+        help="show cache statistics",
+        envfile=False,
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        choices=["json", "markdown"],
+        default="json",
+    )
 
 
 def add_command(sp, name, func, help=None, envfile=True):
@@ -261,6 +289,10 @@ def do_cleanup(args):
         provider = providers.get(name)
         provider.cleanup()
     ssh.cleanup()
+
+
+def do_registry_cache_stats(args):
+    registry.show_stats(args.output)
 
 
 def do_clear(args):
