@@ -10,7 +10,9 @@ This speeds up image pulls and reduces network traffic.
 """
 
 import hashlib
+import json
 import logging
+import sys
 
 from drenv import commands
 
@@ -68,6 +70,101 @@ def cleanup():
         name = _container_name(registry)
         if _container_exists(name):
             _remove_container(name)
+
+
+def show_stats(output):
+    """
+    Show cache hit/miss statistics for all registry caches.
+
+    The metric help text in registry:3 is incorrect (same text for hits and
+    requests). The actual semantics based on the source code:
+    - requests: incremented on every cache lookup
+    - hits: incremented when the cache returns a result
+    - errors: incremented on unexpected cache errors (not normal misses)
+    - misses: requests - hits - errors (not reported by the registry)
+
+    See https://github.com/distribution/distribution/blob/0ab7f326/registry/storage/cache/cachedblobdescriptorstore.go
+    """
+    _require_podman()
+
+    rows = [_cache_stats(registry) for registry in REGISTRIES]
+
+    if output == "json":
+        _print_json(rows)
+    elif output == "markdown":
+        _print_markdown_table(rows)
+    else:
+        raise ValueError(f"Unknown output format: {output}")
+
+
+def _cache_stats(registry):
+    """Return cache stats dict for a single registry."""
+    name = _container_name(registry)
+    metrics = _fetch_metrics(name)
+
+    hits = int(metrics.get("registry_storage_cache_hits_total", "0"))
+    requests = int(metrics.get("registry_storage_cache_requests_total", "0"))
+    errors = int(metrics.get("registry_storage_cache_errors_total", "0"))
+    misses = requests - hits - errors
+    hit_rate = hits * 100 // requests if requests else 0
+
+    return {
+        "registry": registry,
+        "hits": hits,
+        "misses": misses,
+        "errors": errors,
+        "hit_rate": hit_rate,
+    }
+
+
+def _fetch_metrics(name):
+    """
+    Fetch Prometheus metrics from a registry cache container.
+
+    Return a dict mapping metric names to string values.
+
+    Example Prometheus text format::
+
+        # HELP registry_storage_cache_hits_total The number of cache ...
+        # TYPE registry_storage_cache_hits_total counter
+        registry_storage_cache_hits_total 0
+        # HELP registry_storage_cache_requests_total The number of ...
+        # TYPE registry_storage_cache_requests_total counter
+        registry_storage_cache_requests_total 0
+    """
+    text = commands.run(
+        "podman",
+        "exec",
+        name,
+        "wget",
+        "--quiet",
+        "--output-document=-",
+        "http://localhost:5001/metrics",
+    )
+
+    metrics = {}
+    for line in text.splitlines():
+        if line and not line.startswith("#"):
+            name, value = line.split()
+            metrics[name] = value
+    return metrics
+
+
+def _print_json(rows):
+    """Print cache stats as JSON."""
+    json.dump(rows, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+def _print_markdown_table(rows):
+    """Print cache stats as a markdown table."""
+    print("| Registry | Hits | Misses | Errors | Hit % |")
+    print("|----------|------|--------|--------|-------|")
+    for r in rows:
+        print(
+            f"| {r['registry']} | {r['hits']} | {r['misses']} "
+            f"| {r['errors']} | {r['hit_rate']}% |"
+        )
 
 
 def _cache_running(registry):
