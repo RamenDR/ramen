@@ -13,7 +13,7 @@ import logging
 
 from drenv import commands
 
-CACHE_IMAGE = "docker.io/library/registry:2"
+CACHE_IMAGE = "docker.io/library/registry:3"
 
 # Each upstream registry maps to a local port.
 # The port is used in the containerd hosts.toml configuration.
