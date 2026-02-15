@@ -36,11 +36,15 @@ def cache_running():
 def setup():
     """Start all registry cache containers if not already running."""
     for registry, config in REGISTRIES.items():
-        if _cache_running(registry):
-            logging.debug("[registry] Cache for %s already running", registry)
-            continue
-
         name = _container_name(registry)
+
+        if _container_exists(name):
+            if _container_running(name):
+                logging.debug("[registry] Cache for %s already running", registry)
+                continue
+
+            _remove_container(name)
+
         logging.info(
             "[registry] Starting cache for %s on port %s", registry, config["port"]
         )
@@ -67,12 +71,14 @@ def cleanup():
     """Stop and remove all registry cache containers."""
     for registry in REGISTRIES:
         name = _container_name(registry)
-        logging.info("[registry] Stopping cache for %s", registry)
-        try:
-            commands.run("podman", "rm", "--force", name)
-        except commands.Error as e:
-            logging.debug("[registry] Could not remove %s: %s", name, e)
-        logging.info("[registry] Cache for %s stopped", registry)
+        if _container_exists(name):
+            _remove_container(name)
+
+
+def _cache_running(registry):
+    """Return True if the registry cache container is running."""
+    name = _container_name(registry)
+    return _container_exists(name) and _container_running(name)
 
 
 def _container_name(registry):
@@ -80,18 +86,37 @@ def _container_name(registry):
     return f"drenv-cache-{registry.replace('.', '-')}"
 
 
-def _cache_running(registry):
-    """Return True if the registry cache container is running."""
-    name = _container_name(registry)
+def _container_exists(name):
+    """
+    Return True if the container exists.
+
+    Podman exit codes:
+      0: containers exist
+      1: not found
+      125: storage error
+    """
     try:
-        out = commands.run(
-            "podman",
-            "inspect",
-            "--format",
-            "{{.State.Running}}",
-            name,
-        )
-        return out.strip() == "true"
+        commands.run("podman", "container", "exists", name)
+        return True
     except commands.Error as e:
-        logging.debug("[registry] Cannot inspect %s: %s", name, e)
-        return False
+        if e.exitcode == 1:
+            return False
+        raise
+
+
+def _container_running(name):
+    """
+    Return True if the container is running. The container must exist.
+
+    Uses podman inspect to query the container state.
+    """
+    out = commands.run("podman", "inspect", "--format", "{{.State.Running}}", name)
+    return out.strip() == "true"
+
+
+def _remove_container(name):
+    """
+    Stop and remove a container, ignoring missing container.
+    """
+    commands.run("podman", "rm", "--force", name)
+    logging.info("[registry] Removed container %s", name)
