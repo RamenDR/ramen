@@ -30,11 +30,16 @@ REGISTRIES = {
 
 def cache_running():
     """Return True if all registry cache containers are running."""
+    if not _podman_available():
+        return False
+
     return all(_cache_running(reg) for reg in REGISTRIES)
 
 
 def setup():
     """Start all registry cache containers if not already running."""
+    _require_podman()
+
     for registry, config in REGISTRIES.items():
         name = _container_name(registry)
 
@@ -69,6 +74,10 @@ def setup():
 
 def cleanup():
     """Stop and remove all registry cache containers."""
+    if not _podman_available():
+        logging.info("[registry] Podman is not available, skipping cleanup")
+        return
+
     for registry in REGISTRIES:
         name = _container_name(registry)
         if _container_exists(name):
@@ -84,6 +93,30 @@ def _cache_running(registry):
 def _container_name(registry):
     """Return the container name for a registry cache."""
     return f"drenv-cache-{registry.replace('.', '-')}"
+
+
+def _podman_available():
+    """
+    Return True if podman is available.
+
+    On macOS, podman requires a running podman machine. On Linux, podman
+    runs natively.
+    """
+    try:
+        commands.run("podman", "info")
+        return True
+    except commands.Error:
+        return False
+
+
+def _require_podman():
+    """
+    Raise if podman is not available.
+
+    Lets podman's own error message propagate, which includes helpful hints
+    like "try `podman machine start`" on macOS.
+    """
+    commands.run("podman", "info")
 
 
 def _container_exists(name):
