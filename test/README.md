@@ -377,6 +377,17 @@ To clear the cached resources run:
 drenv clear
 ```
 
+## Caching container images
+
+We use use local registry cache to cache container images. To check the
+cache stats you can use:
+
+```
+drenv registry-cache stats
+```
+
+See [`registry-cache/README.md`](registry-cache/README.md) for more details.
+
 ## The environment file
 
 To create an environment you need an yaml file describing the
