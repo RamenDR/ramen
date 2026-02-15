@@ -50,26 +50,7 @@ def setup():
 
             _remove_container(name)
 
-        logging.info(
-            "[registry] Starting cache for %s on port %s", registry, config["port"]
-        )
-        cmd = [
-            "podman",
-            "run",
-            "--detach",
-            "--name",
-            name,
-            "--publish",
-            f"{config['port']}:5000",
-            "--volume",
-            f"{name}:/var/lib/registry",
-            "--env",
-            f"REGISTRY_PROXY_REMOTEURL={config['upstream']}",
-            CACHE_IMAGE,
-        ]
-        for line in commands.watch(*cmd):
-            logging.debug("[registry] %s", line)
-        logging.info("[registry] Cache for %s started", registry)
+        _create_container(name, config)
 
 
 def cleanup():
@@ -147,9 +128,36 @@ def _container_running(name):
     return out.strip() == "true"
 
 
+def _create_container(name, config):
+    """Create and start a registry cache container."""
+    logging.info("[registry] Creating container %s on port %s", name, config["port"])
+    cmd = _container_command(name, config)
+    for line in commands.watch(*cmd):
+        logging.debug("[registry] %s", line)
+    logging.info("[registry] Created container %s", name)
+
+
 def _remove_container(name):
     """
     Stop and remove a container, ignoring missing container.
     """
     commands.run("podman", "rm", "--force", name)
     logging.info("[registry] Removed container %s", name)
+
+
+def _container_command(name, config):
+    """Return the podman run command for a registry cache container."""
+    return [
+        "podman",
+        "run",
+        "--detach",
+        "--name",
+        name,
+        "--publish",
+        f"{config['port']}:5000",
+        "--volume",
+        f"{name}:/var/lib/registry",
+        "--env",
+        f"REGISTRY_PROXY_REMOTEURL={config['upstream']}",
+        CACHE_IMAGE,
+    ]
