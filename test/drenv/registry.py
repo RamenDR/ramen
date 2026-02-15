@@ -9,9 +9,13 @@ Each upstream registry gets its own cache instance on a different port.
 This speeds up image pulls and reduces network traffic.
 """
 
+import hashlib
 import logging
 
 from drenv import commands
+
+# Label used to store configuration hash on containers.
+CONFIG_LABEL = "DrenvConfig"
 
 CACHE_IMAGE = "docker.io/library/registry:3"
 
@@ -42,15 +46,16 @@ def setup():
 
     for registry, config in REGISTRIES.items():
         name = _container_name(registry)
+        cmd, config_hash = _container_command(name, config)
 
         if _container_exists(name):
-            if _container_running(name):
-                logging.debug("[registry] Cache for %s already running", registry)
+            if _container_is_current(name, config_hash):
+                logging.debug("[registry] Cache for %s is current", registry)
                 continue
 
             _remove_container(name)
 
-        _create_container(name, config)
+        _create_container(name, config, cmd)
 
 
 def cleanup():
@@ -128,9 +133,8 @@ def _container_running(name):
     return out.strip() == "true"
 
 
-def _create_container(name, config):
+def _create_container(name, config, cmd):
     """Create and start a registry cache container."""
-    cmd = _container_command(name, config)
     container_id = commands.run(*cmd).rstrip()
     logging.info(
         "[registry] Created container %s on port %s (id: %s)",
@@ -148,9 +152,52 @@ def _remove_container(name):
     logging.info("[registry] Removed container %s", name)
 
 
+def _container_is_current(name, config_hash):
+    """
+    Return True if the container is running with the given config hash.
+    The container must exist.
+    """
+    return _container_running(name) and _container_config_hash(name) == config_hash
+
+
+def _container_config_hash(name):
+    """
+    Return the config hash label from a container. The container must exist.
+
+    Uses podman inspect to read the DrenvConfig label value.
+    """
+    out = commands.run(
+        "podman",
+        "inspect",
+        "--format",
+        "{{.Config.Labels." + CONFIG_LABEL + "}}",
+        name,
+    )
+    return out.strip()
+
+
+def _config_hash(cmd):
+    """
+    Return a sha256 hash of the container command.
+
+    The hash covers all arguments (image, ports, volumes, env vars) so any
+    configuration change produces a different hash.
+    """
+    h = hashlib.sha256()
+    for arg in cmd:
+        h.update(arg.encode())
+    return h.hexdigest()
+
+
 def _container_command(name, config):
-    """Return the podman run command for a registry cache container."""
-    return [
+    """
+    Return (cmd, config_hash) for a registry cache container.
+
+    The command includes a DrenvConfig label with the hash of the command
+    arguments. The hash can be compared with _container_config_hash() to
+    detect configuration changes.
+    """
+    cmd = [
         "podman",
         "run",
         "--detach",
@@ -162,5 +209,10 @@ def _container_command(name, config):
         f"{name}:/var/lib/registry",
         "--env",
         f"REGISTRY_PROXY_REMOTEURL={config['upstream']}",
+        "--label",
+        f"{CONFIG_LABEL}=",
         CACHE_IMAGE,
     ]
+    config_hash = _config_hash(cmd)
+    cmd[-2] += config_hash
+    return cmd, config_hash
