@@ -8,4 +8,4 @@ podman run --name registry \
    --volume registry:/var/lib/registry \
    --detach \
    --replace \
-   registry:2
+   registry:3
