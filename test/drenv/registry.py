@@ -28,28 +28,6 @@ REGISTRIES = {
 }
 
 
-def _container_name(registry):
-    """Return the container name for a registry cache."""
-    return f"drenv-cache-{registry.replace('.', '-')}"
-
-
-def _cache_running(registry):
-    """Return True if the registry cache container is running."""
-    name = _container_name(registry)
-    try:
-        out = commands.run(
-            "podman",
-            "inspect",
-            "--format",
-            "{{.State.Running}}",
-            name,
-        )
-        return out.strip() == "true"
-    except commands.Error as e:
-        logging.debug("[registry] Cannot inspect %s: %s", name, e)
-        return False
-
-
 def cache_running():
     """Return True if all registry cache containers are running."""
     return all(_cache_running(reg) for reg in REGISTRIES)
@@ -95,3 +73,25 @@ def cleanup():
         except commands.Error as e:
             logging.debug("[registry] Could not remove %s: %s", name, e)
         logging.info("[registry] Cache for %s stopped", registry)
+
+
+def _container_name(registry):
+    """Return the container name for a registry cache."""
+    return f"drenv-cache-{registry.replace('.', '-')}"
+
+
+def _cache_running(registry):
+    """Return True if the registry cache container is running."""
+    name = _container_name(registry)
+    try:
+        out = commands.run(
+            "podman",
+            "inspect",
+            "--format",
+            "{{.State.Running}}",
+            name,
+        )
+        return out.strip() == "true"
+    except commands.Error as e:
+        logging.debug("[registry] Cannot inspect %s: %s", name, e)
+        return False
