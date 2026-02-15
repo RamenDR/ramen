@@ -61,15 +61,16 @@ def setup():
 
 
 def cleanup():
-    """Stop and remove all registry cache containers."""
-    if not _podman_available():
-        logging.info("[registry] Podman is not available, skipping cleanup")
-        return
+    """
+    Keep registry cache containers running across cleanup cycles.
 
-    for registry in REGISTRIES:
-        name = _container_name(registry)
-        if _container_exists(name):
-            _remove_container(name)
+    The in-memory metadata cache provides near 100% hit rate after the
+    first run. Removing containers would discard this cache, causing
+    hundreds of unnecessary cache misses on the next start.
+
+    Use `drenv registry-cache remove` to remove containers manually.
+    """
+    logging.debug("[registry] Keeping registry cache containers running")
 
 
 def show_stats(output):
@@ -95,6 +96,18 @@ def show_stats(output):
         _print_markdown_table(rows)
     else:
         raise ValueError(f"Unknown output format: {output}")
+
+
+def remove_containers():
+    """Remove all registry cache containers."""
+    if not _podman_available():
+        logging.info("[registry] Podman is not available, skipping remove")
+        return
+
+    for registry in REGISTRIES:
+        name = _container_name(registry)
+        if _container_exists(name):
+            _remove_container(name)
 
 
 def _cache_stats(registry):

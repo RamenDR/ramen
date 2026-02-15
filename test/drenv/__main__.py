@@ -175,6 +175,14 @@ def add_registry_cache_commands(sp):
         default="json",
     )
 
+    add_command(
+        sp,
+        "remove",
+        do_registry_cache_remove,
+        help="remove cache containers",
+        envfile=False,
+    )
+
 
 def add_command(sp, name, func, help=None, envfile=True):
     parser = sp.add_parser(name, help=help)
@@ -293,6 +301,10 @@ def do_cleanup(args):
 
 def do_registry_cache_stats(args):
     registry.show_stats(args.output)
+
+
+def do_registry_cache_remove(args):
+    registry.remove_containers()
 
 
 def do_clear(args):
