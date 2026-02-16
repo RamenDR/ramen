@@ -248,13 +248,13 @@ def pipeline(*commands, input=None, decode=True, timeout=None):
     if len(commands) < 2:
         raise ValueError("pipeline requires at least 2 commands")
 
-    procs = []
+    procs = {}
 
     with shutdown.guard():
-        prev = None
+        last = None
         for cmd in commands:
-            if prev:
-                stdin = prev.stdout
+            if last:
+                stdin = last.stdout
             else:
                 stdin = _select_stdin(input=input)
 
@@ -274,23 +274,22 @@ def pipeline(*commands, input=None, decode=True, timeout=None):
 
             # Close our reference so the previous process gets SIGPIPE if this
             # one exits.
-            if prev:
-                prev.stdout.close()
+            if last:
+                last.stdout.close()
 
-            procs.append(p)
-            prev = p
+            procs[p] = bytearray()
+            last = p
 
     # Collect output and stderr from all processes concurrently to avoid
     # deadlock when a process blocks on stderr write.
     output = bytearray()
-    errors = {proc: bytearray() for proc in procs}
 
     try:
         for proc, src, data in _stream(*procs, input=input, timeout=timeout):
             if src is OUT:
                 output += data
             else:
-                errors[proc] += data
+                procs[proc] += data
     except StreamTimeout as e:
         for proc in procs:
             proc.kill()
@@ -305,9 +304,9 @@ def pipeline(*commands, input=None, decode=True, timeout=None):
 
     # Collect all failures.
     failures = []
-    for proc in procs:
+    for proc, stderr in procs.items():
         if proc.returncode != 0:
-            error = errors[proc].decode(errors="replace")
+            error = stderr.decode(errors="replace")
             failures.append(Failure(proc.args, proc.returncode, error))
 
     if failures:
