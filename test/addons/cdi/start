@@ -22,7 +22,6 @@ def deploy(cluster):
         "status",
         "deploy/cdi-operator",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
         context=cluster,
     )
 
@@ -37,7 +36,6 @@ def wait(cluster):
         "cdi.cdi.kubevirt.io/cdi",
         "--for=condition=available",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
         context=cluster,
     )
     print("Waiting until cdi cr finished progressing")
@@ -45,7 +43,6 @@ def wait(cluster):
         "cdi.cdi.kubevirt.io/cdi",
         "--for=condition=progressing=False",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
         context=cluster,
     )
 

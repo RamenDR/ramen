@@ -57,7 +57,7 @@ def test_rollout(tmpenv, capsys):
     kubectl.rollout(
         "status",
         "deploy/example-deployment",
-        f"--timeout={TIMEOUT}s",
+        timeout=TIMEOUT,
         context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
@@ -68,7 +68,7 @@ def test_wait(tmpenv, capsys):
     kubectl.wait(
         "deploy/example-deployment",
         "--for=condition=available",
-        f"--timeout={TIMEOUT}s",
+        timeout=TIMEOUT,
         context=tmpenv.profile,
     )
     out, err = capsys.readouterr()

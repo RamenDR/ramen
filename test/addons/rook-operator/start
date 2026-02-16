@@ -23,7 +23,7 @@ def wait(cluster):
         "deploy/rook-ceph-operator",
         "--namespace=rook-ceph",
         # We had random timeout with 300s.
-        "--timeout=600s",
+        timeout=600,
         context=cluster,
     )
 
@@ -33,7 +33,6 @@ def wait(cluster):
         "--for=jsonpath={.status.phase}=Running",
         "--namespace=rook-ceph",
         "--selector=app=rook-ceph-operator",
-        "--timeout=300s",
         context=cluster,
     )
 

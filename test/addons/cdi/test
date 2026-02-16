@@ -20,7 +20,7 @@ def test(cluster):
     kubectl.wait(
         "pvc/test-pvc",
         "--for=jsonpath={.status.phase}=Bound",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
 
@@ -28,7 +28,7 @@ def test(cluster):
     kubectl.wait(
         "dv/test-dv",
         "--for=condition=Bound",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
 
@@ -36,7 +36,7 @@ def test(cluster):
     kubectl.wait(
         "pvc/test-dv",
         "--for=jsonpath={.status.phase}=Bound",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
 

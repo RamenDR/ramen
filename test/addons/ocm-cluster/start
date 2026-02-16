@@ -74,7 +74,6 @@ def wait(cluster):
             "status",
             deployment,
             f"--namespace={ADDONS_NAMESPACE}",
-            "--timeout=300s",
             context=cluster,
         )
 
@@ -96,7 +95,6 @@ def wait_for_hub(hub):
                 "status",
                 deployment,
                 f"--namespace={namespace}",
-                "--timeout=300s",
                 context=hub,
             )
 
@@ -146,7 +144,7 @@ def wait_for_managed_cluster(cluster, hub):
     kubectl.wait(
         f"managedcluster/{cluster}",
         "--for=jsonpath={.spec.hubAcceptsClient}=true",
-        "--timeout=60s",
+        timeout=60,
         context=hub,
     )
 
@@ -159,7 +157,7 @@ def wait_for_managed_cluster(cluster, hub):
         kubectl.wait(
             f"managedcluster/{cluster}",
             f"--for=condition={condition}",
-            "--timeout=60s",
+            timeout=60,
             context=hub,
         )
 

@@ -21,7 +21,7 @@ def wait_for_work(cluster, hub):
         "manifestwork/example-manifestwork",
         "--for=condition=applied",
         f"--namespace={cluster}",
-        "--timeout=120s",
+        timeout=120,
         context=hub,
     )
 
@@ -32,7 +32,7 @@ def wait_for_deployment(cluster, hub):
         "manifestwork/example-manifestwork",
         "--for=condition=available",
         f"--namespace={cluster}",
-        "--timeout=120s",
+        timeout=120,
         context=hub,
     )
 
@@ -40,8 +40,8 @@ def wait_for_deployment(cluster, hub):
     kubectl.wait(
         "deploy/example-deployment",
         "--for=condition=available",
-        "--timeout=120s",
         "--namespace=default",
+        timeout=120,
         context=cluster,
     )
 
@@ -57,7 +57,7 @@ def wait_for_delete_work(cluster, hub):
         "manifestwork/example-manifestwork",
         "--for=delete",
         f"--namespace={cluster}",
-        "--timeout=120s",
+        timeout=120,
         context=hub,
     )
 
@@ -67,7 +67,7 @@ def wait_for_delete_deployment(cluster):
     kubectl.wait(
         "deploy/example-deployment",
         "--for=delete",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
 

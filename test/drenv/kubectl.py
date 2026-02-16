@@ -9,6 +9,11 @@ from . import zap
 
 JSONPATH_NEWLINE = '{"\\n"}'
 
+# Default timeout for kubectl commands that can wait for a condition (wait,
+# delete, rollout). Without a timeout these commands can hang indefinitely,
+# wasting hours of CI time.
+DEFAULT_TIMEOUT = 300
+
 
 def version(context=None, output=None):
     """
@@ -127,25 +132,25 @@ def annotate(
     _watch(*args, context=context, log=log)
 
 
-def delete(*args, input=None, context=None, log=print):
+def delete(*args, input=None, timeout=DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl delete ... logging progress messages.
     """
-    _watch("delete", *args, input=input, context=context, log=log)
+    _watch("delete", *args, input=input, timeout=timeout, context=context, log=log)
 
 
-def rollout(*args, context=None, log=print):
+def rollout(*args, timeout=DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl rollout ... logging progress messages.
     """
-    _watch("rollout", *args, context=context, log=log)
+    _watch("rollout", *args, timeout=timeout, context=context, log=log)
 
 
-def wait(*args, context=None, log=print):
+def wait(*args, timeout=DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl wait ... logging progress messages.
     """
-    _watch("wait", *args, context=context, log=log)
+    _watch("wait", *args, timeout=timeout, context=context, log=log)
 
 
 def watch(
@@ -230,10 +235,12 @@ def _run(cmd, *args, env=None, context=None):
     return commands.run(*cmd, env=env)
 
 
-def _watch(cmd, *args, input=None, context=None, log=print):
+def _watch(cmd, *args, input=None, timeout=None, context=None, log=print):
     cmd = ["kubectl", cmd]
     if context:
         cmd.extend(("--context", context))
     cmd.extend(args)
+    if timeout is not None:
+        cmd.extend(("--timeout", f"{timeout}s"))
     for line in commands.watch(*cmd, input=input):
         log(line)
