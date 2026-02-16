@@ -21,8 +21,9 @@ const (
 	// to be the TargetCluster.
 	ActionRelocate = DRAction("Relocate")
 
-	// This is to test the failover to the TargetCluster without impacting the PrimaryCluster.  
-	// This is a non-disruptive action and is used to validate the failover on the TargetCluster cluster before performing an actual failover.
+	// TestFailover is to test the failover to the TargetCluster without impacting the PrimaryCluster.
+	// This is a non-disruptive action and is used to validate the failover on the TargetCluster
+	// cluster before performing an actual failover.
 	ActionTestFailover = DRAction("TestFailover")
 )
 
@@ -59,7 +60,7 @@ const (
 	FailedOver = DRState("FailedOver")
 
 	// TestFailover, state recorded in the DRPC status when the test failover
-	// is initiated but has not been completed yet
+	// is initiated
 	TestFailover = DRState("TestFailover")
 
 	// TestFailedOver, state recorded in the DRPC status when the test failover process
@@ -131,6 +132,7 @@ const (
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
+	ProgressionTestingFailover                        = ProgressionStatus("TestingFailover")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
