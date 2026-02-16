@@ -5,6 +5,7 @@ import collections
 import os
 import platform
 import selectors
+import signal
 import subprocess
 import time
 
@@ -302,12 +303,17 @@ def pipeline(*commands, input=None, decode=True, timeout=None):
         for proc in procs:
             proc.wait()
 
-    # Collect all failures.
+    # Collect all failures. SIGPIPE in non-last commands is normal in
+    # pipelines - it means a downstream command exited before consuming all
+    # input, same as how real shells handle it.
     failures = []
     for proc, stderr in procs.items():
-        if proc.returncode != 0:
-            error = stderr.decode(errors="replace")
-            failures.append(Failure(proc.args, proc.returncode, error))
+        if proc.returncode == 0:
+            continue
+        if proc is not last and proc.returncode == -signal.SIGPIPE:
+            continue
+        error = stderr.decode(errors="replace")
+        failures.append(Failure(proc.args, proc.returncode, error))
 
     if failures:
         raise PipelineError(failures)
