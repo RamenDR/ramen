@@ -99,7 +99,6 @@ def wait_for_service(cluster, namespace):
         f"deploy/{SERVICE}",
         "--for=condition=Available",
         f"--namespace={namespace}",
-        "--timeout=300s",
         context=cluster,
     )
 
@@ -110,7 +109,6 @@ def wait_for_pod(cluster, namespace):
         "pod/test",
         "--for=condition=Ready",
         f"--namespace={namespace}",
-        "--timeout=300s",
         context=cluster,
     )
 
@@ -131,7 +129,7 @@ def wait_for_service_export(cluster, namespace):
         f"serviceexports/{SERVICE}",
         "--for=condition=Ready",
         f"--namespace={namespace}",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
     exports = kubectl.describe(

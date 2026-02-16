@@ -64,7 +64,6 @@ def test_volume_replication(primary, secondary):
         f"pvc/{PVC_NAME}",
         "--for=jsonpath={.status.phase}=Bound",
         "--namespace=rook-ceph",
-        "--timeout=300s",
         context=primary,
     )
 
@@ -73,7 +72,6 @@ def test_volume_replication(primary, secondary):
         f"volumereplication/{VR_NAME}",
         "--for=condition=Completed",
         "--namespace=rook-ceph",
-        "--timeout=300s",
         context=primary,
     )
 
@@ -82,7 +80,6 @@ def test_volume_replication(primary, secondary):
         f"volumereplication/{VR_NAME}",
         "--for=jsonpath={.status.state}=Primary",
         "--namespace=rook-ceph",
-        "--timeout=300s",
         context=primary,
     )
 

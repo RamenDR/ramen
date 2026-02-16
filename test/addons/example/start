@@ -22,7 +22,7 @@ print("Waiting until example deployment is rolled out")
 kubectl.rollout(
     "status",
     "deploy/example-deployment",
-    "--timeout=180s",
+    timeout=180,
     context=cluster,
 )
 
@@ -31,6 +31,6 @@ kubectl.wait(
     "pod",
     "--selector=app=example",
     "--for=condition=Ready",
-    "--timeout=180s",
+    timeout=180,
     context=cluster,
 )

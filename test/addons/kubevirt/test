@@ -40,7 +40,7 @@ def wait_until_vm_is_ready(cluster):
         "vm/testvm",
         "--for=condition=ready",
         f"--namespace={NAMESPACE}",
-        "--timeout=180s",
+        timeout=180,
         context=cluster,
     )
 
