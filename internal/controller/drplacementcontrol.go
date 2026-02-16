@@ -113,6 +113,8 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 		return d.RunFailover()
 	case rmn.ActionRelocate:
 		return d.RunRelocate()
+	case rmn.ActionTestFailover:
+		return d.RunTestFailover()
 	}
 
 	// Not a failover or a relocation.  Must be an initial deployment.
@@ -363,7 +365,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
-	// IFF VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
+	// If VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
 	// clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
@@ -388,13 +390,19 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
+		// Opltimize by adding a reconciler so that we reconcile at 1 minute at most.
+		if d.instance.Spec.Action == rmn.ActionTestFailover {
+			d.setProgression(rmn.ProgressionTestingFailover)
+
+			return !done, nil
+		}
+
 		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
 		// We have to wait for the VRG to appear on the failoverCluster or
 		// in case of an error, try again later
 		return !done, err
 	}
-
 	// Use the DRPC Protected condition to check if it is true and then allow failover
 	if !d.isProtected() {
 		return !done, nil
@@ -403,6 +411,17 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.setStatusInitiating()
 
 	return d.switchToFailoverCluster()
+}
+
+func (d *DRPCInstance) RunTestFailover() (bool, error) {
+	d.log.Info("Entering RunTestFailover", "state", d.getLastDRState())
+
+	// The logic for test failover is same as actual failover,
+	// allowing users to understand that we are in a testing failover mode,
+	// without impacting the real failover, with an option to revert to process whenever needed
+	// or even to continue with the actual failover if they are satisfied with the test failover results.
+
+	return d.RunFailover()
 }
 
 func (d *DRPCInstance) isProtected() bool {
@@ -2474,9 +2493,28 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 		d.log.Info(fmt.Sprintf("Phase: Current '%s'. Next '%s'",
 			d.instance.Status.Phase, nextState))
 
-		d.instance.Status.Phase = nextState
+		d.instance.Status.Phase = d.adjustPhaseIfTestFailover(nextState)
 		d.instance.Status.ObservedGeneration = d.instance.Generation
 		d.reportEvent(nextState)
+	}
+}
+
+func (d *DRPCInstance) adjustPhaseIfTestFailover(nextState rmn.DRState) rmn.DRState {
+	if d.instance.Spec.Action == rmn.ActionTestFailover {
+		return mapPhaseForTestFailover(nextState)
+	}
+
+	return nextState
+}
+
+func mapPhaseForTestFailover(nextState rmn.DRState) rmn.DRState {
+	switch nextState {
+	case rmn.FailingOver:
+		return rmn.TestFailover
+	case rmn.FailedOver:
+		return rmn.TestFailedOver
+	default:
+		return nextState
 	}
 }
 
