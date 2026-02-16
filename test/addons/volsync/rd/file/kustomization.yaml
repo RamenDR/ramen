@@ -28,6 +28,3 @@ patches:
       - op: replace
         path: /spec/rsyncTLS/storageClassName
         value: rook-cephfs-fs1
-      - op: replace
-        path: /spec/rsyncTLS/volumeSnapshotClassName
-        value: csi-cephfsplugin-snapclass
