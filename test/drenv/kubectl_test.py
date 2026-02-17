@@ -53,7 +53,7 @@ def test_apply(tmpenv, capsys):
     assert out.strip() == "deployment.apps/example-deployment unchanged"
 
 
-def test_rollout(tmpenv, capsys):
+def test_rollout_status(tmpenv, capsys):
     kubectl.rollout(
         "status",
         "deploy/example-deployment",
@@ -62,6 +62,47 @@ def test_rollout(tmpenv, capsys):
     )
     out, err = capsys.readouterr()
     assert out.strip() == 'deployment "example-deployment" successfully rolled out'
+
+
+def test_rollout_status_default_timeout(tmpenv, capsys, monkeypatch):
+    monkeypatch.setattr(kubectl, "DEFAULT_TIMEOUT", TIMEOUT)
+    kubectl.rollout(
+        "status",
+        "deploy/example-deployment",
+        context=tmpenv.profile,
+    )
+    out, err = capsys.readouterr()
+    assert out.strip() == 'deployment "example-deployment" successfully rolled out'
+
+
+def test_rollout_restart(tmpenv, capsys):
+    kubectl.rollout(
+        "restart",
+        "deploy/example-deployment",
+        context=tmpenv.profile,
+    )
+    out, err = capsys.readouterr()
+    assert "example-deployment" in out
+    assert "restarted" in out
+
+    # Wait for the restart to complete so subsequent tests find a consistent
+    # deployment state.
+    kubectl.rollout(
+        "status",
+        "deploy/example-deployment",
+        timeout=TIMEOUT,
+        context=tmpenv.profile,
+    )
+
+
+def test_rollout_restart_unsupported_timeout(tmpenv):
+    with pytest.raises(commands.Error):
+        kubectl.rollout(
+            "restart",
+            "deploy/example-deployment",
+            timeout=300,
+            context=tmpenv.profile,
+        )
 
 
 def test_wait(tmpenv, capsys):
