@@ -28,7 +28,7 @@ func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
 }
 
 func (d DiscoveredApp) GetName() string {
-	return "disapp"
+	return d.DeployerSpec.Name
 }
 
 func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {

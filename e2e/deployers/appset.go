@@ -125,7 +125,7 @@ func (a ApplicationSet) WaitForResourcesDelete(ctx types.TestContext) error {
 }
 
 func (a ApplicationSet) GetName() string {
-	return "appset"
+	return a.DeployerSpec.Name
 }
 
 func (a ApplicationSet) GetNamespace(ctx types.TestContext) string {
