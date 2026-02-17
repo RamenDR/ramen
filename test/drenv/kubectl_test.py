@@ -76,7 +76,7 @@ def test_wait(tmpenv, capsys):
 
 
 def test_patch(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     kubectl.patch(
         pod,
         "--type=merge",
@@ -88,7 +88,7 @@ def test_patch(tmpenv, capsys):
 
 
 def test_label(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     name = f"test-{secrets.token_hex(8)}"
 
     kubectl.label(pod, f"{name}=old", context=tmpenv.profile)
@@ -101,7 +101,7 @@ def test_label(tmpenv, capsys):
 
 
 def test_annotate(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     annotation = f"test-{secrets.token_hex(8)}"
 
     print(f"Adding new annotation {annotation}")
@@ -123,7 +123,7 @@ def test_annotate(tmpenv, capsys):
 
 
 def test_delete(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     kubectl.delete(pod, context=tmpenv.profile)
     out, err = capsys.readouterr()
     _, name = pod.split("/", 1)
@@ -239,6 +239,22 @@ def test_watch_timeout(tmpenv):
 
     # We should get at least the initial state.
     assert output[0] == "example-deployment"
+
+
+def _current_pod(context):
+    """
+    Return the name of the current running example pod. After rollout restart
+    the deployment may have old terminating pods.
+    """
+    out = kubectl.get(
+        "pod",
+        "--selector=app=example",
+        "--field-selector=status.phase=Running",
+        "--output=name",
+        context=context,
+    ).strip()
+    assert "\n" not in out, f"Expected single pod, got: {out}"
+    return out
 
 
 def _get_annotations(resource, context):
