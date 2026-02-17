@@ -1661,18 +1661,13 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		rd := currentRDListByOwner.Items[i]
 
 		foundInSpecList := false
-		cgName := ""
+		cgName := rd.GetLabels()[util.RGDOwnerLabel]
 
 		for _, rdSpec := range rdSpecList {
-			if rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel] != "" {
-				cgName = rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
-			}
-
 			// Check if the ReplicationDestination is in the spec list
 			if rd.GetName() == util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name) &&
 				rd.GetNamespace() == rdSpec.ProtectedPVC.Namespace {
 				foundInSpecList = true
-				cgName = "" // Reset cgName if found in spec list
 
 				break
 			}
@@ -1704,15 +1699,15 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 				}
 			}
 		}
+	}
 
-		for cgName, cgNamespace := range groupsToRecreate {
-			v.log.V(1).Info("Recreating RGD", "cgName", cgName)
+	for cgName, cgNamespace := range groupsToRecreate {
+		v.log.V(1).Info("Recreating RGD", "cgName", cgName)
 
-			if err := util.DeleteReplicationGroupDestination(v.ctx, v.client, cgName, cgNamespace); err != nil {
-				v.log.Error(err, "Failed to delete RGD")
+		if err := util.DeleteReplicationGroupDestination(v.ctx, v.client, cgName, cgNamespace); err != nil {
+			v.log.Error(err, "Failed to delete RGD")
 
-				return err
-			}
+			return err
 		}
 	}
 
