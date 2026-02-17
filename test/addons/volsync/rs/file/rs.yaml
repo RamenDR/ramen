@@ -13,8 +13,7 @@ spec:
   rsyncTLS:
     keySecret: volsync-rsync-tls-busybox-dst-file
     address: volsync-rsync-tls-dst-busybox-dst.volsync-test-file.svc.clusterset.local
-    copyMethod: Snapshot
-    volumeSnapshotClassName: csi-cephfsplugin-snapclass
+    copyMethod: Direct
     moverSecurityContext:
       runAsUser: 10000
       runAsGroup: 10000
