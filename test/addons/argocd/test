@@ -52,7 +52,7 @@ def wait_until_busybox_is_healthy(hub, cluster):
         f"busybox-{cluster}",
         "--for=jsonpath={.status.health.status}=Healthy",
         "--namespace=argocd",
-        "--timeout=120s",
+        timeout=120,
         context=hub,
     )
 
@@ -99,7 +99,7 @@ def wait_until_busybox_is_deleted(hub, cluster):
         f"busybox-{cluster}",
         "--for=delete",
         "--namespace=argocd",
-        "--timeout=60s",
+        timeout=60,
         context=hub,
     )
     print(f"Waiting until namespace argocd-test is deleted in cluster {cluster}")
@@ -107,7 +107,7 @@ def wait_until_busybox_is_deleted(hub, cluster):
         "ns",
         "argocd-test",
         "--for=delete",
-        "--timeout=60s",
+        timeout=60,
         context=cluster,
     )
 
