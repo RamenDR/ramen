@@ -2570,6 +2570,46 @@ specialProgressions are used to indicate special cases irrespective of action or
 		ProgressionActionPaused,
 	}
 */
+
+var deployProgressionList = []rmn.ProgressionStatus{
+	rmn.ProgressionCreatingMW,
+	rmn.ProgressionUpdatingPlRule,
+	rmn.ProgressionEnsuringVolSyncSetup,
+	rmn.ProgressionSettingupVolsyncDest,
+	rmn.ProgressionCompleted,
+}
+
+var failoverProgressionList = []rmn.ProgressionStatus{
+	rmn.ProgressionCheckingFailoverPrerequisites,
+	rmn.ProgressionWaitForFencing,
+	rmn.ProgressionWaitForStorageMaintenanceActivation,
+	rmn.ProgressionFailingOverToCluster,
+	rmn.ProgressionWaitingForResourceRestore,
+	rmn.ProgressionEnsuringVolSyncSetup,
+	rmn.ProgressionSettingupVolsyncDest,
+	rmn.ProgressionWaitForReadiness,
+	rmn.ProgressionUpdatedPlacement,
+	rmn.ProgressionCleaningUp,
+	rmn.ProgressionWaitOnUserToCleanUp,
+	rmn.ProgressionCompleted,
+}
+
+var relocateProgressionList = []rmn.ProgressionStatus{
+	rmn.ProgressionPreparingFinalSync,
+	rmn.ProgressionClearingPlacement,
+	rmn.ProgressionRunningFinalSync,
+	rmn.ProgressionFinalSyncComplete,
+	rmn.ProgressionEnsuringVolumesAreSecondary,
+	rmn.ProgressionWaitOnUserToCleanUp,
+	rmn.ProgressionCleaningUp,
+	rmn.ProgressionWaitingForResourceRestore,
+	rmn.ProgressionWaitForReadiness,
+	rmn.ProgressionUpdatedPlacement,
+	rmn.ProgressionEnsuringVolSyncSetup,
+	rmn.ProgressionSettingupVolsyncDest,
+	rmn.ProgressionCompleted,
+}
+
 func (d *DRPCInstance) setProgression(nextProgression rmn.ProgressionStatus) {
 	updateDRPCProgression(d.instance, nextProgression, d.log)
 }
