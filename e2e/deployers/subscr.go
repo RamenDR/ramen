@@ -157,6 +157,11 @@ func (s Subscription) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error) {
 	return nil, nil
 }
 
+// GetConfig returns the deployer configuration used by the Subscription deployer.
+func (s Subscription) GetConfig() *config.Deployer {
+	return &s.DeployerSpec
+}
+
 func init() {
 	register("subscr", NewSubscription)
 }

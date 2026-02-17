@@ -140,6 +140,11 @@ func (d *DiscoveredApp) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error)
 	return d.recipe, nil
 }
 
+// GetConfig returns the deployer configuration used by the DiscoveredApp deployer.
+func (d DiscoveredApp) GetConfig() *config.Deployer {
+	return &d.DeployerSpec
+}
+
 func (d DiscoveredApp) shouldGenerateRecipe() bool {
 	return d.DeployerSpec.Recipe != nil && d.DeployerSpec.Recipe.Type == "generate"
 }

@@ -141,6 +141,11 @@ func (a ApplicationSet) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error)
 	return nil, nil
 }
 
+// GetConfig returns the deployer configuration used by the ApplicationSet deployer.
+func (a ApplicationSet) GetConfig() *config.Deployer {
+	return &a.DeployerSpec
+}
+
 func init() {
 	register("appset", NewApplicationSet)
 }
