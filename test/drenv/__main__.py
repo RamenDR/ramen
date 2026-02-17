@@ -19,6 +19,7 @@ from . import cluster
 from . import commands
 from . import envfile
 from . import kubectl
+from . import marker
 from . import providers
 from . import ramen
 from . import shutdown
@@ -98,6 +99,11 @@ def parse_args():
             "(8.8.8.8, 1.1.1.1). 'host' uses the host resolver (default for "
             "minikube, may not work on managed Macs)."
         ),
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Run all addons even if previously completed",
     )
 
     p = add_command(sp, "stop", do_stop, help="stop an environment")
@@ -299,7 +305,13 @@ def do_start(args):
     )
 
     if hooks:
-        execute(run_worker, env["workers"], "workers", hooks=hooks)
+        execute(
+            run_worker,
+            env["workers"],
+            "workers",
+            hooks=hooks,
+            force=args.force,
+        )
 
     if "ramen" in env:
         ramen.dump_e2e_config(env)
@@ -450,6 +462,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
             profile["name"],
             max_workers=args.max_workers,
             hooks=hooks,
+            force=args.force,
         )
 
 
@@ -536,10 +549,16 @@ def failed_deployments(profile):
                 yield namespace, deploy, progressing
 
 
-def run_worker(worker, hooks=(), reverse=False, allow_failure=False):
+def run_worker(worker, hooks=(), reverse=False, allow_failure=False, force=False):
     addons = reversed(worker["addons"]) if reverse else worker["addons"]
     for addon in addons:
-        run_addon(addon, worker["name"], hooks=hooks, allow_failure=allow_failure)
+        run_addon(
+            addon,
+            worker["name"],
+            hooks=hooks,
+            allow_failure=allow_failure,
+            force=force,
+        )
 
 
 def cache_addon(addon, ctx="global"):
@@ -553,7 +572,7 @@ def cache_addon(addon, ctx="global"):
         run_hook(hook, (), ctx)
 
 
-def run_addon(addon, name, hooks=(), allow_failure=False):
+def run_addon(addon, name, hooks=(), allow_failure=False, force=False):
     addon_dir = os.path.join(ADDONS_DIR, addon["name"])
     if not os.path.isdir(addon_dir):
         skip_addon(addon, name)
@@ -562,7 +581,14 @@ def run_addon(addon, name, hooks=(), allow_failure=False):
     for filename in hooks:
         hook = os.path.join(addon_dir, filename)
         if os.path.isfile(hook):
-            run_hook(hook, addon["args"], name, allow_failure=allow_failure)
+            run_hook(
+                hook,
+                addon["args"],
+                name,
+                addon_name=addon["name"],
+                allow_failure=allow_failure,
+                force=force,
+            )
 
 
 def skip_addon(addon, ctx):
@@ -573,10 +599,16 @@ def skip_addon(addon, ctx):
     )
 
 
-def run_hook(hook, args, name, allow_failure=False):
+def run_hook(hook, args, name, addon_name=None, allow_failure=False, force=False):
     if shutdown.started():
         logging.debug("[%s] Shutting down", name)
         raise shutdown.Started
+
+    hook_name = os.path.basename(hook)
+
+    if not force and addon_name and marker.exists(name, addon_name, hook_name):
+        logging.info("[%s] Skipping %s (already completed)", name, hook)
+        return
 
     start = time.monotonic()
     logging.info("[%s] Running %s", name, hook)
@@ -587,6 +619,8 @@ def run_hook(hook, args, name, allow_failure=False):
             raise
         logging.warning("[%s] %s failed: %s", name, hook, e)
     else:
+        if addon_name:
+            marker.create(name, addon_name, hook_name)
         logging.info(
             "[%s] %s completed in %.2f seconds",
             name,
