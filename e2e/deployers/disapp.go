@@ -28,7 +28,7 @@ func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
 }
 
 func (d DiscoveredApp) GetName() string {
-	return "disapp"
+	return d.DeployerSpec.Name
 }
 
 func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {
@@ -79,7 +79,32 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
+	if d.shouldGenerateRecipe() {
+		recipe, err := d.GetRecipe(ctx)
+		if err != nil {
+			return err
+		}
+
+		if err := d.deployRecipe(ctx, recipe); err != nil {
+			return err
+		}
+	}
+
 	log.Info("Workload deployed")
+
+	return nil
+}
+
+func (d DiscoveredApp) deployRecipe(ctx types.TestContext, recipe *recipe.Recipe) error {
+	log := ctx.Logger()
+
+	if err := recipes.CreateRecipeOnManagedClusters(ctx, recipe); err != nil {
+		return fmt.Errorf("failed to create recipe for discovered app \"%s/%s\": %w",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+	}
+
+	log.Debugf("Recipe %s created for discovered app \"%s/%s\"",
+		recipe.Name, ctx.AppNamespace(), ctx.Workload().GetAppName())
 
 	return nil
 }
@@ -102,6 +127,10 @@ func (d DiscoveredApp) Undeploy(ctx types.TestContext) error {
 	return nil
 }
 
+func (d DiscoveredApp) shouldGenerateRecipe() bool {
+	return d.DeployerSpec.Recipe != nil && d.DeployerSpec.Recipe.Type == "generate"
+}
+
 func (d DiscoveredApp) DeleteResources(ctx types.TestContext) error {
 	if err := DeleteDiscoveredApps(ctx, ctx.Env().C1, ctx.AppNamespace()); err != nil {
 		return err
@@ -111,10 +140,36 @@ func (d DiscoveredApp) DeleteResources(ctx types.TestContext) error {
 		return err
 	}
 
+	recipe, err := d.GetRecipe(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get recipe for discovered app \"%s/%s\": %w",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+	}
+
+	if recipe != nil {
+		if err := recipes.DeleteRecipeOnManagedClusters(ctx, recipe); err != nil {
+			return fmt.Errorf("failed to delete recipe for discovered app \"%s/%s\": %w",
+				ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+		}
+	}
+
 	return util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace())
 }
 
 func (d DiscoveredApp) WaitForResourcesDelete(ctx types.TestContext) error {
+	recipe, err := d.GetRecipe(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get recipe for discovered app \"%s/%s\": %w",
+			ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+	}
+
+	if recipe != nil {
+		if err := util.WaitForRecipeDeleteOnManagedClusters(ctx, recipe); err != nil {
+			return fmt.Errorf("failed to wait for recipe deletion for discovered app \"%s/%s\": %w",
+				ctx.AppNamespace(), ctx.Workload().GetAppName(), err)
+		}
+	}
+
 	return util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace())
 }
 
@@ -138,10 +193,6 @@ func (d *DiscoveredApp) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error)
 	}
 
 	return d.recipe, nil
-}
-
-func (d DiscoveredApp) shouldGenerateRecipe() bool {
-	return d.DeployerSpec.Recipe != nil && d.DeployerSpec.Recipe.Type == "generate"
 }
 
 func DeleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespace string) error {
