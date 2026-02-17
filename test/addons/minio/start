@@ -30,7 +30,6 @@ def wait(cluster):
         "status",
         "deployment/minio",
         "--namespace=minio",
-        "--timeout=300s",
         context=cluster,
     )
 

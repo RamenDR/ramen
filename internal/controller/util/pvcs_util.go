@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,8 @@ const (
 	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
 
 	SuffixForFinalsyncPVC = "-for-finalsync"
+
+	ManagedAnnotationKeysMarker string = "ramendr.openshift.io/managed-annotation-keys"
 )
 
 // nolint:funlen
@@ -396,4 +399,55 @@ func sortJSON(v interface{}) interface{} {
 
 func GetTmpPVCNameForFinalSync(pvcName string) string {
 	return fmt.Sprintf("%s%s", pvcName, SuffixForFinalsyncPVC)
+}
+
+// SyncPVCLabels synchronizes labels from ProtectedPVC to PVC.
+// It simply adds/updates labels without removing ones that are deleted from ProtectedPVC.
+// Note: Kubernetes handles labels differently from annotations. Label values are limited to
+// 63 characters, so using the same pattern as in the SyncPVCAnnotations will eventually cause
+// it to break.
+func SyncPVCLabels(pvc *corev1.PersistentVolumeClaim, protectedLabels map[string]string) {
+	if pvc.Labels == nil {
+		pvc.Labels = make(map[string]string)
+	}
+
+	for key, val := range protectedLabels {
+		pvc.Labels[key] = val
+	}
+}
+
+// SyncPVCAnnotations synchronizes annotations from ProtectedPVC to PVC, removing annotations that were
+// previously synced but are no longer in ProtectedPVC, while preserving PVC-specific annotations.
+func SyncPVCAnnotations(pvc *corev1.PersistentVolumeClaim, protectedAnnotations map[string]string) {
+	if pvc.Annotations == nil {
+		pvc.Annotations = make(map[string]string)
+	}
+
+	currentManagedKeys := make(map[string]bool)
+	// Track which keys we previously managed
+	if markerVal, exists := pvc.Annotations[ManagedAnnotationKeysMarker]; exists {
+		for _, key := range strings.Split(markerVal, ",") {
+			if key != "" {
+				currentManagedKeys[key] = true
+			}
+		}
+	}
+
+	// Remove annotations that we previously managed but are no longer in ProtectedPVC
+	for key := range currentManagedKeys {
+		if _, exists := protectedAnnotations[key]; !exists {
+			delete(pvc.Annotations, key)
+		}
+	}
+
+	// Add/update all annotations from ProtectedPVC
+	newManagedKeys := make([]string, 0, len(protectedAnnotations))
+	for key, val := range protectedAnnotations {
+		pvc.Annotations[key] = val
+		newManagedKeys = append(newManagedKeys, key)
+	}
+
+	// Store the new set of managed keys
+	sort.Strings(newManagedKeys)
+	pvc.Annotations[ManagedAnnotationKeysMarker] = strings.Join(newManagedKeys, ",")
 }

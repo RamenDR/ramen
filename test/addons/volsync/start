@@ -52,7 +52,6 @@ def wait_for_deployment(cluster):
         "status",
         f"deploy/{DEPLOYMENT}",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
         context=cluster,
     )
 
