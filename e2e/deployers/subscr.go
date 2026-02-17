@@ -24,7 +24,7 @@ func NewSubscription(deployer config.Deployer) types.Deployer {
 }
 
 func (s Subscription) GetName() string {
-	return "subscr"
+	return s.DeployerSpec.Name
 }
 
 func (s Subscription) GetNamespace(_ types.TestContext) string {
