@@ -375,6 +375,31 @@ func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementC
 	cgEnabledMetrics.CGEnabled.Set(float64(enabled))
 }
 
+func (r *DRPlacementControlReconciler) setDRProgressionStateMetric(drpc *rmn.DRPlacementControl,
+	drProgressionStateMetrics *DRProgressionStateMetrics, log logr.Logger,
+) {
+	if drProgressionStateMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", DRProgressionState))
+
+	// Extend this metric to other DR progression(rmn.ProgressionState) states by adding them to the `states` slice.
+	states := []string{
+		string(rmn.ProgressionWaitOnUserToCleanUp),
+	}
+
+	currentState := string(drpc.Status.Progression)
+	for _, state := range states {
+		labels := DRProgressionStateMetricLabels(drpc)
+		if state == currentState {
+			drpcProgressionState.With(labels).Set(1)
+		} else {
+			drpcProgressionState.With(labels).Set(0)
+		}
+	}
+}
+
 //nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
@@ -493,6 +518,17 @@ func (r *DRPlacementControlReconciler) createCGEnabledMetricsInstance(
 
 	return &CGEnabledMetrics{
 		CGEnabled: cgEnabledMetrics.CGEnabled,
+	}
+}
+
+func (r *DRPlacementControlReconciler) createDRProgressionStateMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *DRProgressionStateMetrics {
+	drProgressionStateLabels := DRProgressionStateMetricLabels(drpc)
+	drProgressionStateMetrics := NewDRPCProgressionStateMetric(drProgressionStateLabels)
+
+	return &DRProgressionStateMetrics{
+		DRProgressionState: drProgressionStateMetrics.DRProgressionState,
 	}
 }
 
@@ -747,6 +783,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	cgEnabledMetricLabels := CGEnabledMetricLabels(drpc)
 	DeleteCGEnabledMetric(cgEnabledMetricLabels)
+
+	DRProgressionStateMetricsLabels := DRProgressionStateMetricLabels(drpc)
+	DeleteDRPCProgressionStateMetric(DRProgressionStateMetricsLabels)
 
 	return nil
 }
@@ -1649,6 +1688,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
 		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
 	}
+
+	appDRCleanupMetrics := r.createDRProgressionStateMetricsInstance(drpc)
+	r.setDRProgressionStateMetric(drpc, appDRCleanupMetrics, log)
 
 	return nil
 }
