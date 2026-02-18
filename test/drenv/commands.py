@@ -245,7 +245,9 @@ def watch(
         return
     except StreamTimeout as e:
         p.kill()
-        raise Timeout(args, "Timed watching command").with_exception(e)
+        raise Timeout(
+            args, f"Command did not finish in {timeout} seconds"
+        ).with_exception(e)
     finally:
         p.wait()
 
@@ -325,7 +327,9 @@ def pipeline(*commands, input=None, decode=True, timeout=_DEFAULT_TIMEOUT):
     except StreamTimeout as e:
         for proc in procs:
             proc.kill()
-        raise Timeout(commands, "Pipeline timed out").with_exception(e)
+        raise Timeout(
+            commands, f"Pipeline did not finish in {timeout} seconds"
+        ).with_exception(e)
     except BaseException:
         for proc in procs:
             proc.kill()
