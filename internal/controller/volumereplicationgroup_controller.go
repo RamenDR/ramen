@@ -544,6 +544,9 @@ const (
 	// VolumeGroupReplicationClass label
 	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
+	// VolumeReplicationGroup label indicating globally scoped VGRClass, value is the storageID
+	GlobalOffloadedLabel = "ramendr.openshift.io/global-offloaded"
+
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 
@@ -751,6 +754,17 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
+		globalOffloaded, err := v.isGlobalOffloaded(pvcList)
+		if err != nil {
+			return err
+		}
+
+		if globalOffloaded {
+			if err := v.addGlobalOffloadedLabel(pvcList); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 
@@ -862,6 +876,56 @@ func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaim
 	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for offloaded protection", len(v.volRepPVCs)))
 
 	return offloaded, nil
+}
+
+// isGlobalOffloaded returns true if the offloaded PVCs use a globally scoped VGRClass.
+func (v *VRGInstance) isGlobalOffloaded(pvcList *corev1.PersistentVolumeClaimList) (bool, error) {
+	if len(pvcList.Items) == 0 {
+		return false, nil
+	}
+
+	pvc := &pvcList.Items[0]
+
+	vgrClassObj, err := v.selectVolumeReplicationClass(pvc, true)
+	if err != nil {
+		return false, fmt.Errorf("failed to find VolumeGroupReplicationClass for PVC %s/%s: %w",
+			pvc.GetNamespace(), pvc.GetName(), err)
+	}
+
+	vgrClass, ok := vgrClassObj.(*volrep.VolumeGroupReplicationClass)
+	if !ok {
+		return false, fmt.Errorf("unexpected type for VolumeGroupReplicationClass: %T", vgrClassObj)
+	}
+
+	// TODO: Replace with vgrClass.Spec.Global once csi-addons adds the field
+	return vgrClass.Spec.Parameters["global"] == "true", nil
+}
+
+// addGlobalOffloadLabel labels the VRG with the storageID, enabling VRGs
+// with the same storageID to be discovered during consensus checks.
+func (v *VRGInstance) addGlobalOffloadedLabel(pvcList *corev1.PersistentVolumeClaimList) error {
+	pvc := &pvcList.Items[0]
+
+	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
+	if err != nil {
+		return err
+	}
+
+	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
+	if !ok {
+		return fmt.Errorf("storageClass %s missing label %s", storageClass.GetName(), StorageIDLabel)
+	}
+
+	if util.AddLabel(v.instance, GlobalOffloadedLabel, storageID) {
+		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
+			return fmt.Errorf("failed to add label %s to VRG %s/%s: %w",
+				GlobalOffloadedLabel, v.instance.Namespace, v.instance.Name, err)
+		}
+
+		v.log.Info("Labeled VRG for global offload", "storageID", storageID)
+	}
+
+	return nil
 }
 
 // addVolRepConsistencyGroupLabel ensures that the given PVC is labeled as part of a consistency group.
