@@ -462,6 +462,16 @@ def test_run_cwd(tmpdir):
     assert output == "content"
 
 
+def test_run_timeout():
+    with pytest.raises(commands.Timeout):
+        commands.run("sleep", "5", timeout=0.001)
+
+
+def test_run_timeout_not_expired():
+    output = commands.run("true", timeout=5)
+    assert output == ""
+
+
 # Formatting errors.
 
 

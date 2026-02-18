@@ -15,6 +15,10 @@ from . import yaml
 OUT = "out"
 ERR = "err"
 
+# Default timeout for commands. Without a timeout commands can hang
+# indefinitely, wasting hours of CI time.
+_DEFAULT_TIMEOUT = 300
+
 Failure = collections.namedtuple("Failure", ["command", "exitcode", "error"])
 
 _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
@@ -89,9 +93,20 @@ class StreamTimeout(Exception):
     """
 
 
-def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
+def run(
+    *args,
+    input=None,
+    stdin=None,
+    decode=True,
+    env=None,
+    cwd=None,
+    timeout=_DEFAULT_TIMEOUT,
+):
     """
     Run command args and return the output of the command.
+
+    By default commands are terminated after the default timeout. Use
+    timeout=None to wait forever.
 
     Assumes that the child process output UTF-8. Will raise if the command
     outputs binary data. This is not a problem in this projects since all our
@@ -101,9 +116,11 @@ def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
     fail to raise an error about the failing command. Invalid characters will
     be replaced with unicode replacement character (U+FFFD).
 
-    Raises Error if creating a child process failed or the child process
-    terminated with non-zero exit code. The error includes all data read from
-    the child process stdout and stderr.
+    Raises:
+    - Error if creating a child process failed or the child process
+      terminated with non-zero exit code. The error includes all data read
+      from the child process stdout and stderr.
+    - Timeout if the command did not terminate within the specified timeout.
     """
     with shutdown.guard():
         try:
@@ -118,7 +135,15 @@ def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
 
-    output, error = p.communicate(input=input.encode() if input else None)
+    try:
+        output, error = p.communicate(
+            input=input.encode() if input else None,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait()
+        raise Timeout(args, f"Command did not finish in {timeout} seconds")
 
     if p.returncode != 0:
         error = error.decode(errors="replace")
@@ -132,7 +157,7 @@ def watch(
     input=None,
     keepends=False,
     decode=True,
-    timeout=None,
+    timeout=_DEFAULT_TIMEOUT,
     env=None,
     stdin=None,
     stderr=subprocess.PIPE,
@@ -140,6 +165,9 @@ def watch(
 ):
     """
     Run command args, iterating over lines read from the child process stdout.
+
+    By default commands are terminated after the default timeout. Use
+    timeout=None to wait forever.
 
     Some commands have no output and log everyting to stderr (like drenv). To
     watch the output call with stderr=subprocess.STDOUT. When such command
@@ -226,10 +254,13 @@ def watch(
         raise Error(args, error, exitcode=p.returncode)
 
 
-def pipeline(*commands, input=None, decode=True, timeout=None):
+def pipeline(*commands, input=None, decode=True, timeout=_DEFAULT_TIMEOUT):
     """
     Run commands as a pipeline, piping stdout of each command to stdin of the
     next.
+
+    By default pipelines are terminated after the default timeout. Use
+    timeout=None to wait forever.
 
     If input is not None, it is written to the first command's stdin.
 
