@@ -167,7 +167,7 @@ def watch(
     resource,
     jsonpath="{}",
     namespace=None,
-    timeout=None,
+    timeout=_DEFAULT_TIMEOUT,
     context=None,
 ):
     """
