@@ -632,10 +632,22 @@ func (v *VRGInstance) processVGRAsSecondary(vrNamespacedName types.NamespacedNam
 	return v.createOrUpdateVGR(vrNamespacedName, pvcs, volrep.Secondary, log)
 }
 
+//nolint:gocognit,funlen
 func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState, log logr.Logger,
 ) (bool, bool, error) {
 	const requeue = true
+
+	storageID, isVRGGlobal := v.globallyOffloadedLabel()
+
+	if isVRGGlobal {
+		if !v.isGlobalConsensusReached(storageID) {
+			log.Info("Waiting for all globally offloaded VRGs to reach consensus")
+
+			// TODO: If stuck here for extended time, raise an alert.
+			return requeue, false, nil
+		}
+	}
 
 	volRep := &volrep.VolumeGroupReplication{}
 
@@ -744,6 +756,59 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 	}
 
 	return !requeue, false, nil
+}
+
+func (v *VRGInstance) globallyOffloadedLabel() (string, bool) {
+	storageID := v.instance.GetLabels()[GloballyOffloadedLabel]
+
+	return storageID, storageID != ""
+}
+
+// isGlobalConsensusReached returns true when all VRGs sharing the same storageID
+// agree on action, replication state, and destination cluster.
+func (v *VRGInstance) isGlobalConsensusReached(storageID string) bool {
+	vrgList := &ramendrv1alpha1.VolumeReplicationGroupList{}
+	if err := v.reconciler.List(v.ctx, vrgList, client.MatchingLabels{
+		GloballyOffloadedLabel: storageID,
+	}); err != nil {
+		v.log.Error(err, "failed to list VRGs for global offload consensus check")
+
+		return false
+	}
+
+	if len(vrgList.Items) == 0 {
+		return false
+	}
+
+	expectedAction := v.instance.Spec.Action
+	expectedReplicationState := v.instance.Spec.ReplicationState
+	expectedDestinationCluster := v.instance.GetAnnotations()[DestinationClusterAnnotationKey]
+
+	for idx := range vrgList.Items {
+		vrg := &vrgList.Items[idx]
+
+		action := vrg.Spec.Action
+		replicationState := vrg.Spec.ReplicationState
+		destinationCluster := vrg.GetAnnotations()[DestinationClusterAnnotationKey]
+
+		if action != expectedAction || replicationState != expectedReplicationState ||
+			destinationCluster != expectedDestinationCluster {
+			v.log.Info("Global offload consensus not reached",
+				"vrg", vrg.Namespace+"/"+vrg.Name, "expectedAction", expectedAction, "action", action,
+				"expectedReplicationState", expectedReplicationState, "replicationState", replicationState,
+				"expectedDestinationCluster", expectedDestinationCluster, "destinationCluster", destinationCluster,
+			)
+
+			return false
+		}
+	}
+
+	v.log.Info("Global offload consensus reached",
+		"storageID", storageID, "vrgCount", len(vrgList.Items),
+		"action", expectedAction, "state", expectedReplicationState,
+		"cluster", expectedDestinationCluster)
+
+	return true
 }
 
 // createVGR creates a VolumeGroupReplication CR
