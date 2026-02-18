@@ -5,11 +5,13 @@ package controllers
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
 func updateProtectedConditionUnknown(drpc *rmn.DRPlacementControl, clusterName string) {
@@ -29,16 +31,17 @@ func updateDRPCProtectedCondition(
 	drpc *rmn.DRPlacementControl,
 	vrg *rmn.VolumeReplicationGroup,
 	clusterName string,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
 ) {
 	if updateVRGClusterDataReady(drpc, vrg, clusterName) {
 		return
 	}
 
-	if updateDRPCProtectedForReplicationState(drpc, vrg, clusterName) {
+	if updateDRPCProtectedForReplicationState(drpc, vrg, clusterName, vrgs) {
 		return
 	}
 
-	if updateVRGNoClusterDataConflict(drpc, vrg, clusterName) {
+	if updateVRGNoClusterDataConflict(drpc, vrg, vrgs) {
 		return
 	}
 
@@ -65,13 +68,19 @@ func updateDRPCProtectedForReplicationState(
 	drpc *rmn.DRPlacementControl,
 	vrg *rmn.VolumeReplicationGroup,
 	clusterName string,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
 ) bool {
+	var fromCluster string
+
+	drpc.Status.ResourceConditions.Conditions, fromCluster = mergeVRGsConditions(
+		vrgs, vrg, VRGConditionTypeDataReady)
+
 	switch vrg.Spec.ReplicationState {
 	case rmn.Primary:
-		return updateVRGDataReadyAsPrimary(drpc, vrg, clusterName) ||
+		return updateVRGDataReadyAsPrimary(drpc, vrg, fromCluster) ||
 			updateVRGDataProtectedAsPrimary(drpc, vrg, clusterName)
 	case rmn.Secondary:
-		return updateVRGDataReadyAsSecondary(drpc, vrg, clusterName) ||
+		return updateVRGDataReadyAsSecondary(drpc, vrg, fromCluster) ||
 			updateVRGDataProtectedAsSecondary(drpc, vrg, clusterName)
 	}
 
@@ -186,8 +195,13 @@ func updateVRGDataProtectedAsPrimary(drpc *rmn.DRPlacementControl,
 //   - Returns a bool that is true if status was updated, and false otherwise
 func updateVRGNoClusterDataConflict(drpc *rmn.DRPlacementControl,
 	vrg *rmn.VolumeReplicationGroup,
-	clusterName string,
+	vrgs map[string]*rmn.VolumeReplicationGroup,
 ) bool {
+	var clusterName string
+
+	drpc.Status.ResourceConditions.Conditions, clusterName = mergeVRGsConditions(
+		vrgs, vrg, VRGConditionTypeNoClusterDataConflict)
+
 	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeNoClusterDataConflict,
 		"workload data protection", "checking for workload data conflict", "conflicting workload data")
 }
@@ -305,4 +319,88 @@ func updateMiscVRGStatus(drpc *rmn.DRPlacementControl,
 	}
 
 	return !updated
+}
+
+// findConflictCondition selects the appropriate condition from VRGs based on the conflict type.
+func findConflictCondition(vrgs map[string]*rmn.VolumeReplicationGroup,
+	conflictType string,
+) (*metav1.Condition, string) {
+	var selectedCondition *metav1.Condition
+
+	var clusterName string
+
+	for _, vrg := range vrgs {
+		condition := meta.FindStatusCondition(vrg.Status.Conditions, conflictType)
+		if condition != nil && condition.Status == metav1.ConditionFalse {
+			// Prioritize primary VRG's condition if available
+			clusterName = vrg.GetAnnotations()[DestinationClusterAnnotationKey]
+			if isVRGPrimary(vrg) {
+				return condition, clusterName // Exit early if primary VRG condition is found
+			}
+
+			// Assign the first non-primary VRG's condition if no primary found yet
+			if selectedCondition == nil {
+				selectedCondition = condition
+			}
+		}
+	}
+
+	return selectedCondition, clusterName
+}
+
+// mergeVRGsConditions assigns conditions from a given VRG while prioritizing conflict conditions.
+func mergeVRGsConditions(vrgs map[string]*rmn.VolumeReplicationGroup,
+	vrg *rmn.VolumeReplicationGroup, conflictType string,
+) ([]metav1.Condition, string) {
+	conditions := &vrg.Status.Conditions
+	conflictCondition, clusterName := findConflictCondition(vrgs, conflictType)
+
+	// Ensure the conflict condition is present in the conditions list
+	if conflictCondition != nil {
+		setConflictStatusCondition(conditions, *conflictCondition)
+	}
+
+	return *conditions, clusterName
+}
+
+func setConflictStatusCondition(existingConditions *[]metav1.Condition,
+	newCondition metav1.Condition,
+) metav1.Condition {
+	if existingConditions == nil {
+		existingConditions = &[]metav1.Condition{}
+	}
+
+	existingCondition := rmnutil.FindCondition(*existingConditions, newCondition.Type)
+	if existingCondition == nil {
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		*existingConditions = append(*existingConditions, newCondition)
+
+		return newCondition
+	}
+
+	if existingCondition.Status != newCondition.Status ||
+		existingCondition.Reason != newCondition.Reason {
+		existingCondition.Status = newCondition.Status
+		existingCondition.Reason = newCondition.Reason
+		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
+	}
+
+	defaultValue := "none"
+	if newCondition.Reason == "" {
+		newCondition.Reason = defaultValue
+	}
+
+	if newCondition.Message == "" {
+		newCondition.Message = defaultValue
+	}
+
+	existingCondition.Reason = newCondition.Reason
+	existingCondition.Message = newCondition.Message
+	// TODO: Why not update lastTranTime if the above change?
+
+	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
+		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
+	}
+
+	return *existingCondition
 }
