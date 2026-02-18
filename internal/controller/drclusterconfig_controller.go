@@ -35,9 +35,10 @@ import (
 )
 
 const (
-	drCConfigFinalizerName = "drclusterconfigs.ramendr.openshift.io/finalizer"
-	drCConfigOwnerLabel    = "drclusterconfigs.ramendr.openshift.io/owner"
-	drCConfigOwnerName     = "ramen"
+	drCConfigFinalizerName    = "drclusterconfigs.ramendr.openshift.io/finalizer"
+	drCConfigOwnerLabel       = "drclusterconfigs.ramendr.openshift.io/owner"
+	drCConfigOwnerName        = "ramen"
+	clusterIDClusterClaimName = "id.k8s.io"
 
 	maxReconcileBackoff = 5 * time.Minute
 )
@@ -243,6 +244,16 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	log logr.Logger,
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
+	// Validate cluster ID
+	if err := r.validateClusterIDFromClaim(ctx, drCConfig); err != nil {
+		log.Error(err, "failed to validate cluster ID claim")
+		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+			err.Error(), metav1.ConditionFalse, DRClusterConfigConditionConfigurationFailed,
+		)
+
+		return ctrl.Result{Requeue: true}, err
+	}
+
 	if err := util.NewResourceUpdater(drCConfig).
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
@@ -276,6 +287,39 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		"Configuration processed and validated", metav1.ConditionTrue, DRClusterConfigConditionConfigurationProcessed)
 
 	return ctrl.Result{}, nil
+}
+
+// validateClusterIDFromClaim fetches the cluster ID claim and validates it against the DRClusterConfig.
+// It only returns an error and leaves status handling to the caller.
+func (r *DRClusterConfigReconciler) validateClusterIDFromClaim(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	clusterID, err := r.getClusterID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster ID claim: %w", err)
+	}
+
+	if drCConfig.Spec.ClusterID != clusterID {
+		return fmt.Errorf("cluster ID claim value %q differs from DRClusterConfig ClusterID %q",
+			clusterID, drCConfig.Spec.ClusterID)
+	}
+
+	return nil
+}
+
+// getClusterID fetches the cluster ID directly from the id.k8s.io ClusterClaim.
+func (r *DRClusterConfigReconciler) getClusterID(ctx context.Context) (string, error) {
+	claim := &clusterv1alpha1.ClusterClaim{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: clusterIDClusterClaimName}, claim); err != nil {
+		return "", fmt.Errorf("failed to get ClusterClaim %q: %w", clusterIDClusterClaimName, err)
+	}
+
+	if claim.Spec.Value == "" {
+		return "", fmt.Errorf("ClusterClaim %q has an empty cluster ID value", clusterIDClusterClaimName)
+	}
+
+	return claim.Spec.Value, nil
 }
 
 // UpdateSupportedClasses updates DRClusterConfig status with a list of storage related classes that are marked for DR
