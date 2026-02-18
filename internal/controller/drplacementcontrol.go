@@ -108,6 +108,10 @@ func (d *DRPCInstance) startProcessing() bool {
 func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
+	if d.instance.Spec.Action != rmn.ActionTestFailover {
+		rmnutil.AddAnnotation(d.instance, "ramendr.openshift.io/last-action", string(d.instance.Spec.Action))
+	}
+
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.RunFailover()
@@ -393,6 +397,11 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		// Opltimize by adding a reconciler so that we reconcile at 1 minute at most.
 		if d.instance.Spec.Action == rmn.ActionTestFailover {
 			d.setProgression(rmn.ProgressionTestingFailover)
+
+			err := d.ensurePlacement(failoverCluster)
+			if err != nil {
+				return !done, err
+			}
 
 			return !done, nil
 		}
@@ -1493,7 +1502,11 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
 		d.userPlacement.GetName(), homeCluster))
 
-	added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	added := false
+	if d.instance.Spec.Action != rmn.ActionTestFailover {
+		added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	}
+
 	if added {
 		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
 			return err
