@@ -386,6 +386,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
