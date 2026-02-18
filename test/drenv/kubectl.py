@@ -5,14 +5,16 @@ import logging
 import subprocess
 
 from . import commands
+from . import sentinel
 from . import zap
 
 JSONPATH_NEWLINE = '{"\\n"}'
 
 # Default timeout for kubectl commands that can wait for a condition (wait,
 # delete, rollout). Without a timeout these commands can hang indefinitely,
-# wasting hours of CI time.
-DEFAULT_TIMEOUT = 300
+# wasting hours of CI time. Sentinel.Duration so "caller did not pass" is
+# distinguishable for rollout() (only "status" supports --timeout).
+_DEFAULT_TIMEOUT = sentinel.Duration(300)
 
 
 def version(context=None, output=None):
@@ -132,26 +134,29 @@ def annotate(
     _watch(*args, context=context, log=log)
 
 
-def delete(*args, input=None, timeout=DEFAULT_TIMEOUT, context=None, log=print):
+def delete(*args, input=None, timeout=_DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl delete ... logging progress messages.
     """
     _watch("delete", *args, input=input, timeout=timeout, context=context, log=log)
 
 
-def rollout(command, *args, timeout=None, context=None, log=print):
+def rollout(command, *args, timeout=_DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl rollout command ... logging progress messages.
 
-    Only the "status" subcommand supports --timeout. If timeout is not
-    specified for "status", DEFAULT_TIMEOUT is used.
+    Only the "status" subcommand supports --timeout. For other subcommands
+    the timeout is not passed to kubectl. Passing timeout for other
+    subcommands raises ValueError.
     """
-    if command == "status":
-        timeout = timeout or DEFAULT_TIMEOUT
+    if command != "status":
+        if timeout is not _DEFAULT_TIMEOUT:
+            raise ValueError(f"rollout {command} does not support timeout")
+        timeout = None
     _watch("rollout", command, *args, timeout=timeout, context=context, log=log)
 
 
-def wait(*args, timeout=DEFAULT_TIMEOUT, context=None, log=print):
+def wait(*args, timeout=_DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl wait ... logging progress messages.
     """
