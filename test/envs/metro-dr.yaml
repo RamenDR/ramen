@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Enviroment for testing Metro-DR.
+---
+name: "mdr"
+
+ramen:
+  hub: hub
+  clusters: [dr1, dr2]
+  topology: metro-dr
+
+templates:
+  - name: "dr-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    network: "$network"
+    memory: "5g"
+    addons:
+      - volumesnapshots
+      - csi-hostpath-driver
+    workers:
+      - addons:
+          - name: cert-manager
+          - name: ocm-cluster
+            args: ["$name", "hub"]
+          - name: csi-addons
+          - name: olm
+          - name: rook-operator
+          - name: rook-external-cluster
+            args: ["$name", "hub"]
+      - addons:
+          - name: minio
+          - name: velero
+  - name: "hub-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    network: "$network"
+    memory: "5g"
+    extra_disks: 1
+    disk_size: "50g"
+    addons:
+      - volumesnapshots
+      - csi-hostpath-driver
+    workers:
+      - addons:
+          - name: ocm-hub
+          - name: ocm-controller
+          - name: cert-manager
+          - name: olm
+      - addons:
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-pool
+          - name: rook-toolbox
+      - addons:
+          - name: csi-addons
+
+profiles:
+  - name: "dr1"
+    template: "dr-cluster"
+  - name: "dr2"
+    template: "dr-cluster"
+  - name: "hub"
+    template: "hub-cluster"
