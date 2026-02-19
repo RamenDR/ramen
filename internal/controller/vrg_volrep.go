@@ -829,6 +829,7 @@ func (v *VRGInstance) cacheObjectStorer(s3ProfileName string, objectStore Object
 // TODO: Currently removes VR requests unconditionally, needs to ensure it is managed by VRG
 func (v *VRGInstance) reconcileVRsForDeletion() {
 	v.pvcsUnprotectVolRep(v.volRepPVCs)
+	v.pvcsUnprotectVolSync(v.volSyncPVCs)
 }
 
 func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(

@@ -24,7 +24,7 @@ func NewSubscription(deployer config.Deployer) types.Deployer {
 }
 
 func (s Subscription) GetName() string {
-	return "subscr"
+	return s.DeployerSpec.Name
 }
 
 func (s Subscription) GetNamespace(_ types.TestContext) string {
@@ -155,6 +155,11 @@ func (s Subscription) IsDiscovered() bool {
 // GetRecipe returns nil as Subscription deployer does not use Recipe.
 func (s Subscription) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error) {
 	return nil, nil
+}
+
+// GetConfig returns the deployer configuration used by the Subscription deployer.
+func (s Subscription) GetConfig() *config.Deployer {
+	return &s.DeployerSpec
 }
 
 func init() {

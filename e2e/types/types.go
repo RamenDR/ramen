@@ -60,6 +60,9 @@ type Deployer interface {
 	// GetRecipe returns the recipe if the deployer is configured to use one.
 	// Returns nil if the deployer is not configured to use a recipe.
 	GetRecipe(TestContext) (*recipe.Recipe, error)
+
+	// GetConfig returns the deployer configuration used by the deployer
+	GetConfig() *config.Deployer
 }
 
 // nolint:interfacebloat

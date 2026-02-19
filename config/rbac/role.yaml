@@ -90,6 +90,7 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
   - deployments
   - replicasets
   - statefulsets
@@ -209,6 +210,7 @@ rules:
 - apiGroups:
   - csiaddons.openshift.io
   resources:
+  - csiaddonsnodes
   - networkfenceclasses
   verbs:
   - get
