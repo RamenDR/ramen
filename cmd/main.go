@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
@@ -261,6 +262,11 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 }
 
 func main() {
+	if os.Getenv("PVC_INIT") == "true" {
+		runPVCInit()
+		os.Exit(0)
+	}
+
 	logOpts := configureLogOptions()
 	bindFlags(logOpts.BindFlags)
 	flag.Parse()
@@ -299,4 +305,24 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func runPVCInit() {
+	mountPath := os.Getenv("PVC_MOUNT_PATH")
+	if mountPath == "" {
+		fatal("PVC_MOUNT_PATH must be set when PVC_INIT=true")
+	}
+
+	for {
+		if _, err := os.Stat(mountPath); err == nil {
+			return
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func fatal(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
 }
