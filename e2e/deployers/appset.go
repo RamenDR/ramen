@@ -125,7 +125,7 @@ func (a ApplicationSet) WaitForResourcesDelete(ctx types.TestContext) error {
 }
 
 func (a ApplicationSet) GetName() string {
-	return "appset"
+	return a.DeployerSpec.Name
 }
 
 func (a ApplicationSet) GetNamespace(ctx types.TestContext) string {
@@ -139,6 +139,11 @@ func (a ApplicationSet) IsDiscovered() bool {
 // GetRecipe returns nil as ApplicationSet deployer does not use Recipe.
 func (a ApplicationSet) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error) {
 	return nil, nil
+}
+
+// GetConfig returns the deployer configuration used by the ApplicationSet deployer.
+func (a ApplicationSet) GetConfig() *config.Deployer {
+	return &a.DeployerSpec
 }
 
 func init() {

@@ -28,7 +28,7 @@ func NewDiscoveredApp(deployer config.Deployer) types.Deployer {
 }
 
 func (d DiscoveredApp) GetName() string {
-	return "disapp"
+	return d.DeployerSpec.Name
 }
 
 func (d DiscoveredApp) GetNamespace(ctx types.TestContext) string {
@@ -138,6 +138,11 @@ func (d *DiscoveredApp) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error)
 	}
 
 	return d.recipe, nil
+}
+
+// GetConfig returns the deployer configuration used by the DiscoveredApp deployer.
+func (d DiscoveredApp) GetConfig() *config.Deployer {
+	return &d.DeployerSpec
 }
 
 func (d DiscoveredApp) shouldGenerateRecipe() bool {

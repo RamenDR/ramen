@@ -5,7 +5,7 @@
 
 podman run --name registry \
    --publish 5050:5000 \
-   --volume registry:/var/lib/registry:Z \
+   --volume registry:/var/lib/registry \
    --detach \
    --replace \
-   registry:2
+   registry:3

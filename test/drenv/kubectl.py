@@ -139,11 +139,16 @@ def delete(*args, input=None, timeout=DEFAULT_TIMEOUT, context=None, log=print):
     _watch("delete", *args, input=input, timeout=timeout, context=context, log=log)
 
 
-def rollout(*args, timeout=DEFAULT_TIMEOUT, context=None, log=print):
+def rollout(command, *args, timeout=None, context=None, log=print):
     """
-    Run kubectl rollout ... logging progress messages.
+    Run kubectl rollout command ... logging progress messages.
+
+    Only the "status" subcommand supports --timeout. If timeout is not
+    specified for "status", DEFAULT_TIMEOUT is used.
     """
-    _watch("rollout", *args, timeout=timeout, context=context, log=log)
+    if command == "status":
+        timeout = timeout or DEFAULT_TIMEOUT
+    _watch("rollout", command, *args, timeout=timeout, context=context, log=log)
 
 
 def wait(*args, timeout=DEFAULT_TIMEOUT, context=None, log=print):

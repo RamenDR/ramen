@@ -21,6 +21,7 @@ from . import envfile
 from . import kubectl
 from . import providers
 from . import ramen
+from . import registry
 from . import shutdown
 from . import yaml
 from . import ssh
@@ -42,8 +43,8 @@ def main():
         logging.exception("Command failed")
         sys.exit(1)
     finally:
-        shutdown_executors()
-        terminate_process_group()
+        if shutdown_executors():
+            terminate_process_group()
 
 
 def parse_args():
@@ -54,6 +55,8 @@ def parse_args():
         dest="command",
         required=True,
     )
+
+    # Environment commands.
 
     p = add_command(sp, "start", do_start, help="start an environment")
     p.add_argument(
@@ -141,11 +144,44 @@ def parse_args():
     add_command(sp, "resume", do_resume, help="resume virtual machines")
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
 
+    # Host commands.
+
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
     add_command(sp, "setup", do_setup, help="setup host for drenv")
     add_command(sp, "cleanup", do_cleanup, help="cleanup host")
 
+    # Registry cache commands.
+
+    add_registry_cache_commands(sp)
+
     return parser.parse_args()
+
+
+def add_registry_cache_commands(sp):
+    p = sp.add_parser("registry-cache", help="manage registry cache")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    p = add_command(
+        sp,
+        "stats",
+        do_registry_cache_stats,
+        help="show cache statistics",
+        envfile=False,
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        choices=["json", "markdown"],
+        default="json",
+    )
+
+    add_command(
+        sp,
+        "remove",
+        do_registry_cache_remove,
+        help="remove cache containers",
+        envfile=False,
+    )
 
 
 def add_command(sp, name, func, help=None, envfile=True):
@@ -193,6 +229,12 @@ def configure_logging(args):
 
 
 def shutdown_executors():
+    """
+    Shut down all executors and return True if any were shut down.
+
+    When executors are used, the caller should also terminate the process
+    group to clean up any child processes spawned by executor tasks.
+    """
     # Prevents adding new executors, starting new child processes, and aborts
     # running workers.
     shutdown.start()
@@ -203,6 +245,8 @@ def shutdown_executors():
     for name, executor in executors:
         logging.debug("[main] Shutting down executor %s", name)
         executor.shutdown(wait=False, cancel_futures=True)
+
+    return len(executors) > 0
 
 
 def add_executor(name, executor):
@@ -253,6 +297,14 @@ def do_cleanup(args):
         provider = providers.get(name)
         provider.cleanup()
     ssh.cleanup()
+
+
+def do_registry_cache_stats(args):
+    registry.show_stats(args.output)
+
+
+def do_registry_cache_remove(args):
+    registry.remove_containers()
 
 
 def do_clear(args):

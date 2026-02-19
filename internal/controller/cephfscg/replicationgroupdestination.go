@@ -256,6 +256,7 @@ func (m *rgdMachine) ensurePSKSecretReady(pskSecretName string, log logr.Logger)
 	return nil
 }
 
+//nolint:funlen
 func (m *rgdMachine) CreateReplicationDestinations(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	pskSecretName string, dstPVC *string, manual string,
@@ -288,12 +289,14 @@ func (m *rgdMachine) CreateReplicationDestinations(
 			}
 
 			util.AddLabel(rd, util.RGDOwnerLabel, m.ReplicationGroupDestination.Name)
+			util.AddLabel(rd, util.VRGOwnerNameLabel, m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel])
+			util.AddLabel(rd, util.VRGOwnerNamespaceLabel,
+				m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNamespaceLabel])
 			util.AddLabel(rd, util.CreatedByRamenLabel, "true")
 			util.AddAnnotation(rd, volsync.OwnerNameAnnotation, m.ReplicationGroupDestination.Name)
 			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
 
 			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{Manual: manual}
-
 			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 				ServiceType: m.VSHandler.GetRsyncServiceType(),
 				KeySecret:   &pskSecretName,

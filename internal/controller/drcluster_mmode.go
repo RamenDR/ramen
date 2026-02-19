@@ -6,6 +6,7 @@ package controllers
 import (
 	"github.com/go-logr/logr"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
@@ -219,6 +220,22 @@ func (u *drclusterInstance) pruneMModesActivations(
 		// Check if maintenance mode is still required, if not expire it
 		mModeKey := mModeRequest.Spec.StorageProvisioner + mModeRequest.Spec.TargetID
 		if _, ok := activationsRequired[mModeKey]; !ok {
+			// Before pruning, be conservative and verify there is no failover DRPC
+			// that still depends on MaintenanceMode on this cluster. This ensures
+			// that all VRGs in the failover group have fully transitioned to
+			// Primary before MMode is removed.
+			if u.mmodeStillNeededByAnyFailoverDRPC() {
+				u.log.Info(
+					"Keeping maintenance mode activation because at least one failover DRPC still needs MaintenanceMode",
+					"name", mModeMWs.Items[idx].GetName(),
+				)
+
+				// Treat as survivor for now so that status remains visible.
+				survivors[mModeRequest.Spec.TargetID] = &mModeMWs.Items[idx]
+
+				continue
+			}
+
 			u.log.Info("Pruning maintenance mode activaiton", "name", mModeMWs.Items[idx].GetName())
 
 			if err := u.expireClusterMModeActivation(&mModeMWs.Items[idx]); err != nil {
@@ -400,4 +417,46 @@ func drClusterMModeCleanup(
 	}
 
 	return nil
+}
+
+// mmodeStillNeededByAnyFailoverDRPC returns true if there exists at least one
+// DRPlacementControl that is failing over to this DRCluster and whose storage
+// protection has not fully completed yet.
+//
+// NOTE: This implementation is conservative: as long as ANY failover DRPC to
+// this cluster is not fully available (ConditionAvailable != True for the
+// current generation), we keep all MMode activations. This avoids prematurely
+// resuming mirroring while promotion is still in progress or has errors.
+func (u *drclusterInstance) mmodeStillNeededByAnyFailoverDRPC() bool {
+	drpcList := &ramen.DRPlacementControlList{}
+
+	if err := u.client.List(u.ctx, drpcList); err != nil {
+		// Be conservative on errors to avoid unsafe MMode pruning.
+		u.log.Error(err, "Failed to list DRPlacementControls when deciding MMode pruning")
+		u.requeue = true
+
+		return true
+	}
+
+	for i := range drpcList.Items {
+		drpc := &drpcList.Items[i]
+
+		// Only consider DRPCs that are actually failing over to this DRCluster.
+		if drpc.Spec.Action != ramen.ActionFailover ||
+			drpc.Spec.FailoverCluster != u.object.GetName() {
+			continue
+		}
+
+		// If Available is not True for this generation, promotion / protection
+		// is not fully complete yet; keep MaintenanceMode.
+		availableCond := meta.FindStatusCondition(drpc.Status.Conditions, ramen.ConditionAvailable)
+		if availableCond == nil ||
+			availableCond.Status != metav1.ConditionTrue ||
+			availableCond.ObservedGeneration != drpc.Generation {
+			return true
+		}
+	}
+
+	// No failover DRPCs still in-progress or unprotected.
+	return false
 }

@@ -46,6 +46,8 @@ const (
 
 	VRGOwnerNameLabel      string = "volumereplicationgroups-owner"
 	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
+
+	MarkForDeletion = "ramendr.io/marked-for-deletion"
 )
 
 type ResourceUpdater struct {
