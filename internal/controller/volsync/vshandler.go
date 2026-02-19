@@ -1725,6 +1725,7 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 			// Get name of the local service (this needs to be exported)
 			"name":      util.GetLocalServiceNameForRD(rd.GetName()),
 			"namespace": rd.GetNamespace(),
+			// TODO: Add ramen and also velero exclude labels to the ServiceExport
 		},
 	}
 	svcExport.SetGroupVersionKind(schema.GroupVersionKind{
