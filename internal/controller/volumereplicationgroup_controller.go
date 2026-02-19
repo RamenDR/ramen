@@ -1379,6 +1379,16 @@ func (v *VRGInstance) removeFinalizer(finalizer string) error {
 	return nil
 }
 
+func (v *VRGInstance) initializeVRGObjectProtectedCondition() {
+	if v.vrgObjectProtected != nil {
+		return
+	}
+
+	v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(v.instance.Generation,
+		"VolumeReplicationGroupObjectCaptureError",
+		"VRG Object capture not started")
+}
+
 func (v *VRGInstance) resetKubeObjectsCaptureStatusIfRequired() {
 	if v.kubeObjectProtectionDisabled("capture") {
 		// set the in-memory condition to nil to indicate that we don't need
@@ -1408,6 +1418,7 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
+	v.initializeVRGObjectProtectedCondition()
 	v.resetKubeObjectsCaptureStatusIfRequired()
 
 	if v.shouldRestoreClusterData() {
