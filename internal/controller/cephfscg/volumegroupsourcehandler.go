@@ -64,6 +64,11 @@ type VolumeGroupSourceHandler interface {
 	WaitIfPVCTooNew(
 		ctx context.Context,
 	) (bool, error)
+
+	// EnsureApplicationPVCsMounted ensures all application PVCs (for this owner/RGS) that
+	// need to be mounted are mounted (e.g. via mount job) before creating a volume group snapshot.
+	// Returns (true, nil) when all are ready, (false, nil) to requeue, or (_, err) on error.
+	EnsureApplicationPVCsMounted(ctx context.Context) (bool, error)
 }
 
 type RestoredPVC struct {
@@ -83,6 +88,7 @@ type volumeGroupSourceHandler struct {
 	VolumeGroupLabel             *metav1.LabelSelector
 	VolsyncKeySecretName         string
 	DefaultCephFSCSIDriverName   string
+	VSHandler                    *volsync.VSHandler
 	Logger                       logr.Logger
 }
 
@@ -90,6 +96,7 @@ func NewVolumeGroupSourceHandler(
 	client client.Client,
 	rgs *ramendrv1alpha1.ReplicationGroupSource,
 	defaultCephFSCSIDriverName string,
+	vsHandler *volsync.VSHandler,
 	logger logr.Logger,
 ) VolumeGroupSourceHandler {
 	vrgName := rgs.GetLabels()[util.VRGOwnerNameLabel]
@@ -104,6 +111,7 @@ func NewVolumeGroupSourceHandler(
 		VolumeGroupLabel:             rgs.Spec.VolumeGroupSnapshotSource,
 		VolsyncKeySecretName:         volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName),
 		DefaultCephFSCSIDriverName:   defaultCephFSCSIDriverName,
+		VSHandler:                    vsHandler,
 		Logger: logger.WithName("VolumeGroupSourceHandler").
 			WithValues("VolumeGroupSnapshotName", vgsName).
 			WithValues("VolumeGroupSnapshotNamespace", rgs.Namespace),
@@ -669,6 +677,56 @@ func (h *volumeGroupSourceHandler) WaitIfPVCTooNew(
 	h.Logger.Info("All PVCs in the group are old enough", "NumberOfPVCs", len(pvcList.Items))
 
 	return false, nil
+}
+
+func (h *volumeGroupSourceHandler) EnsureApplicationPVCsMounted(
+	ctx context.Context,
+) (bool, error) {
+	if h.VSHandler == nil || h.VolumeGroupLabel == nil {
+		return true, nil
+	}
+
+	cgLabelVal := h.VolumeGroupLabel.MatchLabels[util.ConsistencyGroupLabel]
+	if cgLabelVal == "" {
+		return true, nil
+	}
+
+	pvcList, listErr := util.ListPVCsByCGLabel(ctx, h.Client, h.VolumeGroupSnapshotNamespace,
+		cgLabelVal, h.Logger)
+	if listErr != nil {
+		h.Logger.Error(listErr, "Failed to list application PVCs for mount check")
+
+		return false, listErr
+	}
+
+	for i := range pvcList.Items {
+		pvc := &pvcList.Items[i]
+		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+				Name:               pvc.Name,
+				Namespace:          pvc.Namespace,
+				ProtectedByVolSync: true,
+			},
+		}
+
+		ready, mountErr := h.VSHandler.EnsureMountJobForUnmountedPVC(&rsSpec)
+		if mountErr != nil {
+			h.Logger.Error(mountErr, "Failed to ensure application PVC is mounted", "pvc", pvc.Namespace+"/"+pvc.Name)
+
+			return false, mountErr
+		}
+
+		if !ready {
+			h.Logger.Info("Waiting for application PVCs to be mounted before first snapshot",
+				"pvc", pvc.Namespace+"/"+pvc.Name)
+
+			return false, nil
+		}
+
+		h.Logger.Info("Application PVC is mounted and ready for snapshot", "pvc", pvc.Namespace+"/"+pvc.Name)
+	}
+
+	return true, nil
 }
 
 func GetPVCfromStorageHandle(
