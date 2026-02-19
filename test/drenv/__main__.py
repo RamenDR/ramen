@@ -88,6 +88,17 @@ def parse_args():
             "more info."
         ),
     )
+    p.add_argument(
+        "--dns-mode",
+        choices=["auto", "static", "host"],
+        default="auto",
+        help=(
+            "DNS configuration mode. 'auto' detects managed Macs and uses "
+            "'static' if needed. 'static' configures public DNS servers "
+            "(8.8.8.8, 1.1.1.1). 'host' uses the host resolver (default for "
+            "minikube, may not work on managed Macs)."
+        ),
+    )
 
     p = add_command(sp, "stop", do_stop, help="stop an environment")
     p.add_argument(
@@ -378,7 +389,7 @@ def do_resume(args):
 
 def do_dump(args):
     env = load_env(args)
-    yaml.dump(env, sys.stdout)
+    yaml.safe_dump(env, sys.stdout)
 
 
 def execute(func, profiles, name, max_workers=None, **options):
@@ -427,7 +438,7 @@ def start_cluster(profile, hooks=(), args=None, **options):
         timeout=args.timeout,
         local_registry=args.local_registry,
     )
-    provider.configure(profile, existing=existing)
+    provider.configure(profile, existing=existing, dns_mode=args.dns_mode)
 
     if existing:
         restart_failed_deployments(profile)

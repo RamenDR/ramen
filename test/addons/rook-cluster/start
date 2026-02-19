@@ -36,7 +36,7 @@ def wait(cluster):
         "cephcluster/my-cluster",
         "--for=jsonpath={.status.phase}=Ready",
         "--namespace=rook-ceph",
-        f"--timeout={TIMEOUT}s",
+        timeout=TIMEOUT,
         context=cluster,
     )
 

@@ -131,7 +131,6 @@ def wait_until_rbd_mirror_is_ready(cluster):
         "cephrbdmirror/my-rbd-mirror",
         "--for=jsonpath={.status.phase}=Ready",
         "--namespace=rook-ceph",
-        "--timeout=300s",
         context=cluster,
     )
     status = kubectl.get(
@@ -222,7 +221,7 @@ def restart_rbd_mirror_daemon(cluster):
         "status",
         deploy,
         "--namespace=rook-ceph",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
 

@@ -29,7 +29,6 @@ def wait(cluster):
         "status",
         "deploy/snapshot-controller",
         "--namespace=kube-system",
-        "--timeout=300s",
         context=cluster,
     )
 
