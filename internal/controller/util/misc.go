@@ -48,6 +48,8 @@ const (
 	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
 
 	MarkForDeletion = "ramendr.io/marked-for-deletion"
+
+	PVCMountedAnnotation = "ramendr.openshift.io/mounted"
 )
 
 type ResourceUpdater struct {

@@ -13,6 +13,7 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -806,6 +807,63 @@ var _ = Describe("VolSync_Handler", func() {
 						}, 1*time.Second, interval).Should(BeNil())
 					})
 				})
+
+				Context("When the PVC is unmounted (no pod, no RS) and mount job runs", func() {
+					var testPVC *corev1.PersistentVolumeClaim
+					JustBeforeEach(func() {
+						// Create PVC only - no pod mounting it, so it is "unmounted"
+						testPVC = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, nil)
+					})
+
+					It("Should create mount Job, then after Job completes set mounted annotation on PVC", func() {
+						// First reconcile: mount job required -> Job created, not ready yet
+						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false, nil)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).To(BeNil())
+
+						// Mount Job should exist
+						jobName := util.GetJobName(volsync.VolSyncMountJobNamePrefix, testPVCName)
+						mountJob := &batchv1.Job{}
+						Eventually(func() error {
+							return k8sClient.Get(ctx,
+								types.NamespacedName{Name: jobName, Namespace: testNamespace.GetName()}, mountJob)
+						}, maxWait, interval).Should(Succeed())
+
+						// Simulate Job completion so handler can patch PVC and delete Job.
+						// API server requires startTime, completionTime, and (on newer K8s) SuccessCriteriaMet before Complete.
+						now := metav1.Now()
+						mountJob.Status.StartTime = &now
+						mountJob.Status.CompletionTime = &now
+						mountJob.Status.Succeeded = 1
+						mountJob.Status.Conditions = append(mountJob.Status.Conditions,
+							batchv1.JobCondition{
+								Type:               batchv1.JobSuccessCriteriaMet,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+							batchv1.JobCondition{
+								Type:               batchv1.JobComplete,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+						)
+						Expect(k8sClient.Status().Update(ctx, mountJob)).To(Succeed())
+
+						// Second reconcile: handleMountJobResult sees completed Job, patches PVC, deletes Job; then RS is created
+						finalSyncCompl, rs, err = vsHandler.ReconcileRS(rsSpec, false, nil)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).ToNot(BeNil())
+
+						// PVC should have mounted annotation set by the code
+						Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)).To(Succeed())
+						val, ok := testPVC.GetAnnotations()[util.PVCMountedAnnotation]
+						Expect(ok).To(BeTrue(), "PVC should have %s annotation", util.PVCMountedAnnotation)
+						Expect(val).To(Equal("true"))
+					})
+				})
+
 				Context("When the PVC to be protected is mounted by a pod that is NOT in running phase", func() {
 					JustBeforeEach(func() {
 						// Create PVC and pod that is mounting it - pod phase will be "Pending"

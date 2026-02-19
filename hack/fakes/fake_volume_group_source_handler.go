@@ -44,6 +44,8 @@ type FakeVolumeGroupSourceHandler struct {
 		arg2 string
 		arg3 []cephfscg.RestoredPVC
 		arg4 v1a.Object
+		arg5 *ramendrv1alpha1.VolumeReplicationGroup
+		arg6 bool
 	}
 	createOrUpdateReplicationSourceForRestoredPVCsReturns struct {
 		result1 []*v1.ObjectReference
@@ -93,6 +95,19 @@ type FakeVolumeGroupSourceHandler struct {
 		result2 error
 	}
 	waitIfPVCTooNewReturnsOnCall map[int]struct {
+		result1 bool
+		result2 error
+	}
+	EnsureApplicationPVCsMountedStub        func(context.Context) (bool, error)
+	ensureApplicationPVCsMountedMutex       sync.RWMutex
+	ensureApplicationPVCsMountedArgsForCall []struct {
+		arg1 context.Context
+	}
+	ensureApplicationPVCsMountedReturns struct {
+		result1 bool
+		result2 error
+	}
+	ensureApplicationPVCsMountedReturnsOnCall map[int]struct {
 		result1 bool
 		result2 error
 	}
@@ -244,7 +259,9 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 		arg2 string
 		arg3 []cephfscg.RestoredPVC
 		arg4 v1a.Object
-	}{arg1, arg2, arg3Copy, arg4})
+		arg5 *ramendrv1alpha1.VolumeReplicationGroup
+		arg6 bool
+	}{arg1, arg2, arg3Copy, arg4, arg5, arg6})
 	stub := fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub
 	fakeReturns := fake.createOrUpdateReplicationSourceForRestoredPVCsReturns
 	fake.recordInvocation("CreateOrUpdateReplicationSourceForRestoredPVCs", []interface{}{arg1, arg2, arg3Copy, arg4, arg5, arg6})
@@ -495,6 +512,70 @@ func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNewReturnsOnCall(i int, re
 		})
 	}
 	fake.waitIfPVCTooNewReturnsOnCall[i] = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMounted(arg1 context.Context) (bool, error) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	ret, specificReturn := fake.ensureApplicationPVCsMountedReturnsOnCall[len(fake.ensureApplicationPVCsMountedArgsForCall)]
+	fake.ensureApplicationPVCsMountedArgsForCall = append(fake.ensureApplicationPVCsMountedArgsForCall, struct {
+		arg1 context.Context
+	}{arg1})
+	stub := fake.EnsureApplicationPVCsMountedStub
+	fakeReturns := fake.ensureApplicationPVCsMountedReturns
+	fake.recordInvocation("EnsureApplicationPVCsMounted", []interface{}{arg1})
+	fake.ensureApplicationPVCsMountedMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedCallCount() int {
+	fake.ensureApplicationPVCsMountedMutex.RLock()
+	defer fake.ensureApplicationPVCsMountedMutex.RUnlock()
+	return len(fake.ensureApplicationPVCsMountedArgsForCall)
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedCalls(stub func(context.Context) (bool, error)) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	defer fake.ensureApplicationPVCsMountedMutex.Unlock()
+	fake.EnsureApplicationPVCsMountedStub = stub
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedArgsForCall(i int) context.Context {
+	fake.ensureApplicationPVCsMountedMutex.RLock()
+	defer fake.ensureApplicationPVCsMountedMutex.RUnlock()
+	argsForCall := fake.ensureApplicationPVCsMountedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedReturns(result1 bool, result2 error) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	defer fake.ensureApplicationPVCsMountedMutex.Unlock()
+	fake.EnsureApplicationPVCsMountedStub = nil
+	fake.ensureApplicationPVCsMountedReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	defer fake.ensureApplicationPVCsMountedMutex.Unlock()
+	fake.EnsureApplicationPVCsMountedStub = nil
+	if fake.ensureApplicationPVCsMountedReturnsOnCall == nil {
+		fake.ensureApplicationPVCsMountedReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
+		})
+	}
+	fake.ensureApplicationPVCsMountedReturnsOnCall[i] = struct {
 		result1 bool
 		result2 error
 	}{result1, result2}
