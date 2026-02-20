@@ -1031,19 +1031,19 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 //nolint:cyclop,funlen,nestif,gocognit
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
-) (bool, error) {
+) error {
 	v.log.Info("separate PVC using peerClasses")
 
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if peerClass == nil {
 		msg := fmt.Sprintf("peerClass matching storageClass %s not found for async PVC", storageClass.GetName())
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonPeerClassNotFound, msg)
 
-		return false, errors.New(msg)
+		return errors.New(msg)
 	}
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1055,52 +1055,45 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 				// label VolRep PVCs if peerClass.grouping is enabled
 				if peerClass.Grouping {
 					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
-						return false, fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 							pvc.GetNamespace(), pvc.GetName(), err)
 					}
 				}
 
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
 
-				return false, nil
+				return nil
 			}
 
-			return false, fmt.Errorf("failed to find replicationClass matching peerClass for PVC %s/%s",
+			return fmt.Errorf("failed to find replicationClass matching peerClass for PVC %s/%s",
 				pvc.Namespace, pvc.Name)
 		}
 	}
 
 	if v.instance.Spec.VolSync.Disabled {
-		return false, fmt.Errorf("failed to find matching peerClass for PVC and VolSync is disabled")
+		return fmt.Errorf("failed to find matching peerClass for PVC and VolSync is disabled")
 	}
 
 	snapClass, err := v.findVolSnapClass(storageClass)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if snapClass == nil {
-		return false, fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
+		return fmt.Errorf("failed to find snapshotClass for PVC %s/%s", pvc.Namespace, pvc.Name)
 	}
 
 	// label VolSync PVCs if peerClass.grouping is enabled
 	if peerClass.Grouping && !v.instance.Spec.RunFinalSync {
-		if util.ResourceIsDeleted(pvc) {
-			v.log.Info(fmt.Sprintf("Skipping consistency group label for deleted PVC %s/%s",
-				pvc.GetNamespace(), pvc.GetName()))
-
-			return true, nil
-		}
-
 		if err := v.addConsistencyGroupLabel(pvc); err != nil {
-			return false, fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
+			return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
 				pvc.GetNamespace(), pvc.GetName(), err)
 		}
 	}
 
 	v.volSyncPVCs = append(v.volSyncPVCs, *pvc)
 
-	return false, nil
+	return nil
 }
 
 //nolint:gocognit,cyclop
@@ -1112,6 +1105,14 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 		pvc := &pvcList.Items[idx]
 		scName := pvc.Spec.StorageClassName
 
+		if util.ResourceIsDeleted(pvc) {
+			deletedPVCCount++
+
+			v.log.Info("Skipping PVC marked for deletion", "pvc", pvc.Name, "namespace", pvc.Namespace)
+
+			continue
+		}
+
 		storageClass, err := v.validateAndGetStorageClass(scName, pvc)
 		if err != nil {
 			return err
@@ -1120,13 +1121,9 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 		if len(peerClasses) == 0 {
 			v.separatePVCsUsingOnlySC(storageClass, pvc)
 		} else {
-			deletedPVC, err := v.separatePVCUsingPeerClassAndSC(peerClasses, storageClass, pvc)
+			err = v.separatePVCUsingPeerClassAndSC(peerClasses, storageClass, pvc)
 			if err != nil {
 				return err
-			}
-
-			if deletedPVC {
-				deletedPVCCount++
 			}
 		}
 	}
