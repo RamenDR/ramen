@@ -638,14 +638,19 @@ func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 ) (bool, bool, error) {
 	const requeue = true
 
-	storageID, isGlobalVGR := v.globalOffloadedLabel()
+	storageID, isGlobal := v.globalOffloadedLabel()
 
-	if isGlobalVGR {
+	if isGlobal {
 		if !v.isGlobalConsensusReached(storageID) {
 			log.Info("Waiting for all globally offloaded VRGs to reach consensus")
 
 			// TODO: If stuck here for extended time, raise an alert.
 			return requeue, false, nil
+		}
+
+		vrNamespacedName = types.NamespacedName{
+			Namespace: RamenOperatorNamespace(),
+			Name:      rmnutil.CreateGlobalVGRName(storageID),
 		}
 	}
 
@@ -854,7 +859,7 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
-			Labels:    rmnutil.OwnerLabels(v.instance),
+			Labels:    rmnutil.OwnerLabels(v.instance), // For Global VGR?
 		},
 		Spec: volrep.VolumeGroupReplicationSpec{
 			ReplicationState:                state,
@@ -869,10 +874,12 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	rmnutil.AddLabel(volRep, rmnutil.CreatedByRamenLabel, "true")
 
-	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
-		// This is to keep existing behavior of ramen.
-		// Set the owner reference only for the VRs which are in the same namespace as the VRG and
-		// when VRG is not in the admin namespace.
+	_, isGlobal := v.globalOffloadedLabel()
+
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) && !isGlobal {
+		// Owner references require both resources to be in the same namespace.
+		// Skip for admin namespace VRGs and global VGRs, which live in a
+		// different namespace than the VRG.
 		if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				volRep.GetName(), volRep.GetNamespace(), err)
