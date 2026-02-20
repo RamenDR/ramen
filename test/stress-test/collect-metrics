@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+# collect-metrics
+
+Collect system metrics from Netdata for a stress test run.
+
+Netdata is a real-time performance monitoring tool that collects system
+metrics (CPU, memory, disk, network, etc.) and stores them with historical
+data. This script exports metrics for a specific time range corresponding
+to a stress test run.
+
+The script determines the time range from test.json timestamps if available,
+or computes it from file modification times for older test results.
+
+## Requirements
+
+- Netdata must be running locally (http://localhost:19999)
+- Netdata must have historical data for the test time range
+
+## Installing Netdata
+
+### macOS
+
+    brew install netdata
+
+### Linux
+
+    curl -fsSL https://get.netdata.cloud/kickstart.sh -o /tmp/netdata-kickstart.sh
+    bash /tmp/netdata-kickstart.sh --no-updates --stable-channel
+
+## Running Netdata
+
+Start Netdata before running a stress test:
+
+    # macOS
+    brew services start netdata
+
+    # Linux
+    sudo systemctl start netdata
+
+Stop Netdata after collecting metrics:
+
+    # macOS
+    brew services stop netdata
+
+    # Linux
+    sudo systemctl stop netdata
+
+Verify Netdata is running by opening http://localhost:19999 in a browser.
+
+### Remote access (Linux)
+
+By default Netdata listens on localhost only. To access it from another
+machine, configure it to listen on all interfaces:
+
+Edit `/etc/netdata/netdata.conf`:
+
+    [web]
+    bind to = 0.0.0.0
+
+Restart Netdata and open the firewall port:
+
+    sudo systemctl restart netdata
+    sudo firewall-cmd --zone=public --add-port=19999/tcp --permanent
+    sudo firewall-cmd --reload
+
+Then access Netdata at `http://<host>:19999`.
+
+### Recommended configuration
+
+For stress testing, configure Netdata to use minimal resources and store
+data on disk (persists across restarts, uses less memory):
+
+Edit `/opt/homebrew/etc/netdata/netdata.conf` (macOS) or
+`/etc/netdata/netdata.conf` (Linux):
+
+    [cloud]
+    enable = no
+
+    [global]
+    update every = 15
+    memory mode = dbengine
+
+    [db]
+    mode = dbengine
+    dbengine multihost disk space MB = 1024
+
+Then restart Netdata:
+
+    # macOS
+    brew services restart netdata
+
+    # Linux
+    sudo systemctl restart netdata
+
+This configuration:
+
+- Collects metrics every 15 seconds (good balance of detail vs overhead)
+- Stores data on disk (up to 2GB, keeps weeks of history)
+- Uses minimal memory (~64MB for cache)
+- Safe to leave running permanently
+
+## Usage
+
+    ./collect-metrics path/to/test-output-dir
+
+## Output
+
+Creates a `metrics/` subdirectory containing:
+
+- CSV files for each chart (e.g., `system_cpu.csv`, `system_ram.csv`)
+- `metrics.json` with time range and chart list
+
+Running the script again will overwrite existing metrics.
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.request
+import urllib.error
+
+NETDATA_URL = "http://localhost:19999"
+
+# Buffer time (seconds) added before start and after end to capture
+# system state before/after the test runs (10 minutes each side).
+TIME_BUFFER = 600
+
+# Charts to export - these are preferences, actual charts are filtered
+# based on what's available in the Netdata instance.
+PREFERRED_CHARTS = [
+    # System-wide metrics
+    "system.cpu",  # CPU usage by type (user, system, iowait, idle)
+    "system.ram",  # Memory usage (used, free, cached, buffers)
+    "system.io",  # Disk I/O throughput (reads/writes KB/s)
+    "system.load",  # Load averages (1, 5, 15 minute)
+    "system.swap",  # Swap usage (Linux)
+    "system.processes",  # Process counts (Linux)
+    "system.ctxt",  # Context switches per second (Linux)
+    "system.intr",  # Hardware interrupts per second (Linux)
+    "system.net",  # Network traffic (Linux)
+    # Memory metrics
+    "mem.swap",  # Swap usage (macOS)
+    "mem.pgfaults",  # Page faults (macOS)
+    # Per-application metrics (Linux only, requires apps.plugin)
+    "apps.cpu",  # CPU usage by application group
+    "apps.mem",  # Memory usage by application group
+    "apps.io_read",  # Disk reads by application group
+    "apps.io_write",  # Disk writes by application group
+    "apps.processes",  # Process count by application group
+]
+
+# Prefixes for auto-discovered charts (network, disk interfaces)
+AUTO_DISCOVER_PREFIXES = [
+    "net.",  # Network interfaces (net.en0, net.eth0, etc.)
+    "disk.",  # Disk devices (disk.sda, disk.disk0, etc.)
+]
+
+
+def main():
+    args = parse_args()
+
+    outdir = args.outdir
+    test_json_path = os.path.join(outdir, "test.json")
+
+    if not os.path.isdir(outdir):
+        sys.exit(f"Error: Output directory not found: {outdir}")
+
+    if not os.path.isfile(test_json_path):
+        sys.exit(f"Error: test.json not found: {test_json_path}")
+
+    # Load test.json
+    with open(test_json_path) as f:
+        test_json = json.load(f)
+
+    # Get timestamps from test.json if available, otherwise use file times
+    start_time, end_time, source = get_time_range(test_json, outdir, test_json_path)
+
+    print(f"Time range: {end_time - start_time} seconds (from {source})")
+    print(f"  Start: {start_time}")
+    print(f"  End:   {end_time}")
+
+    # Create metrics directory
+    metrics_dir = os.path.join(outdir, "metrics")
+    os.makedirs(metrics_dir, exist_ok=True)
+
+    # Get available charts from Netdata
+    available_charts = get_available_charts()
+    if not available_charts:
+        sys.exit(f"Error: Cannot get charts from Netdata at {NETDATA_URL}")
+
+    # Select charts to export
+    charts = select_charts(available_charts)
+    print(f"Exporting {len(charts)} charts...")
+
+    # Export each chart
+    for chart in charts:
+        export_chart(chart, start_time, end_time, metrics_dir, args.format)
+
+    # Save metadata
+    metadata = {
+        "start_time": start_time,
+        "end_time": end_time,
+        "duration_seconds": end_time - start_time,
+        "charts": charts,
+        "format": args.format,
+    }
+    metadata_file = os.path.join(metrics_dir, "metrics.json")
+    with open(metadata_file, "w") as f:
+        json.dump(metadata, f, indent=2)
+        f.write("\n")
+
+    print(f"Metrics exported to: {metrics_dir}")
+
+
+def get_time_range(test_json, outdir, test_json_path):
+    """
+    Get start and end timestamps for the test run.
+
+    Netdata stores metrics with Unix timestamps, so we need to determine
+    the exact time range of the stress test to export the correct data.
+
+    The function first tries to read start_time and end_time from test.json
+    (added by newer versions of the stress test runner). For older test
+    results without these fields, it falls back to computing the time range
+    from file modification times and run durations.
+
+    A buffer (TIME_BUFFER) is added before and after the test times to
+    ensure we capture metrics during environment setup and teardown.
+
+    Args:
+        test_json: Parsed contents of test.json.
+        outdir: Path to the test output directory.
+        test_json_path: Path to the test.json file.
+
+    Returns:
+        Tuple of (start_time, end_time, source) where times are Unix
+        timestamps and source describes where the timestamps came from
+        (for debugging/logging purposes).
+    """
+    # Try to get from test.json (new format)
+    start_time = test_json.get("start_time")
+    end_time = test_json.get("end_time")
+
+    if start_time and end_time:
+        # Add buffer to capture metrics during setup/teardown
+        return int(start_time) - TIME_BUFFER, int(end_time) + TIME_BUFFER, "test.json"
+
+    # TODO: Remove this fallback once all test.json files have timestamps.
+    return _get_time_range_fallback(test_json, outdir, test_json_path)
+
+
+def _get_time_range_fallback(test_json, outdir, test_json_path):
+    """
+    Compute time range from file timestamps for old test.json without timestamps.
+
+    This is a fallback for backward compatibility with test results created
+    before start_time and end_time were added to test.json. Remove this
+    function once all test.json files have these fields.
+
+    The algorithm:
+        - end_time: test.json modification time + buffer
+        - start_time: first log file mtime - first run duration - buffer
+
+    This works because:
+        - test.json is written at the end of all runs
+        - Each log file's mtime is when that run finished
+        - Subtracting the run duration gives approximately when it started
+
+    Args:
+        test_json: Parsed contents of test.json.
+        outdir: Path to the test output directory.
+        test_json_path: Path to the test.json file.
+
+    Returns:
+        Tuple of (start_time, end_time, source).
+    """
+    # end_time = test.json mtime + TIME_BUFFER (to capture last sample)
+    # start_time = first_log mtime - first_run_duration - TIME_BUFFER
+    # The buffer accounts for setup/teardown time around the runs.
+    end_time = int(os.stat(test_json_path).st_mtime) + TIME_BUFFER
+
+    results = test_json.get("results", [])
+    if results:
+        first_run = results[0]
+        first_log = os.path.join(outdir, first_run["name"] + ".log")
+        if os.path.isfile(first_log):
+            first_log_mtime = int(os.stat(first_log).st_mtime)
+            first_run_duration = first_run.get("time", 0)
+            start_time = int(first_log_mtime - first_run_duration - TIME_BUFFER)
+            return start_time, end_time, "computed from first run"
+
+    # Last resort: no duration info available, just use end_time
+    return end_time, end_time, "file system"
+
+
+def get_available_charts():
+    """
+    Fetch list of available charts from Netdata.
+
+    Netdata organizes metrics into "charts", where each chart contains
+    related metrics. For example, "system.cpu" contains user, system,
+    iowait, and idle CPU percentages.
+
+    Available charts vary by platform and Netdata configuration:
+        - macOS has fewer charts (no process-level metrics)
+        - Linux has extensive charts including per-process data
+        - Network and disk charts are named after interfaces/devices
+
+    This function queries the Netdata API to get the list of charts
+    available on the current system.
+
+    Returns:
+        Set of chart names available in the Netdata instance, or an
+        empty set if Netdata is not reachable.
+    """
+    url = f"{NETDATA_URL}/api/v1/charts"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            data = json.load(response)
+            return set(data.get("charts", {}).keys())
+    except (urllib.error.URLError, json.JSONDecodeError) as e:
+        print(f"Error fetching charts: {e}")
+        return set()
+
+
+def select_charts(available_charts):
+    """
+    Select charts to export based on what's available.
+
+    This function handles differences between macOS and Linux Netdata
+    installations. It filters PREFERRED_CHARTS to only include charts
+    that exist on the current system, and auto-discovers network and
+    disk interface charts which have platform-specific names.
+
+    Examples:
+        On macOS, preferred charts like "system.cpu" and "mem.swap" are
+        included, while Linux-only charts like "apps.cpu" are skipped.
+        Auto-discovery finds "net.en0", "disk.disk0", etc.
+
+        On Linux, preferred charts include "system.cpu", "apps.cpu",
+        "system.swap", etc. Auto-discovery finds "net.eth0", "net.br0",
+        "disk.sda", "disk.nvme0n1", etc.
+
+    Args:
+        available_charts: Set of chart names available in Netdata.
+
+    Returns:
+        List of chart names to export.
+    """
+    charts = []
+
+    # Add preferred charts that are available
+    for chart in PREFERRED_CHARTS:
+        if chart in available_charts:
+            charts.append(chart)
+
+    # Auto-discover charts by prefix (network interfaces, disks)
+    for prefix in AUTO_DISCOVER_PREFIXES:
+        for chart in sorted(available_charts):
+            if chart.startswith(prefix) and chart not in charts:
+                charts.append(chart)
+
+    return charts
+
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Collect Netdata metrics for a stress test run"
+    )
+    p.add_argument(
+        "outdir",
+        help="stress test output directory (contains test.json)",
+    )
+    p.add_argument(
+        "-f",
+        "--format",
+        choices=["csv", "json"],
+        default="csv",
+        help="output format (default: csv)",
+    )
+    return p.parse_args()
+
+
+def export_chart(chart, start_time, end_time, metrics_dir, fmt):
+    """
+    Export a single chart from Netdata to a file.
+
+    Uses the Netdata REST API to fetch historical data for the specified
+    chart and time range. The data is saved to a file in the metrics
+    directory.
+
+    The API returns data points at the resolution available for the
+    requested time range. Netdata automatically adjusts resolution based
+    on how far back the data is (recent data has higher resolution).
+
+    Args:
+        chart: Name of the chart to export (e.g., "system.cpu").
+        start_time: Unix timestamp for the start of the time range.
+        end_time: Unix timestamp for the end of the time range.
+        metrics_dir: Directory to save the exported file.
+        fmt: Output format ("csv" or "json").
+    """
+    url = (
+        f"{NETDATA_URL}/api/v1/data"
+        f"?chart={chart}"
+        f"&after={start_time}"
+        f"&before={end_time}"
+        f"&format={fmt}"
+    )
+
+    filename = f"{chart.replace('.', '_')}.{fmt}"
+    filepath = os.path.join(metrics_dir, filename)
+
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            data = response.read()
+            with open(filepath, "wb") as f:
+                f.write(data)
+        print(f"  Exported: {chart}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # Chart has no data for this time range (e.g., interface didn't exist)
+            print(f"  Skipped: {chart} - no data for time range")
+        else:
+            print(f"  Failed: {chart} - {e}")
+    except urllib.error.URLError as e:
+        print(f"  Failed: {chart} - {e}")
+
+
+if __name__ == "__main__":
+    main()

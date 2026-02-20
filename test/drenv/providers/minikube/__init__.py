@@ -347,12 +347,14 @@ def _configure_containerd(profile):
     registry_config = {
         "plugins": {
             "io.containerd.cri.v1.images": {
-                # Configure registry mirrors path and limit concurrent
-                # downloads.  We limit concurrent downloads to 3 per image (the
-                # containerd/Docker default) to avoid overwhelming the local
-                # registry cache. With serial pulls and 3 clusters, this means
-                # at most 9 concurrent downloads from the cache.
-                "max_concurrent_downloads": 3,
+                # Higher values can pull data faster from the local registry
+                # cache, but unpacking the image may overload the machine and
+                # lead to leader election delays.  We did not see load issues
+                # on 2 cpus VM with 3 concurrent downloads, so we want to keep
+                # this value as the minimum. On bigger vms we can use more
+                # concurrent download.
+                # TODO: need more testing to find optimal value.
+                "max_concurrent_downloads": max(profile["cpus"] - 1, 3),
                 "registry": {
                     "config_path": "/etc/containerd/certs.d",
                 },
