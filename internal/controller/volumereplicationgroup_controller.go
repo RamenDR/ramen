@@ -1099,19 +1099,10 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 //nolint:gocognit,cyclop
 func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList) error {
 	peerClasses := v.instance.Spec.Async.PeerClasses
-	deletedPVCCount := 0
 
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
 		scName := pvc.Spec.StorageClassName
-
-		if util.ResourceIsDeleted(pvc) {
-			deletedPVCCount++
-
-			v.log.Info("Skipping PVC marked for deletion", "pvc", pvc.Name, "namespace", pvc.Namespace)
-
-			continue
-		}
 
 		storageClass, err := v.validateAndGetStorageClass(scName, pvc)
 		if err != nil {
@@ -1131,7 +1122,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for VolRep and %d targeted for VolSync",
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
-	if len(pvcList.Items) != (len(v.volRepPVCs) + len(v.volSyncPVCs) + deletedPVCCount) {
+	if len(pvcList.Items) != (len(v.volRepPVCs) + len(v.volSyncPVCs)) {
 		return fmt.Errorf("no PVCs are procted")
 	}
 
