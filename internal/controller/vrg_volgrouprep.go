@@ -647,6 +647,11 @@ func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 			// TODO: If stuck here for extended time, raise an alert.
 			return requeue, false, nil
 		}
+
+		vrNamespacedName = types.NamespacedName{
+			Namespace: RamenOperatorNamespace(),
+			Name:      rmnutil.CreateGlobalVGRName(storageID),
+		}
 	}
 
 	volRep := &volrep.VolumeGroupReplication{}
@@ -813,7 +818,7 @@ func (v *VRGInstance) isGlobalConsensusReached(storageID string) bool {
 
 // createVGR creates a VolumeGroupReplication CR
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState,
 ) error {
@@ -850,11 +855,19 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, rmnutil.ConsistencyGroupLabel, cg)
 
+	_, isVRGGlobal := v.globallyOffloadedLabel()
+
+	labels := map[string]string{}
+	if !isVRGGlobal {
+		// Global VGRs are not owned by a single VRG, so skip owner labels.
+		labels = rmnutil.OwnerLabels(v.instance)
+	}
+
 	volRep := &volrep.VolumeGroupReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
-			Labels:    rmnutil.OwnerLabels(v.instance),
+			Labels:    labels,
 		},
 		Spec: volrep.VolumeGroupReplicationSpec{
 			ReplicationState:                state,
@@ -869,10 +882,10 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	rmnutil.AddLabel(volRep, rmnutil.CreatedByRamenLabel, "true")
 
-	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
-		// This is to keep existing behavior of ramen.
-		// Set the owner reference only for the VRs which are in the same namespace as the VRG and
-		// when VRG is not in the admin namespace.
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) && !isVRGGlobal {
+		// Owner references require both resources to be in the same namespace.
+		// Skip for admin namespace VRGs and global VGRs, which live in a
+		// different namespace than the VRG.
 		if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				volRep.GetName(), volRep.GetNamespace(), err)
