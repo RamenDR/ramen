@@ -632,10 +632,27 @@ func (v *VRGInstance) processVGRAsSecondary(vrNamespacedName types.NamespacedNam
 	return v.createOrUpdateVGR(vrNamespacedName, pvcs, volrep.Secondary, log)
 }
 
+//nolint:gocognit,funlen
 func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState, log logr.Logger,
 ) (bool, bool, error) {
 	const requeue = true
+
+	storageID, isGlobal := v.globalOffloadedLabel()
+
+	if isGlobal {
+		if !v.isGlobalConsensusReached(storageID) {
+			log.Info("Waiting for all globally offloaded VRGs to reach consensus")
+
+			// TODO: If stuck here for extended time, raise an alert.
+			return requeue, false, nil
+		}
+
+		vrNamespacedName = types.NamespacedName{
+			Namespace: RamenOperatorNamespace(),
+			Name:      rmnutil.CreateGlobalVGRName(storageID),
+		}
+	}
 
 	volRep := &volrep.VolumeGroupReplication{}
 
@@ -746,6 +763,59 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 	return !requeue, false, nil
 }
 
+func (v *VRGInstance) globalOffloadedLabel() (string, bool) {
+	storageID := v.instance.GetLabels()[GlobalOffloadedLabel]
+
+	return storageID, storageID != ""
+}
+
+// isGlobalConsensusReached returns true when all VRGs sharing the same storageID
+// agree on action, replication state, and destination cluster.
+func (v *VRGInstance) isGlobalConsensusReached(storageID string) bool {
+	vrgList := &ramendrv1alpha1.VolumeReplicationGroupList{}
+	if err := v.reconciler.List(v.ctx, vrgList, client.MatchingLabels{
+		GlobalOffloadedLabel: storageID,
+	}); err != nil {
+		v.log.Error(err, "failed to list VRGs for global offload consensus check")
+
+		return false
+	}
+
+	if len(vrgList.Items) == 0 {
+		return false
+	}
+
+	expectedAction := v.instance.Spec.Action
+	expectedReplicationState := v.instance.Spec.ReplicationState
+	expectedDestinationCluster := v.instance.GetAnnotations()[DestinationClusterAnnotationKey]
+
+	for idx := range vrgList.Items {
+		vrg := &vrgList.Items[idx]
+
+		action := vrg.Spec.Action
+		replicationState := vrg.Spec.ReplicationState
+		destinationCluster := vrg.GetAnnotations()[DestinationClusterAnnotationKey]
+
+		if action != expectedAction || replicationState != expectedReplicationState ||
+			destinationCluster != expectedDestinationCluster {
+			v.log.Info("Global offload consensus not reached",
+				"vrg", vrg.Namespace+"/"+vrg.Name, "expectedAction", expectedAction, "action", action,
+				"expectedReplicationState", expectedReplicationState, "replicationState", replicationState,
+				"expectedDestinationCluster", expectedDestinationCluster, "destinationCluster", destinationCluster,
+			)
+
+			return false
+		}
+	}
+
+	v.log.Info("Global offload consensus reached",
+		"storageID", storageID, "vrgCount", len(vrgList.Items),
+		"action", expectedAction, "state", expectedReplicationState,
+		"cluster", expectedDestinationCluster)
+
+	return true
+}
+
 // createVGR creates a VolumeGroupReplication CR
 //
 //nolint:funlen
@@ -789,7 +859,7 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
-			Labels:    rmnutil.OwnerLabels(v.instance),
+			Labels:    rmnutil.OwnerLabels(v.instance), // For Global VGR?
 		},
 		Spec: volrep.VolumeGroupReplicationSpec{
 			ReplicationState:                state,
@@ -804,10 +874,12 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	rmnutil.AddLabel(volRep, rmnutil.CreatedByRamenLabel, "true")
 
-	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
-		// This is to keep existing behavior of ramen.
-		// Set the owner reference only for the VRs which are in the same namespace as the VRG and
-		// when VRG is not in the admin namespace.
+	_, isGlobal := v.globalOffloadedLabel()
+
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) && !isGlobal {
+		// Owner references require both resources to be in the same namespace.
+		// Skip for admin namespace VRGs and global VGRs, which live in a
+		// different namespace than the VRG.
 		if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				volRep.GetName(), volRep.GetNamespace(), err)
