@@ -20,6 +20,10 @@ from . import dns
 
 MINIKUBE = "minikube"
 
+# Default timeout for minikube start --wait-timeout. Starting a cluster
+# takes 15-30 seconds on macOS and 35-85 seconds on Linux CI.
+_START_TIMEOUT = 180
+
 EXTRA_CONFIG = [
     # When enabled, tells the Kubelet to pull images one at a time. This slows
     # down concurrent image pulls and cause timeouts when using slow network.
@@ -71,7 +75,7 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False, timeout=None, local_registry=False):
+def start(profile, verbose=False, timeout=_START_TIMEOUT, local_registry=False):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
 
@@ -132,10 +136,13 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     if platform.system() == "Darwin" and platform.machine() == "arm64":
         args.append("--rosetta")
 
+    if timeout is not None:
+        args.extend(("--wait-timeout", f"{timeout}s"))
+
     # TODO: Use --interactive=false when the bug is fixed.
     # https://github.com/kubernetes/minikube/issues/19518
 
-    _watch("start", *args, profile=profile["name"], timeout=timeout)
+    _watch("start", *args, profile=profile["name"])
 
     logging.info(
         "[%s] Cluster started in %.2f seconds",
@@ -469,11 +476,11 @@ def _run(command, *args, profile=None, output=None):
     return commands.run(*cmd)
 
 
-def _watch(command, *args, profile=None, timeout=None):
+def _watch(command, *args, profile=None):
     cmd = [MINIKUBE, command, "--profile", profile]
     cmd.extend(args)
     logging.debug("[%s] Running %s", profile, cmd)
-    for line in commands.watch(*cmd, timeout=timeout):
+    for line in commands.watch(*cmd):
         logging.debug("[%s] %s", profile, line)
 
 
