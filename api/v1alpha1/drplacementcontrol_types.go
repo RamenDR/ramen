@@ -8,8 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DRAction which will be either a Failover or Relocate action
-// +kubebuilder:validation:Enum=Failover;Relocate
+// DRAction which will be either a Failover, Relocate or TestFailover action
+// +kubebuilder:validation:Enum=Failover;Relocate;TestFailover
 type DRAction string
 
 // These are the valid values for DRAction
@@ -20,6 +20,11 @@ const (
 	// Relocate, restore PVs to the designated TargetCluster.  PreferredCluster will change
 	// to be the TargetCluster.
 	ActionRelocate = DRAction("Relocate")
+
+	// TestFailover is to test the failover to the TargetCluster without impacting the PrimaryCluster.
+	// This is a non-disruptive action and is used to validate the failover on the TargetCluster
+	// cluster before performing an actual failover.
+	ActionTestFailover = DRAction("TestFailover")
 )
 
 // DRState for keeping track of the DR placement
@@ -53,6 +58,14 @@ const (
 	// FailedOver, state recorded in the DRPC status when the failover
 	// process has completed
 	FailedOver = DRState("FailedOver")
+
+	// TestFailover, state recorded in the DRPC status when the test failover
+	// is initiated
+	TestFailover = DRState("TestFailover")
+
+	// TestFailedOver, state recorded in the DRPC status when the test failover process
+	// is in progress but has not been completed yet
+	TestFailedOver = DRState("TestFailedOver")
 
 	// Relocating, state recorded in the DRPC status to indicate that the
 	// relocation is in progress
@@ -119,6 +132,7 @@ const (
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
+	ProgressionTestingFailover                        = ProgressionStatus("TestingFailover")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
