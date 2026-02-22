@@ -66,6 +66,7 @@ spec:
                 enum:
                 - Failover
                 - Relocate
+                - TestFailover
                 type: string
               async:
                 description: VRGAsyncSpec has the parameters associated with RegionalDR

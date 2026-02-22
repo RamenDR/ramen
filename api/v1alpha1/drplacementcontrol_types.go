@@ -132,7 +132,7 @@ const (
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
-	ProgressionTestingFailover                        = ProgressionStatus("TestingFailover")
+	ProgressionTestingFailover                     = ProgressionStatus("TestingFailover")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
