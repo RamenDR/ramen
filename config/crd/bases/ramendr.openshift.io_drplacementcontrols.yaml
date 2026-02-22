@@ -79,6 +79,7 @@ spec:
                 enum:
                 - Failover
                 - Relocate
+                - TestFailover
                 type: string
               drPolicyRef:
                 description: DRPolicyRef is the reference to the DRPolicy participating
