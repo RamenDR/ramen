@@ -139,6 +139,8 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		ensureNamespaceExists(context.TODO(), k8sClient, ramenNamespace)
 
+		ramencontrollers.ControllerType = ramen.DRHubType
+
 		By("starting the DRClusterConfig reconciler")
 
 		ramenConfig := &ramen.RamenConfig{

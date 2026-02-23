@@ -114,7 +114,6 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 	ramenConfig := &drClusterOperatorRamenConfig
 	drClusterOperatorNamespaceName := drClusterOperatorNamespaceNameOrDefault(ramenConfig)
 	ramenConfig.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
-	ramenConfig.RamenControllerType = rmn.DRClusterType
 
 	drClusterOperatorConfigMap, err := ConfigMapNew(
 		drClusterOperatorNamespaceName,

@@ -95,9 +95,7 @@ func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
 	return &ctrlOptions, ramenConfig
 }
 
-func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
-	controllers.ControllerType = ramenConfig.RamenControllerType
-
+func configureController() error {
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
 		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
@@ -275,7 +273,7 @@ func main() {
 
 	ctrlOptions, ramenConfig := buildOptions()
 
-	if err := configureController(ramenConfig); err != nil {
+	if err := configureController(); err != nil {
 		setupLog.Error(err, "unable to configure controller")
 		os.Exit(1)
 	}
