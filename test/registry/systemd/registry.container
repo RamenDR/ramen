@@ -4,7 +4,7 @@ Description=Registry container
 [Container]
 Label=app=registry
 ContainerName=registry
-Image=quay.io/libpod/registry:2
+Image=docker.io/library/registry:3
 PublishPort=5050:5000
 Volume=registry.volume:/var/lib/registry
 

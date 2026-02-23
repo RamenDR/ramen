@@ -8,10 +8,9 @@ SPDX-License-Identifier: Apache-2.0
 The registry cache provides pull-through caching for upstream container
 registries. This speeds up image pulls and reduces network traffic.
 
-The cache is managed automatically by drenv:
-
-- `drenv setup`: Creates and starts registry cache containers
-- `drenv cleanup`: Stops and removes registry cache containers
+> [!TIP]
+> See [Initial setup - Linux](#initial-setup---linux) or
+> [Initial setup - macOS](#initial-setup---macos) for first-time configuration.
 
 ## Architecture
 
@@ -76,6 +75,21 @@ sequenceDiagram
 | 5054 | ghcr.io |
 | 5055 | gcr.io |
 
+## Lifecycle
+
+Cache containers are created by `drenv setup` and kept running across
+`drenv cleanup` and `drenv setup` cycles. This preserves the in-memory
+metadata cache, which provides near 100% hit rate after the first run.
+
+- `drenv setup`: Creates cache containers if they don't exist, or
+  recreates them if the configuration has changed. Running containers
+  with current configuration are not touched.
+- `drenv cleanup`: Keeps cache containers running. Previously cleanup
+  removed the containers, discarding the in-memory cache and causing
+  hundreds of unnecessary cache misses on the next start.
+- `drenv registry-cache remove`: Removes cache containers manually.
+  Useful for development and testing of the registry cache.
+
 ## Initial setup - Linux
 
 Allow access to registry cache ports in the libvirt zone:
@@ -106,17 +120,100 @@ the registry cache.
 
 ## Managing the cache
 
+### Cache statistics
+
+To view cache hit/miss statistics:
+
+```
+drenv registry-cache stats
+```
+
+Example output:
+
+```json
+[
+  {
+    "registry": "quay.io",
+    "hits": 2242,
+    "misses": 564,
+    "errors": 0,
+    "hit_rate": 79
+  },
+  ...
+]
+```
+
+To get hit rates per registry:
+
+```
+drenv registry-cache stats | jq 'map({(.registry): .hit_rate}) | add'
+```
+
+```json
+{
+  "quay.io": 79,
+  "docker.io": 73,
+  "registry.k8s.io": 70,
+  "ghcr.io": 64,
+  "gcr.io": 0
+}
+```
+
+To get the output as a markdown table:
+
+```
+drenv registry-cache stats -o markdown
+```
+
+Example output:
+
+```
+| Registry | Hits | Misses | Errors | Hit % |
+|----------|------|--------|--------|-------|
+| quay.io | 2242 | 564 | 0 | 79% |
+| docker.io | 122 | 44 | 0 | 73% |
+| registry.k8s.io | 299 | 124 | 0 | 70% |
+| ghcr.io | 47 | 26 | 0 | 64% |
+| gcr.io | 0 | 0 | 0 | 0% |
+```
+
+The metrics are:
+
+- **hits**: cache lookups that returned a cached result
+- **misses**: cache lookups where the item was not cached (fetched
+  from upstream)
+- **errors**: unexpected cache failures (not normal misses)
+- **hit_rate**: percentage of requests served from cache
+
+### Removing containers
+
+To remove all cache containers:
+
+```
+drenv registry-cache remove
+```
+
+Cache containers are kept running across `drenv cleanup` cycles to
+preserve the in-memory metadata cache. This command is useful for
+development and testing of the registry cache.
+
+### Checking containers
+
 To check if the cache containers are running:
 
 ```
 podman ps --filter name=drenv-cache
 ```
 
+### Viewing cached images
+
 To view cached images for a specific registry (e.g., quay.io on port 5051):
 
 ```
 curl -s http://localhost:5051/v2/_catalog | jq
 ```
+
+### Viewing logs
 
 To view cache logs:
 
@@ -135,6 +232,6 @@ podman volume ls --filter name=drenv-cache
 To remove all cached data:
 
 ```
-drenv cleanup <envfile>
+drenv registry-cache remove
 podman volume rm $(podman volume ls -q --filter name=drenv-cache)
 ```
