@@ -160,7 +160,7 @@ type MoverConfig struct {
 }
 
 // VRGAction which will be either a Failover or Relocate
-// +kubebuilder:validation:Enum=Failover;Relocate;TestFailover
+// +kubebuilder:validation:Enum=Failover;Relocate
 type VRGAction string
 
 // These are the valid values for VRGAction
@@ -172,11 +172,6 @@ const (
 	// Relocate, VRG was relocated to/from this cluster,
 	// the to/from is determined by VRG spec.ReplicationState values of Primary/Secondary respectively
 	VRGActionRelocate = VRGAction("Relocate")
-
-	// TestFailover, VRG is in a test failover state where the secondary is temporarily promoted
-	// to primary to verify readiness and data consistency without committing to the actual failover.
-	// Test failover is non-destructive and can be aborted to return to the original state.
-	VRGActionTestFailover = VRGAction("TestFailover")
 )
 
 type KubeObjectProtectionSpec struct {
@@ -257,6 +252,10 @@ type VolumeReplicationGroupSpec struct {
 	// Action is either Failover or Relocate
 	//+optional
 	Action VRGAction `json:"action,omitempty"`
+	// DryRun indicates whether the action should be executed in test/non-destructive mode.
+	// When true, no permanent changes are made on the failover cluster.
+	//+optional
+	DryRun bool `json:"dryRun,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 
