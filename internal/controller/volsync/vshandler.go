@@ -514,15 +514,6 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, nil // Requeue
 	}
 
-	if err := v.deleteMountJobIfExists(
-		types.NamespacedName{
-			Namespace: rsSpec.ProtectedPVC.Namespace,
-			Name:      rsSpec.ProtectedPVC.Name,
-		},
-	); err != nil {
-		return false, replicationSource, err
-	}
-
 	if err = v.assignRDAndRSAsOwnerToProtectedPVC(replicationSource, rsSpec.ProtectedPVC); err != nil {
 		return false, replicationSource, err
 	}
@@ -3243,27 +3234,12 @@ func (v *VSHandler) mountJobRequired(
 	pvcNamespacedName types.NamespacedName,
 	log logr.Logger,
 ) (bool, error) {
-	pvc := &corev1.PersistentVolumeClaim{}
-
-	err := v.client.Get(context.Background(), pvcNamespacedName, pvc)
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			return false, err
-		}
-
-		log.V(1).Info("PVC not found, mount job not required")
-
+	vrg, ok := v.GetOwner().(*ramendrv1alpha1.VolumeReplicationGroup)
+	if ok && vrg.Spec.VolSync.MoverConfig != nil {
 		return false, nil
 	}
 
-	val, ok := pvc.GetAnnotations()[util.PVCMountedAnnotation]
-	if ok && val == "true" {
-		log.V(1).Info("PVC is annotated as mounted, mount job not required")
-
-		return false, nil
-	}
-
-	_, err = v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
+	_, err := v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
 	if err == nil {
 		log.V(1).Info("ReplicationSource exists, no mount job needed")
 
@@ -3296,19 +3272,15 @@ func (v *VSHandler) handleMountJobResult(
 	if jobCompleted(job) {
 		l.V(1).Info("Mount job completed successfully")
 
-		patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{"%s": "true"}}}`, util.PVCMountedAnnotation))
-
-		err := v.client.Patch(context.Background(), &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: pvcNamespacedName.Namespace,
-				Name:      pvcNamespacedName.Name,
-			},
-		}, client.RawPatch(types.StrategicMergePatchType, patch))
+		_, err := v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
 		if err != nil {
-			return false, fmt.Errorf(
-				"patching PVC %s/%s with mounted annotation after successful mount job failed: %w",
-				pvcNamespacedName.Namespace, pvcNamespacedName.Name, err,
-			)
+			if !errors.IsNotFound(err) {
+				return false, fmt.Errorf("ReplicationSource not found after successful mount job: %w", err)
+			}
+
+			l.V(1).Info("ReplicationSource does not exist after successful mount job, waiting")
+
+			return true, nil
 		}
 
 		err = v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
@@ -3479,15 +3451,4 @@ func (v *VSHandler) getRamenImage() string {
 	}
 
 	return ""
-}
-
-func (v *VSHandler) deleteMountJobIfExists(pvcNamespacedName types.NamespacedName) error {
-	job := prepareJobMetadata(pvcNamespacedName)
-
-	err := v.client.Delete(v.ctx, job)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error deleting mount job (%w)", err)
-	}
-
-	return nil
 }
