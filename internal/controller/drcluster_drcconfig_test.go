@@ -89,6 +89,8 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drCluster1Name}},
 		)).To(Succeed())
 
+		ramencontrollers.ControllerType = ramen.DRHubType
+
 		By("Defining a ramen configuration")
 
 		ramenConfig = &ramen.RamenConfig{
@@ -103,7 +105,6 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			Metrics: ramen.ControllerMetrics{
 				BindAddress: "0", // Disable metrics
 			},
-			RamenControllerType: ramen.DRHubType,
 		}
 		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true

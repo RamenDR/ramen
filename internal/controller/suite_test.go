@@ -257,7 +257,6 @@ var _ = BeforeSuite(func() {
 			LeaderElect:  new(bool),
 			ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 		},
-		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
