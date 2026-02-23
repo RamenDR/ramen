@@ -79,7 +79,6 @@ spec:
                 enum:
                 - Failover
                 - Relocate
-                - TestFailover
                 type: string
               drPolicyRef:
                 description: DRPolicyRef is the reference to the DRPolicy participating
@@ -128,6 +127,12 @@ spec:
                 x-kubernetes-validations:
                 - message: drPolicyRef is immutable
                   rule: self == oldSelf
+              dryRun:
+                description: |-
+                  DryRun when set to true, makes the action (Failover or Relocate) non-destructive.
+                  The secondary is temporarily promoted to primary to verify readiness and data consistency
+                  without committing to the actual failover. Can be aborted to return to the original state.
+                type: boolean
               failoverCluster:
                 description: |-
                   FailoverCluster is the cluster name that the user wants to failover the application to.

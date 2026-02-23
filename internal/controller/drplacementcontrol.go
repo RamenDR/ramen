@@ -110,7 +110,7 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
 	// Handle test failover cleanup when switching away from test failover to another action
-	if d.instance.Spec.Action != rmn.ActionTestFailover {
+	if !d.instance.Spec.DryRun {
 		rmnutil.AddAnnotation(d.instance, "ramendr.openshift.io/last-action", string(d.instance.Spec.Action))
 
 		// If we're exiting a test failover (were in TestingFailover progression), clean up placement
@@ -118,7 +118,7 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 		if d.instance.Status.Progression == rmn.ProgressionTestingFailover {
 			for clusterName, vrg := range d.vrgs {
 				// Find the primary VRG that was used for testing and clean up after it
-				if isVRGPrimary(vrg) && vrg.Spec.Action == rmn.VRGActionTestFailover {
+				if isVRGPrimary(vrg) && vrg.Spec.DryRun {
 					// Remove cluster decision that was retained during test failover
 					if err := d.reconciler.removeClusterDecisionAfterTestFailover(d.ctx, d.userPlacement, clusterName); err != nil {
 						return false, err
@@ -143,8 +143,6 @@ func (d *DRPCInstance) executeAction() (bool, error) {
 		return d.RunFailover()
 	case rmn.ActionRelocate:
 		return d.RunRelocate()
-	case rmn.ActionTestFailover:
-		return d.RunTestFailover()
 	}
 
 	// Not a failover or a relocation.  Must be an initial deployment.
@@ -366,7 +364,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
 //
-//nolint:cyclop,funlen,nestif
+//nolint:cyclop,funlen,nestif,gocognit
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -417,7 +415,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		// Opltimize by adding a reconciler so that we reconcile at 1 minute at most.
-		if d.instance.Spec.Action == rmn.ActionTestFailover {
+		if d.instance.Spec.DryRun && d.instance.Spec.Action == rmn.ActionFailover {
 			d.setProgression(rmn.ProgressionTestingFailover)
 
 			if err := d.ensurePlacement(failoverCluster); err != nil {
@@ -1184,7 +1182,7 @@ func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
 	numOfPrimaries := 0
 
 	for _, vrg := range d.vrgs {
-		if isVRGPrimary(vrg) && vrg.Spec.Action != rmn.VRGActionTestFailover {
+		if isVRGPrimary(vrg) && !vrg.Spec.DryRun {
 			numOfPrimaries++
 		}
 	}
@@ -1534,7 +1532,7 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 		d.userPlacement.GetName(), homeCluster))
 
 	added := false
-	if d.instance.Spec.Action != rmn.ActionTestFailover {
+	if !d.instance.Spec.DryRun {
 		added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
 	}
 
@@ -1958,8 +1956,6 @@ func vrgAction(drpcAction rmn.DRAction) rmn.VRGAction {
 		return rmn.VRGActionFailover
 	case rmn.ActionRelocate:
 		return rmn.VRGActionRelocate
-	case rmn.ActionTestFailover:
-		return rmn.VRGActionTestFailover
 	default:
 		return ""
 	}
@@ -1972,6 +1968,9 @@ func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	}
 
 	vrg.Spec.Action = action
+	if action == rmn.VRGActionFailover {
+		vrg.Spec.DryRun = d.instance.Spec.DryRun
+	}
 }
 
 func (d *DRPCInstance) newVRG(
@@ -2546,23 +2545,9 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 }
 
 func (d *DRPCInstance) adjustPhaseIfTestFailover(nextState rmn.DRState) rmn.DRState {
-	if d.instance.Spec.Action == rmn.ActionTestFailover {
-		return mapPhaseForTestFailover(nextState)
-	}
-
+	// With the DryRun approach, we don't need to adjust phases for test failover
+	// The progression status (ProgressionTestingFailover) indicates test mode
 	return nextState
-}
-
-//nolint:exhaustive
-func mapPhaseForTestFailover(nextState rmn.DRState) rmn.DRState {
-	switch nextState {
-	case rmn.FailingOver:
-		return rmn.TestFailover
-	case rmn.FailedOver:
-		return rmn.TestFailedOver
-	default:
-		return nextState
-	}
 }
 
 func updateDRPCProgression(

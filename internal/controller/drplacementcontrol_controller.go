@@ -1577,10 +1577,11 @@ func (r *DRPlacementControlReconciler) clusterForVRGStatus(
 
 	switch drpc.Spec.Action {
 	case rmn.ActionFailover:
-	case rmn.ActionTestFailover:
 		// Failover can rely on inspecting VRG from clusterDecision as it is never made nil, hence till
 		// placementDecision is changed to failoverCluster, we can inspect VRG from the existing cluster
-		return clusterName
+		if drpc.Spec.DryRun {
+			return clusterName
+		}
 	case rmn.ActionRelocate:
 		if drpc.Status.ObservedGeneration != drpc.Generation {
 			log.Info("DPRC observedGeneration mismatches current generation, using ClusterDecision instead",

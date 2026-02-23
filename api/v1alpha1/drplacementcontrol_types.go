@@ -8,8 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DRAction which will be either a Failover, Relocate or TestFailover action
-// +kubebuilder:validation:Enum=Failover;Relocate;TestFailover
+// DRAction which will be either a Failover or Relocate action
+// +kubebuilder:validation:Enum=Failover;Relocate
 type DRAction string
 
 // These are the valid values for DRAction
@@ -20,11 +20,6 @@ const (
 	// Relocate, restore PVs to the designated TargetCluster.  PreferredCluster will change
 	// to be the TargetCluster.
 	ActionRelocate = DRAction("Relocate")
-
-	// TestFailover is to test the failover to the TargetCluster without impacting the PrimaryCluster.
-	// This is a non-disruptive action and is used to validate the failover on the TargetCluster
-	// cluster before performing an actual failover.
-	ActionTestFailover = DRAction("TestFailover")
 )
 
 // DRState for keeping track of the DR placement
@@ -58,14 +53,6 @@ const (
 	// FailedOver, state recorded in the DRPC status when the failover
 	// process has completed
 	FailedOver = DRState("FailedOver")
-
-	// TestFailover, state recorded in the DRPC status when the test failover
-	// is initiated
-	TestFailover = DRState("TestFailover")
-
-	// TestFailedOver, state recorded in the DRPC status when the test failover process
-	// is in progress but has not been completed yet
-	TestFailedOver = DRState("TestFailedOver")
 
 	// Relocating, state recorded in the DRPC status to indicate that the
 	// relocation is in progress
@@ -171,6 +158,12 @@ type DRPlacementControlSpec struct {
 
 	// Action is either Failover or Relocate operation
 	Action DRAction `json:"action,omitempty"`
+
+	// DryRun when set to true, makes the action Failover non-destructive.
+	// The secondary is temporarily promoted to primary to verify readiness and data consistency
+	// without committing to the actual failover. Can be aborted to return to the original state.
+	// +kubebuilder:validation:Optional
+	DryRun bool `json:"dryRun,omitempty"`
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`

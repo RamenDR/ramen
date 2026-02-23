@@ -66,7 +66,6 @@ spec:
                 enum:
                 - Failover
                 - Relocate
-                - TestFailover
                 type: string
               async:
                 description: VRGAsyncSpec has the parameters associated with RegionalDR
@@ -281,6 +280,11 @@ spec:
                 required:
                 - schedulingInterval
                 type: object
+              dryRun:
+                description: |-
+                  DryRun indicates whether the action should be executed in test/non-destructive mode.
+                  When true, no permanent changes are made to the replication group or data.
+                type: boolean
               kubeObjectProtection:
                 properties:
                   captureInterval:

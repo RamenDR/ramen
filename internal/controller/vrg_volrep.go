@@ -1263,8 +1263,7 @@ func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 		return false
 	}
 
-	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover &&
-		v.instance.Spec.Action != ramendrv1alpha1.VRGActionTestFailover {
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover {
 		return false
 	}
 

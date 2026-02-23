@@ -33,8 +33,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 	numPVsRestored := 0
 
 	for _, rdSpec := range v.instance.Spec.VolSync.RDSpec {
-		failoverAction := (v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover) ||
-			(v.instance.Spec.Action == ramendrv1alpha1.VRGActionTestFailover)
+		failoverAction := v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
 
 		var err error
 		// Source conditions are not needed and should not be added to vrg.status.ProtectedPVCs,
