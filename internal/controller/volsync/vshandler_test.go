@@ -786,36 +786,23 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				Context("When no running pod is mounting the PVC to be protected", func() {
-					It("Should return a replication source and a RS should be created", func() {
+					It("Should not return a replication source", func() {
 						// Run another reconcile - we have the psk secret now but the pvc is not in use by
 						// a running pod
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false, nil)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).ToNot(BeNil())
-
-						// Ensure replication source is created
-						Eventually(func() error {
-							return k8sClient.Get(ctx,
-								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, maxWait, interval).Should(Succeed())
-
-						// Consistently continue to synchronize PVC data to a remote location
-						Consistently(func() error {
-							return k8sClient.Get(ctx,
-								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).Should(BeNil())
+						Expect(rs).To(BeNil())
 					})
 				})
 
 				Context("When the PVC is unmounted (no pod, no RS) and mount job runs", func() {
-					var testPVC *corev1.PersistentVolumeClaim
 					JustBeforeEach(func() {
 						// Create PVC only - no pod mounting it, so it is "unmounted"
-						testPVC = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, nil)
+						_ = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, nil)
 					})
 
-					It("Should create mount Job, then after Job completes set mounted annotation on PVC", func() {
+					It("Should create mount Job, then after Job completes create ReplicationSource", func() {
 						// First reconcile: mount job required -> Job created, not ready yet
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false, nil)
 						Expect(err).ToNot(HaveOccurred())
@@ -830,7 +817,7 @@ var _ = Describe("VolSync_Handler", func() {
 								types.NamespacedName{Name: jobName, Namespace: testNamespace.GetName()}, mountJob)
 						}, maxWait, interval).Should(Succeed())
 
-						// Simulate Job completion so handler can patch PVC and delete Job.
+						// Simulate Job completion so handler proceeds to create RS.
 						// API server requires startTime, completionTime, and (on newer K8s) SuccessCriteriaMet before Complete.
 						now := metav1.Now()
 						mountJob.Status.StartTime = &now
@@ -850,17 +837,11 @@ var _ = Describe("VolSync_Handler", func() {
 						)
 						Expect(k8sClient.Status().Update(ctx, mountJob)).To(Succeed())
 
-						// Second reconcile: handleMountJobResult sees completed Job, patches PVC, deletes Job; then RS is created
+						// Second reconcile: mount job is complete, ReplicationSource is created
 						finalSyncCompl, rs, err = vsHandler.ReconcileRS(rsSpec, false, nil)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(finalSyncCompl).To(BeFalse())
 						Expect(rs).ToNot(BeNil())
-
-						// PVC should have mounted annotation set by the code
-						Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)).To(Succeed())
-						val, ok := testPVC.GetAnnotations()[util.PVCMountedAnnotation]
-						Expect(ok).To(BeTrue(), "PVC should have %s annotation", util.PVCMountedAnnotation)
-						Expect(val).To(Equal("true"))
 					})
 				})
 
