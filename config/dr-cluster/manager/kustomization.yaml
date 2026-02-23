@@ -1,6 +1,20 @@
 resources:
 - ../../manager/manager.yaml
 
+patches:
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: RAMEN_CONTROLLER_TYPE
+        value: dr-cluster
+  target:
+    group: apps
+    kind: Deployment
+    name: operator
+    namespace: system
+    version: v1
+
 generatorOptions:
   disableNameSuffixHash: true
 
