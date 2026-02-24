@@ -252,6 +252,10 @@ type VolumeReplicationGroupSpec struct {
 	// Action is either Failover or Relocate
 	//+optional
 	Action VRGAction `json:"action,omitempty"`
+	// DryRun indicates whether the action should be executed in test/non-destructive mode.
+	// When true, no permanent changes are made on the failover cluster.
+	//+optional
+	DryRun bool `json:"dryRun,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 

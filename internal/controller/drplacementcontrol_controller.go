@@ -1579,7 +1579,9 @@ func (r *DRPlacementControlReconciler) clusterForVRGStatus(
 	case rmn.ActionFailover:
 		// Failover can rely on inspecting VRG from clusterDecision as it is never made nil, hence till
 		// placementDecision is changed to failoverCluster, we can inspect VRG from the existing cluster
-		return clusterName
+		if drpc.Spec.DryRun {
+			return clusterName
+		}
 	case rmn.ActionRelocate:
 		if drpc.Status.ObservedGeneration != drpc.Generation {
 			log.Info("DPRC observedGeneration mismatches current generation, using ClusterDecision instead",
@@ -1997,6 +1999,86 @@ func (r *DRPlacementControlReconciler) removePlacementClusterDecisionForFailover
 
 	r.Log.Info(
 		"Updated PlacementDecision to drop cluster decision for failover",
+		"ClusterName", clusterName,
+		"PlacementDecision", plDecision.Status.Decisions,
+	)
+
+	return nil
+}
+
+func (r *DRPlacementControlReconciler) removeClusterDecisionAfterTestFailover(
+	ctx context.Context,
+	placement interface{},
+	clusterName string,
+) error {
+	switch obj := placement.(type) {
+	case *plrv1.PlacementRule:
+		return r.removePlacementRuleClusterDecisionAfterTestFailover(ctx, obj, clusterName)
+	case *clrapiv1beta1.Placement:
+		return r.removePlacementClusterDecisionAfterTestFailover(ctx, obj, clusterName)
+	default:
+		return fmt.Errorf("failed to find Placement or PlacementRule")
+	}
+}
+
+func (r *DRPlacementControlReconciler) removePlacementRuleClusterDecisionAfterTestFailover(
+	_ context.Context,
+	_ *plrv1.PlacementRule,
+	_ string,
+) error {
+	// PlacementRule support for test failover cleanup is not yet implemented.
+	// PlacementRule is a legacy API; modern clusters use Placement (PlacementDecision).
+	return nil
+}
+
+// removePlacementClusterDecisionAfterTestFailover removes a cluster decision that matches the passed in clusterName
+// after test failover cleanup to restore the placement to its original state.
+func (r *DRPlacementControlReconciler) removePlacementClusterDecisionAfterTestFailover(
+	ctx context.Context,
+	placement *clrapiv1beta1.Placement,
+	clusterName string,
+) error {
+	plDecision, err := r.getPlacementDecisionFromPlacement(placement)
+	if err != nil {
+		return err
+	}
+
+	if plDecision == nil {
+		return nil
+	}
+
+	dropped := false
+	decisions := []clrapiv1beta1.ClusterDecision{}
+
+	for idx := range plDecision.Status.Decisions {
+		if plDecision.Status.Decisions[idx].ClusterName == clusterName {
+			dropped = true
+
+			continue
+		}
+
+		plDecision.Status.Decisions[idx].Reason = plDecision.Status.Decisions[idx].ClusterName
+		decisions = append(decisions, plDecision.Status.Decisions[idx])
+	}
+
+	if !dropped {
+		return nil
+	}
+
+	plDecision.Status = clrapiv1beta1.PlacementDecisionStatus{
+		Decisions: decisions,
+	}
+
+	if err := r.Status().Update(ctx, plDecision); err != nil {
+		return fmt.Errorf(
+			"failed to update placementDecision status to drop cluster decision (%s) for 'test' failover (%w)",
+			clusterName,
+			err,
+		)
+	}
+
+	r.Log.Info(
+		"Updated PlacementDecision to drop cluster decision for 'test' failover",
 		"ClusterName", clusterName,
 		"PlacementDecision", plDecision.Status.Decisions,
 	)
