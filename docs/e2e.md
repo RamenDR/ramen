@@ -33,6 +33,15 @@ for VM workload testing:
 cat config-vm.yaml.sample ~/.config/drenv/rdr-kubevirt/config.yaml > config.yaml
 ```
 
+If the `drenv` tool was used to configure RDR clusters with the recipe based
+workload for the discovered apps using the configuration file located at
+`envs/regional-dr.yaml`, follow these steps to complete the e2e setup for
+recipe workload testing:
+
+```sh
+cat config-recipe.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
+```
+
 #### For real cluster
 
 Create a `config.yaml` file by copying the `config.yaml.sample` template:
