@@ -28,6 +28,10 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
+const (
+	NetworkFencePrefix = "network-fence"
+)
+
 //nolint:interfacebloat
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
@@ -35,7 +39,7 @@ type ManagedClusterViewGetter interface {
 		annotations map[string]string) (*rmn.VolumeReplicationGroup, error)
 
 	GetNFFromManagedCluster(
-		resourceName, resourceNamespace, managedCluster string,
+		resourceName, networkFenceClassName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error)
 
 	GetMModeFromManagedCluster(
@@ -160,13 +164,18 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 	return vrg, err
 }
 
-func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string,
+func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(targetCluster, networkFenceClassName,
+	resourceNamespace, managedCluster string, annotations map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nf := &csiaddonsv1alpha1.NetworkFence{}
 
+	resourceName := strings.Join([]string{NetworkFencePrefix, targetCluster}, "-")
+	if networkFenceClassName != "" {
+		resourceName = strings.Join([]string{NetworkFencePrefix, networkFenceClassName, targetCluster}, "-")
+	}
+
 	err := m.getResourceFromManagedCluster(
-		"network-fence-"+resourceName,
+		resourceName,
 		resourceNamespace,
 		managedCluster,
 		annotations,
