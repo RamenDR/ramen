@@ -1099,7 +1099,7 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
-	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name, networkFenceClassName,
 		u.object.Namespace, peerCluster.Name, annotations)
 	if err != nil {
 		// dont update the status or conditions. Return requeue, nil as
@@ -1173,7 +1173,7 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
-	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name, networkFenceClassName,
 		u.object.Namespace, peerCluster.Name, annotations)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
