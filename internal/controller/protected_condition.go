@@ -277,7 +277,7 @@ func updateMiscVRGStatus(drpc *rmn.DRPlacementControl,
 	if vrg.Status.ObservedGeneration != vrg.Generation {
 		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionProtected, drpc.Generation, metav1.ConditionFalse,
 			rmn.ReasonProtectedUnknown, fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s "+
-				"is not reporting status for current generation as %s, retrying till status is met",
+				"is not reporting status for current generation. Waiting for VRG to reconcile as %s",
 				vrg.GetNamespace(), vrg.GetName(),
 				clusterName, vrg.Spec.ReplicationState))
 
@@ -287,9 +287,9 @@ func updateMiscVRGStatus(drpc *rmn.DRPlacementControl,
 	if vrg.Status.State != getStatusStateFromSpecState(vrg.Spec.ReplicationState) {
 		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionProtected, drpc.Generation, metav1.ConditionFalse,
 			rmn.ReasonProtectedProgressing, fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s "+
-				"is not reporting status as %s, retrying till status is met",
+				"current state is %s. Waiting for VRG to report %s state",
 				vrg.GetNamespace(), vrg.GetName(),
-				clusterName, vrg.Spec.ReplicationState))
+				clusterName, vrg.Status.State, vrg.Spec.ReplicationState))
 
 		return updated
 	}
@@ -297,7 +297,7 @@ func updateMiscVRGStatus(drpc *rmn.DRPlacementControl,
 	if vrg.Spec.Async != nil && vrg.Status.LastGroupSyncTime.IsZero() {
 		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionProtected, drpc.Generation, metav1.ConditionFalse,
 			rmn.ReasonProtectedProgressing, fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s "+
-				"is not reporting any lastGroupSyncTime as %s, retrying till status is met",
+				"is not reporting lastGroupSyncTime as %s. Waiting for initial synchronization to complete",
 				vrg.GetNamespace(), vrg.GetName(),
 				clusterName, vrg.Spec.ReplicationState))
 
