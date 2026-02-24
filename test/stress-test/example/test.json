@@ -1,0 +1,528 @@
+{
+  "git": {
+    "commit": "4d2c0f72676b8979333057d5dcaa670524f8c497",
+    "branch": "registry-metrics"
+  },
+  "config": {
+    "runs": 100,
+    "envfile": "envs/regional-dr.yaml",
+    "exit-first": false,
+    "name-prefix": null
+  },
+  "results": [
+    {
+      "name": "000",
+      "passed": false,
+      "time": 186.94192845901125
+    },
+    {
+      "name": "001",
+      "passed": true,
+      "time": 285.94882391601277
+    },
+    {
+      "name": "002",
+      "passed": false,
+      "time": 121.36153791598917
+    },
+    {
+      "name": "003",
+      "passed": true,
+      "time": 297.0640579579922
+    },
+    {
+      "name": "004",
+      "passed": true,
+      "time": 281.3016952909966
+    },
+    {
+      "name": "005",
+      "passed": true,
+      "time": 276.43958858400583
+    },
+    {
+      "name": "006",
+      "passed": true,
+      "time": 278.43251758300175
+    },
+    {
+      "name": "007",
+      "passed": true,
+      "time": 287.874191083014
+    },
+    {
+      "name": "008",
+      "passed": true,
+      "time": 285.730149666997
+    },
+    {
+      "name": "009",
+      "passed": true,
+      "time": 293.4181415409985
+    },
+    {
+      "name": "010",
+      "passed": true,
+      "time": 272.90668841599836
+    },
+    {
+      "name": "011",
+      "passed": true,
+      "time": 283.7138765829877
+    },
+    {
+      "name": "012",
+      "passed": true,
+      "time": 285.72897870800807
+    },
+    {
+      "name": "013",
+      "passed": true,
+      "time": 285.64928320799663
+    },
+    {
+      "name": "014",
+      "passed": true,
+      "time": 278.8151636249968
+    },
+    {
+      "name": "015",
+      "passed": true,
+      "time": 277.8089260840061
+    },
+    {
+      "name": "016",
+      "passed": true,
+      "time": 287.66508550000435
+    },
+    {
+      "name": "017",
+      "passed": false,
+      "time": 131.07046933300444
+    },
+    {
+      "name": "018",
+      "passed": true,
+      "time": 288.8380507080001
+    },
+    {
+      "name": "019",
+      "passed": true,
+      "time": 278.6664327920007
+    },
+    {
+      "name": "020",
+      "passed": true,
+      "time": 284.10837754199747
+    },
+    {
+      "name": "021",
+      "passed": true,
+      "time": 287.6385934590071
+    },
+    {
+      "name": "022",
+      "passed": true,
+      "time": 275.89645795800607
+    },
+    {
+      "name": "023",
+      "passed": true,
+      "time": 268.73265420799726
+    },
+    {
+      "name": "024",
+      "passed": true,
+      "time": 275.8707810840133
+    },
+    {
+      "name": "025",
+      "passed": true,
+      "time": 277.0611580830009
+    },
+    {
+      "name": "026",
+      "passed": true,
+      "time": 267.0600178750028
+    },
+    {
+      "name": "027",
+      "passed": true,
+      "time": 276.277772750007
+    },
+    {
+      "name": "028",
+      "passed": true,
+      "time": 270.40808537499106
+    },
+    {
+      "name": "029",
+      "passed": true,
+      "time": 275.3149684159871
+    },
+    {
+      "name": "030",
+      "passed": false,
+      "time": 573.0752635840036
+    },
+    {
+      "name": "031",
+      "passed": true,
+      "time": 283.90511058300035
+    },
+    {
+      "name": "032",
+      "passed": true,
+      "time": 282.8862855829939
+    },
+    {
+      "name": "033",
+      "passed": true,
+      "time": 287.0214249169949
+    },
+    {
+      "name": "034",
+      "passed": false,
+      "time": 124.63962875001016
+    },
+    {
+      "name": "035",
+      "passed": true,
+      "time": 283.72936341699096
+    },
+    {
+      "name": "036",
+      "passed": true,
+      "time": 281.0216737090086
+    },
+    {
+      "name": "037",
+      "passed": true,
+      "time": 283.33232662500814
+    },
+    {
+      "name": "038",
+      "passed": true,
+      "time": 280.1664219999948
+    },
+    {
+      "name": "039",
+      "passed": true,
+      "time": 293.63689633300237
+    },
+    {
+      "name": "040",
+      "passed": false,
+      "time": 743.5137845830031
+    },
+    {
+      "name": "041",
+      "passed": true,
+      "time": 284.8892432499997
+    },
+    {
+      "name": "042",
+      "passed": true,
+      "time": 285.9080118340062
+    },
+    {
+      "name": "043",
+      "passed": true,
+      "time": 273.55670879100217
+    },
+    {
+      "name": "044",
+      "passed": true,
+      "time": 274.96448149999196
+    },
+    {
+      "name": "045",
+      "passed": false,
+      "time": 133.24914308400184
+    },
+    {
+      "name": "046",
+      "passed": true,
+      "time": 269.90202750000753
+    },
+    {
+      "name": "047",
+      "passed": true,
+      "time": 276.0028735829983
+    },
+    {
+      "name": "048",
+      "passed": true,
+      "time": 276.38696245900064
+    },
+    {
+      "name": "049",
+      "passed": true,
+      "time": 299.45869283299544
+    },
+    {
+      "name": "050",
+      "passed": true,
+      "time": 279.2512417079997
+    },
+    {
+      "name": "051",
+      "passed": true,
+      "time": 281.80221604199323
+    },
+    {
+      "name": "052",
+      "passed": true,
+      "time": 278.24988987500547
+    },
+    {
+      "name": "053",
+      "passed": true,
+      "time": 282.9215726669936
+    },
+    {
+      "name": "054",
+      "passed": true,
+      "time": 281.7580858750007
+    },
+    {
+      "name": "055",
+      "passed": true,
+      "time": 276.42407158399874
+    },
+    {
+      "name": "056",
+      "passed": true,
+      "time": 281.210636333999
+    },
+    {
+      "name": "057",
+      "passed": true,
+      "time": 288.4025590829988
+    },
+    {
+      "name": "058",
+      "passed": true,
+      "time": 287.59362025000155
+    },
+    {
+      "name": "059",
+      "passed": true,
+      "time": 303.3257421669987
+    },
+    {
+      "name": "060",
+      "passed": true,
+      "time": 287.179815667012
+    },
+    {
+      "name": "061",
+      "passed": true,
+      "time": 279.65214000002015
+    },
+    {
+      "name": "062",
+      "passed": true,
+      "time": 283.23393470799783
+    },
+    {
+      "name": "063",
+      "passed": true,
+      "time": 286.40026379199116
+    },
+    {
+      "name": "064",
+      "passed": true,
+      "time": 276.91876674999367
+    },
+    {
+      "name": "065",
+      "passed": true,
+      "time": 284.83129254099913
+    },
+    {
+      "name": "066",
+      "passed": true,
+      "time": 281.6038259580091
+    },
+    {
+      "name": "067",
+      "passed": true,
+      "time": 282.2814004159882
+    },
+    {
+      "name": "068",
+      "passed": false,
+      "time": 126.71537599997828
+    },
+    {
+      "name": "069",
+      "passed": true,
+      "time": 283.07154716699733
+    },
+    {
+      "name": "070",
+      "passed": true,
+      "time": 283.00198420797824
+    },
+    {
+      "name": "071",
+      "passed": true,
+      "time": 297.4712152919965
+    },
+    {
+      "name": "072",
+      "passed": true,
+      "time": 287.1325263339968
+    },
+    {
+      "name": "073",
+      "passed": true,
+      "time": 281.8877632920048
+    },
+    {
+      "name": "074",
+      "passed": true,
+      "time": 283.5494796669809
+    },
+    {
+      "name": "075",
+      "passed": true,
+      "time": 282.0252984580002
+    },
+    {
+      "name": "076",
+      "passed": true,
+      "time": 290.98686949998955
+    },
+    {
+      "name": "077",
+      "passed": true,
+      "time": 278.2617630410241
+    },
+    {
+      "name": "078",
+      "passed": true,
+      "time": 279.23999041700154
+    },
+    {
+      "name": "079",
+      "passed": true,
+      "time": 281.37733849999495
+    },
+    {
+      "name": "080",
+      "passed": true,
+      "time": 279.125113416987
+    },
+    {
+      "name": "081",
+      "passed": true,
+      "time": 297.19272104199626
+    },
+    {
+      "name": "082",
+      "passed": false,
+      "time": 578.5558956659806
+    },
+    {
+      "name": "083",
+      "passed": true,
+      "time": 279.11808008301887
+    },
+    {
+      "name": "084",
+      "passed": true,
+      "time": 274.91631537501235
+    },
+    {
+      "name": "085",
+      "passed": true,
+      "time": 279.1567357080057
+    },
+    {
+      "name": "086",
+      "passed": true,
+      "time": 282.2166285000276
+    },
+    {
+      "name": "087",
+      "passed": true,
+      "time": 281.9211029589933
+    },
+    {
+      "name": "088",
+      "passed": true,
+      "time": 287.44326154197915
+    },
+    {
+      "name": "089",
+      "passed": true,
+      "time": 280.87936629200703
+    },
+    {
+      "name": "090",
+      "passed": true,
+      "time": 281.43309812498046
+    },
+    {
+      "name": "091",
+      "passed": false,
+      "time": 130.52773216698552
+    },
+    {
+      "name": "092",
+      "passed": true,
+      "time": 287.7218337910017
+    },
+    {
+      "name": "093",
+      "passed": true,
+      "time": 283.3838545419858
+    },
+    {
+      "name": "094",
+      "passed": true,
+      "time": 286.0991723750194
+    },
+    {
+      "name": "095",
+      "passed": true,
+      "time": 281.4778732499981
+    },
+    {
+      "name": "096",
+      "passed": true,
+      "time": 280.98609729201416
+    },
+    {
+      "name": "097",
+      "passed": true,
+      "time": 282.94830645801267
+    },
+    {
+      "name": "098",
+      "passed": true,
+      "time": 280.69649837500765
+    },
+    {
+      "name": "099",
+      "passed": true,
+      "time": 283.0236017080024
+    }
+  ],
+  "stats": {
+    "runs": 100,
+    "done": 100,
+    "passed": 90,
+    "failed": 10,
+    "rate": 90.0,
+    "time": 28271.576294583007,
+    "time/run": 282.7157629458301,
+    "mean": 282.4658392782338,
+    "median": 281.97320070849673,
+    "min": 267.0600178750028,
+    "max": 303.3257421669987,
+    "stdev": 6.443421212744115
+  }
+}

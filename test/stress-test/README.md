@@ -134,3 +134,64 @@ out.4/021.log:drenv.commands.Error: Command failed:
 The clusters are running, hopefully in the same state when the run
 failed. Sometimes the cluster fixed itself after the failure, this
 usually means some timeout was too short.
+
+## Analyzing failures
+
+After a test run, use `analyze-failures` to generate a structured
+report of all failures:
+
+```
+stress-test/analyze-failures out
+```
+
+This creates `failures.md` in the output directory with:
+
+- **Summary**: Error counts by addon
+- **Detailed errors**: Full error messages with log file references
+
+The structured format makes it easy to identify the most common failure
+patterns and prioritize fixes.
+
+## Collecting system metrics
+
+If you have Netdata running on the test host, collect system metrics
+for correlation with test failures:
+
+```
+stress-test/collect-metrics out
+```
+
+This reads the test time range from `test.json` and exports CPU, memory,
+disk I/O, and network metrics to `metrics/metrics.json` for analysis.
+
+## Generating visual reports
+
+Generate plots and a metrics report from collected data:
+
+```
+stress-test/analyze-metrics out
+```
+
+This creates:
+
+- `metrics/*.png`: Individual metric plots
+- `metrics.md`: Consolidated report with all plots
+
+## AI-assisted analysis
+
+The generated reports are designed for AI consumption. Use an AI
+assistant to analyze failures and metrics together:
+
+**Suggested prompt:**
+
+> Analyze the stress test results in test/out/TEST_NAME/. Read failures.md
+> for error patterns, metrics/*.csv for system metrics during the test, and
+> test.md for overall results. If errors lack sufficient detail, read the
+> referenced log files. Correlate failures with system metrics to identify
+> load-related issues. Generate ai-analysis.md in the same directory with
+> prioritized action items.
+
+## Example output
+
+See the [example](example/) directory for complete output from a
+100-run stress test, including generated reports and AI analysis.

@@ -1,0 +1,32 @@
+{
+  "start_time": 1770414869,
+  "end_time": 1770444887,
+  "duration_seconds": 30018,
+  "charts": [
+    "system.cpu",
+    "system.ram",
+    "system.io",
+    "system.load",
+    "mem.swap",
+    "mem.pgfaults",
+    "net.en0",
+    "net.en1",
+    "net.en2",
+    "net.en3",
+    "net.en4",
+    "net.en5",
+    "net.en6",
+    "net.stf0",
+    "net.utun0",
+    "net.utun1",
+    "net.utun2",
+    "net.utun3",
+    "net.utun4",
+    "net.utun5",
+    "net.vmenet0",
+    "net.vmenet1",
+    "net.vmenet2",
+    "disk.disk0"
+  ],
+  "format": "csv"
+}
