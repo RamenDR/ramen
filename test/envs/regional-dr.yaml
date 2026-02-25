@@ -9,6 +9,7 @@ ramen:
   hub: hub
   clusters: [dr1, dr2]
   topology: regional-dr
+  distribution: k8s
   features:
     volsync: true
 

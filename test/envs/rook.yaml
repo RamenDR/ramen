@@ -5,6 +5,11 @@
 ---
 name: "rook"
 
+ramen:
+  hub: null
+  clusters: [dr1, dr2]
+  distribution: "k8s"
+
 templates:
   - name: "dr-cluster"
     driver: "$vm"
