@@ -13,6 +13,7 @@ import (
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -785,27 +786,65 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				Context("When no running pod is mounting the PVC to be protected", func() {
-					It("Should return a replication source and a RS should be created", func() {
+					It("Should not return a replication source", func() {
 						// Run another reconcile - we have the psk secret now but the pvc is not in use by
 						// a running pod
 						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false, nil)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(finalSyncCompl).To(BeFalse())
-						Expect(rs).ToNot(BeNil())
-
-						// Ensure replication source is created
-						Eventually(func() error {
-							return k8sClient.Get(ctx,
-								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, maxWait, interval).Should(Succeed())
-
-						// Consistently continue to synchronize PVC data to a remote location
-						Consistently(func() error {
-							return k8sClient.Get(ctx,
-								types.NamespacedName{Name: rsSpec.ProtectedPVC.Name, Namespace: testNamespace.GetName()}, createdRS)
-						}, 1*time.Second, interval).Should(BeNil())
+						Expect(rs).To(BeNil())
 					})
 				})
+
+				Context("When the PVC is unmounted (no pod, no RS) and mount job runs", func() {
+					JustBeforeEach(func() {
+						// Create PVC only - no pod mounting it, so it is "unmounted"
+						_ = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, nil)
+					})
+
+					It("Should create mount Job, then after Job completes create ReplicationSource", func() {
+						// First reconcile: mount job required -> Job created, not ready yet
+						finalSyncCompl, rs, err := vsHandler.ReconcileRS(rsSpec, false, nil)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).To(BeNil())
+
+						// Mount Job should exist
+						jobName := util.GetJobName(volsync.VolSyncMountJobNamePrefix, testPVCName)
+						mountJob := &batchv1.Job{}
+						Eventually(func() error {
+							return k8sClient.Get(ctx,
+								types.NamespacedName{Name: jobName, Namespace: testNamespace.GetName()}, mountJob)
+						}, maxWait, interval).Should(Succeed())
+
+						// Simulate Job completion so handler proceeds to create RS.
+						// API server requires startTime, completionTime, and (on newer K8s) SuccessCriteriaMet before Complete.
+						now := metav1.Now()
+						mountJob.Status.StartTime = &now
+						mountJob.Status.CompletionTime = &now
+						mountJob.Status.Succeeded = 1
+						mountJob.Status.Conditions = append(mountJob.Status.Conditions,
+							batchv1.JobCondition{
+								Type:               batchv1.JobSuccessCriteriaMet,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+							batchv1.JobCondition{
+								Type:               batchv1.JobComplete,
+								Status:             corev1.ConditionTrue,
+								LastTransitionTime: now,
+							},
+						)
+						Expect(k8sClient.Status().Update(ctx, mountJob)).To(Succeed())
+
+						// Second reconcile: mount job is complete, ReplicationSource is created
+						finalSyncCompl, rs, err = vsHandler.ReconcileRS(rsSpec, false, nil)
+						Expect(err).ToNot(HaveOccurred())
+						Expect(finalSyncCompl).To(BeFalse())
+						Expect(rs).ToNot(BeNil())
+					})
+				})
+
 				Context("When the PVC to be protected is mounted by a pod that is NOT in running phase", func() {
 					JustBeforeEach(func() {
 						// Create PVC and pod that is mounting it - pod phase will be "Pending"

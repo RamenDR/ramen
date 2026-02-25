@@ -30,6 +30,7 @@ var _ = Describe("Replicationgroupsource", func() {
 	var fakeVolumeGroupSourceHandler *fakes.FakeVolumeGroupSourceHandler
 	BeforeEach(func() {
 		fakeVolumeGroupSourceHandler = &fakes.FakeVolumeGroupSourceHandler{}
+		fakeVolumeGroupSourceHandler.EnsureApplicationPVCsMountedReturns(true, nil)
 		metaTime := metav1.NewTime(time.Now())
 		rgs := &ramendrv1alpha1.ReplicationGroupSource{
 			ObjectMeta: metav1.ObjectMeta{

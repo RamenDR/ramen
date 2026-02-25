@@ -129,6 +129,20 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 		return mover.InProgress(), nil
 	}
 
+	// Ensure application PVCs are mounted before first snapshot (e.g. for SELinux labels).
+	ready, err := m.VolumeGroupHandler.EnsureApplicationPVCsMounted(ctx)
+	if err != nil {
+		m.Logger.Error(err, "Failed to ensure application PVCs are mounted")
+
+		return mover.InProgress(), err
+	}
+
+	if !ready {
+		m.Logger.Info("Waiting for application PVCs to be mounted before first snapshot")
+
+		return mover.InProgress(), nil
+	}
+
 	createdOrUpdatedVGS, err := m.VolumeGroupHandler.CreateOrUpdateVolumeGroupSnapshot(
 		ctx, m.ReplicationGroupSource,
 	)
@@ -201,7 +215,12 @@ func (m *replicationGroupSourceMachine) Synchronize(ctx context.Context) (mover.
 
 	m.Logger.Info("Check if all ReplicationSources are completed")
 
-	completed, err := m.VolumeGroupHandler.CheckReplicationSourceForRestoredPVCsCompleted(ctx, replicationSources)
+	return m.handlerRSCompletionForRestoredPVCs(ctx)
+}
+
+func (m *replicationGroupSourceMachine) handlerRSCompletionForRestoredPVCs(ctx context.Context) (mover.Result, error) {
+	completed, err := m.VolumeGroupHandler.CheckReplicationSourceForRestoredPVCsCompleted(ctx,
+		m.ReplicationGroupSource.Status.ReplicationSources)
 	if err != nil {
 		m.Logger.Error(err, "Failed to check replication sources")
 

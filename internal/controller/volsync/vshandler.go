@@ -6,6 +6,7 @@ package volsync
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/reference"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -68,6 +70,9 @@ const (
 	PVAnnotationRetentionValue = "retained"
 
 	PVCFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-volsync-protection"
+
+	// Prefix for the job that mounts unmounted PVC when RS is not found
+	VolSyncMountJobNamePrefix = "volsync-pvc-mount-"
 )
 
 type VSHandler struct {
@@ -444,7 +449,7 @@ func (v *VSHandler) IsPVCInUseByNonRDPod(pvcNamespacedName types.NamespacedName)
 // Callers should assume getting a nil replication source back means they should retry/requeue.
 // Returns true/false if final sync is complete, and also returns an RS if one was reconciled.
 //
-//nolint:cyclop,funlen,gocognit
+//nolint:cyclop,funlen,gocognit,gocyclo
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool,
 	moverConfig *ramendrv1alpha1.MoverConfig) (bool /* finalSyncComplete */, *volsyncv1alpha1.ReplicationSource, error,
@@ -481,6 +486,16 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	err = v.DeleteRD(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace, false)
 	if err != nil {
 		return false, nil, err
+	}
+
+	// When PVC is unmounted and RS for that PVC is not found, create a job to mount the PVC
+	mountJobReady, err := v.EnsureMountJobForUnmountedPVC(&rsSpec)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if !mountJobReady {
+		return false, nil, nil // Requeue until mount job completes
 	}
 
 	pvcOk, err := v.validatePVCForFinalSync(rsSpec, runFinalSync)
@@ -3172,4 +3187,268 @@ func (v *VSHandler) AppendOrUpdateRdInfo(
 
 func (v *VSHandler) IsSubmarinerEnabled() bool {
 	return util.IsSubmarinerEnabled(v.owner.GetAnnotations())
+}
+
+func (v *VSHandler) EnsureMountJobForUnmountedPVC(rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
+) (bool, error) {
+	log := v.log.WithValues("pvc", rsSpec.ProtectedPVC.Name, "namespace", rsSpec.ProtectedPVC.Namespace)
+	pvcNamespacedName := util.ProtectedPVCNamespacedName(rsSpec.ProtectedPVC)
+
+	jobNamespacedName := types.NamespacedName{
+		Name:      util.GetJobName(VolSyncMountJobNamePrefix, pvcNamespacedName.Name),
+		Namespace: pvcNamespacedName.Namespace,
+	}
+
+	job := &batchv1.Job{}
+
+	err := v.client.Get(context.Background(), jobNamespacedName, job)
+	if err == nil {
+		log.V(1).Info("Mount job already exists, handling result")
+
+		return v.handleMountJobResult(job, pvcNamespacedName, log)
+	}
+
+	if !errors.IsNotFound(err) {
+		return false, err
+	}
+
+	mountJobReq, err := v.mountJobRequired(pvcNamespacedName, log)
+	if err != nil {
+		return false, err
+	}
+
+	if !mountJobReq {
+		return true, nil
+	}
+
+	// PVC exists and is not in use, and RS does not exist - create mount job
+	job, err = v.createOrUpdateMountJob(pvcNamespacedName)
+	if err != nil {
+		return false, err
+	}
+
+	return v.handleMountJobResult(job, pvcNamespacedName, log)
+}
+
+func (v *VSHandler) mountJobRequired(
+	pvcNamespacedName types.NamespacedName,
+	log logr.Logger,
+) (bool, error) {
+	vrg, ok := v.GetOwner().(*ramendrv1alpha1.VolumeReplicationGroup)
+	if ok && vrg.Spec.VolSync.MoverConfig != nil {
+		return false, nil
+	}
+
+	_, err := v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
+	if err == nil {
+		log.V(1).Info("ReplicationSource exists, no mount job needed")
+
+		return false, nil
+	}
+
+	if !errors.IsNotFound(err) {
+		return false, err
+	}
+
+	inUse, err := v.pvcExistsAndInUse(pvcNamespacedName, false)
+	if err != nil {
+		return false, err
+	}
+
+	if inUse {
+		log.V(1).Info("PVC is already in use, no mount job needed")
+
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (v *VSHandler) handleMountJobResult(
+	job *batchv1.Job,
+	pvcNamespacedName types.NamespacedName,
+	l logr.Logger,
+) (bool, error) {
+	if jobCompleted(job) {
+		l.V(1).Info("Mount job completed successfully")
+
+		_, err := v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				return false, fmt.Errorf("ReplicationSource not found after successful mount job: %w", err)
+			}
+
+			l.V(1).Info("ReplicationSource does not exist after successful mount job, waiting")
+
+			return true, nil
+		}
+
+		err = v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+		if err != nil && !errors.IsNotFound(err) {
+			return false, fmt.Errorf(
+				"deleting mount job %s/%s after success failed: %w",
+				job.Namespace, job.Name, err,
+			)
+		}
+
+		return true, nil
+	}
+
+	if jobFailed(job) {
+		err := v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+		if err != nil && !errors.IsNotFound(err) {
+			return false, fmt.Errorf(
+				"deleting mount job %s/%s after failure failed: %w",
+				job.Namespace, job.Name, err,
+			)
+		}
+
+		return false, fmt.Errorf(
+			"mount job %s/%s failed",
+			job.Namespace, job.Name,
+		)
+	}
+
+	l.V(1).Info("Mount job in progress")
+
+	return false, nil
+}
+
+func jobCompleted(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func jobFailed(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func prepareJobMetadata(pvcNamespacedName types.NamespacedName) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.GetJobName(VolSyncMountJobNamePrefix, pvcNamespacedName.Name),
+			Namespace: pvcNamespacedName.Namespace,
+		},
+	}
+}
+
+func (v *VSHandler) createOrUpdateMountJob(pvcNamespacedName types.NamespacedName) (*batchv1.Job, error) {
+	job := prepareJobMetadata(pvcNamespacedName)
+
+	util.AddLabel(job, util.CreatedByRamenLabel, "true")
+	util.AddLabel(job, util.VRGOwnerNameLabel, v.owner.GetName())
+	util.AddLabel(job, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
+
+	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, job, func() error {
+		job.Spec = v.prepareJobSpec(pvcNamespacedName.Name)
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating or updating mount job (%w)", err)
+	}
+
+	v.log.V(1).Info("Mount Job createOrUpdate Complete", "op", op, "jobName", job.Name)
+
+	return job, nil
+}
+
+func (v *VSHandler) prepareJobSpec(pvcName string) batchv1.JobSpec {
+	backoffLimit := int32(1)
+	gracePeriod := 10
+
+	return batchv1.JobSpec{
+		BackoffLimit: &backoffLimit,
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				RestartPolicy:                 corev1.RestartPolicyNever,
+				TerminationGracePeriodSeconds: ptr.To(int64(gracePeriod)),
+				Containers: []corev1.Container{
+					{
+						Name:    "prepare-pvc",
+						Image:   v.getRamenImage(),
+						Command: []string{"/manager"},
+						Env: []corev1.EnvVar{
+							{
+								Name:  "PVC_INIT",
+								Value: "true",
+							},
+							{
+								Name:  "PVC_MOUNT_PATH",
+								Value: "/var/log",
+							},
+						},
+						ImagePullPolicy: "IfNotPresent",
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{
+									"ALL",
+								},
+							},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "varlog",
+								MountPath: "/var/log",
+							},
+						},
+					},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "varlog",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: pvcName,
+							},
+						},
+					},
+				},
+				SecurityContext: &corev1.PodSecurityContext{
+					SeccompProfile: &corev1.SeccompProfile{
+						Type: corev1.SeccompProfileTypeRuntimeDefault,
+					},
+				},
+			},
+		},
+	}
+}
+
+func (v *VSHandler) getRamenImage() string {
+	podName := os.Getenv("POD_NAME")
+	podNamespace := os.Getenv("POD_NAMESPACE")
+
+	if podName == "" || podNamespace == "" {
+		v.log.Info("POD_NAME or POD_NAMESPACE environment variable is not set.")
+
+		return "quay.io/ramendr/ramen:latest"
+	}
+
+	pod := &corev1.Pod{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: podName, Namespace: podNamespace}, pod)
+	if err != nil {
+		v.log.Error(err, "Failed to get Ramen operator pod.")
+
+		return ""
+	}
+
+	for _, container := range pod.Spec.Containers {
+		if container.Name == "manager" {
+			return container.Image
+		}
+	}
+
+	return ""
 }

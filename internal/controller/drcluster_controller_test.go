@@ -108,8 +108,8 @@ func generateNFC() *csiaddonsv1alpha1.NetworkFenceClass {
 	return nfc
 }
 
-func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string,
+func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, networkFenceClass, resourceNamespace,
+	managedCluster string, annotations map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nfStatus := csiaddonsv1alpha1.NetworkFenceStatus{
 		Result:  csiaddonsv1alpha1.FencingOperationResultSucceeded,
