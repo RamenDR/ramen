@@ -1,0 +1,20 @@
+---
+resources:
+  - https://raw.githubusercontent.com/red-hat-storage/external-snapshotter/refs/heads/master/deploy/kubernetes/snapshot-controller/odf-rbac-snapshot-controller.yaml
+  - https://raw.githubusercontent.com/red-hat-storage/external-snapshotter/refs/heads/master/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+namespace: kube-system
+
+patches:
+  # Enable volume group replication support
+  - target:
+      kind: Deployment
+      name: odf-external-snapshotter-operator
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--feature-gates=CSIVolumeGroupSnapshot=true"
+
+images:
+  - name: registry.k8s.io/sig-storage/snapshot-controller
+    newName: quay.io/ocs-dev/snapshot-controller
+    newTag: latest

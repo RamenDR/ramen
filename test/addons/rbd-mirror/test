@@ -7,12 +7,27 @@ import json
 import os
 import sys
 import time
+import uuid
 
 from drenv import kubectl
 
 POOL_NAME = "replicapool"
 PVC_NAME = "rbd-pvc"
-VR_NAME = "vr-1m"
+VGR_NAME = "vgr-1m"
+
+
+def to_csi_vol_group(s: str, prefix: str = "csi-vol-group") -> str:
+    parts = s.rsplit("-", 5)  # split at the 5 rightmost dashes
+    if len(parts) < 6:
+        raise RuntimeError(f"Expected a trailing UUID, got: {s!r}")
+
+    candidate = "-".join(parts[1:6])  # the 5 UUID chunks
+    try:
+        u = str(uuid.UUID(candidate))  # validate & normalize
+    except ValueError as e:
+        raise RuntimeError(f"Trailing token is not a valid UUID: {candidate!r}") from e
+
+    return f"{prefix}-{u}"
 
 
 def rbd(*args, cluster=None):
@@ -34,7 +49,7 @@ def rbd(*args, cluster=None):
 def rbd_mirror_image_status(cluster, image):
     out = rbd(
         "mirror",
-        "image",
+        "group",
         "status",
         image,
         "--format=json",
@@ -56,7 +71,7 @@ def rbd_mirror_image_status(cluster, image):
 
 
 def test_volume_replication(primary, secondary):
-    print(f"Deploying pvc {PVC_NAME} and vr {VR_NAME} in cluster '{primary}'")
+    print(f"Deploying pvc {PVC_NAME} and vgr {VGR_NAME} in cluster '{primary}'")
     kubectl.apply("--kustomize=test-data", context=primary)
 
     print(f"Waiting until pvc {PVC_NAME} is bound in cluster '{primary}'")
@@ -67,56 +82,60 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Waiting until vr {VR_NAME} is completed in cluster '{primary}'")
+    print(f"Waiting until vgr {VGR_NAME} is completed in cluster '{primary}'")
     kubectl.wait(
-        f"volumereplication/{VR_NAME}",
+        f"volumegroupreplication/{VGR_NAME}",
         "--for=condition=Completed",
         "--namespace=rook-ceph",
         context=primary,
     )
 
-    print(f"Waiting until vr {VR_NAME} state is primary in cluster '{primary}'")
+    print(f"Waiting until vgr {VGR_NAME} state is primary in cluster '{primary}'")
     kubectl.wait(
-        f"volumereplication/{VR_NAME}",
+        f"volumegroupreplication/{VGR_NAME}",
         "--for=jsonpath={.status.state}=Primary",
         "--namespace=rook-ceph",
         context=primary,
     )
 
     print(f"Looking up pvc {PVC_NAME} pv name in cluster '{primary}'")
-    pv_name = kubectl.get(
-        f"pvc/{PVC_NAME}",
-        "--output=jsonpath={.spec.volumeName}",
+    vgrcontent_name = kubectl.get(
+        f"volumegroupreplication/{VGR_NAME}",
+        "--output=jsonpath={.spec.volumeGroupReplicationContentName}",
         "--namespace=rook-ceph",
         context=primary,
     )
 
-    print(f"Looking up rbd image for pv {pv_name} in cluster '{primary}'")
-    rbd_image = kubectl.get(
-        f"pv/{pv_name}",
-        "--output=jsonpath={.spec.csi.volumeAttributes.imageName}",
+    print(
+        f"Looking up rbd image for vrgcontent {vgrcontent_name} in cluster '{primary}'"
+    )
+    rbd_handle = kubectl.get(
+        f"volumegroupreplicationcontent/{vgrcontent_name}",
+        "--output=jsonpath={.spec.volumeGroupReplicationHandle}",
         "--namespace=rook-ceph",
         context=primary,
     )
+
+    rbd_image = to_csi_vol_group(rbd_handle)
 
     print(f"rbd image {rbd_image} info in cluster '{primary}'")
-    out = rbd("info", rbd_image, cluster=primary)
+    out = rbd("group", "info", rbd_image, cluster=primary)
     print(out)
 
     print(f"Waiting until rbd image {rbd_image} is created in cluster '{secondary}'")
     for i in range(60):
         time.sleep(1)
-        out = rbd("list", cluster=primary)
+        out = rbd("group", "list", cluster=primary)
         if rbd_image in out:
-            out = rbd("info", rbd_image, cluster=primary)
+            out = rbd("group", "info", rbd_image, cluster=primary)
             print(out)
             break
     else:
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
-    print(f"vr {VR_NAME} info on primary cluster '{primary}'")
+    print(f"vgr {VGR_NAME} info on primary cluster '{primary}'")
     kubectl.get(
-        f"volumereplication/{VR_NAME}",
+        f"volumegroupreplication/{VGR_NAME}",
         "--output=yaml",
         "--namespace=rook-ceph",
         context=primary,
@@ -126,7 +145,7 @@ def test_volume_replication(primary, secondary):
     image_status = rbd_mirror_image_status(primary, rbd_image)
     print(json.dumps(image_status, indent=2))
 
-    print(f"Deleting pvc {PVC_NAME} and vr {VR_NAME} in primary cluster '{primary}'")
+    print(f"Deleting pvc {PVC_NAME} and vgr {VGR_NAME} in primary cluster '{primary}'")
     kubectl.delete("--kustomize=test-data", context=primary)
 
     print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")

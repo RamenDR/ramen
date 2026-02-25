@@ -21,8 +21,8 @@ templates:
         io.containerd.grpc.v1.cri:
           device_ownership_from_security_context: true
     network: "$network"
-    cpus: 4
-    memory: "8g"
+    cpus: 8
+    memory: "16g"
     extra_disks: 1
     disk_size: "50g"
     workers:
