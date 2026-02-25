@@ -577,6 +577,97 @@ func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster s
 	return drpc
 }
 
+func updateDRPCWithMoverConfig(drpc *rmn.DRPlacementControl, numOfPVCs int) {
+	if drpc == nil {
+		return
+	}
+
+	var runAsUser, fsGroup, runAsGroup int64
+
+	var moverConfigs []rmn.MoverConfig
+
+	runAsUser = 1000
+	fsGroup = 2000
+	runAsGroup = 0
+	runAsNonRoot := false
+	moverSA := "db-app-sa"
+
+	for i := 0; i < numOfPVCs; i++ {
+		pvcName := "testPVC-" + fmt.Sprintf("%d", i)
+		moverConfig := rmn.MoverConfig{
+			MoverSecurityContext: &corev1.PodSecurityContext{
+				SELinuxOptions: &corev1.SELinuxOptions{},
+				RunAsUser:      &runAsUser,
+				RunAsNonRoot:   &runAsNonRoot,
+				FSGroup:        &fsGroup,
+				RunAsGroup:     &runAsGroup,
+			},
+			MoverServiceAccount: &moverSA,
+			PVCName:             pvcName,
+			PVCNameSpace:        "testPVCNameSpace",
+		}
+		moverConfigs = append(moverConfigs, moverConfig)
+	}
+
+	drpcLookupKey := types.NamespacedName{
+		Name:      drpc.Name,
+		Namespace: drpc.Namespace,
+	}
+	latestDRPC := &rmn.DRPlacementControl{}
+	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		err := k8sClient.Get(context.TODO(), drpcLookupKey, latestDRPC)
+		if err != nil {
+			return err
+		}
+
+		if latestDRPC.Spec.VolSyncSpec == nil {
+			latestDRPC.Spec.VolSyncSpec = &rmn.VolSyncSpec{}
+		}
+
+		latestDRPC.Spec.VolSyncSpec.MoverConfig = moverConfigs
+
+		return k8sClient.Update(context.TODO(), latestDRPC)
+	})
+
+	Expect(retryErr).NotTo(HaveOccurred())
+
+	Eventually(func() bool {
+		latestDRPC = getLatestDRPC(drpc.Namespace)
+
+		return latestDRPC.Spec.VolSyncSpec != nil &&
+			len(latestDRPC.Spec.VolSyncSpec.MoverConfig) == numOfPVCs
+	}, timeout, interval).Should(BeTrue(), "failed to update VolSyncSpec in DRPC")
+}
+
+func verifyMoverConfig(manifestLookupKey types.NamespacedName,
+	numOfPVCs int,
+) {
+	mw := &ocmworkv1.ManifestWork{}
+
+	var moverConfig []rmn.MoverConfig
+
+	Eventually(func() bool {
+		Eventually(func() bool {
+			err := k8sClient.Get(context.TODO(), manifestLookupKey, mw)
+
+			return err == nil
+		}, timeout, interval).Should(BeTrue(), fmt.Sprintf("manifestlookup %+v", manifestLookupKey))
+
+		Expect(len(mw.Spec.Workload.Manifests)).To(Equal(1))
+
+		vrgClientManifest := mw.Spec.Workload.Manifests[0]
+		Expect(vrgClientManifest).ToNot(BeNil())
+
+		vrg := &rmn.VolumeReplicationGroup{}
+		err := yaml.Unmarshal(vrgClientManifest.RawExtension.Raw, &vrg)
+		Expect(err).NotTo(HaveOccurred())
+
+		moverConfig = append(moverConfig, vrg.Spec.VolSync.MoverConfig...)
+
+		return len(vrg.Spec.VolSync.MoverConfig) == numOfPVCs
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("MoverConfig %+v", moverConfig))
+}
+
 //nolint:unparam
 func deleteUserPlacementRule(name, namespace string) {
 	userPlacementRule := getLatestUserPlacementRule(name, namespace)
@@ -2676,6 +2767,137 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(userPlacementRule).NotTo(BeNil())
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
 				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC(DefaultDRPCNamespace))
+			})
+		})
+		When("DRAction is changed to Failover", func() {
+			It("Should failover to Secondary (West1ManagedCluster)", func() {
+				recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
+				Expect(getVRGManifestWorkCount()).Should(Equal(2))
+				verifyRDSpecAfterActionSwitch(West1ManagedCluster, East1ManagedCluster, 2)
+			})
+		})
+		When("DRAction is set to Relocate", func() {
+			It("Should relocate to Primary (East1ManagedCluster)", func() {
+				relocateToPreferredCluster(userPlacementRule, West1ManagedCluster)
+				Expect(getVRGManifestWorkCount()).Should(Equal(2))
+				verifyRDSpecAfterActionSwitch(East1ManagedCluster, West1ManagedCluster, 2)
+			})
+		})
+		When("DRAction is changed back to Failover using only 1 protectedPVC", func() {
+			It("Should failover to secondary (West1ManagedCluster)", func() {
+				ProtectedPVCCount = 1
+				recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
+				Expect(getVRGManifestWorkCount()).Should(Equal(2))
+				verifyRDSpecAfterActionSwitch(West1ManagedCluster, East1ManagedCluster, 1)
+				ProtectedPVCCount = 2
+			})
+		})
+		When("DRAction is set back to Relocate using only 1 protectedPVC", func() {
+			It("Should relocate to Primary (East1ManagedCluster)", func() {
+				ProtectedPVCCount = 1
+				relocateToPreferredCluster(userPlacementRule, West1ManagedCluster)
+				Expect(getVRGManifestWorkCount()).Should(Equal(2))
+				verifyRDSpecAfterActionSwitch(East1ManagedCluster, West1ManagedCluster, 1)
+				ProtectedPVCCount = 2
+			})
+		})
+		When("DRAction is changed back to Failover using only 10 protectedPVC", func() {
+			It("Should failover to secondary (West1ManagedCluster)", func() {
+				ProtectedPVCCount = 10
+				recoverToFailoverCluster(userPlacementRule, East1ManagedCluster, West1ManagedCluster)
+				Expect(getVRGManifestWorkCount()).Should(Equal(2))
+				verifyRDSpecAfterActionSwitch(West1ManagedCluster, East1ManagedCluster, 10)
+				ProtectedPVCCount = 2
+			})
+		})
+		When("DRAction is set back to Relocate using only 10 protectedPVC", func() {
+			It("Should relocate to Primary (East1ManagedCluster)", func() {
+				ProtectedPVCCount = 10
+				relocateToPreferredCluster(userPlacementRule, West1ManagedCluster)
+				Expect(getVRGManifestWorkCount()).Should(Equal(2))
+				verifyRDSpecAfterActionSwitch(East1ManagedCluster, West1ManagedCluster, 10)
+				ProtectedPVCCount = 2
+			})
+		})
+		When("Deleting DRPolicy with DRPC references", func() {
+			It("Should retain the deleted DRPolicy in the API server", func() {
+				deleteDRPolicyAsync()
+				ensureDRPolicyIsNotDeleted(drpc)
+			})
+		})
+		When("Deleting user PlacementRule", func() {
+			It("Should cleanup DRPC", func() {
+				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+			})
+		})
+
+		When("Deleting DRPC", func() {
+			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG MW
+				deleteDRPC()
+				waitForCompletion("deleted")
+				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
+				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
+				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
+			})
+			It("should delete the DRPC causing its referenced drpolicy to be deleted"+
+				" by drpolicy controller since no DRPCs reference it anymore", func() {
+				ensureDRPolicyIsDeleted(drpc.Spec.DRPolicyRef.Name)
+			})
+		})
+		Specify("delete drclusters", func() {
+			RunningVolSyncTests = false
+			deleteDRClustersAsync()
+		})
+	})
+	Context("Test DRPlacementControl With moverConfig for VolSync PVCs", func() {
+		var userPlacementRule *plrv1.PlacementRule
+		var drpc *rmn.DRPlacementControl
+		var numOfPVCs int
+
+		Specify("DRClusters", func() {
+			RunningVolSyncTests = true
+			populateDRClusters()
+		})
+		When("The Application is deployed for VolSync with moverConfig configured", func() {
+			It("Should deploy to East1ManagedCluster and configure VolSync moverConfig for a protected PVC", func() {
+				var placementObj client.Object
+				placementObj, drpc = InitialDeploymentAsync(
+					DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster, UsePlacementRule)
+				userPlacementRule = placementObj.(*plrv1.PlacementRule)
+				Expect(userPlacementRule).NotTo(BeNil())
+				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
+				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC(DefaultDRPCNamespace))
+				numOfPVCs = 1
+				updateDRPCWithMoverConfig(drpc, numOfPVCs)
+
+				manifestLookupKey := types.NamespacedName{
+					Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(userPlacementRule.GetNamespace()), "vrg"),
+					Namespace: East1ManagedCluster,
+				}
+
+				verifyMoverConfig(manifestLookupKey, numOfPVCs)
+			})
+			It("Validates that DRPC applies VolSync with the specified moverConfig on the target PVCs", func() {
+				numOfPVCs = 3
+				updateDRPCWithMoverConfig(drpc, numOfPVCs)
+				manifestLookupKey := types.NamespacedName{
+					Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(userPlacementRule.GetNamespace()), "vrg"),
+					Namespace: East1ManagedCluster,
+				}
+
+				verifyMoverConfig(manifestLookupKey, numOfPVCs)
+			})
+
+			It("Validate moverConfig reapplied correctly", func() {
+				numOfPVCs = 1
+				updateDRPCWithMoverConfig(drpc, numOfPVCs)
+				manifestLookupKey := types.NamespacedName{
+					Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(userPlacementRule.GetNamespace()), "vrg"),
+					Namespace: East1ManagedCluster,
+				}
+
+				verifyMoverConfig(manifestLookupKey, numOfPVCs)
 			})
 		})
 		When("DRAction is changed to Failover", func() {
