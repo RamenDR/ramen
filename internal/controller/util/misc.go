@@ -404,6 +404,10 @@ func CreateVGRName(prefix string, suffix string) string {
 	return TrimToK8sResourceNameLength("vgr-" + prefix + "-" + suffix)
 }
 
+func CreateGlobalVGRName(storageID string) string {
+	return TrimToK8sResourceNameLength("vgr-global-" + storageID)
+}
+
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 	return annotations[UseVolSyncAnnotation] == "true"
 }
