@@ -43,7 +43,32 @@ func TestDR(dt *testing.T) {
 	pvcSpecs := config.PVCSpecsMap(Ctx.Config())
 	deploySpecs := config.DeployersMap(Ctx.Config())
 
-	for _, tc := range Ctx.Config().Tests {
+	ungroupedTests := filterUngroupedTests(Ctx.Config().Tests)
+	runTestCases(t, ungroupedTests, pvcSpecs, deploySpecs)
+}
+
+// filterUngroupedTests returns only tests without a group assignment.
+// Tests with a group are handled by dedicated test functions.
+func filterUngroupedTests(tests []config.Test) []config.Test {
+	var ungrouped []config.Test
+
+	for _, tc := range tests {
+		if tc.Group == "" {
+			ungrouped = append(ungrouped, tc)
+		}
+	}
+
+	return ungrouped
+}
+
+// runTestCases executes the provided test cases using the given specifications.
+func runTestCases(
+	t *test.T,
+	tests []config.Test,
+	pvcSpecs map[string]config.PVCSpec,
+	deploySpecs map[string]config.Deployer,
+) {
+	for _, tc := range tests {
 		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
 		if !ok {
 			panic("unknown pvcSpec")

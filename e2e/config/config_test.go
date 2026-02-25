@@ -45,6 +45,8 @@ func TestReadConfig(t *testing.T) {
 		Tests: []Test{
 			{Workload: "deploy", Deployer: "appset", PVCSpec: "rbd"},
 			{Workload: "deploy", Deployer: "appset", PVCSpec: "cephfs"},
+			{Workload: "deploy", Deployer: "disapp", PVCSpec: "rbd", Group: "single-s3-store"},
+			{Workload: "deploy", Deployer: "disapp", PVCSpec: "cephfs", Group: "single-s3-store"},
 		},
 		Channel: Channel{
 			Name:      "https-github-com-ramendr-ocm-ramen-samples-git",
