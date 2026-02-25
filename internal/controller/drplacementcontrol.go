@@ -18,6 +18,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -387,6 +388,8 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
+
+		d.cleanupCompletedFailoverMarkers(failoverCluster)
 
 		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
@@ -1330,6 +1333,14 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 // TODO: This hence can be corrected to remove the call to updateUserPlacementRule and further lines of code
 func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string) error {
 	d.log.Info("switchToCluster", "cluster", targetCluster)
+
+	// Determine old primary cluster
+	oldPrimaryCluster := d.getOldPrimaryCluster(targetCluster)
+
+	// S3 fencing for failover
+	if d.instance.Spec.Action == rmn.ActionFailover {
+		d.s3FenceFailover(targetCluster, oldPrimaryCluster)
+	}
 
 	createdOrUpdated, err := d.createVRGManifestWorkAsPrimary(targetCluster)
 	if err != nil {
@@ -2935,4 +2946,221 @@ func removeSCCAnnotations(annotations map[string]string) map[string]string {
 	}
 
 	return filteredAnnotations
+}
+
+// handleFailoverMarkerForProfile creates the marker for a single S3 profile and logs context.
+// It returns an error so the caller can fail fast (same behavior as before).
+func (d *DRPCInstance) handleFailoverMarkerForS3Profile(
+	s3ProfileName, vrgNamespace, vrgName, targetCluster, sourceCluster string,
+) error {
+	objectStore, _, err := d.reconciler.ObjStoreGetter.ObjectStore(
+		d.ctx,
+		d.reconciler.APIReader,
+		s3ProfileName,
+		types.NamespacedName{Namespace: d.instance.Namespace, Name: d.instance.Name}.String(),
+		d.log,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get object store for profile %s: %w", s3ProfileName, err)
+	}
+
+	pathPrefix := s3PathNamePrefix(vrgNamespace, vrgName)
+	marker := S3FailoverMarker{
+		InitiatedBy:      "drpc-controller",
+		InitiatedAt:      metav1.Now(),
+		DRPCName:         d.instance.Name,
+		DRPCNamespace:    d.instance.Namespace,
+		FailoverCluster:  targetCluster,
+		Phase:            FailoverPhaseInitiated,
+		MarkerGeneration: time.Now().Unix(),
+		SourceCluster:    sourceCluster,
+	}
+
+	if err := objectStore.CreateFailoverMarkerForVRG(pathPrefix, marker); err != nil {
+		return fmt.Errorf("failed to create failover marker for profile %s: %w", s3ProfileName, err)
+	}
+
+	d.log.Info("Failover marker created in S3",
+		"vrgNamespace", vrgNamespace,
+		"vrgName", vrgName,
+		"failoverCluster", targetCluster,
+		"s3Profile", s3ProfileName)
+
+	return nil
+}
+
+func (d *DRPCInstance) createFailoverMarkersInS3(targetCluster, sourceCluster string) error {
+	d.log.Info("Creating failover markers in S3 to suspend old primary writes",
+		"targetCluster", targetCluster)
+
+	// Get S3 profiles from any VRG
+	var s3ProfileNames []string
+
+	for _, vrg := range d.vrgs {
+		if vrg != nil && len(vrg.Spec.S3Profiles) > 0 {
+			s3ProfileNames = vrg.Spec.S3Profiles
+
+			break
+		}
+	}
+
+	if len(s3ProfileNames) == 0 {
+		d.log.Info("No S3 profiles configured in VRG")
+
+		return nil
+	}
+
+	vrgNamespace := d.vrgNamespace
+	vrgName := d.instance.Name
+
+	for _, name := range s3ProfileNames {
+		if err := d.handleFailoverMarkerForS3Profile(name, vrgNamespace, vrgName, targetCluster, sourceCluster); err != nil {
+			return err
+		}
+	}
+
+	d.log.Info("Failover markers created successfully", "profileCount", len(s3ProfileNames))
+
+	return nil
+}
+
+func (d *DRPCInstance) getOldPrimaryCluster(targetCluster string) string {
+	for clusterName, vrg := range d.vrgs {
+		if vrg != nil && vrg.Spec.ReplicationState == rmn.Primary && clusterName != targetCluster {
+			return clusterName
+		}
+	}
+
+	return ""
+}
+
+func (d *DRPCInstance) s3FenceFailover(targetCluster, oldPrimary string) {
+	d.log.Info("Initiating S3 fencing for DR action",
+		"action", d.instance.Spec.Action,
+		"oldPrimary", oldPrimary,
+		"newPrimary", targetCluster)
+
+	if err := d.createFailoverMarkersInS3(targetCluster, oldPrimary); err != nil {
+		d.log.Error(err, "Failed to create S3 failover markers")
+	} else {
+		d.log.Info("S3 failover markers created successfully")
+	}
+}
+
+// cleanupCompletedFailoverMarkers checks S3 failover markers and removes completed ones for the given cluster.
+func (d *DRPCInstance) cleanupCompletedFailoverMarkers(cluster string) {
+	d.log.Info("Checking for completed failover markers", "cluster", cluster)
+
+	vrg, ok := d.vrgs[cluster]
+	if !ok || vrg == nil {
+		return
+	}
+
+	if !d.isVRGKubeObjectsReady(vrg) {
+		d.log.Info("VRG not ready, skipping marker cleanup")
+
+		return
+	}
+
+	profiles := vrg.Spec.S3Profiles
+	if len(profiles) == 0 {
+		return
+	}
+
+	ns, name := vrg.Namespace, vrg.Name
+	pathPrefix := s3PathNamePrefix(ns, name)
+
+	for _, profile := range profiles {
+		if profile == NoS3StoreAvailable {
+			continue
+		}
+
+		s3Store := d.resolveS3Store(profile)
+		if s3Store == nil {
+			// Error already logged inside resolveS3Store
+			continue
+		}
+
+		marker, found := d.loadFailoverMarker(s3Store, pathPrefix)
+		if !found {
+			// Either not present or load failed and was logged; just move on
+			continue
+		}
+
+		if !d.shouldRemoveMarker(marker, cluster) {
+			continue
+		}
+
+		d.removeCompletedMarker(s3Store, pathPrefix, cluster)
+	}
+}
+
+func (d *DRPCInstance) isVRGKubeObjectsReady(vrg *rmn.VolumeReplicationGroup) bool {
+	for _, c := range vrg.Status.Conditions {
+		if c.Type == VRGConditionTypeKubeObjectsReady && c.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) resolveS3Store(profile string) *s3ObjectStore {
+	objectStorer, _, err := d.reconciler.ObjStoreGetter.ObjectStore(
+		d.ctx, d.reconciler.Client, profile, "drpc-marker-cleanup", d.log,
+	)
+	if err != nil {
+		d.log.Error(err, "Failed to get object store", "profile", profile)
+
+		return nil
+	}
+
+	s3Store, ok := objectStorer.(*s3ObjectStore)
+	if !ok {
+		return nil
+	}
+
+	return s3Store
+}
+
+func (d *DRPCInstance) loadFailoverMarker(s3Store *s3ObjectStore, pathPrefix string) (S3FailoverMarker, bool) {
+	markerKey := pathPrefix + failoverMarkerKey
+
+	var marker S3FailoverMarker
+	if err := s3Store.DownloadObject(markerKey, &marker); err != nil {
+		if isAwsErrCodeNoSuchKey(err) {
+			// No marker; nothing to clean up
+			return S3FailoverMarker{}, false
+		}
+
+		d.log.Error(err, "Failed to read marker for cleanup check")
+
+		return S3FailoverMarker{}, false
+	}
+
+	return marker, true
+}
+
+func (d *DRPCInstance) shouldRemoveMarker(marker S3FailoverMarker, cluster string) bool {
+	if marker.FailoverCluster != cluster {
+		d.log.Info("Marker for different cluster", "markerCluster", marker.FailoverCluster)
+
+		return false
+	}
+
+	d.log.Info("Removing failover marker pointing to cluster " + cluster)
+
+	return marker.Phase == FailoverPhaseCompleted
+}
+
+func (d *DRPCInstance) removeCompletedMarker(s3Store *s3ObjectStore, pathPrefix, cluster string) {
+	d.log.Info("Found completed failover marker, removing", "cluster", cluster)
+
+	if err := s3Store.RemoveFailoverMarkerForVRG(pathPrefix, cluster, d.log); err != nil {
+		d.log.Error(err, "Failed to remove completed marker")
+
+		return
+	}
+
+	d.log.Info("Successfully removed completed failover marker")
 }
