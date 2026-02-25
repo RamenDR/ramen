@@ -1582,10 +1582,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgScheduleTest6Template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			storageIDLabel := genStorageIDLabel(storageIDs[0])
 			storageID := storageIDLabel[vrgController.StorageIDLabel]
-			vrgScheduleTest6Template.replicationClassLabels = map[string]string{
-				vrgController.ReplicationIDLabel: replicationIDs[0],
-				vrgController.StorageIDLabel:     storageID,
-			}
+			// Do not label the base VRC to match; let only the two non-default VRCs carry matching labels
+			vrgScheduleTest6Template.replicationClassLabels = map[string]string{}
 			vrgScheduleTest6Template.additionalVRCInfoList[0].replicationClassLabels = genVRCLabels(
 				replicationIDs[0], storageID, "ramen")
 			vrgScheduleTest6Template.additionalVRCInfoList[1].replicationClassLabels = genVRCLabels(
@@ -1686,6 +1684,257 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 	})
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
+
+	createFreshPVCTestTemplate := func() *template {
+		storageIDLabel := genStorageIDLabel(storageIDs[0])
+		vrcLabels := genVRCLabels(replicationIDs[0], storageIDLabel[vrgController.StorageIDLabel], "ramen")
+
+		return &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			storageIDLabels:        storageIDLabel,
+			replicationClassLabels: vrcLabels,
+			replicationState:       ramendrv1alpha1.Primary, // Default to Primary
+		}
+	}
+
+	// VRG Conflict Detection Tests
+	Context("VRG Cluster Data Conflict Condition Validation", func() {
+		// Helper functions
+		var (
+			validateVRGCondition = func(
+				vrg *ramendrv1alpha1.VolumeReplicationGroup,
+				conditionType, expectedStatus, expectedReason string,
+			) {
+				condition := meta.FindStatusCondition(vrg.Status.Conditions, conditionType)
+				Expect(condition).NotTo(BeNil(), fmt.Sprintf("%s condition should exist", conditionType))
+				Expect(string(condition.Status)).To(Equal(expectedStatus), fmt.Sprintf("Should have status %s", expectedStatus))
+				Expect(condition.Reason).To(Equal(expectedReason), fmt.Sprintf("Should have reason %s", expectedReason))
+			}
+
+			createBasicVRGTemplate = func(replicationState ramendrv1alpha1.ReplicationState, volsyncEnabled bool) *template {
+				template := createFreshPVCTestTemplate()
+				template.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+				template.volsyncEnabled = volsyncEnabled
+				template.replicationState = replicationState
+
+				return template
+			}
+
+			waitForVRGCondition = func(vrgInstance *vrgTest, conditionType, expectedStatus, expectedReason string) {
+				Eventually(func() bool {
+					vrg := vrgInstance.getVRG()
+					if vrg == nil {
+						return false
+					}
+					condition := meta.FindStatusCondition(vrg.Status.Conditions, conditionType)
+
+					return condition != nil &&
+						string(condition.Status) == expectedStatus &&
+						condition.Reason == expectedReason
+				}, vrgtimeout, vrginterval).Should(BeTrue(),
+					fmt.Sprintf("Expected %s condition with status %s and reason %s",
+						conditionType, expectedStatus, expectedReason))
+			}
+
+			setupSecondaryVRGForConflict = func(vrgInstance *vrgTest) {
+				Eventually(func() bool {
+					vrg := vrgInstance.getVRG()
+					if vrg == nil {
+						return false
+					}
+
+					// Configure VRG for conflict detection: Secondary state + VolRep PVCs = conflict
+					vrg.Status.State = ramendrv1alpha1.SecondaryState
+					vrg.Status.ObservedGeneration = vrg.Generation
+
+					// Ensure DataReady is True to maintain SecondaryState
+					meta.SetStatusCondition(&vrg.Status.Conditions, metav1.Condition{
+						Type:               "DataReady",
+						Status:             metav1.ConditionTrue,
+						Reason:             "AllPVCsReady",
+						Message:            "All PVCs are ready",
+						ObservedGeneration: vrg.Generation,
+						LastTransitionTime: metav1.NewTime(time.Now()),
+					})
+
+					err := k8sClient.Status().Update(context.TODO(), vrg)
+
+					return err == nil
+				}, vrgtimeout, vrginterval).Should(BeTrue(), "Should configure VRG for conflict detection")
+
+				// Trigger reconcile for conflict detection
+				Eventually(func() bool {
+					vrg := vrgInstance.getVRG()
+					if vrg == nil {
+						return false
+					}
+					if vrg.Annotations == nil {
+						vrg.Annotations = make(map[string]string)
+					}
+					vrg.Annotations["test.trigger.reconcile"] = fmt.Sprintf("%d", time.Now().Unix())
+					err := k8sClient.Update(context.TODO(), vrg)
+
+					return err == nil
+				}, vrgtimeout, vrginterval).Should(BeTrue(), "Should trigger reconcile")
+			}
+		)
+		Context("NoConflictDetected scenarios", func() {
+			DescribeTable("validates no conflicts for different VRG configurations",
+				func(replicationState ramendrv1alpha1.ReplicationState, createPVCs bool) {
+					template := createBasicVRGTemplate(replicationState, false)
+					vrg := newVRGTestCaseCreate(1, template, false, false)
+					vrg.createNamespace()
+					vrg.createSC(template)
+					vrg.createVRC(template)
+					if createPVCs {
+						vrg.createPVCandPV(corev1.ClaimBound, corev1.VolumeBound)
+					}
+					vrg.createVRG()
+					DeferCleanup(vrg.cleanupVRGForPVCTests)
+
+					waitForVRGCondition(vrg, "NoClusterDataConflict", "True", "NoConflictDetected")
+					validateVRGCondition(vrg.getVRG(), "NoClusterDataConflict", "True", "NoConflictDetected")
+					By(fmt.Sprintf("Validated %s VRG with no conflicts", replicationState))
+				},
+				Entry("Primary VRG with PVCs", ramendrv1alpha1.Primary, true),
+				Entry("Secondary VRG without PVCs", ramendrv1alpha1.Secondary, false),
+			)
+		})
+
+		Context("ClusterDataConflictSecondary scenarios", func() {
+			// This test validates PVC conflict detection on Secondary VRG with VolRep(RBD) and
+			// VolSync(CEPHFS) storage. It simulates a scenario where a PVC is already owned by another VRG,
+			// triggering the conflict detection logic in aggregateVRGNoClusterDataConflictCondition().
+			It("validates VolRep PVC conflict detection (RBD Secondary)", func() {
+				template := createBasicVRGTemplate(ramendrv1alpha1.Secondary, false)
+
+				// Create Secondary VRG with VolRep PVCs
+				secondaryVRG := newVRGTestCaseCreate(1, template, false, false)
+				secondaryVRG.createNamespace()
+				secondaryVRG.createSC(template)
+				secondaryVRG.createVRC(template)
+				secondaryVRG.createPVCandPV(corev1.ClaimBound, corev1.VolumeBound)
+				secondaryVRG.createVRG()
+				DeferCleanup(secondaryVRG.cleanupVRGForPVCTests)
+
+				// Add VR finalizer and owner labels to PVC to simulate ownership by another VRG
+				Eventually(func() bool {
+					pvcKey := secondaryVRG.pvcNames[0]
+					pvc := getPVC(pvcKey)
+
+					// Add VR protection finalizer and owner labels as if owned by another VRG
+					finalizers := []string{"replication.storage.openshift.io/pvc-protection"}
+					pvc.SetFinalizers(append(pvc.GetFinalizers(), finalizers...))
+
+					if pvc.Labels == nil {
+						pvc.Labels = make(map[string]string)
+					}
+					pvc.Labels["volumereplicationgroups.ramendr.openshift.io/replication-id"] = "different-vrg-id"
+					pvc.Labels["volumereplicationgroups.ramendr.openshift.io/cluster-id"] = "different-cluster"
+
+					err := k8sClient.Update(context.TODO(), pvc)
+
+					return err == nil
+				}, vrgtimeout, vrginterval).Should(BeTrue(), "Should add finalizers and owner labels to PVC")
+
+				// Configure VRG for conflict detection
+				setupSecondaryVRGForConflict(secondaryVRG)
+
+				// Wait for specific Secondary VolRep conflict detection
+				Eventually(func() bool {
+					vrg := secondaryVRG.getVRG()
+					if vrg == nil {
+						return false
+					}
+					condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+					if condition != nil &&
+						condition.Status == metav1.ConditionFalse &&
+						condition.Reason == "ClusterDataConflictSecondary" &&
+						condition.Message == "No PVC on the secondary should match the label selector" {
+
+						return true
+					}
+
+					return false
+				}, vrgtimeout, vrginterval).Should(BeTrue(), "Expected Secondary VolRep conflict detection")
+
+				// Validate exact conflict condition
+				vrg := secondaryVRG.getVRG()
+				validateVRGCondition(vrg, "NoClusterDataConflict", "False", "ClusterDataConflictSecondary")
+				conflictCondition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+				Expect(conflictCondition.Message).To(Equal("No PVC on the secondary should match the label selector"),
+					"Should have exact message from validateSecondaryPVCConflictForVolRep")
+
+				By("Successfully validated Secondary VolRep PVC conflict detection")
+			})
+
+			It("validates VolSync PVC conflict detection (CEPHFS Secondary)", func() {
+				// Secondary VRG with VolSync PVCs that don't match RDSpec should trigger conflict
+				template := createBasicVRGTemplate(ramendrv1alpha1.Secondary, true)
+
+				secondaryVRG := newVRGTestCaseCreate(1, template, false, false)
+				secondaryVRG.createNamespace()
+				secondaryVRG.createSC(template)
+				secondaryVRG.createVRC(template)
+				secondaryVRG.createPVCandPV(corev1.ClaimBound, corev1.VolumeBound)
+				secondaryVRG.createVRG()
+				DeferCleanup(secondaryVRG.cleanupVRGForPVCTests)
+
+				// Add UseVolSyncAnnotation to ensure PVCs are categorized as VolSync
+				Eventually(func() bool {
+					vrg := secondaryVRG.getVRG()
+					if vrg == nil {
+						return false
+					}
+
+					if vrg.Annotations == nil {
+						vrg.Annotations = make(map[string]string)
+					}
+					vrg.Annotations["drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"] = "true"
+
+					err := k8sClient.Update(context.TODO(), vrg)
+
+					return err == nil
+				}, vrgtimeout, vrginterval).Should(BeTrue(), "Should add VolSync annotation")
+
+				// Configure VRG for VolSync conflict detection
+				setupSecondaryVRGForConflict(secondaryVRG)
+
+				// Wait for Secondary VolSync conflict detection
+				Eventually(func() bool {
+					vrg := secondaryVRG.getVRG()
+					if vrg == nil {
+						return false
+					}
+					condition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+					if condition != nil &&
+						condition.Status == metav1.ConditionFalse &&
+						condition.Reason == "ClusterDataConflictSecondary" &&
+						strings.Contains(condition.Message, "replication destination") {
+
+						return true
+					}
+
+					return false
+				}, vrgtimeout, vrginterval).Should(BeTrue(), "Expected Secondary VolSync conflict detection")
+
+				// Validate exact conflict condition
+				vrg := secondaryVRG.getVRG()
+				validateVRGCondition(vrg, "NoClusterDataConflict", "False", "ClusterDataConflictSecondary")
+				conflictCondition := meta.FindStatusCondition(vrg.Status.Conditions, "NoClusterDataConflict")
+				Expect(conflictCondition.Message).To(ContainSubstring("replication destination"),
+					"Should have VolSync-specific conflict message")
+
+				By("Successfully validated Secondary VolSync PVC conflict detection")
+			})
+		})
+	})
 })
 
 type vrgTest struct {
@@ -1726,6 +1975,7 @@ type template struct {
 	s3Profiles             []string
 	volsyncEnabled         bool
 	scDisabled             bool
+	replicationState       ramendrv1alpha1.ReplicationState
 }
 
 // we want the math rand version here and not the crypto rand. This way we can debug the tests by repeating the seed.
@@ -2087,6 +2337,12 @@ func (v *vrgTest) createVRG() {
 	schedulingInterval := "1h"
 	replicationClassLabels := map[string]string{"protection": "ramen"}
 
+	// Default to Primary if replicationState is not set for backward compatibility
+	replicationState := v.template.replicationState
+	if replicationState == "" {
+		replicationState = ramendrv1alpha1.Primary
+	}
+
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: ramendrv1alpha1.GroupVersion.String(),
@@ -2098,7 +2354,7 @@ func (v *vrgTest) createVRG() {
 		},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 			PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},
-			ReplicationState: "primary",
+			ReplicationState: replicationState,
 			Async: &ramendrv1alpha1.VRGAsyncSpec{
 				SchedulingInterval:       schedulingInterval,
 				ReplicationClassSelector: metav1.LabelSelector{MatchLabels: replicationClassLabels},
@@ -2763,6 +3019,14 @@ func (v *vrgTest) cleanupVRG() {
 	Expect(err).To(BeNil(),
 		"failed to delete VRG %s", v.vrgName)
 	v.waitForVRCountToMatch(0)
+}
+
+func (v *vrgTest) cleanupVRGForPVCTests() {
+	vrg := v.getVRG()
+	err := k8sClient.Delete(context.TODO(), vrg)
+	Expect(err).To(BeNil(),
+		"failed to delete VRG %s", v.vrgName)
+	// Skip VR count verification for PVC tests due to test environment VR deletion limitations
 }
 
 func (v *vrgTest) cleanupSC() {
