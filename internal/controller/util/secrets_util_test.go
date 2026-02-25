@@ -8,11 +8,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	placementv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 
 	"github.com/ramendr/ramen/internal/controller/util"
@@ -30,20 +30,20 @@ var _ = Describe("Secrets_Util", func() {
 			"secretb",
 			"012345678901234567890123456789012345678901234567890000", // 54 chars
 		}
-		clusterNames                             = [clustersCount]string{"clusterEast", "clusterWest"}
-		policyName, plBindingName, plRuleName    [secretsCount]string
-		policyNameV, plBindingNameV, plRuleNameV [secretsCount]string
-		secrets                                  [secretsCount]*corev1.Secret
-		tstNamespace                             = "default" // 7 chars
-		veleroNS                                 = "default" // 7 chars
+		clusterNames                                = [clustersCount]string{"clusterEast", "clusterWest"}
+		policyName, plBindingName, placementName    [secretsCount]string
+		policyNameV, plBindingNameV, placementNameV [secretsCount]string
+		secrets                                     [secretsCount]*corev1.Secret
+		tstNamespace                                = "default" // 7 chars
+		veleroNS                                    = "default" // 7 chars
 	)
 
 	BeforeEach(func() {
 		for idx := range secretNames {
-			policyName[idx], plBindingName[idx], plRuleName[idx], _ = util.GeneratePolicyResourceNames(
+			policyName[idx], plBindingName[idx], placementName[idx], _ = util.GeneratePolicyResourceNames(
 				secretNames[idx],
 				util.SecretFormatRamen)
-			policyNameV[idx], plBindingNameV[idx], plRuleNameV[idx], _ = util.GeneratePolicyResourceNames(
+			policyNameV[idx], plBindingNameV[idx], placementNameV[idx], _ = util.GeneratePolicyResourceNames(
 				secretNames[idx],
 				util.SecretFormatVelero)
 			secrets[idx] = &corev1.Secret{
@@ -59,39 +59,57 @@ var _ = Describe("Secrets_Util", func() {
 		}
 	})
 
-	plRuleAbsent := func(plRuleName, namespace string) bool {
-		plRule := &plrv1.PlacementRule{}
+	placementAbsent := func(placementName, namespace string) bool {
+		placement := &placementv1beta1.Placement{}
 
 		return k8serrors.IsNotFound(k8sClient.Get(context.TODO(),
-			types.NamespacedName{Name: plRuleName, Namespace: namespace},
-			plRule))
+			types.NamespacedName{Name: placementName, Namespace: namespace},
+			placement))
 	}
 
-	plRuleContains := func(plRuleName, namespace string, clusters []string) bool {
-		plRule := &plrv1.PlacementRule{}
+	placementContains := func(placementName, namespace string, clusters []string) bool {
+		placement := &placementv1beta1.Placement{}
 		if err := k8sClient.Get(
 			context.TODO(),
-			types.NamespacedName{Name: plRuleName, Namespace: namespace},
-			plRule); err != nil {
+			types.NamespacedName{Name: placementName, Namespace: namespace},
+			placement); err != nil {
 			return false
+		}
+
+		// Extract cluster names from placement spec
+		if len(placement.Spec.Predicates) == 0 {
+			return false
+		}
+
+		// Check if MatchExpressions exists
+		if len(placement.Spec.Predicates[0].RequiredClusterSelector.LabelSelector.MatchExpressions) == 0 {
+			return false
+		}
+
+		currentClusters := []string{}
+		for _, req := range placement.Spec.Predicates[0].RequiredClusterSelector.LabelSelector.MatchExpressions {
+			if req.Key == "name" && req.Operator == metav1.LabelSelectorOpIn {
+				currentClusters = req.Values
+
+				break
+			}
 		}
 
 		for _, cluster := range clusters {
 			found := false
-			for _, specCluster := range plRule.Spec.Clusters {
-				if specCluster.Name == cluster {
+			for _, currentCluster := range currentClusters {
+				if currentCluster == cluster {
 					found = true
 
 					break
 				}
 			}
-
 			if !found {
 				return false
 			}
 		}
 
-		return true
+		return len(currentClusters) > 0 && len(clusters) > 0
 	}
 
 	policyContains := func(policyName, namespace string, secret *corev1.Secret) bool {
@@ -168,10 +186,14 @@ var _ = Describe("Secrets_Util", func() {
 			return false
 		}
 
-		secretFetched.StringData = map[string]string{
-			"AWS_ACCESS_KEY_ID":     value,
-			"AWS_SECRET_ACCESS_KEY": value,
+		// Using Data field to preserve finalizers and other metadata
+		if secretFetched.Data == nil {
+			secretFetched.Data = make(map[string][]byte)
 		}
+		secretFetched.Data["AWS_ACCESS_KEY_ID"] = []byte(value)
+		secretFetched.Data["AWS_SECRET_ACCESS_KEY"] = []byte(value)
+		// Clear StringData field to avoid conflicts
+		secretFetched.StringData = nil
 
 		return k8sClient.Update(context.TODO(), secretFetched) == nil
 	}
@@ -198,7 +220,7 @@ var _ = Describe("Secrets_Util", func() {
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
-				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[2], tstNamespace)).Should(BeTrue())
 			})
 		})
 		When("Secret namespace.name length exceeds limits by 1 (", func() {
@@ -211,7 +233,7 @@ var _ = Describe("Secrets_Util", func() {
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
-				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[2], tstNamespace)).Should(BeTrue())
 			})
 		})
 		When("Secret namespace.name length is exactly 63 characters", func() {
@@ -230,7 +252,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[2], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[2], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementName[2], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyName[2], tstNamespace, secrets[2])).Should(BeTrue())
 			})
 		})
@@ -244,7 +266,7 @@ var _ = Describe("Secrets_Util", func() {
 					util.SecretFormatRamen, "")).Should(HaveOccurred())
 			})
 			It("Does not create an associated secret policy", func() {
-				Expect(plRuleAbsent(plRuleName[0], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[0], tstNamespace)).Should(BeTrue())
 			})
 		})
 		When("Secret is present", func() {
@@ -263,7 +285,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -284,7 +306,7 @@ var _ = Describe("Secrets_Util", func() {
 				Eventually(secretAbsent(secretNames[0]), timeout, interval).Should(BeTrue())
 			})
 			It("Cleans up the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleName[0], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[0], tstNamespace)).Should(BeTrue())
 			})
 		})
 		When("Secret is recreated", func() {
@@ -303,7 +325,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -323,7 +345,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -340,7 +362,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[0:])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[0:])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -361,11 +383,11 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[1], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates a associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[1], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementName[1], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyName[1], tstNamespace, secrets[1])).Should(BeTrue())
 			})
 			It("Retains the associated policy with the older secret", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[0:])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[0:])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -383,7 +405,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerAbsent(secretNames[2], util.SecretFormatRamen)).To(BeTrue())
 			})
 			It("Cleans up the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleName[2], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[2], tstNamespace)).Should(BeTrue())
 			})
 			It("Does not block deletion of the secret", func() {
 				By("Delete the secret")
@@ -407,7 +429,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Updates the associated policy for the secret excuding the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[1:2])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[1:2])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -423,7 +445,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Updates the associated policy for the secret excuding the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[1:2])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[1:2])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -439,7 +461,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerAbsent(secretNames[0], util.SecretFormatRamen)).To(BeTrue())
 			})
 			It("Cleans up the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleName[0], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[0], tstNamespace)).Should(BeTrue())
 			})
 		})
 		When("The last cluster is removed again from the secret", func() {
@@ -454,7 +476,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerAbsent(secretNames[0], util.SecretFormatRamen)).To(BeTrue())
 			})
 			It("Cleans up the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleName[0], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[0], tstNamespace)).Should(BeTrue())
 			})
 			It("Does not block deletion of the secret", func() {
 				By("Delete the secret")
@@ -472,7 +494,7 @@ var _ = Describe("Secrets_Util", func() {
 					util.SecretFormatRamen)).To(Succeed())
 			})
 			It("Does not create the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleName[0]+"-missing", tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[0]+"-missing", tstNamespace)).Should(BeTrue())
 			})
 		})
 		// Second policy
@@ -492,7 +514,7 @@ var _ = Describe("Secrets_Util", func() {
 				Eventually(secretAbsent(secretNames[1]), timeout, interval).Should(BeTrue())
 			})
 			It("Cleans up the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleName[1], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[1], tstNamespace)).Should(BeTrue())
 			})
 		})
 	})
@@ -514,7 +536,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
 			})
 			It("Creates an associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyName[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -532,7 +554,7 @@ var _ = Describe("Secrets_Util", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatVelero)).Should(BeTrue())
 			})
 			It("Creates an associated policy for the secret including the cluster", func() {
-				Expect(plRuleContains(plRuleNameV[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementContains(placementNameV[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
 				Expect(policyContains(policyNameV[0], tstNamespace, secrets[0])).Should(BeTrue())
 			})
 		})
@@ -550,8 +572,8 @@ var _ = Describe("Secrets_Util", func() {
 					veleroNS)).Should(HaveOccurred())
 			})
 			It("Cleans up the associated velero policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleNameV[0], tstNamespace)).Should(BeTrue())
-				Expect(plRuleContains(plRuleName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
+				Expect(placementAbsent(placementNameV[0], tstNamespace)).Should(BeTrue())
+				Expect(placementContains(placementName[0], tstNamespace, clusterNames[:1])).Should(BeTrue())
 			})
 			It("Continues protecting the secret with the ramen namespace finalizer", func() {
 				Expect(finalizerPresent(secretNames[0], util.SecretFormatRamen)).Should(BeTrue())
@@ -570,8 +592,8 @@ var _ = Describe("Secrets_Util", func() {
 				Eventually(secretAbsent(secretNames[0]), timeout, interval).Should(BeTrue())
 			})
 			It("Cleans up the associated policy for the secret", func() {
-				Expect(plRuleAbsent(plRuleNameV[0], tstNamespace)).Should(BeTrue())
-				Expect(plRuleAbsent(plRuleName[0], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementNameV[0], tstNamespace)).Should(BeTrue())
+				Expect(placementAbsent(placementName[0], tstNamespace)).Should(BeTrue())
 			})
 		})
 	})

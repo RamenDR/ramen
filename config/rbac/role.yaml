@@ -478,6 +478,18 @@ rules:
   - get
   - update
 - apiGroups:
+  - cluster.open-cluster-management.io
+  resources:
+  - placements
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - policy.open-cluster-management.io
   resources:
   - placementbindings
