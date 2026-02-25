@@ -205,7 +205,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.ConfigurationPolicy, error) {
 	secretData := map[string]interface{}{}
 	for key := range sp.SourceSecret.Data {
-		secretData[key] = fmt.Sprintf("{{hub fromSecret \"%s\" \"%s\" \"%s\" hub}}",
+		secretData[key] = fmt.Sprintf("{{hub (index (lookup \"v1\" \"Secret\" \"%s\" \"%s\").data \"%s\") | base64dec hub}}",
 			sp.SourceSecret.GetNamespace(), sp.SourceSecret.GetName(), key)
 	}
 
@@ -217,8 +217,8 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 			"name":      sp.DestSecretName,
 			"namespace": sp.DestSecretNamespace,
 		},
-		"type": "Opaque",
-		"data": secretData,
+		"type":       "Opaque",
+		"stringData": secretData,
 	}
 
 	secretObjDefinitionRaw, err := json.Marshal(secretObjDefinition)

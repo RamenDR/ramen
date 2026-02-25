@@ -181,7 +181,8 @@ var _ = Describe("Secret_propagator", func() {
 							Name      string `json:"name"`
 							Namespace string `json:"namespace"`
 						} `json:"metadata"`
-						Data map[string]string `json:"data"`
+						Data       map[string]string `json:"data"`
+						StringData map[string]string `json:"stringData"`
 					}
 
 					embeddedSecret := secretDefinition{}
@@ -192,8 +193,8 @@ var _ = Describe("Secret_propagator", func() {
 					Expect(embeddedSecret.Metadata.Name).To(Equal(destSecName))
 					Expect(embeddedSecret.Metadata.Namespace).To(Equal(destSecNamespace))
 
-					Expect(embeddedSecret.Data["abc"]).To(ContainSubstring("hub fromSecret"))
-					Expect(embeddedSecret.Data["123"]).To(ContainSubstring("hub fromSecret"))
+					Expect(embeddedSecret.StringData["abc"]).To(ContainSubstring("index (lookup"))
+					Expect(embeddedSecret.StringData["123"]).To(ContainSubstring("index (lookup"))
 
 					//
 					// Verify created placementRule
