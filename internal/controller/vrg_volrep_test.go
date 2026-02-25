@@ -3449,3 +3449,207 @@ func genVGRCLabels(replicationID, storageID, protectionKey string) map[string]st
 
 	return vrcLabel
 }
+
+var _ = Describe("VRG S3 Profile Change Detection - isPVAndPVCDataInS3", func() {
+	var fakeStorer *fakeObjectStorer
+
+	BeforeEach(func() {
+		fakeStorer = &fakeObjectStorer{
+			name:       "test-storer",
+			bucketName: "test-bucket",
+			objects:    make(map[string]interface{}),
+		}
+	})
+
+	Context("FakeObjectStorer ListKeys", func() {
+		When("PV/PVC data exists in S3", func() {
+			It("should find keys matching the prefix", func() {
+				s3KeyPrefix := "test-ns/test-vrg"
+				pvKey := s3KeyPrefix + "/PersistentVolume.test-pv"
+				pvcKey := s3KeyPrefix + "/PersistentVolumeClaim.test-ns.test-pvc"
+
+				// Store dummy data
+				fakeStorer.objects[pvKey] = "dummy-pv"
+				fakeStorer.objects[pvcKey] = "dummy-pvc"
+
+				keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(keys).To(ContainElement(pvKey))
+				Expect(keys).To(ContainElement(pvcKey))
+				Expect(keys).To(HaveLen(2))
+			})
+		})
+
+		When("no S3 data exists under prefix", func() {
+			It("should return empty list", func() {
+				s3KeyPrefix := "test-ns/test-vrg"
+
+				keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(keys).To(BeEmpty())
+			})
+		})
+
+		When("multiple prefixes exist but only matching prefix requested", func() {
+			It("should only return keys for requested prefix", func() {
+				prefix1 := "ns1/vrg1"
+				prefix2 := "ns2/vrg2"
+
+				// Store in different prefixes
+				fakeStorer.objects[prefix1+"/pv1"] = "data1"
+				fakeStorer.objects[prefix2+"/pv2"] = "data2"
+
+				// List only prefix1
+				keys, err := fakeStorer.ListKeys(prefix1)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(keys).To(ConsistOf(prefix1 + "/pv1"))
+				Expect(keys).NotTo(ContainElement(prefix2 + "/pv2"))
+			})
+		})
+	})
+
+	Context("S3 Profile Change Detection - Scenario", func() {
+		It("should detect when data missing after profile change", func() {
+			s3KeyPrefix := "test-ns/test-vrg"
+			pvKey := s3KeyPrefix + "/PersistentVolume.test-pv"
+			pvcKey := s3KeyPrefix + "/PersistentVolumeClaim.test-ns.test-pvc"
+
+			// Step 1: Data exists in original S3 profile
+			fakeStorer.objects[pvKey] = "pv-data"
+			fakeStorer.objects[pvcKey] = "pvc-data"
+
+			keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(keys).To(HaveLen(2))
+
+			// Step 2: User changes S3 profile in config map
+			// New objectStorer is created (empty)
+			newStorer := &fakeObjectStorer{
+				name:       "new-storer",
+				bucketName: "new-bucket",
+				objects:    make(map[string]interface{}),
+			}
+
+			// Step 3: Check if data exists in new profile
+			keys, err = newStorer.ListKeys(s3KeyPrefix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(keys).To(BeEmpty()) // Data missing in new profile
+
+			// This missing data detection would trigger isPVAndPVCDataInS3()
+			// to return false, causing isArchivedAlready() to return false,
+			// which triggers re-upload of PV/PVC on next reconcile
+		})
+	})
+})
+
+var _ = Describe("VRG S3 Profile Change Detection - isVGRAndVGRCDataInS3", func() {
+	var fakeStorer *fakeObjectStorer
+
+	BeforeEach(func() {
+		fakeStorer = &fakeObjectStorer{
+			name:       "test-storer",
+			bucketName: "test-bucket",
+			objects:    make(map[string]interface{}),
+		}
+	})
+
+	Context("VGR/VGRC data existence checks", func() {
+		When("VGR and VGRC data exists in S3", func() {
+			It("should find keys matching the VGR/VGRC prefix", func() {
+				s3KeyPrefix := "test-ns/test-vrg"
+				vgrKey := s3KeyPrefix + "/VolumeGroupReplication.test-vgr"
+				vgrcKey := s3KeyPrefix + "/VolumeGroupReplicationContent.test-vgrc"
+
+				// Store VGR/VGRC data
+				fakeStorer.objects[vgrKey] = "dummy-vgr"
+				fakeStorer.objects[vgrcKey] = "dummy-vgrc"
+
+				keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(keys).To(ContainElement(vgrKey))
+				Expect(keys).To(ContainElement(vgrcKey))
+				Expect(keys).To(HaveLen(2))
+			})
+		})
+
+		When("VGR/VGRC data does not exist in S3", func() {
+			It("should return empty list", func() {
+				s3KeyPrefix := "test-ns/test-vrg"
+
+				keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(keys).To(BeEmpty())
+			})
+		})
+
+		When("mixed PV/PVC and VGR/VGRC data exists", func() {
+			It("should retrieve all objects under the prefix", func() {
+				s3KeyPrefix := "test-ns/test-vrg"
+
+				// Store mixed data
+				pvKey := s3KeyPrefix + "/PersistentVolume.test-pv"
+				pvcKey := s3KeyPrefix + "/PersistentVolumeClaim.test-ns.test-pvc"
+				vgrKey := s3KeyPrefix + "/VolumeGroupReplication.test-vgr"
+				vgrcKey := s3KeyPrefix + "/VolumeGroupReplicationContent.test-vgrc"
+
+				fakeStorer.objects[pvKey] = "pv-data"
+				fakeStorer.objects[pvcKey] = "pvc-data"
+				fakeStorer.objects[vgrKey] = "vgr-data"
+				fakeStorer.objects[vgrcKey] = "vgrc-data"
+
+				keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(keys).To(HaveLen(4))
+				Expect(keys).To(ContainElement(pvKey))
+				Expect(keys).To(ContainElement(pvcKey))
+				Expect(keys).To(ContainElement(vgrKey))
+				Expect(keys).To(ContainElement(vgrcKey))
+			})
+		})
+	})
+
+	Context("VGR/VGRC S3 Profile Change Detection", func() {
+		It("should detect when VGR/VGRC data missing after profile change", func() {
+			s3KeyPrefix := "test-ns/test-vrg"
+			vgrKey := s3KeyPrefix + "/VolumeGroupReplication.test-vgr"
+			vgrcKey := s3KeyPrefix + "/VolumeGroupReplicationContent.test-vgrc"
+
+			// Step 1: Data exists in original S3 profile
+			fakeStorer.objects[vgrKey] = "vgr-data"
+			fakeStorer.objects[vgrcKey] = "vgrc-data"
+
+			keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(keys).To(HaveLen(2))
+
+			// Step 2: User changes S3 profile in config map
+			newStorer := &fakeObjectStorer{
+				name:       "new-storer",
+				bucketName: "new-bucket",
+				objects:    make(map[string]interface{}),
+			}
+
+			// Step 3: Check if data exists in new profile
+			keys, err = newStorer.ListKeys(s3KeyPrefix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(keys).To(BeEmpty()) // Data missing in new profile
+
+			// This would trigger isVGRAndVGRCDataInS3() to return false,
+			// causing isVGRandVGRCArchivedAlready() to return false,
+			// which triggers re-upload of VGR/VGRC on next reconcile
+		})
+
+		It("should handle partial data (one component missing)", func() {
+			s3KeyPrefix := "test-ns/test-vrg"
+			vgrKey := s3KeyPrefix + "/VolumeGroupReplication.test-vgr"
+			// Only VGR exists, VGRC is missing
+
+			fakeStorer.objects[vgrKey] = "vgr-data"
+
+			keys, err := fakeStorer.ListKeys(s3KeyPrefix)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(keys).To(HaveLen(1))
+			Expect(keys).To(ContainElement(vgrKey))
+		})
+	})
+})

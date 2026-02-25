@@ -631,7 +631,100 @@ func (v *VRGInstance) isArchivedAlready(pvc *corev1.PersistentVolumeClaim, log l
 		return false
 	}
 
+	// Both annotations are present and correct. Now check if S3 data actually exists.
+	// If S3 data is missing (e.g., due to S3 profile change), we should return false to
+	// trigger re-upload.
+	if !v.isPVAndPVCDataInS3(pvc, log) {
+		log.Info("PV/PVC data not found in S3 stores, will trigger re-upload", "pvc", pvc.Name)
+
+		return false
+	}
+
 	return true
+}
+
+// isDataInS3Stores checks if any of the expected keys exist in any configured S3 stores.
+// This is a generic helper for detecting S3 data existence across profiles.
+// Returns true if any expected key is found in any S3 store.
+func (v *VRGInstance) isDataInS3Stores(keyPrefix string, expectedKeys []string, log logr.Logger, dataType string) bool {
+	// Check if data exists in any of the S3 profiles
+	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
+		if s3ProfileName == NoS3StoreAvailable {
+			continue
+		}
+
+		if v.checkDataInProfile(s3ProfileName, keyPrefix, expectedKeys, log, dataType) {
+			return true
+		}
+	}
+
+	log.Info("No "+dataType+" data found in any S3 profile for VRG", "vrgNamespacedName", v.namespacedName)
+
+	return false
+}
+
+// checkDataInProfile checks if any expected key exists in a specific S3 profile.
+// Returns true if any expected key is found, false otherwise.
+func (v *VRGInstance) checkDataInProfile(
+	s3ProfileName string,
+	keyPrefix string,
+	expectedKeys []string,
+	log logr.Logger,
+	dataType string,
+) bool {
+	objectStore, err := v.getObjectStorer(s3ProfileName)
+	if err != nil {
+		log.Info("Failed to get object store for S3 profile, will check next profile",
+			"profile", s3ProfileName, "error", err)
+
+		return false
+	}
+
+	// List keys in this store to see if any of the expected keys exist
+	keys, err := objectStore.ListKeys(keyPrefix)
+	if err != nil {
+		log.Info("Failed to list keys in S3 profile, will check next profile",
+			"profile", s3ProfileName, "error", err)
+
+		return false
+	}
+
+	// Check if any of the expected keys exist in this profile
+	for _, expectedKey := range expectedKeys {
+		for _, existingKey := range keys {
+			if existingKey == expectedKey {
+				log.Info("Found "+dataType+" data in S3 profile", "profile", s3ProfileName, "key", expectedKey)
+
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// isPVAndPVCDataInS3 checks if PV and PVC data exists in any of the configured S3 stores.
+// This is used to detect when S3 profile has changed and data needs to be re-uploaded.
+// Returns true only if data is found in at least one S3 store.
+func (v *VRGInstance) isPVAndPVCDataInS3(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		log.Error(err, "Failed to get PV for checking S3 data existence")
+
+		return false
+	}
+
+	keyPrefix := v.s3KeyPrefix()
+	pvcNamespacedName := types.NamespacedName{Namespace: pvc.Namespace, Name: pvc.Name}
+	pvcNamespacedNameString := pvcNamespacedName.String()
+
+	// Keys that should exist if data has been uploaded
+	expectedKeys := []string{
+		TypedObjectKey(keyPrefix, pv.Name, corev1.PersistentVolume{}),
+		TypedObjectKey(keyPrefix, pvcNamespacedNameString, corev1.PersistentVolumeClaim{}),
+	}
+
+	return v.isDataInS3Stores(keyPrefix, expectedKeys, log, "PV/PVC")
 }
 
 func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bool {
