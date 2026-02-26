@@ -52,8 +52,6 @@ const NoS3StoreAvailable = "NoS3"
 
 var ControllerType ramendrv1alpha1.ControllerType
 
-var cachedRamenConfigFileName string
-
 func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv1alpha1.RamenConfig {
 	var leaderElectionResourceName string
 
@@ -154,37 +152,6 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 	}
 }
 
-// Read the RamenConfig file mounted in the local file system.  This file is
-// expected to be cached in the local file system.  If reading of the
-// RamenConfig file for every S3 store profile access turns out to be more
-// expensive, we may need to enhance this logic to load it only when
-// RamenConfig has changed.
-func ReadRamenConfigFile(log logr.Logger) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
-	if cachedRamenConfigFileName == "" {
-		err = fmt.Errorf("config file not specified")
-
-		return
-	}
-
-	fileContents, err := os.ReadFile(cachedRamenConfigFileName)
-	if err != nil {
-		err = fmt.Errorf("unable to load the config file %s: %w",
-			cachedRamenConfigFileName, err)
-
-		return
-	}
-
-	err = yaml.Unmarshal(fileContents, &ramenConfig)
-	if err != nil {
-		err = fmt.Errorf("unable to marshal the config file %s: %w",
-			cachedRamenConfigFileName, err)
-
-		return
-	}
-
-	return
-}
-
 func GetRamenConfigS3StoreProfile(ctx context.Context, apiReader client.Reader, profileName string) (
 	s3StoreProfile ramendrv1alpha1.S3StoreProfile, err error,
 ) {
@@ -248,11 +215,10 @@ func s3StoreProfileFormatCheck(s3StoreProfile *ramendrv1alpha1.S3StoreProfile) (
 	return nil
 }
 
-func getMaxConcurrentReconciles(log logr.Logger) int {
+func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	const defaultMaxConcurrentReconciles = 1
 
-	ramenConfig, err := ReadRamenConfigFile(log)
-	if err != nil {
+	if ramenConfig == nil {
 		return defaultMaxConcurrentReconciles
 	}
 
