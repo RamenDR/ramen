@@ -84,7 +84,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 			RateLimiter:             rateLimiter,
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{},

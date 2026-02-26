@@ -151,14 +151,16 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) error {
 	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDPrivateName) {
 		r.volumeGroupSnapshotCRsAreWatched = true
 	}
 
 	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 		}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{}).

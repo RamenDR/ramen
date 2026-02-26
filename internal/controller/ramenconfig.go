@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -50,9 +51,71 @@ var ControllerType ramendrv1alpha1.ControllerType
 
 var cachedRamenConfigFileName string
 
+func defaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv1alpha1.RamenConfig {
+	cfg := &ramendrv1alpha1.RamenConfig{}
+
+	cfg.MaxConcurrentReconciles = 50
+	cfg.TypeMeta.APIVersion = ramendrv1alpha1.GroupVersion.String()
+	cfg.TypeMeta.Kind = "RamenConfig"
+
+	cfg.Health.HealthProbeBindAddress = ":8081"
+	cfg.Metrics.BindAddress = "127.0.0.1:9289"
+
+	if cfg.LeaderElection == nil {
+		cfg.LeaderElection = &configv1alpha1.LeaderElectionConfiguration{}
+	}
+
+	leaderElect := true
+	cfg.LeaderElection.LeaderElect = &leaderElect
+
+	switch controllerType {
+	case ramendrv1alpha1.DRHubType:
+		cfg.LeaderElection.ResourceName = HubLeaderElectionResourceName
+	case ramendrv1alpha1.DRClusterType:
+		cfg.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
+	default:
+		panic(fmt.Sprintf("unknown controller type %q", controllerType))
+	}
+
+	cfg.RamenControllerType = controllerType
+
+	cfg.DrClusterOperator.ChannelName = drClusterOperatorChannelNameDefault
+	cfg.DrClusterOperator.PackageName = drClusterOperatorPackageNameDefault
+	cfg.DrClusterOperator.CatalogSourceName = drClusterOperatorCatalogSourceNameDefault
+	cfg.DrClusterOperator.DeploymentAutomationEnabled = true
+	cfg.DrClusterOperator.S3SecretDistributionEnabled = true
+
+	cfg.KubeObjectProtection.VeleroNamespaceName = VeleroNamespaceNameDefault
+	cfg.VolSync.DestinationCopyMethod = "Direct"
+	cfg.VolSync.Disabled = false
+
+	cfg.RamenOpsNamespace = "ramen-ops"
+	cfg.VolumeUnprotectionEnabled = true
+
+	cfg.MultiNamespace.FeatureEnabled = true
+	cfg.MultiNamespace.VolsyncSupported = true
+
+	return cfg
+}
+
 func LoadControllerConfig(configFile string,
 	log logr.Logger,
 ) (ramenConfig *ramendrv1alpha1.RamenConfig) {
+	controllerType := os.Getenv("RAMEN_CONTROLLER_TYPE")
+	if controllerType != "" {
+		ct := ramendrv1alpha1.ControllerType(os.Getenv("RAMEN_CONTROLLER_TYPE"))
+		if ct != ramendrv1alpha1.DRHubType && ct != ramendrv1alpha1.DRClusterType {
+			panic(fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+				ct, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType))
+		}
+
+		log.Info("loading Ramen configuration from defaults")
+
+		ramenConfig = defaultRamenConfig(ct)
+
+		return
+	}
+
 	if configFile == "" {
 		log.Info("Ramen config file not specified")
 
@@ -188,11 +251,10 @@ func s3StoreProfileFormatCheck(s3StoreProfile *ramendrv1alpha1.S3StoreProfile) (
 	return nil
 }
 
-func getMaxConcurrentReconciles(log logr.Logger) int {
+func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	const defaultMaxConcurrentReconciles = 1
 
-	ramenConfig, err := ReadRamenConfigFile(log)
-	if err != nil {
+	if ramenConfig == nil {
 		return defaultMaxConcurrentReconciles
 	}
 

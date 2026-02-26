@@ -143,7 +143,7 @@ func newManager(options *ctrl.Options) (ctrl.Manager, error) {
 
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
-		setupReconcilersHub(mgr)
+		setupReconcilersHub(mgr, ramenConfig)
 	}
 
 	if controllers.ControllerType == ramendrv1alpha1.DRClusterType {
@@ -196,7 +196,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
 			Log:    ctrl.Log.WithName("rgd"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, ramenConfig); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
 			os.Exit(1)
 		}
@@ -206,14 +206,14 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
 			Log:       ctrl.Log.WithName("rgs"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, ramenConfig); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
 			os.Exit(1)
 		}
 	}
 }
 
-func setupReconcilersHub(mgr ctrl.Manager) {
+func setupReconcilersHub(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if err := (&controllers.DRPolicyReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
@@ -255,7 +255,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 		Scheme:         mgr.GetScheme(),
 		Callback:       func(string, string) {},
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, ramenConfig); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)
 	}
