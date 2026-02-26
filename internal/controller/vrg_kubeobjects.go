@@ -557,18 +557,6 @@ func (v *VRGInstance) getVRGFromS3Profile(s3ProfileName string) (*ramen.VolumeRe
 	return vrg, nil
 }
 
-func (v *VRGInstance) skipIfS3ProfileIsForTest() bool {
-	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		if s3ProfileName == NoS3StoreAvailable {
-			v.log.Info("NoS3 available to fetch")
-
-			return true
-		}
-	}
-
-	return false
-}
-
 func (v *VRGInstance) kubeObjectsRecoverFromS3(result *ctrl.Result, accessor s3StoreAccessor) error {
 	s3ProfileName := accessor.S3ProfileName
 
@@ -600,14 +588,8 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 	}
 
 	if len(v.s3StoreAccessors) == 0 {
-		v.log.Info("No S3 profiles configured")
+		v.log.Info("No S3 profiles configured, skipping kube objects recovery")
 
-		result.Requeue = true
-
-		return fmt.Errorf("no S3Profiles configured")
-	}
-
-	if v.skipIfS3ProfileIsForTest() {
 		return nil
 	}
 
