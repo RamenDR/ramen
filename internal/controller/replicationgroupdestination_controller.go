@@ -106,7 +106,9 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manager,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) error {
 	vsMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			if rgdName, ok := obj.GetLabels()[util.RGDOwnerLabel]; ok {
@@ -121,7 +123,7 @@ func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manage
 
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 		}).
 		Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		For(&ramendrv1alpha1.ReplicationGroupDestination{}).

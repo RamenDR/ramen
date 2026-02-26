@@ -594,7 +594,9 @@ func (r *DRPlacementControlReconciler) FilterDRPCsForDRPolicyUpdate(drpolicy *rm
 }
 
 //nolint:funlen
-func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.Manager) error {
+func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.Manager,
+	ramenConfig *rmn.RamenConfig,
+) error {
 	mwPred := ManifestWorkPredicateFunc()
 
 	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
@@ -682,7 +684,7 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	options := ctrlcontroller.Options{
-		MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+		MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 	}
 	if r.RateLimiter != nil {
 		options.RateLimiter = *r.RateLimiter
