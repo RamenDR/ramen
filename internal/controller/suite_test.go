@@ -397,7 +397,7 @@ var _ = BeforeSuite(func() {
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		RateLimiter:    &rateLimiter,
 	})
-	err = drpcReconciler.SetupWithManager(k8sManager)
+	err = drpcReconciler.SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())

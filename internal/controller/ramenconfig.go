@@ -251,11 +251,10 @@ func s3StoreProfileFormatCheck(s3StoreProfile *ramendrv1alpha1.S3StoreProfile) (
 	return nil
 }
 
-func getMaxConcurrentReconciles(log logr.Logger) int {
+func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	const defaultMaxConcurrentReconciles = 1
 
-	ramenConfig, err := ReadRamenConfigFile(log)
-	if err != nil {
+	if ramenConfig == nil {
 		return defaultMaxConcurrentReconciles
 	}
 
