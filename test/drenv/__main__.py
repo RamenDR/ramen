@@ -150,21 +150,21 @@ def parse_args():
     add_command(sp, "setup", do_setup, help="setup host for drenv")
     add_command(sp, "cleanup", do_cleanup, help="cleanup host")
 
-    # Registry cache commands.
+    # Sub commands.
 
-    add_registry_cache_commands(sp)
+    add_registry_cache_command(sp)
 
     return parser.parse_args()
 
 
-def add_registry_cache_commands(sp):
+def add_registry_cache_command(sp):
     p = sp.add_parser("registry-cache", help="manage registry cache")
     sp = p.add_subparsers(dest="command", required=True)
 
     p = add_command(
         sp,
         "stats",
-        do_registry_cache_stats,
+        registry.show_stats,
         help="show cache statistics",
         envfile=False,
     )
@@ -178,7 +178,7 @@ def add_registry_cache_commands(sp):
     add_command(
         sp,
         "remove",
-        do_registry_cache_remove,
+        registry.remove_containers,
         help="remove cache containers",
         envfile=False,
     )
@@ -297,14 +297,6 @@ def do_cleanup(args):
         provider = providers.get(name)
         provider.cleanup()
     ssh.cleanup()
-
-
-def do_registry_cache_stats(args):
-    registry.show_stats(args.output)
-
-
-def do_registry_cache_remove(args):
-    registry.remove_containers()
 
 
 def do_clear(args):
