@@ -18,10 +18,6 @@ patches:
 generatorOptions:
   disableNameSuffixHash: true
 
-configMapGenerator:
-- files:
-  - ramen_manager_config.yaml
-  name: operator-config
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
