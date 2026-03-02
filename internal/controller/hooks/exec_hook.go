@@ -57,6 +57,13 @@ func (e ExecHook) Execute(log logr.Logger) error {
 		return fmt.Errorf("error getting pods for exec hook: %w", err)
 	}
 
+	// If no pods are found return an error.
+	// This will cause the controller to retry until pods become available
+	if len(execPods) == 0 {
+		return fmt.Errorf("no running pods found for exec hook %s in namespace %s with selectResource %s",
+			e.Hook.Name, e.Hook.Namespace, e.Hook.SelectResource)
+	}
+
 	inverseOp := e.Hook.Op.InverseOp
 
 	failedPod, err := e.executeCommands(execPods, log)
