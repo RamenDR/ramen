@@ -21,6 +21,7 @@ setuptools.setup(
         "drenv",
         "drenv.providers",
         "drenv.providers.lima",
+        "drenv.providers.minikube",
     ],
     include_package_data=True,
     install_requires=[
