@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
@@ -263,6 +264,55 @@ func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	}
 
 	return ramenConfig.MaxConcurrentReconciles
+}
+
+func GetOrCreateConfigMap(
+	ctx context.Context,
+	c client.Client,
+	r client.Reader,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
+	configMapName := HubOperatorConfigMapName
+	if ControllerType != ramendrv1alpha1.DRHubType {
+		configMapName = DrClusterOperatorConfigMapName
+	}
+
+	configMap = &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      configMapName,
+	}
+
+	//nolint:nestif
+	if err = r.Get(ctx, key, configMap); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return
+		}
+
+		var newCM *corev1.ConfigMap
+
+		newCM, err = ConfigMapNew(key.Namespace, key.Name, defaultRamenConfig)
+		if err != nil {
+			return
+		}
+
+		if err = c.Create(ctx, newCM); err != nil {
+			if !k8serrors.IsAlreadyExists(err) {
+				return
+			}
+		}
+
+		if err = r.Get(ctx, key, configMap); err != nil {
+			return
+		}
+	}
+
+	// Parse and return the config from the CM we ended up with
+	ramenConfig = &ramendrv1alpha1.RamenConfig{}
+	err = yaml.Unmarshal([]byte(configMap.Data[ConfigMapRamenConfigKeyName]), ramenConfig)
+
+	return
 }
 
 func ConfigMapNew(
