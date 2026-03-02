@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
@@ -21,6 +22,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	rameninternalconfig "github.com/ramendr/ramen/internal/config"
 )
 
 const (
@@ -229,6 +231,113 @@ func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	return ramenConfig.MaxConcurrentReconciles
 }
 
+func ramenOperatorConfigMapName() string {
+	switch ControllerType {
+	case ramendrv1alpha1.DRHubType:
+		return HubOperatorConfigMapName
+	case ramendrv1alpha1.DRClusterType:
+		return DrClusterOperatorConfigMapName
+	default:
+		panic(fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+			ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType))
+	}
+}
+
+func CreateOrUpdateConfigMap(
+	ctx context.Context,
+	c client.Client,
+	r client.Reader,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	if defaultRamenConfig == nil {
+		return nil, fmt.Errorf("defaultRamenConfig must not be nil")
+	}
+
+	configMapName := ramenOperatorConfigMapName()
+
+	configMap := &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      configMapName,
+	}
+
+	if err := r.Get(ctx, key, configMap); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		return configMapCreate(ctx, c, key.Name, defaultRamenConfig, log)
+	}
+
+	defaultYAML, err := yaml.Marshal(defaultRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	userYAML := []byte(configMap.Data[ConfigMapRamenConfigKeyName])
+
+	merged, err := rameninternalconfig.Merge(defaultYAML, userYAML)
+	if err != nil {
+		return nil, err
+	}
+
+	return configMapUpdate(ctx, c, configMap, &merged, log)
+}
+
+func configMapCreate(
+	ctx context.Context,
+	c client.Client,
+	configMapName string,
+	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	userKey := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      configMapName,
+	}
+
+	newConfigMap, err := ConfigMapNew(userKey.Namespace, userKey.Name, desiredRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = c.Create(ctx, newConfigMap); err != nil {
+		return nil, err
+	}
+
+	log.Info("created configmap", "namespace", newConfigMap.Namespace, "name", newConfigMap.Name)
+
+	return desiredRamenConfig, nil
+}
+
+func configMapUpdate(
+	ctx context.Context,
+	c client.Client,
+	userConfigMap *corev1.ConfigMap,
+	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	desiredBytes, err := yaml.Marshal(desiredRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if userConfigMap.Data == nil {
+		userConfigMap.Data = map[string]string{}
+	}
+
+	userConfigMap.Data[ConfigMapRamenConfigKeyName] = string(desiredBytes)
+	if err := c.Update(ctx, userConfigMap); err != nil {
+		return nil, err
+	}
+
+	log.Info("updated configmap (merged onto defaults)",
+		"namespace", userConfigMap.Namespace, "name", userConfigMap.Name)
+
+	return desiredRamenConfig, nil
+}
+
 func ConfigMapNew(
 	namespaceName string,
 	name string,
@@ -255,10 +364,7 @@ func ConfigMapGet(
 	ctx context.Context,
 	apiReader client.Reader,
 ) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
-	configMapName := HubOperatorConfigMapName
-	if ControllerType != ramendrv1alpha1.DRHubType {
-		configMapName = DrClusterOperatorConfigMapName
-	}
+	configMapName := ramenOperatorConfigMapName()
 
 	configMap = &corev1.ConfigMap{}
 	if err = apiReader.Get(
