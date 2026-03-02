@@ -198,12 +198,12 @@ def add_command(sp, name, func, help=None, envfile=True):
             metavar="PREFIX",
             help="prefix profile names",
         )
-        parser.add_argument("filename", help="path to environment file")
+        parser.add_argument("envfile", help="path to environment file")
     return parser
 
 
 def load_env(args):
-    with open(args.filename) as f:
+    with open(args.envfile) as f:
         return envfile.load(f, name_prefix=args.name_prefix)
 
 
