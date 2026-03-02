@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
@@ -7,7 +5,6 @@
 Generate markdown report from stress test results.
 """
 
-import argparse
 import io
 import json
 import os
@@ -15,22 +12,10 @@ import statistics
 import sys
 
 
-def main():
-    args = parse_args()
+def command(args):
     test = load_test(args.directory)
     report = format_report(test)
     sys.stdout.write(report)
-
-
-def parse_args():
-    p = argparse.ArgumentParser(
-        description="Generate markdown report from stress test results"
-    )
-    p.add_argument(
-        "directory",
-        help="directory containing test.json",
-    )
-    return p.parse_args()
 
 
 def load_test(directory):
@@ -118,7 +103,3 @@ def format_report(test):
     out.write(f"| Total time | {stats['time']:.1f} s |\n")
 
     return out.getvalue()
-
-
-if __name__ == "__main__":
-    main()

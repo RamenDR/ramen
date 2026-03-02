@@ -1,13 +1,10 @@
-#!/usr/bin/env python3
-
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Compare stress test results from multiple runs.
+Compare stress test results from 2 runs.
 """
 
-import argparse
 import io
 import json
 import os
@@ -15,24 +12,12 @@ import statistics
 import sys
 
 
-def main():
-    args = parse_args()
-    tests = [load_test(d) for d in args.directories]
-    labels = extract_labels(args.directories)
+def command(args):
+    directories = [args.before, args.after]
+    tests = [load_test(d) for d in directories]
+    labels = extract_labels(directories)
     report = format_comparison(tests, labels)
     sys.stdout.write(report)
-
-
-def parse_args():
-    p = argparse.ArgumentParser(
-        description="Compare stress test results from multiple runs"
-    )
-    p.add_argument(
-        "directories",
-        nargs="+",
-        help="directories containing test.json",
-    )
-    return p.parse_args()
 
 
 def load_test(directory):
@@ -80,7 +65,9 @@ def compute_stats(test):
 
 
 def format_comparison(tests, labels):
-    """Format comparison of multiple test results as markdown."""
+    """
+    Format comparison of multiple test results as markdown.
+    """
     out = io.StringIO()
 
     out.write("### Environment startup time\n")
@@ -145,7 +132,3 @@ def format_comparison(tests, labels):
     out.write(" - |\n")
 
     return out.getvalue()
-
-
-if __name__ == "__main__":
-    main()

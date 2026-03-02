@@ -23,8 +23,9 @@ from . import providers
 from . import ramen
 from . import registry
 from . import shutdown
-from . import yaml
 from . import ssh
+from . import stress
+from . import yaml
 
 ADDONS_DIR = "addons"
 LOGFILE = "drenv.log"
@@ -153,6 +154,7 @@ def parse_args():
     # Sub commands.
 
     add_registry_cache_command(sp)
+    add_stress_test_command(sp)
 
     return parser.parse_args()
 
@@ -181,6 +183,65 @@ def add_registry_cache_command(sp):
         registry.remove_containers,
         help="remove cache containers",
         envfile=False,
+    )
+
+
+def add_stress_test_command(sp):
+    p = sp.add_parser("stress-test", help="run drenv stress test")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    p = add_command(
+        sp,
+        "run",
+        stress.run,
+        help="run stress test",
+    )
+    p.add_argument(
+        "-r",
+        "--runs",
+        type=int,
+        default=1,
+        help="number of runs (default 1)",
+    )
+    p.add_argument(
+        "-o",
+        "--outdir",
+        default="out",
+        help="directroy for storing test output (default out)",
+    )
+    p.add_argument(
+        "-x",
+        "--exit-first",
+        action="store_true",
+        help="exit on first failure without deleting the clusters",
+    )
+
+    p = add_command(
+        sp,
+        "report",
+        stress.report,
+        help="generate markdown report from stress test results",
+        envfile=False,
+    )
+    p.add_argument(
+        "directory",
+        help="directory containing test.json",
+    )
+
+    p = add_command(
+        sp,
+        "compare",
+        stress.compare,
+        help="compare 2 stress tests",
+        envfile=False,
+    )
+    p.add_argument(
+        "before",
+        help="directory containing test.json (before)",
+    )
+    p.add_argument(
+        "after",
+        help="directory containing test.json (after)",
     )
 
 

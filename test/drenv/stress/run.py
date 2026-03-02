@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
-
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+"""
+Run stress test.
+"""
+
 import json
 import os
 import statistics
@@ -20,9 +21,7 @@ PROGRESS = (
 )
 
 
-def main():
-    args = parse_args()
-
+def command(args):
     os.mkdir(args.outdir)
 
     test = {
@@ -49,7 +48,7 @@ def main():
 
     for i in range(args.runs):
         name = f"{i:03d}"
-        r = run(name, args)
+        r = run_test(name, args)
         test["results"].append(r)
         update_stats(test["stats"], r)
         update_progress(test["stats"])
@@ -59,38 +58,6 @@ def main():
     update_progress(test["stats"], last=True)
     compute_final_stats(test)
     write_output(test, args.outdir)
-
-
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument(
-        "-r",
-        "--runs",
-        type=int,
-        default=1,
-        help="number of runs (default 1)",
-    )
-    p.add_argument(
-        "-o",
-        "--outdir",
-        default="out",
-        help="directroy for storing test output (default out)",
-    )
-    p.add_argument(
-        "-x",
-        "--exit-first",
-        action="store_true",
-        help="exit on first failure without deleting the clusters",
-    )
-    p.add_argument(
-        "--name-prefix",
-        help="prefix profile names",
-    )
-    p.add_argument(
-        "envfile",
-        help="path to environment file",
-    )
-    return p.parse_args()
 
 
 def update_stats(stats, result):
@@ -140,7 +107,7 @@ def write_output(test, outdir):
         f.write("\n")
 
 
-def run(name, args):
+def run_test(name, args):
     log = os.path.join(args.outdir, name + ".log")
 
     start = time.monotonic()
@@ -199,7 +166,3 @@ def git_info():
 def git(*args):
     cmd = ["git", *args]
     return subprocess.check_output(cmd).decode().strip()
-
-
-if __name__ == "__main__":
-    main()
