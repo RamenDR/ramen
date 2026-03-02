@@ -284,6 +284,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	ramenConfig, err = controllers.CreateOrUpdateConfigMap(context.Background(), mgr.GetClient(),
+		mgr.GetAPIReader(), ramenConfig, setupLog)
+	if err != nil {
+		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
+		os.Exit(1)
+	}
+
 	setupReconcilers(mgr, ramenConfig)
 
 	// +kubebuilder:scaffold:builder
