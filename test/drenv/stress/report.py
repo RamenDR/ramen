@@ -10,14 +10,20 @@ import json
 import os
 import statistics
 
+from . import failures
+
 
 def command(args):
     test = load_test(args.directory)
     report = format_report(test)
+    failure_report = failures.analyze(args.directory)
 
     output_path = os.path.join(args.directory, "report.md")
     with open(output_path, "w") as f:
         f.write(report)
+        if failure_report:
+            f.write("\n")
+            f.write(failure_report)
 
     print(f"Report written to: {output_path}")
 
