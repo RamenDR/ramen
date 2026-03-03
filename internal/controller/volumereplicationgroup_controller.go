@@ -545,8 +545,7 @@ const (
 	// VolumeGroupReplicationClass label
 	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
-	// VolumeReplicationGroup label indicating globally scoped VGRClass, value is the storageID
-	GloballyOffloadedLabel = "ramendr.openshift.io/globally-offloaded"
+	GlobalVGRLabel = "ramendr.openshift.io/global-vgr"
 
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
@@ -761,7 +760,7 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 		}
 
 		if globallyOffloaded {
-			if err := v.addGloballyOffloadedLabel(pvcList); err != nil {
+			if err := v.addGlobalVGRLabel(pvcList); err != nil {
 				return err
 			}
 		}
@@ -902,9 +901,7 @@ func (v *VRGInstance) usesGlobalVGRClass(pvcList *corev1.PersistentVolumeClaimLi
 	return vgrClass.Spec.Parameters["global"] == "true", nil
 }
 
-// addGloballyOffloadedLabel labels the VRG with the storageID, enabling VRGs
-// with the same storageID to be discovered during consensus checks.
-func (v *VRGInstance) addGloballyOffloadedLabel(pvcList *corev1.PersistentVolumeClaimList) error {
+func (v *VRGInstance) addGlobalVGRLabel(pvcList *corev1.PersistentVolumeClaimList) error {
 	pvc := &pvcList.Items[0]
 
 	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
@@ -917,13 +914,15 @@ func (v *VRGInstance) addGloballyOffloadedLabel(pvcList *corev1.PersistentVolume
 		return fmt.Errorf("storageClass %s missing label %s", storageClass.GetName(), StorageIDLabel)
 	}
 
-	if util.AddLabel(v.instance, GloballyOffloadedLabel, storageID) {
+	vgrName := util.CreateGlobalVGRName(storageID)
+
+	if util.AddLabel(v.instance, GlobalVGRLabel, vgrName) {
 		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
 			return fmt.Errorf("failed to add label %s to VRG %s/%s: %w",
-				GloballyOffloadedLabel, v.instance.Namespace, v.instance.Name, err)
+				GlobalVGRLabel, v.instance.Namespace, v.instance.Name, err)
 		}
 
-		v.log.Info("Labeled VRG as globally offloaded", "storageID", storageID)
+		v.log.Info("Labeled VRG with global VGR", "vgrName", vgrName)
 	}
 
 	return nil
@@ -2229,6 +2228,17 @@ func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 		}
 	}
 
+	// For global VGRs, the external controller may not provide lastSyncTime per PVC.
+	// Use current time so the Protected condition on DRPC can pass.
+	if leastLastSyncTime == nil {
+		if _, isGlobal := v.globalVGRName(); isGlobal {
+			now := metav1.Now()
+			leastLastSyncTime = &now
+
+			v.log.Info("Global VGR: setting lastGroupSyncTime to now()")
+		}
+	}
+
 	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
 }
 
@@ -2360,8 +2370,45 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 		return []reconcile.Request{}
 	}
 
-	return filterVRGDependentObjects(r.Client, obj,
-		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
+	vgrLog := log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace})
+
+	if vgr.Namespace == RamenOperatorNamespace() {
+		return r.enqueueVRGsForGlobalVGR(vgr.Name, vgrLog)
+	}
+
+	return filterVRGDependentObjects(r.Client, obj, vgrLog)
+}
+
+func (r *VolumeReplicationGroupReconciler) enqueueVRGsForGlobalVGR(
+	vgrName string, log logr.Logger,
+) []reconcile.Request {
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := r.Client.List(context.TODO(), &vrgs,
+		client.MatchingLabels{GlobalVGRLabel: vgrName},
+	)
+	if err != nil {
+		log.Error(err, "Failed to list VRGs for global VGR")
+
+		return []reconcile.Request{}
+	}
+
+	req := make([]reconcile.Request, 0, len(vrgs.Items))
+
+	for idx := range vrgs.Items {
+		vrg := &vrgs.Items[idx]
+		log.Info("Enqueueing VRG for global VGR status change",
+			"vrg", vrg.Name, "namespace", vrg.Namespace)
+
+		req = append(req, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			},
+		})
+	}
+
+	return req
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
