@@ -10,6 +10,7 @@ import json
 import os
 import statistics
 
+from . import addons
 from . import failures
 from . import metrics
 from . import plot
@@ -18,6 +19,7 @@ from . import plot
 def command(args):
     metrics.collect(args.directory)
     has_plots = plot.create_plots(args.directory)
+    addon_report = addons.analyze(args.directory)
 
     test = load_test(args.directory)
     report = format_report(test)
@@ -29,6 +31,9 @@ def command(args):
         if failure_report:
             f.write("\n")
             f.write(failure_report)
+        if addon_report:
+            f.write("\n")
+            f.write(addon_report)
         if has_plots:
             f.write("\n## System Metrics\n\n")
             f.write("See [metrics.md](metrics.md) for system metrics charts.\n")
