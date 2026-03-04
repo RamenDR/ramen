@@ -73,7 +73,7 @@ def cleanup():
     logging.debug("[registry] Keeping registry cache containers running")
 
 
-def show_stats(output):
+def show_stats(args):
     """
     Show cache hit/miss statistics for all registry caches.
 
@@ -90,15 +90,15 @@ def show_stats(output):
 
     rows = [_cache_stats(registry) for registry in REGISTRIES]
 
-    if output == "json":
+    if args.output == "json":
         _print_json(rows)
-    elif output == "markdown":
+    elif args.output == "markdown":
         _print_markdown_table(rows)
     else:
-        raise ValueError(f"Unknown output format: {output}")
+        raise ValueError(f"Unknown output format: {args.output}")
 
 
-def remove_containers():
+def remove_containers(args):
     """Remove all registry cache containers."""
     if not _podman_available():
         logging.info("[registry] Podman is not available, skipping remove")

@@ -23,8 +23,9 @@ from . import providers
 from . import ramen
 from . import registry
 from . import shutdown
-from . import yaml
 from . import ssh
+from . import stress
+from . import yaml
 
 ADDONS_DIR = "addons"
 LOGFILE = "drenv.log"
@@ -150,21 +151,22 @@ def parse_args():
     add_command(sp, "setup", do_setup, help="setup host for drenv")
     add_command(sp, "cleanup", do_cleanup, help="cleanup host")
 
-    # Registry cache commands.
+    # Sub commands.
 
-    add_registry_cache_commands(sp)
+    add_registry_cache_command(sp)
+    add_stress_test_command(sp)
 
     return parser.parse_args()
 
 
-def add_registry_cache_commands(sp):
+def add_registry_cache_command(sp):
     p = sp.add_parser("registry-cache", help="manage registry cache")
     sp = p.add_subparsers(dest="command", required=True)
 
     p = add_command(
         sp,
         "stats",
-        do_registry_cache_stats,
+        registry.show_stats,
         help="show cache statistics",
         envfile=False,
     )
@@ -178,9 +180,68 @@ def add_registry_cache_commands(sp):
     add_command(
         sp,
         "remove",
-        do_registry_cache_remove,
+        registry.remove_containers,
         help="remove cache containers",
         envfile=False,
+    )
+
+
+def add_stress_test_command(sp):
+    p = sp.add_parser("stress-test", help="run drenv stress test")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    p = add_command(
+        sp,
+        "run",
+        stress.run,
+        help="run stress test",
+    )
+    p.add_argument(
+        "-r",
+        "--runs",
+        type=int,
+        default=1,
+        help="number of runs (default 1)",
+    )
+    p.add_argument(
+        "-o",
+        "--outdir",
+        default="out",
+        help="directroy for storing test output (default out)",
+    )
+    p.add_argument(
+        "-x",
+        "--exit-first",
+        action="store_true",
+        help="exit on first failure without deleting the clusters",
+    )
+
+    p = add_command(
+        sp,
+        "report",
+        stress.report,
+        help="generate markdown report from stress test results",
+        envfile=False,
+    )
+    p.add_argument(
+        "directory",
+        help="directory containing test.json",
+    )
+
+    p = add_command(
+        sp,
+        "compare",
+        stress.compare,
+        help="compare 2 stress tests",
+        envfile=False,
+    )
+    p.add_argument(
+        "before",
+        help="directory containing test.json (before)",
+    )
+    p.add_argument(
+        "after",
+        help="directory containing test.json (after)",
     )
 
 
@@ -198,12 +259,12 @@ def add_command(sp, name, func, help=None, envfile=True):
             metavar="PREFIX",
             help="prefix profile names",
         )
-        parser.add_argument("filename", help="path to environment file")
+        parser.add_argument("envfile", help="path to environment file")
     return parser
 
 
 def load_env(args):
-    with open(args.filename) as f:
+    with open(args.envfile) as f:
         return envfile.load(f, name_prefix=args.name_prefix)
 
 
@@ -297,14 +358,6 @@ def do_cleanup(args):
         provider = providers.get(name)
         provider.cleanup()
     ssh.cleanup()
-
-
-def do_registry_cache_stats(args):
-    registry.show_stats(args.output)
-
-
-def do_registry_cache_remove(args):
-    registry.remove_containers()
 
 
 def do_clear(args):

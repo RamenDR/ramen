@@ -1,9 +1,14 @@
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # drenv stress test
 
-This directory includes the drenv stress test for evaluating `drenv start`
-robustness and debugging failed runs.
+The drenv stress test evaluates `drenv start` robustness and helps
+debug failed runs.
 
-The test support 2 modes of operation:
+The test supports 2 modes of operation:
 
 - Collecting stats from long unattended test run
 - Debugging a failed run
@@ -15,7 +20,7 @@ a run fails, we delete the clusters and continue. This is useful for
 understanding what are the most common failures.
 
 ```
-stress-test/run -r 100 ../envs/regional-dr.yaml
+drenv stress-test run -r 100 envs/regional-dr.yaml
 ```
 
 This creates the `out` directory in the current directory, logging each
@@ -91,11 +96,11 @@ out/089.log:drenv.commands.Error: Command failed:
 
 ## Debugging a failed run
 
-In this mode the run exit cleanly after the first failure, leaving the
+In this mode the run exits cleanly after the first failure, leaving the
 cluster running for inspection.
 
 ```
-stress-test/run -r 100 -x ../envs/regional-dr.yaml
+drenv stress-test run -r 100 -x envs/regional-dr.yaml
 ```
 
 Because the failures are random, a run may fail very quickly or only
