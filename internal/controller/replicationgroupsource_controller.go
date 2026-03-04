@@ -103,18 +103,6 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
-	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger)
-
-	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
-		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
-
-		err := vgsHandler.CleanVolumeGroupSnapshot(ctx)
-
-		const retryDelay = 5 * time.Second
-
-		return ctrl.Result{RequeueAfter: retryDelay}, err
-	}
-
 	logger.Info("Get vrg from ReplicationGroupSource")
 
 	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
@@ -127,17 +115,26 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 
+	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
+		&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
+		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
+	)
+	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+
+	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
+		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
+
+		err := vgsHandler.CleanVolumeGroupSnapshot(ctx)
+
+		const retryDelay = 5 * time.Second
+
+		return ctrl.Result{RequeueAfter: retryDelay}, err
+	}
+
 	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 	result, err := statemachine.Run(
 		ctx,
-		cephfscg.NewRGSMachine(r.Client, rgs, vrg,
-			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
-				&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
-				volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
-			),
-			vgsHandler,
-			logger,
-		),
+		cephfscg.NewRGSMachine(r.Client, rgs, vrg, vsHandler, vgsHandler, logger),
 		logger,
 	)
 	// Update instance status
