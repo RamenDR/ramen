@@ -21,6 +21,8 @@ setuptools.setup(
         "drenv",
         "drenv.providers",
         "drenv.providers.lima",
+        "drenv.providers.minikube",
+        "drenv.stress",
     ],
     include_package_data=True,
     install_requires=[
