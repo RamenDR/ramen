@@ -64,6 +64,12 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
+	if v.instance.Spec.DryRun {
+		v.log.Info("Skipping upload of Kube Objects to S3 store(s) as VRG is in dry-run mode")
+
+		return
+	}
+
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
 		v.log.Info("Skipping kube objects capture in final sync case")
 
