@@ -31,7 +31,8 @@ func TestReadConfig(t *testing.T) {
 			URL:    "https://github.com/RamenDR/ocm-ramen-samples.git",
 			Branch: "main",
 		},
-		DRPolicy: "dr-policy",
+		DRPolicy:        "dr-policy",
+		NamespacePrefix: "test-",
 		PVCSpecs: []PVCSpec{
 			{Name: "rbd", StorageClassName: "rook-ceph-block", AccessModes: "ReadWriteOnce"},
 			{Name: "cephfs", StorageClassName: "rook-cephfs-fs1", AccessModes: "ReadWriteMany"},
@@ -47,7 +48,7 @@ func TestReadConfig(t *testing.T) {
 		},
 		Channel: Channel{
 			Name:      "https-github-com-ramendr-ocm-ramen-samples-git",
-			Namespace: "e2e-gitops",
+			Namespace: "test-gitops",
 		},
 	}
 	if !c.Equal(expected) {

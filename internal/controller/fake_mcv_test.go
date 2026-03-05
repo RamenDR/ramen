@@ -9,19 +9,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
-
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
-
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
@@ -199,4 +197,8 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, log
 	}
 
 	return f.Delete(context.TODO(), mcv)
+}
+
+func (f FakeMCVGetter) GetNSFromManagedCluster(managedCluster, resourceName string) (*corev1.Namespace, error) {
+	return nil, nil
 }

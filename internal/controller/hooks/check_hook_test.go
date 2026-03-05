@@ -4,17 +4,24 @@
 package hooks_test
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
 
-	"github.com/ramendr/ramen/internal/controller/hooks"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	rmnv1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/hooks"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
 type testCases struct {
@@ -219,6 +226,32 @@ var testCasesObjectData = []testCasesObject{
 	},
 }
 
+func setupFakeClient(t *testing.T) client.Client {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	err := corev1.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	err = appsv1.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	err = rmnv1.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	// nolint:errcheck
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithIndex(&corev1.Pod{}, "metadata.name", func(obj client.Object) []string {
+			return []string{obj.(*corev1.Pod).Name}
+		}).
+		WithIndex(&appsv1.Deployment{}, "metadata.name", func(obj client.Object) []string {
+			return []string{obj.(*unstructured.Unstructured).GetName()}
+		}).Build()
+	assert.NotNil(t, fakeClient)
+
+	return fakeClient
+}
+
 func getHookSpec(resourceType, condition string) *kubeobjects.HookSpec {
 	return &kubeobjects.HookSpec{
 		Name:           "test-hook",
@@ -226,8 +259,105 @@ func getHookSpec(resourceType, condition string) *kubeobjects.HookSpec {
 		Chk: kubeobjects.Check{
 			Name:      "test-check",
 			Condition: condition,
+			OnError:   "continue",
 		},
 	}
+}
+
+func TestExecutCheckHookForPodWithNoSelector(t *testing.T) {
+	fakeClient := setupFakeClient(t)
+
+	assert.NotNil(t, fakeClient)
+
+	pod := getPodSpec("busybox")
+	err := fakeClient.Create(context.Background(), pod)
+	assert.Nil(t, err)
+
+	cHook := hooks.CheckHook{
+		Hook:   getHookSpec("pod", "{$.status.phase} == {Running}"),
+		Reader: fakeClient,
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+	err = cHook.Execute(log)
+	assert.NotNil(t, err)
+}
+
+func TestExecutCheckHookForPodWithNameSelector(t *testing.T) {
+	fakeClient := setupFakeClient(t)
+	assert.NotNil(t, fakeClient)
+
+	pod := getPodSpec("busybox")
+	pod.Status.Phase = "Running"
+	err := fakeClient.Create(context.Background(), pod)
+	assert.Nil(t, err)
+
+	pod = getPodSpec("busybox1")
+	err = fakeClient.Create(context.Background(), pod)
+	assert.Nil(t, err)
+
+	hook := getHookSpec("pod", "{$.status.phase} == {Running}")
+	hook.NameSelector = "busybox"
+
+	cHook := hooks.CheckHook{
+		Hook:   hook,
+		Reader: fakeClient,
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+	err = cHook.Execute(log)
+	assert.Nil(t, err)
+}
+
+func TestExecuteCheckHookForDeployment(t *testing.T) {
+	fakeClient := setupFakeClient(t)
+	assert.NotNil(t, fakeClient)
+
+	dep := getDeploymentContent()
+
+	err := fakeClient.Create(context.Background(), dep)
+	assert.Nil(t, err)
+
+	hook := getHookSpec("deployment", "{$.spec.replicas} == {$.status.replicas}")
+	hook.NameSelector = "test-deploy"
+
+	cHook := hooks.CheckHook{
+		Hook:   hook,
+		Reader: fakeClient,
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+	err = cHook.Execute(log)
+	assert.Nil(t, err)
+}
+
+func TestExecuteCheckHookForStatefulSet(t *testing.T) {
+	fakeClient := setupFakeClient(t)
+	assert.NotNil(t, fakeClient)
+
+	ss := getStatefulSetContent()
+	ss.Labels = map[string]string{
+		"appname": "test",
+	}
+
+	err := fakeClient.Create(context.Background(), ss)
+	assert.Nil(t, err)
+
+	hook := getHookSpec("statefulset", "{$.spec.replicas} != {$.status.readyReplicas}")
+	hook.LabelSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"appname": "test",
+		},
+	}
+
+	cHook := hooks.CheckHook{
+		Hook:   hook,
+		Reader: fakeClient,
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+	err = cHook.Execute(log)
+	assert.Nil(t, err)
 }
 
 func TestEvaluateCheckHookExp(t *testing.T) {
@@ -272,6 +402,29 @@ func TestEvaluateCheckHookForObjects(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSkipHookIfNotPresentForStatefulset(t *testing.T) {
+	fakeClient := setupFakeClient(t)
+	assert.NotNil(t, fakeClient)
+
+	hook := getHookSpec("statefulset", "{$.spec.replicas} != {$.status.readyReplicas}")
+	hook.LabelSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"appname": "test",
+		},
+	}
+	hook.SkipHookIfNotPresent = true
+	hook.Timeout = 10
+
+	cHook := hooks.CheckHook{
+		Hook:   hook,
+		Reader: fakeClient,
+	}
+
+	log := zap.New(zap.UseDevMode(true))
+	err := cHook.Execute(log)
+	assert.Nil(t, err)
 }
 
 func Test_isValidJsonPathExpression(t *testing.T) {

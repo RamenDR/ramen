@@ -88,10 +88,17 @@ def create_ramen_ops_binding(cluster):
 
 
 def create_hub_dr_resources(hub, clusters, topology):
-    for name in ["dr-clusters", "dr-policy"]:
-        command.info("Creating %s for %s", name, topology)
-        template = drenv.template(command.resource(f"{topology}/{name}.yaml"))
-        yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
+    command.info("Creating dr-clusters for %s", topology)
+    template = drenv.template(command.resource(f"{topology}/dr-clusters.yaml"))
+    yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
+    kubectl.apply("--filename=-", input=yaml, context=hub, log=command.debug)
+
+    for interval in command.DRPOLICY_INTERVALS:
+        command.info("Creating dr-policy-%s for %s", interval, topology)
+        template = drenv.template(command.resource(f"{topology}/dr-policy.yaml"))
+        yaml = template.substitute(
+            cluster1=clusters[0], cluster2=clusters[1], interval=interval
+        )
         kubectl.apply("--filename=-", input=yaml, context=hub, log=command.debug)
 
 
@@ -141,10 +148,11 @@ def wait_for_dr_clusters(hub, clusters, args):
 
 
 def wait_for_dr_policy(hub, args):
-    command.info("Waiting until DRPolicy is validated")
-    kubectl.wait(
-        "drpolicy/dr-policy",
-        "--for=condition=Validated",
-        context=hub,
-        log=command.debug,
-    )
+    for interval in command.DRPOLICY_INTERVALS:
+        command.info("Waiting until dr-policy-%s is validated", interval)
+        kubectl.wait(
+            f"drpolicy/dr-policy-{interval}",
+            "--for=condition=Validated",
+            context=hub,
+            log=command.debug,
+        )

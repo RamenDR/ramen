@@ -5,9 +5,10 @@ package controllers
 
 import (
 	"github.com/go-logr/logr"
+	v1 "k8s.io/api/core/v1"
+
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/util"
-	v1 "k8s.io/api/core/v1"
 )
 
 type s3StoreAccessor struct {

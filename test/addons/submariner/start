@@ -12,7 +12,8 @@ from drenv import cluster as drenv_cluster
 from drenv import kubectl
 from drenv import subctl
 
-VERSION = "0.20.1"
+# 0.22.0 is broken in minikube.
+VERSION = "0.21.2"
 
 NAMESPACE = "submariner-operator"
 
@@ -106,7 +107,7 @@ def wait_for_deployments(cluster, names, namespace):
             "status",
             deployment,
             f"--namespace={namespace}",
-            "--timeout=180s",
+            timeout=180,
             context=cluster,
         )
 

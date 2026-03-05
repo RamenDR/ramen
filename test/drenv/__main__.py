@@ -21,22 +21,21 @@ from . import envfile
 from . import kubectl
 from . import providers
 from . import ramen
+from . import registry
 from . import shutdown
-from . import yaml
 from . import ssh
+from . import stress
+from . import yaml
 
 ADDONS_DIR = "addons"
+LOGFILE = "drenv.log"
 
 executors = []
 
 
 def main():
     args = parse_args()
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-    )
-
+    configure_logging(args)
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:
@@ -45,8 +44,8 @@ def main():
         logging.exception("Command failed")
         sys.exit(1)
     finally:
-        shutdown_executors()
-        terminate_process_group()
+        if shutdown_executors():
+            terminate_process_group()
 
 
 def parse_args():
@@ -57,6 +56,8 @@ def parse_args():
         dest="command",
         required=True,
     )
+
+    # Environment commands.
 
     p = add_command(sp, "start", do_start, help="start an environment")
     p.add_argument(
@@ -81,6 +82,26 @@ def parse_args():
         "--timeout",
         type=int,
         help="time in seconds to wait until clsuter is started",
+    )
+    p.add_argument(
+        "--local-registry",
+        action="store_true",
+        help=(
+            "Use local registry. For lima provider the local registry must "
+            "have the k8s images for kubeadm. See registry/README.md for "
+            "more info."
+        ),
+    )
+    p.add_argument(
+        "--dns-mode",
+        choices=["auto", "static", "host"],
+        default="auto",
+        help=(
+            "DNS configuration mode. 'auto' detects managed Macs and uses "
+            "'static' if needed. 'static' configures public DNS servers "
+            "(8.8.8.8, 1.1.1.1). 'host' uses the host resolver (default for "
+            "minikube, may not work on managed Macs)."
+        ),
     )
 
     p = add_command(sp, "stop", do_stop, help="stop an environment")
@@ -124,16 +145,113 @@ def parse_args():
     add_command(sp, "resume", do_resume, help="resume virtual machines")
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
 
+    # Host commands.
+
     add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
     add_command(sp, "setup", do_setup, help="setup host for drenv")
     add_command(sp, "cleanup", do_cleanup, help="cleanup host")
 
+    # Sub commands.
+
+    add_registry_cache_command(sp)
+    add_stress_test_command(sp)
+
     return parser.parse_args()
+
+
+def add_registry_cache_command(sp):
+    p = sp.add_parser("registry-cache", help="manage registry cache")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    p = add_command(
+        sp,
+        "stats",
+        registry.show_stats,
+        help="show cache statistics",
+        envfile=False,
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        choices=["json", "markdown"],
+        default="json",
+    )
+
+    add_command(
+        sp,
+        "remove",
+        registry.remove_containers,
+        help="remove cache containers",
+        envfile=False,
+    )
+
+
+def add_stress_test_command(sp):
+    p = sp.add_parser("stress-test", help="run drenv stress test")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    p = add_command(
+        sp,
+        "run",
+        stress.run,
+        help="run stress test",
+    )
+    p.add_argument(
+        "-r",
+        "--runs",
+        type=int,
+        default=1,
+        help="number of runs (default 1)",
+    )
+    p.add_argument(
+        "-o",
+        "--outdir",
+        default="out",
+        help="directroy for storing test output (default out)",
+    )
+    p.add_argument(
+        "-x",
+        "--exit-first",
+        action="store_true",
+        help="exit on first failure without deleting the clusters",
+    )
+
+    p = add_command(
+        sp,
+        "report",
+        stress.report,
+        help="generate markdown report from stress test results",
+        envfile=False,
+    )
+    p.add_argument(
+        "directory",
+        help="directory containing test.json",
+    )
+
+    p = add_command(
+        sp,
+        "compare",
+        stress.compare,
+        help="compare 2 stress tests",
+        envfile=False,
+    )
+    p.add_argument(
+        "before",
+        help="directory containing test.json (before)",
+    )
+    p.add_argument(
+        "after",
+        help="directory containing test.json (after)",
+    )
 
 
 def add_command(sp, name, func, help=None, envfile=True):
     parser = sp.add_parser(name, help=help)
-    parser.add_argument("-v", "--verbose", action="store_true", help="be more verbose")
+    parser.add_argument(
+        "--logfile",
+        default=LOGFILE,
+        help=f"path to logfile (default {LOGFILE!r})",
+    )
     parser.set_defaults(func=func)
     if envfile:
         parser.add_argument(
@@ -141,16 +259,43 @@ def add_command(sp, name, func, help=None, envfile=True):
             metavar="PREFIX",
             help="prefix profile names",
         )
-        parser.add_argument("filename", help="path to environment file")
+        parser.add_argument("envfile", help="path to environment file")
     return parser
 
 
 def load_env(args):
-    with open(args.filename) as f:
+    with open(args.envfile) as f:
         return envfile.load(f, name_prefix=args.name_prefix)
 
 
+def configure_logging(args):
+    """
+    Configure logging to log all message to the logfile, and INFO messages to
+    the console.
+    """
+    formatter = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s")
+
+    logfile = logging.FileHandler(args.logfile)
+    logfile.setFormatter(formatter)
+    logfile.setLevel(logging.DEBUG)
+
+    console = logging.StreamHandler(sys.stderr)
+    console.setFormatter(formatter)
+    console.setLevel(logging.INFO)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[console, logfile],
+    )
+
+
 def shutdown_executors():
+    """
+    Shut down all executors and return True if any were shut down.
+
+    When executors are used, the caller should also terminate the process
+    group to clean up any child processes spawned by executor tasks.
+    """
     # Prevents adding new executors, starting new child processes, and aborts
     # running workers.
     shutdown.start()
@@ -161,6 +306,8 @@ def shutdown_executors():
     for name, executor in executors:
         logging.debug("[main] Shutting down executor %s", name)
         executor.shutdown(wait=False, cancel_futures=True)
+
+    return len(executors) > 0
 
 
 def add_executor(name, executor):
@@ -291,7 +438,6 @@ def do_gather(args):
         directory=args.directory,
         namespaces=args.namespaces,
         name=env["name"],
-        verbose=args.verbose,
     )
     logging.info(
         "[%s] Environment gathered in %.2f seconds",
@@ -348,7 +494,7 @@ def do_resume(args):
 
 def do_dump(args):
     env = load_env(args)
-    yaml.dump(env, sys.stdout)
+    yaml.safe_dump(env, sys.stdout)
 
 
 def execute(func, profiles, name, max_workers=None, **options):
@@ -391,8 +537,13 @@ def start_cluster(profile, hooks=(), args=None, **options):
     provider = providers.get(profile["provider"])
     existing = provider.exists(profile)
 
-    provider.start(profile, verbose=args.verbose, timeout=args.timeout)
-    provider.configure(profile, existing=existing)
+    provider.start(
+        profile,
+        verbose=True,
+        timeout=args.timeout,
+        local_registry=args.local_registry,
+    )
+    provider.configure(profile, existing=existing, dns_mode=args.dns_mode)
 
     if existing:
         restart_failed_deployments(profile)

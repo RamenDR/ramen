@@ -8,10 +8,9 @@ metadata:
   name: busybox-dst
 spec:
   rsyncTLS:
-    copyMethod: Snapshot
+    copyMethod: Direct
     destinationPVC: volsync-pvc
     storageClassName: STORAGE_CLASS
-    volumeSnapshotClassName: VOLUME_SNAPSHOT_CLASS
     moverSecurityContext:
       runAsUser: 10000
       runAsGroup: 10000

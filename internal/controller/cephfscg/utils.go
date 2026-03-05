@@ -7,21 +7,18 @@ import (
 	"context"
 	"fmt"
 
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/volsync"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
 // ------------- [Begin] Copied from existing code in Ramen ----
 func isFinalSyncComplete(replicationGroupSource *ramendrv1alpha1.ReplicationGroupSource) bool {
 	return replicationGroupSource.Status.LastManualSync == volsync.FinalSyncTriggerString
-}
-
-func getLocalReplicationName(pvcName string) string {
-	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
 }
 
 func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
@@ -30,26 +27,6 @@ func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
 	}
 
 	return true
-}
-
-func getReplicationDestinationName(pvcName string) string {
-	return pvcName // Use PVC name as name of ReplicationDestination
-}
-
-// This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
-// a ServiceExport is created for the service on the cluster that has the ReplicationDestination
-func getRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
-	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
-}
-
-// Service name that VolSync will create locally in the same namespace as the ReplicationDestination
-func getLocalServiceNameForRDFromPVCName(pvcName string) string {
-	return getLocalServiceNameForRD(getReplicationDestinationName(pvcName))
-}
-
-func getLocalServiceNameForRD(rdName string) string {
-	// This is the name VolSync will use for the service
-	return fmt.Sprintf("volsync-rsync-tls-dst-%s", rdName)
 }
 
 // Copied from func (v *VSHandler) getStorageClass(

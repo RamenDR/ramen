@@ -22,10 +22,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 // We have seen that valid errors from the S3 servers can take up to 2 minutes to timeout.
@@ -139,7 +140,6 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 			string(secretAccessKey), ""),
 		Endpoint:         aws.String(s3Endpoint),
 		Region:           aws.String(s3Region),
-		DisableSSL:       aws.Bool(true),
 		S3ForcePathStyle: aws.Bool(true),
 	})
 	if err != nil {

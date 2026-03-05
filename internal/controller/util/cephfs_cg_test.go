@@ -11,8 +11,6 @@ import (
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/util"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -22,6 +20,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("CephfsCg", func() {
@@ -462,7 +463,8 @@ var _ = Describe("CephfsCg", func() {
 				})
 				Describe("DeferDeleteImage with vs exist", func() {
 					It("Should be success", func() {
-						err := util.DeferDeleteImage(context.Background(), k8sClient, "vs", "default", "rgdName")
+						err := util.DeferDeleteImage(context.Background(), k8sClient, "vs", "default",
+							"rgdName", "vrgName", "vrgNamespace")
 						Expect(err).To(BeNil())
 						Eventually(func() []string {
 							vs := &vsv1.VolumeSnapshot{}
@@ -482,7 +484,8 @@ var _ = Describe("CephfsCg", func() {
 	})
 	Describe("DeferDeleteImage with vs not exist", func() {
 		It("Should be success", func() {
-			err := util.DeferDeleteImage(context.Background(), k8sClient, "vsnotexist", "default", "rgdName")
+			err := util.DeferDeleteImage(context.Background(), k8sClient, "vsnotexist", "default",
+				"rgdName", "vrgName", "vrgNamespace")
 			Expect(err).NotTo(BeNil())
 		})
 	})

@@ -9,21 +9,21 @@ import (
 	"fmt"
 	"reflect"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -170,13 +170,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
-	err := d.ensureVRGManifestWork(clusterName)
-	if err != nil {
-		return !done, err
-	}
-
 	// If we get here, the deployment is successful
-	err = d.EnsureSecondaryReplicationSetup(homeCluster)
+	err := d.finalizeInitialDeployment(homeCluster, clusterName)
 	if err != nil {
 		return !done, err
 	}
@@ -192,6 +187,15 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.setActionDuration()
 
 	return done, nil
+}
+
+func (d *DRPCInstance) finalizeInitialDeployment(homeCluster, clusterName string) error {
+	if err := d.ensureVRGManifestWork(clusterName); err != nil {
+		return err
+	}
+
+	// If we get here, the deployment is successful
+	return d.EnsureSecondaryReplicationSetup(homeCluster)
 }
 
 func (d *DRPCInstance) getHomeClusterForInitialDeploy() (string, string) {
@@ -364,8 +368,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
 		d.setDRState(rmn.FailedOver)
-		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
 		if err := d.ensureVRGManifestWork(failoverCluster); err != nil {
 			d.log.Info("Unable to ensure VRG ManifestWork on failover cluster")
@@ -383,6 +385,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 			return !done, nil
 		}
 
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
+
 		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
 		// We have to wait for the VRG to appear on the failoverCluster or
@@ -390,9 +395,30 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
+	// Use the DRPC Protected condition to check if it is true and then allow failover
+	if !d.isProtected() {
+		return !done, nil
+	}
+
 	d.setStatusInitiating()
 
 	return d.switchToFailoverCluster()
+}
+
+func (d *DRPCInstance) isProtected() bool {
+	for _, cond := range d.instance.Status.Conditions {
+		if cond.Type == rmn.ConditionProtected && cond.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+
+	const msg = "cannot start failover because workload is not protected"
+	d.log.Info("Failover blocked", "reason", msg)
+
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
+
+	return false
 }
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
@@ -654,7 +680,7 @@ func requiresRegionalFailoverPrerequisites(
 			continue
 		}
 
-		if !hasMode(protectedPVC.StorageIdentifiers.ReplicationID.Modes, rmn.MModeFailover) {
+		if !slices.Contains(protectedPVC.StorageIdentifiers.ReplicationID.Modes, rmn.MModeFailover) {
 			continue
 		}
 
@@ -744,17 +770,6 @@ func GetLastKnownVRGPrimaryFromS3(
 	}
 
 	return latestVrg
-}
-
-// hasMode is a helper routine that checks if a list of modes has the passed in mode
-func hasMode(modes []rmn.MMode, mode rmn.MMode) bool {
-	for _, modeInList := range modes {
-		if modeInList == mode {
-			return true
-		}
-	}
-
-	return false
 }
 
 // checkFailoverMaintenanceActivations checks if all required storage backend maintenance activations are met
@@ -1013,7 +1028,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 		// to wait on user to clean up. For non-discovered apps, we can set the
 		// progression to clearing placement.
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setDiscoveredAppGCProgression(homeCluster)
 		} else {
 			// clear current user PlacementRule's decision
 			d.setProgression(rmn.ProgressionClearingPlacement)
@@ -1033,7 +1048,7 @@ func (d *DRPCInstance) quiesceAndRunFinalSync(homeCluster string) (bool, error) 
 
 	if !result {
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setDiscoveredAppGCProgression(homeCluster)
 		} else {
 			d.setProgression(rmn.ProgressionRunningFinalSync)
 		}
@@ -1282,7 +1297,7 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 	clusterToSkip := preferredCluster
 	if !d.ensureVRGIsSecondaryEverywhere(clusterToSkip) {
 		if isDiscoveredApp(d.instance) {
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+			d.setDiscoveredAppGCProgression(clusterToSkip)
 		} else {
 			d.setProgression(rmn.ProgressionEnsuringVolumesAreSecondary)
 		}
@@ -1819,10 +1834,11 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 // or updated as needed, such as the PrepareForFinalSync and RunFinalSync fields.
 func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeReplicationGroup, homeCluster string) {
 	vrg.ObjectMeta.Annotations = map[string]string{
-		DestinationClusterAnnotationKey: homeCluster,
-		DoNotDeletePVCAnnotation:        d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
-		DRPCUIDAnnotation:               string(d.instance.UID),
-		rmnutil.UseVolSyncAnnotation:    d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		DestinationClusterAnnotationKey:       homeCluster,
+		DoNotDeletePVCAnnotation:              d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
+		DRPCUIDAnnotation:                     string(d.instance.UID),
+		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
@@ -1842,6 +1858,23 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 	} else {
 		d.updateVRGDRTypeSpec(vrgFromView, vrg)
 	}
+
+	// Workaround for cephfs issue: FIXME:
+	// VolSync's DataMover requires the PodSecurityContext to be configured in order to successfully synchronize
+	// data for workloads that have complex Security Context Constraints (SCC) settings.
+	// Populate ReplicationSource and ReplicationDestination specs with MoverSecurityContext and MoverServiceAccount
+	if d.instance.Spec.VolSyncSpec != nil && d.drType == DRTypeAsync {
+		d.updateMoverConfig(vrg)
+	}
+}
+
+// Checks if MoverConfig exists in the spec
+func (d *DRPCInstance) updateMoverConfig(vrg *rmn.VolumeReplicationGroup) {
+	if len(d.instance.Spec.VolSyncSpec.MoverConfig) == 0 {
+		return
+	}
+
+	vrg.Spec.VolSync.MoverConfig = append([]rmn.MoverConfig(nil), d.instance.Spec.VolSyncSpec.MoverConfig...)
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {
@@ -2000,19 +2033,7 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 			return fmt.Errorf("failed to get NS MW (%w)", err)
 		}
 
-		annotations := make(map[string]string)
-
-		annotations[DRPCNameAnnotation] = d.instance.Name
-		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
-
-		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations)
-		if err != nil {
-			return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
-		}
-
-		d.log.Info(fmt.Sprintf("Created Namespace '%s' on cluster %s", d.vrgNamespace, homeCluster))
-
-		return nil // created namespace
+		return d.createOrUpdateNamespaces(homeCluster)
 	}
 
 	// Ensure the OCM backup label does not exists, otherwise, remove it.
@@ -2028,6 +2049,63 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 	}
 
 	return nil
+}
+
+func (d *DRPCInstance) createOrUpdateNamespaces(homeCluster string) error {
+	if !isDiscoveredApp(d.instance) {
+		return d.createOrUpdateNSForNonDiscoveredApps(homeCluster)
+	}
+
+	return d.createOrUpdateNSForDiscoveredApps(homeCluster)
+}
+
+func (d *DRPCInstance) createOrUpdateNSForDiscoveredApps(homeCluster string) error {
+	protectedNamespaces := make([]*corev1.Namespace, 0)
+
+	for _, ns := range *d.instance.Spec.ProtectedNamespaces {
+		protectedNamespace, err := d.reconciler.MCVGetter.GetNSFromManagedCluster(homeCluster, ns)
+		if err != nil {
+			d.log.Error(err, fmt.Sprintf("error getting namespace %s from managed cluster %s using MCV", ns, homeCluster))
+
+			return err
+		}
+
+		protectedNamespaces = append(protectedNamespaces, protectedNamespace)
+	}
+
+	for _, protectedNamespaceObj := range protectedNamespaces {
+		annotations := removeSCCAnnotations(protectedNamespaceObj.Annotations)
+
+		for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if homeCluster == dstCluster {
+				continue
+			}
+
+			if err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, protectedNamespaceObj.Name, dstCluster,
+				annotations, protectedNamespaceObj.Labels); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) createOrUpdateNSForNonDiscoveredApps(homeCluster string) error {
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
+	err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations,
+		map[string]string{})
+	if err != nil {
+		return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
+	}
+
+	d.log.Info(fmt.Sprintf("Created Namespace '%s' on cluster %s", d.vrgNamespace, homeCluster))
+
+	return nil // created namespace
 }
 
 func isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
@@ -2134,7 +2212,7 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 	// So set the progression to wait on user to clean up.
 	// If not discovered apps, then we can set the progression to cleaning up.
 	if isDiscoveredApp(d.instance) {
-		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		d.setDiscoveredAppGCProgression(clusterToSkip)
 	}
 
 	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
@@ -2454,6 +2532,7 @@ failoverProgressions are used to indicate progression during failover action pro
 		ProgressionEnsuringVolSyncSetup,
 		ProgressionSettingupVolsyncDest,
 		ProgressionWaitForReadiness,
+		ProgressionCleanupReadiness,
 		ProgressionUpdatedPlacement,
 		ProgressionCompleted,
 		ProgressionCleaningUp,
@@ -2471,6 +2550,7 @@ relocateProgressions are used to indicate progression during relocate action pro
 		rmn.ProgressionFinalSyncComplete,
 		rmn.ProgressionEnsuringVolumesAreSecondary,
 		rmn.ProgressionWaitOnUserToCleanUp,
+		rmn.ProgressionCleanupReadiness,
 	}
 
 	postRelocateProgressions := {
@@ -2721,4 +2801,138 @@ func getCallerFunction(ancestorLevel int) string {
 	}
 
 	return strings.TrimPrefix(details.Name(), "github.com/ramendr/ramen/internal/controller.")
+}
+
+func (d *DRPCInstance) isVMRecipeInUse() bool {
+	if d.instance == nil ||
+		d.instance.Spec.KubeObjectProtection == nil ||
+		d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+		return false
+	}
+
+	if d.instance.Spec.KubeObjectProtection.RecipeRef.Name != recipecore.VMRecipeName {
+		return false
+	}
+
+	return true
+}
+
+func (d *DRPCInstance) isPreparingForFinalSync(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg == nil {
+		return false
+	}
+
+	if vrg.Spec.PrepareForFinalSync || vrg.Status.FinalSyncComplete || vrg.Status.PrepareForFinalSyncComplete {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isVMAutoCleanupFeasible(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg == nil {
+		return false
+	}
+
+	autoCleanupCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeAutoCleanup)
+	if autoCleanupCondition == nil {
+		return false
+	}
+
+	if autoCleanupCondition.Reason == VRGConditionReasonAutoCleanupProgressing {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) isVMAutoCleanupCompleted(clusterName string) bool {
+	vrg := d.getCleanupSecondaryVRG(clusterName)
+	if vrg == nil {
+		return false
+	}
+
+	autoCleanupCondition := rmnutil.FindCondition(vrg.Status.Conditions, VRGConditionTypeAutoCleanup)
+	if autoCleanupCondition == nil {
+		return false
+	}
+
+	// VM cleanup completed, PVC/VR/VGR cleanup is in progress
+	if autoCleanupCondition.Reason == VRGConditionReasonAutoCleanupCompleted {
+		return true
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) getCleanupSecondaryVRG(clusterName string) *rmn.VolumeReplicationGroup {
+	if len(d.vrgs) == 0 {
+		return nil
+	}
+
+	var vrg *rmn.VolumeReplicationGroup
+
+	if v, ok := d.vrgs[clusterName]; ok && v != nil {
+		vrg = v
+	}
+
+	if d.isSourceVRGForAction(clusterName) {
+		for _, managedCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if clusterName == managedCluster {
+				continue
+			}
+
+			if alternateVRG, ok := d.vrgs[managedCluster]; ok && alternateVRG != nil {
+				vrg = alternateVRG
+
+				break
+			}
+		}
+	}
+
+	return vrg
+}
+
+func (d *DRPCInstance) isSourceVRGForAction(clusterName string) bool {
+	spec := d.instance.Spec
+
+	return (spec.PreferredCluster == clusterName && spec.Action == rmn.ActionRelocate) ||
+		(spec.FailoverCluster == clusterName && spec.Action == rmn.ActionFailover)
+}
+
+// setDiscoveredAppGCProgression determines and sets the garbage collection progression state for
+// discovered application
+// garbage collection (GC) based on the discovered VM recipe and the VRG's auto-cleanup status.
+func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
+	if d.isVMRecipeInUse() {
+		switch {
+		case d.isPreparingForFinalSync(clusterName): // for relocation only
+			d.log.V(1).Info("Setting progression - PreparingFinalSync")
+			d.setProgression(rmn.ProgressionPreparingFinalSync)
+		case d.isVMAutoCleanupFeasible(clusterName):
+			d.log.V(1).Info("Setting progression - CleanUpReadiness")
+			d.setProgression(rmn.ProgressionCleanupReadiness)
+		case d.isVMAutoCleanupCompleted(clusterName):
+			d.log.V(1).Info("Setting progression - Cleaning Up")
+			d.setProgression(rmn.ProgressionCleaningUp)
+		default:
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+		}
+	} else {
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
+	}
+}
+
+func removeSCCAnnotations(annotations map[string]string) map[string]string {
+	filteredAnnotations := make(map[string]string)
+
+	for key, val := range annotations {
+		if !strings.Contains(key, "sa.scc") {
+			filteredAnnotations[key] = val
+		}
+	}
+
+	return filteredAnnotations
 }

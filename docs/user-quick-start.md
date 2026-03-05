@@ -82,6 +82,7 @@ enough resources:
 
    ```
    sudo dnf install @virtualization
+   rpm -q libvirt virt-manager
    ```
 
    For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
@@ -89,10 +90,11 @@ enough resources:
 1. Install minikube - on Fedora you can use::
 
    ```
-   sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
+   minikube version
    ```
 
-   Tested with version v1.36.0.
+   Tested with version v1.38.0.
 
 1. Install the `kubectl` tool
 
@@ -100,11 +102,12 @@ enough resources:
    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
    sudo install kubectl /usr/local/bin
    rm kubectl
+   kubectl version --client
    ```
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.33.2.
+   Tested with version v1.34.1.
 
 1. Validate the installation
 
@@ -145,6 +148,7 @@ enough resources:
 
    ```
    curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   clusteradm version
    ```
 
    For more info see
@@ -158,11 +162,13 @@ enough resources:
    curl -Ls https://get.submariner.io | bash
    sudo install .local/bin/subctl /usr/local/bin/
    rm .local/bin/subctl
+   subctl version
    ```
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Version v0.18.0 or later is required. Tested with version v0.20.1.
+   Tested with version v0.22.0.
+   Version v0.21.2 or later is required.
 
 1. Install the `velero` tool
 
@@ -171,6 +177,7 @@ enough resources:
    tar xf velero.tar.gz --strip 1 velero-v1.14.0-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
+   velero version
    ```
 
    For more info see
@@ -179,9 +186,10 @@ enough resources:
 1. Install the `virtctl` tool.
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.5.2/virtctl-v1.5.2-linux-amd64
+   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
+   virtctl version
    ```
 
    For more info see
@@ -193,6 +201,7 @@ enough resources:
    curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
    sudo install mc /usr/local/bin
    rm mc
+   mc --version
    ```
 
    For more info see
@@ -204,6 +213,7 @@ enough resources:
    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
    sudo install kustomize /usr/local/bin
    rm kustomize
+   kustomize version
    ```
 
    For more info see
@@ -215,6 +225,7 @@ enough resources:
    curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
+   argocd version --client
    ```
 
    For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
@@ -230,6 +241,7 @@ enough resources:
    curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-$os-$machine
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   kubectl gather --version
    ```
 
    kubectl-gather version 0.6.0 or later is required. Tested with
@@ -239,15 +251,21 @@ enough resources:
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-   sudo dnf install helm
+   HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
+   curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
+   sudo install helm /usr/local/bin
+   rm -f helm
+   helm version
    ```
 
-   Tested with version v3.18.1.
+   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
+   Tested with version v4.0.1.
 
 1. Install `podman` - on Fedora you can use:
 
    ```
    sudo dnf install podman
+   podman --version
    ```
 
    Tested with version 5.5.1.
@@ -256,6 +274,7 @@ enough resources:
 
    ```
    sudo dnf install golang
+   go version
    ```
 
    Tested with version go1.24.4.

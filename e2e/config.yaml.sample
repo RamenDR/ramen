@@ -8,7 +8,7 @@ repo:
   branch: main
 
 # DRPolicy name in the hub cluster.
-drPolicy: dr-policy
+drPolicy: dr-policy-1m
 
 # Add ClusterSet name to match your Open Cluster Management configuration.
 clusterSet: default
@@ -36,7 +36,31 @@ deployers:
     description: "Subscription deployer for OCM subscriptions"
   - name: disapp
     type: disapp
-    description: "Discovered Application deployer for discovered applications"
+    description: "Discovered Application without recipe"
+  - name: disapp-recipe
+    type: disapp
+    recipe:
+      type: generate
+    description: "Discovered Application using recipe"
+  - name: disapp-recipe-check
+    type: disapp
+    recipe:
+      type: generate
+      checkHook: true
+    description: "Discovered Application using recipe with check hooks"
+  - name: disapp-recipe-exec
+    type: disapp
+    recipe:
+      type: generate
+      execHook: true
+    description: "Discovered Application using recipe with exec hooks"
+  - name: disapp-recipe-check-exec
+    type: disapp
+    recipe:
+      type: generate
+      checkHook: true
+      execHook: true
+    description: "Discovered Application using recipe with check and exec hooks"
 
 # List to tests to run.
 # Available workloads: deploy
@@ -61,6 +85,9 @@ tests:
   - deployer: disapp
     workload: deploy
     pvcspec: cephfs
+  - deployer: disapp-recipe-check-exec
+    workload: deploy
+    pvcspec: rbd
 
 # Sample cluster configurations:
 # Uncomment and edit the following lines to set the cluster

@@ -15,6 +15,8 @@ import (
 
 func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	w := ctx.Workload()
+	d := ctx.Deployer()
+
 	name := ctx.Name()
 	log := ctx.Logger()
 	config := ctx.Config()
@@ -26,12 +28,19 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	placementName := name
 	drpcName := name
 
+	var recipeRef *ramen.RecipeRef
+
+	deployerConfig := d.GetConfig()
+	if deployerConfig.Recipe != nil {
+		recipeRef = prepareRecipeRef(deployerConfig.Recipe.Type, ctx)
+	}
+
 	cluster, err := findProtectCluster(ctx)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("Protecting workload \"%s/%s\" in cluster %q", appNamespace, appname, cluster.Name)
+	log.Infof("Protecting workload in cluster %q", cluster.Name)
 
 	// create placement
 	if err := createPlacementManagedByRamen(ctx, placementName, managementNamespace); err != nil {
@@ -39,7 +48,7 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	}
 
 	drpc := generateDRPCDiscoveredApps(
-		name, managementNamespace, cluster.Name, drPolicyName, placementName, appname, appNamespace)
+		name, managementNamespace, cluster.Name, drPolicyName, placementName, appname, appNamespace, recipeRef)
 	if err := createDRPC(ctx, drpc); err != nil {
 		return err
 	}
@@ -60,6 +69,24 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	log.Info("Workload protected")
 
 	return nil
+}
+
+func prepareRecipeRef(recipeType string, ctx types.TestContext) *ramen.RecipeRef {
+	switch recipeType {
+	case "generate":
+		return &ramen.RecipeRef{
+			Name:      ctx.Name(),
+			Namespace: ctx.AppNamespace(),
+		}
+	case "vm":
+		return &ramen.RecipeRef{
+			Name:      "vm-recipe",
+			Namespace: ctx.ManagementNamespace(),
+		}
+	default:
+		panic(fmt.Sprintf("invalid recipe type configured %s, expected values are generate or vm",
+			recipeType))
+	}
 }
 
 // nolint:funlen,cyclop

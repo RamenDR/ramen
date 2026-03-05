@@ -6,9 +6,11 @@ package workloads
 import (
 	"fmt"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
 	"github.com/ramendr/ramen/e2e/config"
@@ -16,10 +18,11 @@ import (
 )
 
 const (
-	deploymentName    = "deploy"
-	deploymentAppName = "busybox"
-	deploymentPath    = "workloads/deployment/base"
-	deploymentPVCName = "busybox-pvc"
+	deploymentName           = "deploy"
+	deploymentAppName        = "busybox"
+	deploymentPath           = "workloads/deployment/base"
+	deploymentPVCName        = "busybox-pvc"
+	deploymentSelectResource = "deployment"
 
 	//nolint:lll
 	// deploymentMinimumReplicasAvailable is added in a deployment when it has its minimum replicas required available.
@@ -55,6 +58,40 @@ func (w Deployment) GetPath() string {
 
 func (w Deployment) GetBranch() string {
 	return w.Branch
+}
+
+func (w Deployment) GetSelectResource() string {
+	return deploymentSelectResource
+}
+
+func (w Deployment) GetLabelSelector() *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": deploymentAppName}}
+}
+
+func (w Deployment) GetChecks(namespace string) []*recipe.Check {
+	return []*recipe.Check{
+		{
+			Name:      "check-replicas",
+			Condition: "{$.spec.replicas} == {$.status.readyReplicas}",
+		},
+		{
+			Name:      "check-available",
+			Condition: "{$.spec.replicas} == {$.status.availableReplicas}",
+		},
+	}
+}
+
+func (w Deployment) GetOperations(namespace string) []*recipe.Operation {
+	return []*recipe.Operation{
+		{
+			Name:    "ls",
+			Command: "/bin/sh -c ls",
+		},
+		{
+			Name:    "echo",
+			Command: "/bin/sh -c echo 'Hello'",
+		},
+	}
 }
 
 func (w Deployment) Kustomize() string {
@@ -128,9 +165,7 @@ func (w Deployment) Health(ctx types.TestContext, cluster *types.Cluster) error 
 func (w Deployment) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) {
 	var statuses []types.WorkloadStatus
 
-	clusters := []*types.Cluster{ctx.Env().C1, ctx.Env().C2}
-
-	for _, cluster := range clusters {
+	for _, cluster := range ctx.Env().ManagedClusters() {
 		status, err := w.statusForCluster(ctx, cluster)
 		if err != nil {
 			return nil, fmt.Errorf("error checking application \"%s/%s\" on cluster %q: %w",

@@ -11,14 +11,16 @@ import (
 	"github.com/backube/volsync/controllers/statemachine"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/hack/fakes"
 	controllers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var rgsName = "rgs"
@@ -28,21 +30,43 @@ var _ = Describe("Replicationgroupsource", func() {
 	var fakeVolumeGroupSourceHandler *fakes.FakeVolumeGroupSourceHandler
 	BeforeEach(func() {
 		fakeVolumeGroupSourceHandler = &fakes.FakeVolumeGroupSourceHandler{}
+		fakeVolumeGroupSourceHandler.EnsureApplicationPVCsMountedReturns(true, nil)
 		metaTime := metav1.NewTime(time.Now())
 		rgs := &ramendrv1alpha1.ReplicationGroupSource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      rgsName,
 				Namespace: "default",
 				UID:       "123",
-				Labels:    map[string]string{volsync.VRGOwnerNameLabel: vrgName},
+				Labels:    map[string]string{util.VRGOwnerNameLabel: vrgName},
 			},
 			Status: ramendrv1alpha1.ReplicationGroupSourceStatus{
 				LastSyncStartTime: &metaTime,
 			},
 		}
 
+		vrg := &ramendrv1alpha1.VolumeReplicationGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vrgName,
+				Namespace: "default",
+			},
+			Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+				VolSync: ramendrv1alpha1.VolSyncSpec{
+					RSSpec: []ramendrv1alpha1.VolSyncReplicationSourceSpec{
+						{
+							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+								Name: "mypvc",
+							},
+							RsyncTLS: &ramendrv1alpha1.RsyncTLSConfig{
+								Address: "dummy-address.default.svc",
+							},
+						},
+					},
+				},
+			},
+		}
+
 		replicationGroupSourceMachine = cephfscg.NewRGSMachine(
-			k8sClient, rgs, volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
+			k8sClient, rgs, vrg, volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
 				&ramendrv1alpha1.VRGAsyncSpec{}, controllers.DefaultCephFSCSIDriverName,
 				controllers.DefaultVolSyncCopyMethod, false,
 			), fakeVolumeGroupSourceHandler, testLogger,

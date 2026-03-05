@@ -11,7 +11,6 @@ import (
 	ramenutils "github.com/backube/volsync/controllers/utils"
 	"github.com/go-logr/logr"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -20,6 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
@@ -198,7 +199,7 @@ func IsRDExist(rdspec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 }
 
 func DeferDeleteImage(ctx context.Context,
-	k8sClient client.Client, imageName, imageNamespace, rgdName string,
+	k8sClient client.Client, imageName, imageNamespace, rgdName, vrgName, vrgNamespace string,
 ) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		volumeSnapshot := &vsv1.VolumeSnapshot{}
@@ -215,6 +216,8 @@ func DeferDeleteImage(ctx context.Context,
 
 		labels[ramenutils.DoNotDeleteLabelKey] = "true"
 		labels[RGDOwnerLabel] = rgdName
+		labels[VRGOwnerNameLabel] = vrgName
+		labels[VRGOwnerNamespaceLabel] = vrgNamespace
 		volumeSnapshot.SetLabels(labels)
 
 		return k8sClient.Update(ctx, volumeSnapshot)
@@ -336,4 +339,18 @@ func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 	}
 
 	return volumeSnapshots, nil
+}
+
+func GetRSMoverConfig(name, namespace string, moverConfigArr []ramendrv1alpha1.MoverConfig,
+) *ramendrv1alpha1.MoverConfig {
+	if len(moverConfigArr) > 0 {
+		for _, mc := range moverConfigArr {
+			if mc.PVCName == name &&
+				mc.PVCNameSpace == namespace {
+				return &mc
+			}
+		}
+	}
+
+	return nil
 }

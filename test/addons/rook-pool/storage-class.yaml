@@ -7,6 +7,8 @@ kind: StorageClass
 metadata:
     name: $name
     labels:
+        ramendr.openshift.io/groupreplicationid: rook-ceph-replication-1
+        ramendr.openshift.io/replicationid: rook-ceph-replication-1
         ramendr.openshift.io/storageid: $name-$cluster-1
 provisioner: rook-ceph.rbd.csi.ceph.com
 parameters:
@@ -18,6 +20,8 @@ parameters:
     csi.storage.k8s.io/provisioner-secret-namespace: rook-ceph
     csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
     csi.storage.k8s.io/controller-expand-secret-namespace: rook-ceph
+    csi.storage.k8s.io/controller-publish-secret-name: rook-csi-rbd-provisioner
+    csi.storage.k8s.io/controller-publish-secret-namespace: rook-ceph
     csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
     csi.storage.k8s.io/node-stage-secret-namespace: rook-ceph
     csi.storage.k8s.io/fstype: ext4

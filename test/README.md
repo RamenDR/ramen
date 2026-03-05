@@ -17,6 +17,7 @@ environment.
 
    ```
    sudo dnf install @virtualization
+   rpm -q libvirt virt-manager
    ```
 
    For more info see
@@ -33,10 +34,11 @@ environment.
 1. Install minikube, for example on RHEL/CentOS/Fedora:
 
    ```
-   sudo dnf install https://storage.googleapis.com/minikube/releases/latest/minikube-latest.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
+   minikube version
    ```
 
-   Tested with version v1.36.0.
+   Tested with version v1.38.0.
 
 1. Install the `kubectl` tool
 
@@ -44,16 +46,18 @@ environment.
    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
    sudo install kubectl /usr/local/bin
    rm kubectl
+   kubectl version --client
    ```
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.33.2.
+   Tested with version v1.34.1.
 
 1. Install the `clusteradm` tool
 
    ```
    curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   clusteradm version
    ```
 
    For more info see
@@ -67,12 +71,13 @@ environment.
    curl -Ls https://get.submariner.io | bash
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
+   subctl version
    ```
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.20.1.
-   Version v0.18.0 or later is required.
+   Tested with version v0.22.0.
+   Version v0.21.2 or later is required.
 
 1. Install the `velero` tool
 
@@ -81,6 +86,7 @@ environment.
    tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
+   velero version
    ```
 
    For more info see
@@ -89,18 +95,23 @@ environment.
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-   sudo dnf install helm
+    HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
+    curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
+    sudo install helm /usr/local/bin
+    rm -f helm
+    helm version
    ```
 
-   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
-   Tested with version v3.18.1.
+   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
+   Tested with version v4.0.1.
 
 1. Install the `virtctl` tool
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.5.2/virtctl-v1.5.2-linux-amd64
+   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
+   virtctl version
    ```
 
    For more info see
@@ -112,6 +123,7 @@ environment.
    curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
    sudo install mc /usr/local/bin
    rm mc
+   mc --version
    ```
 
    For more info see
@@ -123,6 +135,7 @@ environment.
    curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
    sudo install kustomize /usr/local/bin
    rm kustomize
+   kustomize version
    ```
 
    For more info see
@@ -134,6 +147,7 @@ environment.
    curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
+   argocd version --client
    ```
 
    For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
@@ -145,13 +159,16 @@ environment.
    curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.11.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-## Setup on macOS
+## Setup on macOS 26+
+
+> [!IMPORTANT]
+> Older macOS are not supported.
 
 1. Install the [Homebrew package manager](https://brew.sh/)
 
@@ -164,20 +181,28 @@ environment.
        helm \
        kubectl \
        kustomize \
-       qemu \
-       lima \
+       minikube \
        minio-mc \
+       qemu \
        velero \
+       vfkit \
        virtctl
    ```
 
-   lima version 1.0.0 or later is required, latest version is
-   recommended. Tested with lima version 1.0.4.
+   **NOTE**: minikube version 1.38.0 or later is required, latest version is recommended.
+
+1. Install `vmnet-helper`
+
+   ```
+   brew tap nirs/vmnet-helper
+   brew install vmnet-helper
+   ```
 
 1. Install the `clusteradm` tool
 
    ```
    curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   clusteradm version
    ```
 
    For more info see
@@ -191,11 +216,13 @@ environment.
    curl -Ls https://get.submariner.io | bash
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
+   subctl version
    ```
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Version v0.18.0 or later is required. Tested with version v0.20.1.
+   Tested with version v0.22.0.
+   Version v0.21.2 or later is required.
 
 1. Install the `kubectl-gather` plugin
 
@@ -204,31 +231,35 @@ environment.
    curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.11.0 or later is required.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-1. Install `socket_vmnet`
+### Migrating from lima
 
-   > [!IMPORTANT]
-   > You must install the socket_vmnet launchd service, we don't manage
-   > socket_vment with Lima.
+If you used the lima provider on macOS, you must remove existing clusters, and
+recreate the clusters with minikube.
 
-   ```
-   VERSION="$(curl -fsSL https://api.github.com/repos/lima-vm/socket_vmnet/releases/latest | jq -r .tag_name)"
-   FILE="socket_vmnet-${VERSION:1}-$(uname -m).tar.gz"
-   SERVICE_ID="io.github.lima-vm.socket_vmnet"
-   curl -OSL "https://github.com/lima-vm/socket_vmnet/releases/download/${VERSION}/${FILE}"
-   sudo tar Cxzvf / "${FILE}" opt/socket_vmnet
-   sudo cp "/opt/socket_vmnet/share/doc/socket_vmnet/launchd/$SERVICE_ID.plist" "/Library/LaunchDaemons/$SERVICE_ID.plist"
-   sudo launchctl bootstrap system "/Library/LaunchDaemons/$SERVICE_ID.plist"
-   sudo launchctl enable system/$SERVICE_ID
-   sudo launchctl kickstart -kp system/$SERVICE_ID
-   ```
+```
+drenv delete envs/{cluster-name}.yaml
+drenv start envs/{cluster-name}.yaml
+```
 
-   For more info see [Installing socket_vmnet from binary](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-binary)
+If you don't use lima vms with socket_vmnet, you can uninstall socket_vmnet:
+
+```
+sudo launchctl bootout system/io.github.lima-vm.socket_vmnet
+sudo rm /Library/LaunchDaemons/io.github.lima-vm.socket_vmnet.plist
+sudo rm -rf /opt/socket_vmnet
+```
+
+If you don't use lima vms, you can uninstall it:
+
+```
+brew uninstall lima
+```
 
 ## Testing that drenv is healthy
 
@@ -345,6 +376,17 @@ To clear the cached resources run:
 ```
 drenv clear
 ```
+
+## Caching container images
+
+We use use local registry cache to cache container images. To check the
+cache stats you can use:
+
+```
+drenv registry-cache stats
+```
+
+See [`registry-cache/README.md`](registry-cache/README.md) for more details.
 
 ## The environment file
 
@@ -545,13 +587,13 @@ $ drenv start envs/example.yaml
 2023-01-03 23:41:01,166 INFO    [example] Environment started in 35.71 seconds
 ```
 
-#### Using --verbose option
+#### The log file
 
-While debugging it is useful to use the `--verbose` option to see much
-more details:
+The console logs contains INFO level message. To see all log messages check the
+log file:
 
-```
-$ drenv start envs/example.yaml -v
+```console
+$ cat drenv.log
 2023-01-03 23:41:53,414 INFO    [example] Starting environment
 2023-01-03 23:41:53,416 INFO    [ex1] Starting cluster
 2023-01-03 23:41:53,539 DEBUG   [ex1] * [ex1] minikube v1.28.0 on Fedora 37

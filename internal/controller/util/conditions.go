@@ -4,10 +4,10 @@
 package util
 
 import (
+	"slices"
 	"time"
 
 	"github.com/go-logr/logr"
-	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -192,7 +192,7 @@ func mergedCondition(conditions []*metav1.Condition, ignoreReasons []string) met
 
 		// NOTE: Reason differs, for now merge the message. We could look at error reasons
 		// taking precedence over other reasons
-		merged.Message += subCondition.Message
+		merged.Message = merged.Message + ". " + subCondition.Message
 	}
 
 	return merged

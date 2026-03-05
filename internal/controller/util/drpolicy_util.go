@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -115,11 +116,5 @@ func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
 }
 
 func DrpolicyContainsDrcluster(drpolicy *rmn.DRPolicy, drcluster string) bool {
-	for _, managedCluster := range DRPolicyClusterNames(drpolicy) {
-		if managedCluster == drcluster {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(DRPolicyClusterNames(drpolicy), drcluster)
 }

@@ -7,22 +7,21 @@ import (
 	"context"
 	"time"
 
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	controller "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	storagev1 "k8s.io/api/storage/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
@@ -141,6 +140,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					volsync.ACMAppSubDoNotDeleteAnnotation:                 volsync.ACMAppSubDoNotDeleteAnnotationVal,
 					"pv.kubernetes.io/bind-completed":                      "yes",
 					"volume.kubernetes.io/storage-provisioner":             "provisioner",
+					"any-other-annotation":                                 "any-value",
 				}
 
 				JustBeforeEach(func() {
@@ -191,6 +191,10 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 							"apps.open-cluster-management.io/hosting-subscription", "sub-name"))
 						Expect(vsPvc.Annotations).To(HaveKeyWithValue(
 							"apps.open-cluster-management.io/reconcile-option", "merge"))
+
+						// Any other annotations are also progagated.
+						Expect(vsPvc.Annotations).To(HaveKeyWithValue(
+							"any-other-annotation", "any-value"))
 
 						// Except the do-no-delete annotion
 						Expect(vsPvc.Annotations).NotTo(HaveKey(volsync.ACMAppSubDoNotDeleteAnnotation))

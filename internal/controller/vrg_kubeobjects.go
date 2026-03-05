@@ -11,10 +11,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/hooks"
-	"github.com/ramendr/ramen/internal/controller/kubeobjects"
-	"github.com/ramendr/ramen/internal/controller/util"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,6 +18,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/hooks"
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
@@ -69,20 +70,11 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 		return
 	}
 
-	v.kubeObjectsProtect(result, kubeObjectsCaptureStartConditionallyPrimary,
-		func() {},
-	)
+	v.kubeObjectsProtect(result)
 }
-
-type (
-	captureStartConditionally     func(*VRGInstance, *ctrl.Result, int64, time.Duration, time.Duration, func())
-	captureInProgressStatusUpdate func()
-)
 
 func (v *VRGInstance) kubeObjectsProtect(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 ) {
 	if v.kubeObjectProtectionDisabled("capture") {
 		return
@@ -109,16 +101,12 @@ func (v *VRGInstance) kubeObjectsProtect(
 	}
 
 	v.kubeObjectsCaptureStartOrResumeOrDelay(result,
-		captureStartConditionally,
-		captureInProgressStatusUpdate,
 		captureToRecoverFrom,
 	)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
 ) {
 	veleroNamespaceName := v.veleroNamespaceName()
@@ -141,51 +129,40 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	captureStartOrResume := func(generation int64, startOrResume string) {
-		log.Info("Kube objects capture "+startOrResume, "generation", generation)
-		v.kubeObjectsCaptureStartOrResume(result,
-			captureStartConditionally,
-			captureInProgressStatusUpdate,
-			number, pathName, capturePathName, namePrefix, veleroNamespaceName, interval,
-			generation,
-			kubeobjects.RequestsMapKeyedByName(requests),
-			log,
-		)
-	}
-
 	if count := requests.Count(); count > 0 {
-		captureStartOrResume(requests.Get(0).Object().GetGeneration(), "resume")
+		generation := requests.Get(0).Object().GetGeneration()
+
+		log.Info("Kube objects capture resume", "generation", generation)
+
+		v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName, namePrefix, veleroNamespaceName,
+			interval, generation, kubeobjects.RequestsMapKeyedByName(requests), log)
 
 		return
 	}
 
-	captureStartConditionally(
-		v, result, captureToRecoverFrom.StartGeneration, time.Since(captureToRecoverFrom.StartTime.Time), interval,
-		func() {
-			if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
-				return
-			}
-
-			captureStartOrResume(vrg.GetGeneration(), "start")
-		},
-	)
-}
-
-func kubeObjectsCaptureStartConditionallyPrimary(
-	v *VRGInstance, result *ctrl.Result,
-	captureStartGeneration int64, captureStartTimeSince, captureStartInterval time.Duration,
-	captureStart func(),
-) {
-	if delay := captureStartInterval - captureStartTimeSince; delay > 0 {
+	// requeue with a delay if the time for the next capture has not yet arrived
+	if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
 		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
-			"interval", captureStartInterval)
+			"interval", interval)
 		delaySetIfLess(result, delay, v.log)
 		v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 		return
 	}
 
-	captureStart()
+	// before starting a new capture, delete the previous one with the same number
+	if v.kubeObjectsCapturesDelete(result, number, capturePathName) != nil {
+		return
+	}
+
+	// start the capture
+	generation := vrg.GetGeneration()
+
+	log.Info("Kube objects capture start", "generation", generation)
+
+	v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName,
+		namePrefix, veleroNamespaceName, interval, generation,
+		kubeobjects.RequestsMapKeyedByName(requests), log)
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
@@ -218,8 +195,6 @@ const (
 // nolint: funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	captureNumber int64,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
 	interval time.Duration,
@@ -240,7 +215,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	}
 
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
-		veleroNamespaceName, captureInProgressStatusUpdate, annotations, requests, log)
+		veleroNamespaceName, annotations, requests, log)
 	if err != nil {
 		rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
 		if !ok {
@@ -284,7 +259,6 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 	v.kubeObjectsCaptureComplete(
 		result,
-		captureStartConditionally,
 		captureNumber,
 		veleroNamespaceName,
 		interval,
@@ -296,7 +270,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
-	veleroNamespaceName string, captureInProgressStatusUpdate captureInProgressStatusUpdate,
+	veleroNamespaceName string,
 	annotations map[string]string, requests map[string]kubeobjects.Request, log logr.Logger,
 ) (bool, error) {
 	captureSteps := v.recipeElements.CaptureWorkflow
@@ -321,8 +295,15 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		if cg.IsHook {
 			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
 
-			executor, err1 := hooks.GetHookExecutor(cg.Hook, v.reconciler.APIReader, v.reconciler.Scheme,
-				v.recipeElements)
+			hookCtx := hooks.HookContext{
+				Hook:           cg.Hook,
+				Client:         v.reconciler.Client,
+				Reader:         v.reconciler.APIReader,
+				Scheme:         v.reconciler.Scheme,
+				RecipeElements: v.recipeElements,
+			}
+
+			executor, err1 := hooks.GetHookExecutor(hookCtx)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", cg.Hook)
@@ -337,7 +318,6 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			isEssentialStep = cg.GroupEssential != nil && *cg.GroupEssential
 			loopCount, err = v.kubeObjectsGroupCapture(
 				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
-				captureInProgressStatusUpdate,
 				labels, annotations, requests, log,
 			)
 			requestsCompletedCount += loopCount
@@ -382,7 +362,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 	result *ctrl.Result,
 	captureGroup kubeobjects.CaptureSpec,
 	pathName, capturePathName, namePrefix, veleroNamespaceName string,
-	captureInProgressStatusUpdate captureInProgressStatusUpdate,
 	labels, annotations map[string]string, requests map[string]kubeobjects.Request,
 	log logr.Logger,
 ) (requestsCompletedCount int, reqErr error) {
@@ -407,7 +386,6 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 				continue
 			}
 
-			captureInProgressStatusUpdate()
 			log1.Info("Kube objects group capture request submitted")
 		} else {
 			err := request.Status(v.log)
@@ -458,7 +436,6 @@ func (v *VRGInstance) kubeObjectsCaptureDeleteAndLog(
 
 func (v *VRGInstance) kubeObjectsCaptureComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureNumber int64, veleroNamespaceName string, interval time.Duration,
 	labels map[string]string, startTime metav1.Time, annotations map[string]string,
 ) {
@@ -485,7 +462,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 		func() {
 			v.kubeObjectsCaptureIdentifierUpdateComplete(
 				result,
-				captureStartConditionally,
 				*captureToRecoverFromIdentifier,
 				veleroNamespaceName,
 				interval,
@@ -500,7 +476,6 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 
 func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	result *ctrl.Result,
-	captureStartConditionally captureStartConditionally,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier,
 	veleroNamespaceName string,
 	interval time.Duration,
@@ -524,13 +499,16 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
 	v.log.Info("Kube objects captured", "recovery point", captureToRecoverFromIdentifier,
 		"duration", captureStartTimeSince)
-	captureStartConditionally(
-		v, result, captureToRecoverFromIdentifier.StartGeneration, captureStartTimeSince, interval,
-		func() {
-			v.log.Info("Kube objects capture schedule to run immediately")
-			delaySetMinimum(result)
-		},
-	)
+
+	// schedule next kube objects capture
+	delay := interval - captureStartTimeSince
+
+	if delay > 0 {
+		delaySetIfLess(result, delay, v.log)
+	} else {
+		delaySetMinimum(result)
+		v.log.Info("Kube objects capture schedule to run immediately")
+	}
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
@@ -785,8 +763,15 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		if rg.IsHook {
 			isEssentialStep = rg.Hook.Essential != nil && *rg.Hook.Essential
 
-			executor, err1 := hooks.GetHookExecutor(rg.Hook, v.reconciler.APIReader, v.reconciler.Scheme,
-				v.recipeElements)
+			hookCtx := hooks.HookContext{
+				Hook:           rg.Hook,
+				Client:         v.reconciler.Client,
+				Reader:         v.reconciler.APIReader,
+				Scheme:         v.reconciler.Scheme,
+				RecipeElements: v.recipeElements,
+			}
+
+			executor, err1 := hooks.GetHookExecutor(hookCtx)
 			if err1 != nil {
 				// continue if hook type is not supported. Supported types are "check" and "exec"
 				log1.Info("Hook type not supported", "hook", rg.Hook)
@@ -1180,28 +1165,50 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 // TODO: Return error as well or ensure that other than exec and check hooks are
 // handled properly.
 func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	// based on hook.type check of the hook is chks or ops
-	if hook.Type == "exec" {
+	// based on hook.type, the hook is chks, ops or scale
+	switch hook.Type {
+	case "exec":
 		return getOpHookSpec(&hook, suffix)
-	} else if hook.Type == "check" {
+	case "check":
 		return getChkHookSpec(&hook, suffix)
+	case "scale":
+		return getScaleHookSpec(&hook, suffix)
+	default:
+		return kubeobjects.HookSpec{}
 	}
+}
 
-	return kubeobjects.HookSpec{}
+func getScaleHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	return kubeobjects.HookSpec{
+		Name:           hook.Name,
+		Namespace:      hook.Namespace,
+		Type:           hook.Type,
+		SelectResource: hook.SelectResource,
+		LabelSelector:  hook.LabelSelector,
+		NameSelector:   hook.NameSelector,
+		Essential:      hook.Essential,
+		Timeout:        hook.Timeout,
+		OnError:        hook.OnError,
+		// suffix will be up, down, or sync
+		Scale: kubeobjects.ScaleSpec{
+			Operation: suffix,
+		},
+	}
 }
 
 func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 	for _, chk := range hook.Chks {
 		if chk.Name == suffix {
 			return kubeobjects.HookSpec{
-				Name:           hook.Name,
-				Namespace:      hook.Namespace,
-				Type:           hook.Type,
-				SelectResource: hook.SelectResource,
-				LabelSelector:  hook.LabelSelector,
-				NameSelector:   hook.NameSelector,
-				Timeout:        chk.Timeout,
-				OnError:        chk.OnError,
+				Name:                 hook.Name,
+				Namespace:            hook.Namespace,
+				Type:                 hook.Type,
+				SelectResource:       hook.SelectResource,
+				LabelSelector:        hook.LabelSelector,
+				NameSelector:         hook.NameSelector,
+				Timeout:              chk.Timeout,
+				OnError:              chk.OnError,
+				SkipHookIfNotPresent: hook.SkipHookIfNotPresent,
 				Chk: kubeobjects.Check{
 					Name:      suffix,
 					Condition: chk.Condition,

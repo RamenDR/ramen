@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -21,11 +22,10 @@ import (
 	"k8s.io/client-go/util/retry"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
 
-	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
-	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -353,9 +353,14 @@ func (mwu *MWUtil) IsManifestApplied(cluster, mwType string) bool {
 // Namespace MW creation
 func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	name string, namespaceName string, managedClusterNamespace string,
-	annotations map[string]string,
+	annotations map[string]string, labels map[string]string,
 ) error {
-	manifest, err := mwu.GenerateManifest(Namespace(namespaceName))
+	ns := Namespace(namespaceName)
+	// Set labels and annotations on the namespace object itself
+	ns.Labels = labels
+	ns.Annotations = annotations
+
+	manifest, err := mwu.GenerateManifest(ns)
 	if err != nil {
 		return err
 	}
@@ -368,7 +373,7 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	manifestWork := mwu.newManifestWork(
 		mwName,
 		managedClusterNamespace,
-		map[string]string{},
+		labels,
 		manifests,
 		annotations)
 
@@ -637,7 +642,8 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations m
 	// if not set, call CreateOrUpdateNamespaceManifest such that it is
 	// updated with the delete option
 	if mw.Spec.DeleteOption == nil {
-		err = mwu.CreateOrUpdateNamespaceManifest(mwu.InstName, mwu.TargetNamespace, clusterName, annotations)
+		err = mwu.CreateOrUpdateNamespaceManifest(mwu.InstName, mwu.TargetNamespace, clusterName, annotations,
+			map[string]string{})
 		if err != nil {
 			mwu.Log.Info("error creating namespace via ManifestWork", "error", err, "cluster", clusterName)
 

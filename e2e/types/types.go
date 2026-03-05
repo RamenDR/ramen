@@ -6,7 +6,9 @@ package types
 import (
 	"context"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	"go.uber.org/zap"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/e2e/config"
@@ -54,8 +56,16 @@ type Deployer interface {
 	DeleteResources(TestContext) error
 	// WaitForResourcesDelete waits for all workload resources to be deleted
 	WaitForResourcesDelete(TestContext) error
+
+	// GetRecipe returns the recipe if the deployer is configured to use one.
+	// Returns nil if the deployer is not configured to use a recipe.
+	GetRecipe(TestContext) (*recipe.Recipe, error)
+
+	// GetConfig returns the deployer configuration used by the deployer
+	GetConfig() *config.Deployer
 }
 
+// nolint:interfacebloat
 type Workload interface {
 	// Can differ based on the workload, hence part of the Workload interface
 	Kustomize() string
@@ -64,6 +74,16 @@ type Workload interface {
 	GetAppName() string
 	GetPath() string
 	GetBranch() string
+	// GetSelectResource returns the hook.selectResource of workload used. It can be either "deployment"
+	//  or "pod" or "statefulset" or any resource with the format "<apigroup>/<apiversion>/<kindplural>"
+	GetSelectResource() string
+	// GetLabelSelector returns the labelSelector to used for selecting the resources.
+	// This value is made use during preparation of hooks used in recipe.
+	GetLabelSelector() *metav1.LabelSelector
+	// GetChecks returns the check hook to be executed based on workload and given namespace.
+	GetChecks(string) []*recipe.Check
+	// GetOperations returns the exec hook to be executed based on workload and given namespace.
+	GetOperations(string) []*recipe.Operation
 	Health(ctx TestContext, cluster *Cluster) error
 	Status(ctx TestContext) ([]WorkloadStatus, error)
 }

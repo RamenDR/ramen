@@ -30,10 +30,13 @@ def run(args):
 
 def delete_hub_dr_resources(hub, clusters, topology):
     # Deleting in reverse order.
-    for name in ["dr-policy", "dr-clusters"]:
-        command.info("Deleting %s for %s", name, topology)
-        template = drenv.template(command.resource(f"{topology}/{name}.yaml"))
-        yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
+
+    for interval in command.DRPOLICY_INTERVALS:
+        command.info("Deleting dr-policy-%s for %s", interval, topology)
+        template = drenv.template(command.resource(f"{topology}/dr-policy.yaml"))
+        yaml = template.substitute(
+            cluster1=clusters[0], cluster2=clusters[1], interval=interval
+        )
         kubectl.delete(
             "--filename=-",
             "--ignore-not-found",
@@ -41,6 +44,17 @@ def delete_hub_dr_resources(hub, clusters, topology):
             context=hub,
             log=command.debug,
         )
+
+    command.info("Deleting dr-clusters for %s", topology)
+    template = drenv.template(command.resource(f"{topology}/dr-clusters.yaml"))
+    yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
+    kubectl.delete(
+        "--filename=-",
+        "--ignore-not-found",
+        input=yaml,
+        context=hub,
+        log=command.debug,
+    )
 
 
 def generate_ramen_s3_secrets(clusters, args):

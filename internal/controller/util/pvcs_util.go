@@ -9,10 +9,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
-	"golang.org/x/exp/slices"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,8 +30,15 @@ const (
 
 	PodVolumePVCClaimIndexName    string = "spec.volumes.persistentVolumeClaim.claimName"
 	VolumeAttachmentToPVIndexName string = "spec.source.persistentVolumeName"
+
+	ConsistencyGroupLabel = "ramendr.openshift.io/consistency-group"
+
+	SuffixForFinalsyncPVC = "-for-finalsync"
+
+	ManagedAnnotationKeysMarker string = "ramendr.openshift.io/managed-annotation-keys"
 )
 
+// nolint:funlen
 func ListPVCsByPVCSelector(
 	ctx context.Context,
 	k8sClient client.Client,
@@ -60,6 +68,17 @@ func ListPVCsByPVCSelector(
 		}
 
 		updatedPVCSelector = pvcSelector.Add(*notCreatedByVolsyncReq)
+
+		// Update the label selector to filter out PVCs created by ramen
+		notCreatedByRamen, err := labels.NewRequirement(
+			CreatedByRamenLabel, selection.NotIn, []string{"true"})
+		if err != nil {
+			logger.Error(err, "error updating PVC label selector for created by ramen label")
+
+			return nil, fmt.Errorf("error updating PVC label selector for created by ramen label, %w", err)
+		}
+
+		updatedPVCSelector = updatedPVCSelector.Add(*notCreatedByRamen)
 	}
 
 	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", updatedPVCSelector)
@@ -87,7 +106,43 @@ func ListPVCsByPVCSelector(
 		}
 	}
 
+	logger.Info(fmt.Sprintf("Returning %d PVCs in namespace(s) %v", len(pvcs), namespaces))
+
 	pvcList.Items = pvcs
+
+	return pvcList, nil
+}
+
+func ListPVCsByCGLabel(
+	ctx context.Context,
+	k8sClient client.Client,
+	namespace string,
+	cgLabelVal string,
+	logger logr.Logger,
+) (*corev1.PersistentVolumeClaimList, error) {
+	logger.Info("Fetching PVCs in CG", "GC Label", cgLabelVal)
+
+	if cgLabelVal == "" {
+		logger.Info("CG label value is empty, returning empty PVC list")
+
+		return &corev1.PersistentVolumeClaimList{}, nil
+	}
+
+	listOptions := []client.ListOption{
+		client.InNamespace(namespace),
+		client.MatchingLabels{
+			ConsistencyGroupLabel: cgLabelVal,
+		},
+	}
+
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err := k8sClient.List(ctx, pvcList, listOptions...); err != nil {
+		logger.Error(err, "Failed to list PVCs using CG label", "label", cgLabelVal)
+
+		return nil, fmt.Errorf("failed to list PVCs using CG label, %w", err)
+	}
+
+	logger.Info(fmt.Sprintf("Found %d PVCs using CG label %s", len(pvcList.Items), cgLabelVal))
 
 	return pvcList, nil
 }
@@ -340,4 +395,59 @@ func sortJSON(v interface{}) interface{} {
 	}
 
 	return v
+}
+
+func GetTmpPVCNameForFinalSync(pvcName string) string {
+	return fmt.Sprintf("%s%s", pvcName, SuffixForFinalsyncPVC)
+}
+
+// SyncPVCLabels synchronizes labels from ProtectedPVC to PVC.
+// It simply adds/updates labels without removing ones that are deleted from ProtectedPVC.
+// Note: Kubernetes handles labels differently from annotations. Label values are limited to
+// 63 characters, so using the same pattern as in the SyncPVCAnnotations will eventually cause
+// it to break.
+func SyncPVCLabels(pvc *corev1.PersistentVolumeClaim, protectedLabels map[string]string) {
+	if pvc.Labels == nil {
+		pvc.Labels = make(map[string]string)
+	}
+
+	for key, val := range protectedLabels {
+		pvc.Labels[key] = val
+	}
+}
+
+// SyncPVCAnnotations synchronizes annotations from ProtectedPVC to PVC, removing annotations that were
+// previously synced but are no longer in ProtectedPVC, while preserving PVC-specific annotations.
+func SyncPVCAnnotations(pvc *corev1.PersistentVolumeClaim, protectedAnnotations map[string]string) {
+	if pvc.Annotations == nil {
+		pvc.Annotations = make(map[string]string)
+	}
+
+	currentManagedKeys := make(map[string]bool)
+	// Track which keys we previously managed
+	if markerVal, exists := pvc.Annotations[ManagedAnnotationKeysMarker]; exists {
+		for _, key := range strings.Split(markerVal, ",") {
+			if key != "" {
+				currentManagedKeys[key] = true
+			}
+		}
+	}
+
+	// Remove annotations that we previously managed but are no longer in ProtectedPVC
+	for key := range currentManagedKeys {
+		if _, exists := protectedAnnotations[key]; !exists {
+			delete(pvc.Annotations, key)
+		}
+	}
+
+	// Add/update all annotations from ProtectedPVC
+	newManagedKeys := make([]string, 0, len(protectedAnnotations))
+	for key, val := range protectedAnnotations {
+		pvc.Annotations[key] = val
+		newManagedKeys = append(newManagedKeys, key)
+	}
+
+	// Store the new set of managed keys
+	sort.Strings(newManagedKeys)
+	pvc.Annotations[ManagedAnnotationKeysMarker] = strings.Join(newManagedKeys, ",")
 }

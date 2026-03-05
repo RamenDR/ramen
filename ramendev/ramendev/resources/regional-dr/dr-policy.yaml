@@ -4,11 +4,11 @@
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRPolicy
 metadata:
-  name: dr-policy
+  name: dr-policy-$interval
 spec:
   drClusters:
   - $cluster1
   - $cluster2
-  schedulingInterval: 1m
+  schedulingInterval: $interval
   replicationClassSelector: {}
   volumeSnapshotClassSelector: {}

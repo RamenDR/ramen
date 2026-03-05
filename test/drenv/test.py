@@ -13,7 +13,6 @@ from drenv import kubectl
 from . import ramen
 from . import yaml
 
-
 workdir = None
 env = None
 config = None
@@ -213,8 +212,8 @@ def lookup_cluster():
     kubectl.wait(
         placement,
         "--for=condition=PlacementSatisfied",
-        "--timeout=60s",
         f"--namespace={config['namespace']}",
+        timeout=60,
         context=env["hub"],
         log=debug,
     )
@@ -304,7 +303,6 @@ def wait_for_drpc_phase(phase):
         drpc,
         f"--for=jsonpath={{.status.phase}}={phase}",
         f"--namespace={config['namespace']}",
-        "--timeout=300s",
         context=env["hub"],
         log=debug,
     )
@@ -324,7 +322,7 @@ def wait_until_drpc_is_stable(timeout=300):
         drpc,
         "--for=condition=Available",
         f"--namespace={config['namespace']}",
-        f"--timeout={timeout}s",
+        timeout=timeout,
         context=env["hub"],
         log=debug,
     )
@@ -334,7 +332,7 @@ def wait_until_drpc_is_stable(timeout=300):
         drpc,
         "--for=condition=PeerReady",
         f"--namespace={config['namespace']}",
-        f"--timeout={timeout}s",
+        timeout=timeout,
         context=env["hub"],
         log=debug,
     )

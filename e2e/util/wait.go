@@ -9,7 +9,7 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +17,7 @@ import (
 	ocmv1b2 "open-cluster-management.io/api/cluster/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	argocdv1alpha1hack "github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/types"
 )
 
@@ -111,6 +112,25 @@ func WaitForNamespaceDeleteOnManagedClusters(ctx types.Context, name string) err
 	}
 
 	return WaitForNamespaceDelete(ctx, ctx.Env().C2, name)
+}
+
+func WaitForRecipeDeleteOnManagedClusters(ctx types.Context, name, namespace string) error {
+	if err := WaitForRecipeDelete(ctx, ctx.Env().C1, name, namespace); err != nil {
+		return err
+	}
+
+	return WaitForRecipeDelete(ctx, ctx.Env().C2, name, namespace)
+}
+
+func WaitForRecipeDelete(ctx types.Context, cluster *types.Cluster, name, namespace string) error {
+	recipe := &recipe.Recipe{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	return waitForResourceDelete(ctx, cluster, recipe)
 }
 
 // waitForResourceDelete waits until a resource is deleted or deadline is reached

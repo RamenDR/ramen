@@ -46,14 +46,18 @@ jobs:
 
       - name: Install minikube
         run: |
-          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          curl --fail --silent --show-error --location --output minikube \
+              https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-amd64
+          sudo install minikube /usr/local/bin/
           minikube version
 
       - name: Install kubectl
         run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install ./kubectl /usr/local/bin/
+          set -e -o pipefail
+          version="$(minikube config defaults kubernetes-version -o json | jq -r '.[0]')"
+          curl --fail --silent --show-error --location --remote-name \
+              "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
+          sudo install kubectl /usr/local/bin/
           kubectl version --client --output=yaml
 
       - name: Install tools
@@ -99,7 +103,7 @@ jobs:
       matrix:
         os:
           # arm64, 3 cpus (M1), 7 GiB RAM, no nested virtalization.
-          - macos-14
+          - macos-latest
         python-version:
           - "3.13"
     runs-on: ${{ matrix.os }}

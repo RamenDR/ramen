@@ -12,14 +12,15 @@ import (
 	"github.com/backube/volsync/controllers/mover"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-	"github.com/ramendr/ramen/internal/controller/util"
-	"github.com/ramendr/ramen/internal/controller/volsync"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/util"
+	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
 type rgdMachine struct {
@@ -135,8 +136,12 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 		m.Logger.Info("Set DoNotDeleteLabel to the image",
 			"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
 
+		rgdName := m.ReplicationGroupDestination.Name
+		vrgName := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel]
+		vrgNamespace := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNamespaceLabel]
+
 		if err := util.DeferDeleteImage(
-			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, m.ReplicationGroupDestination.Name,
+			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rgdName, vrgName, vrgNamespace,
 		); err != nil {
 			return mover.InProgress(), err
 		}
@@ -188,29 +193,13 @@ func (m *rgdMachine) ReconcileRD(
 	}
 
 	log := m.Logger.WithValues("ProtectedPVCName", rdSpec.ProtectedPVC.Name)
-	vrgName := m.ReplicationGroupDestination.GetLabels()[volsync.VRGOwnerNameLabel]
+	vrgName := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel]
 	// Pre-allocated shared secret - DRPC will generate and propagate this secret from hub to clusters
 	pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 	// Need to confirm this secret exists on the cluster before proceeding, otherwise volsync will generate it
-	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
+	err := m.ensurePSKSecretReady(pskSecretName, log)
 	if err != nil {
-		log.Error(err, "Failed to ValidateSecretAndAddVRGOwnerRef", "PSKSecretName", pskSecretName)
-
 		return nil, err
-	}
-
-	if !secretExists {
-		return nil, fmt.Errorf("psk secret: %s is not found", pskSecretName)
-	}
-
-	if m.VSHandler.IsVRGInAdminNamespace() {
-		// copy the secret to the namespace where the PVC is
-		err = m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupDestination.Namespace)
-		if err != nil {
-			log.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
-
-			return nil, err
-		}
 	}
 
 	dstPVC, err := m.VSHandler.PrecreateDestPVCIfEnabled(rdSpec)
@@ -227,11 +216,13 @@ func (m *rgdMachine) ReconcileRD(
 		return nil, err
 	}
 
-	err = m.VSHandler.ReconcileServiceExportForRD(rd)
-	if err != nil {
-		log.Error(err, "Failed to ReconcileServiceExportForRD", "RD", rd)
+	if m.VSHandler.IsSubmarinerEnabled() {
+		err = m.VSHandler.ReconcileServiceExportForRD(rd)
+		if err != nil {
+			log.Error(err, "Failed to ReconcileServiceExportForRD", "RD", rd)
 
-		return nil, err
+			return nil, err
+		}
 	}
 
 	if !volsync.RDStatusReady(rd, m.Logger) {
@@ -241,6 +232,31 @@ func (m *rgdMachine) ReconcileRD(
 	return rd, nil
 }
 
+func (m *rgdMachine) ensurePSKSecretReady(pskSecretName string, log logr.Logger) error {
+	secretExists, err := m.VSHandler.ValidateSecretAndAddVRGOwnerRef(pskSecretName)
+	if err != nil {
+		log.Error(err, "Failed to ValidateSecretAndAddVRGOwnerRef", "PSKSecretName", pskSecretName)
+
+		return err
+	}
+
+	if !secretExists {
+		return fmt.Errorf("psk secret: %s is not found", pskSecretName)
+	}
+
+	if m.VSHandler.IsVRGInAdminNamespace() {
+		// copy the secret to the namespace where the PVC is
+		if err := m.VSHandler.CopySecretToPVCNamespace(pskSecretName, m.ReplicationGroupDestination.Namespace); err != nil {
+			log.Error(err, "Failed to CopySecretToPVCNamespace", "PSKSecretName", pskSecretName)
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+//nolint:funlen
 func (m *rgdMachine) CreateReplicationDestinations(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	pskSecretName string, dstPVC *string, manual string,
@@ -260,7 +276,7 @@ func (m *rgdMachine) CreateReplicationDestinations(
 
 	rd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
+			Name:      util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name),
 			Namespace: m.ReplicationGroupDestination.Namespace,
 		},
 	}
@@ -273,15 +289,16 @@ func (m *rgdMachine) CreateReplicationDestinations(
 			}
 
 			util.AddLabel(rd, util.RGDOwnerLabel, m.ReplicationGroupDestination.Name)
+			util.AddLabel(rd, util.VRGOwnerNameLabel, m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel])
+			util.AddLabel(rd, util.VRGOwnerNamespaceLabel,
+				m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNamespaceLabel])
 			util.AddLabel(rd, util.CreatedByRamenLabel, "true")
 			util.AddAnnotation(rd, volsync.OwnerNameAnnotation, m.ReplicationGroupDestination.Name)
 			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
 
-			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{
-				Manual: manual,
-			}
+			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{Manual: manual}
 			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-				ServiceType: &volsync.DefaultRsyncServiceType,
+				ServiceType: m.VSHandler.GetRsyncServiceType(),
 				KeySecret:   &pskSecretName,
 				ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
 					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
@@ -291,15 +308,29 @@ func (m *rgdMachine) CreateReplicationDestinations(
 					VolumeSnapshotClassName: &volumeSnapshotClassName,
 					DestinationPVC:          dstPVC,
 				},
+				MoverConfig: getMoverConfig(rdSpec),
 			}
 
 			return nil
 		}); err != nil {
 		m.Logger.Error(err, "Failed to create or update ReplicationDestination",
-			"ReplicationDestinationName", getReplicationDestinationName(rdSpec.ProtectedPVC.Name))
+			"ReplicationDestinationName", util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name))
 
 		return nil, fmt.Errorf("%w", err)
 	}
 
 	return rd, nil
+}
+
+// getMoverConfig maps the MoverConfig defined in the ReplicationDestination (RD) spec
+// into a VolSync MoverConfig
+func getMoverConfig(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) volsyncv1alpha1.MoverConfig {
+	if rdSpec.MoverConfig == nil {
+		return volsyncv1alpha1.MoverConfig{}
+	}
+
+	return volsyncv1alpha1.MoverConfig{
+		MoverSecurityContext: rdSpec.MoverConfig.MoverSecurityContext,
+		MoverServiceAccount:  rdSpec.MoverConfig.MoverServiceAccount,
+	}
 }

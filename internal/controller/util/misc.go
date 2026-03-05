@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"hash/crc32"
 	"reflect"
+	"strings"
 
 	"github.com/google/uuid"
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
@@ -27,6 +29,8 @@ const (
 	OCMBackupLabelValue string = "ramen"
 
 	IsCGEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-cg-enabled"
+
+	IsSubmarinerEnabledAnnotation = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
 
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
@@ -39,6 +43,11 @@ const (
 	VGSCRDPrivateName = "volumegroupsnapshots.groupsnapshot.storage.openshift.io"
 	VGSCRDName        = "volumegroupsnapshots.groupsnapshot.storage.k8s.io"
 	VGRCRDName        = "volumegroupreplications.replication.storage.openshift.io"
+
+	VRGOwnerNameLabel      string = "volumereplicationgroups-owner"
+	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
+
+	MarkForDeletion = "ramendr.io/marked-for-deletion"
 )
 
 type ResourceUpdater struct {
@@ -74,6 +83,14 @@ func (u *ResourceUpdater) DeleteLabel(key string) *ResourceUpdater {
 	u.obj.SetLabels(labels)
 
 	u.objModified = u.objModified || deleted
+
+	return u
+}
+
+func (u *ResourceUpdater) AddAnnotation(key, value string) *ResourceUpdater {
+	added := AddAnnotation(u.obj, key, value)
+
+	u.objModified = u.objModified || added
 
 	return u
 }
@@ -369,6 +386,10 @@ func IsCGEnabledForVolSync(ctx context.Context, apiReader client.Reader) bool {
 	return IsCRDInstalled(ctx, apiReader, VGSCRDName) || IsCRDInstalled(ctx, apiReader, VGSCRDPrivateName)
 }
 
+func IsSubmarinerEnabled(annotations map[string]string) bool {
+	return annotations[IsSubmarinerEnabledAnnotation] != "false"
+}
+
 // IsCRDInstalled checks whether a specific CustomResourceDefinition (CRD) is installed on the cluster.
 func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string) bool {
 	installedCRD := &apiextensionsv1.CustomResourceDefinition{}
@@ -379,6 +400,10 @@ func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string
 	return true
 }
 
+func CreateVGRName(prefix string, suffix string) string {
+	return TrimToK8sResourceNameLength("vgr-" + prefix + "-" + suffix)
+}
+
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 	return annotations[UseVolSyncAnnotation] == "true"
 }
@@ -386,7 +411,7 @@ func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 func TrimToK8sResourceNameLength(name string) string {
 	const maxLength = 63
 	if len(name) > maxLength {
-		return name[:maxLength]
+		return strings.TrimRight(name[:maxLength], "-.")
 	}
 
 	return name
@@ -445,4 +470,28 @@ func GenerateCombinedName(name, storageID string) string {
 	// Otherwise, return Hashed 8 character name and append storageID
 	// e.g. "nameHash.storageID"
 	return nameHash + labelSeparator + storageID
+}
+
+func GetReplicationDestinationName(pvcName string) string {
+	return pvcName // Use PVC name as name of ReplicationDestination
+}
+
+func GetLocalReplicationName(pvcName string) string {
+	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
+}
+
+// Service name that VolSync will create locally in the same namespace as the ReplicationDestination
+func getLocalServiceNameForRDFromPVCName(pvcName string) string {
+	return GetLocalServiceNameForRD(GetReplicationDestinationName(pvcName))
+}
+
+func GetLocalServiceNameForRD(rdName string) string {
+	// This is the name VolSync will use for the service
+	return GetServiceName("volsync-rsync-tls-dst-", rdName)
+}
+
+// This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
+// a ServiceExport is created for the service on the cluster that has the ReplicationDestination
+func GetRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
+	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
 }

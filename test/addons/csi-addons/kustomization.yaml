@@ -1,12 +1,14 @@
+# yamllint disable rule:line-length
+#
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
-
+#
 ---
 resources:
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.12.0/crds.yaml
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.12.0/rbac.yaml
-  - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.12.0/setup-controller.yaml
-
+  - https://raw.githubusercontent.com/Nikhil-Ladha/kubernetes-csi-addons/refs/heads/cg-support/deploy/controller/crds.yaml
+  - https://raw.githubusercontent.com/Nikhil-Ladha/kubernetes-csi-addons/refs/heads/cg-support/deploy/controller/rbac.yaml
+  - https://raw.githubusercontent.com/Nikhil-Ladha/kubernetes-csi-addons/refs/heads/cg-support/deploy/controller/setup-controller.yaml
 images:
   - name: quay.io/csiaddons/k8s-controller
-    newTag: v0.12.0
+    newName: quay.io/nladha/csiaddons-controller
+    newTag: cg

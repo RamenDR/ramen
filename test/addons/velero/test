@@ -11,7 +11,6 @@ import time
 from drenv import kubectl
 from drenv import commands
 
-
 BACKUP = "nginx-backup"
 
 
@@ -24,7 +23,7 @@ def test(cluster):
         "status",
         "deploy/nginx-deployment",
         "--namespace=nginx-example",
-        "--timeout=180s",
+        timeout=180,
         context=cluster,
     )
 
@@ -47,7 +46,7 @@ def test(cluster):
         "status",
         "deploy/nginx-deployment",
         "--namespace=nginx-example",
-        "--timeout=120s",
+        timeout=120,
         context=cluster,
     )
 

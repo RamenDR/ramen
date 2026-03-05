@@ -17,6 +17,8 @@ type ReplicationGroupDestinationSpec struct {
 	VolumeSnapshotClassSelector metav1.LabelSelector `json:"volumeSnapshotClassSelector,omitempty"`
 
 	RDSpecs []VolSyncReplicationDestinationSpec `json:"rdSpecs,omitempty"`
+
+	Paused bool `json:"paused,omitempty"`
 }
 
 // ReplicationGroupDestinationStatus defines the observed state of ReplicationGroupDestination

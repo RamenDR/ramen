@@ -43,6 +43,7 @@ venv
 test/.coverage
 test/.coverage.*
 test/addons/kubevirt/vm/id_rsa.pub
+test/drenv.log
 
 # Python generated files
 *.egg-info/
@@ -63,3 +64,6 @@ ramendev/build
 
 # Ginkgo-related test files
 ginkgo.report
+
+# Output files
+out/

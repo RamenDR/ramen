@@ -1,0 +1,5 @@
+---
+resources:
+- pv.yaml
+- pvc.yaml
+- deploy.yaml

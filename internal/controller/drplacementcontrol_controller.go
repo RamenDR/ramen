@@ -8,12 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/go-logr/logr"
-	core "github.com/ramendr/ramen/internal/controller/core"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -22,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -29,9 +28,9 @@ import (
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
+	core "github.com/ramendr/ramen/internal/controller/core"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 )
 
 const (
@@ -62,6 +61,9 @@ const (
 
 	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
 	DoNotDeletePVCAnnotationVal = "true"
+
+	IsSubmarinerEnabledAnnotation    = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
+	IsSubmarinerEnabledAnnotationVal = "true"
 )
 
 var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
@@ -351,6 +353,28 @@ func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProte
 	workloadProtectionMetrics.WorkloadProtectionStatus.Set(float64(protected))
 }
 
+// setCGEnabledMetric sets metric based on annotations on DRPC,
+// where 0 indicates consistency grouping is not enabled
+// and 1 indicates consistency grouping is enabled
+func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementControl,
+	cgEnabledMetrics *CGEnabledMetrics, log logr.Logger,
+) {
+	if cgEnabledMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", CGEnabled))
+
+	enabled := 0
+
+	drpcAnnotations := drpc.GetAnnotations()
+	if drpcAnnotations != nil && drpcAnnotations[rmnutil.IsCGEnabledAnnotation] == "true" {
+		enabled = 1
+	}
+
+	cgEnabledMetrics.CGEnabled.Set(float64(enabled))
+}
+
 //nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
@@ -458,6 +482,17 @@ func (r *DRPlacementControlReconciler) createWorkloadProtectionMetricsInstance(
 
 	return &WorkloadProtectionMetrics{
 		WorkloadProtectionStatus: workloadProtectionMetrics.WorkloadProtectionStatus,
+	}
+}
+
+func (r *DRPlacementControlReconciler) createCGEnabledMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *CGEnabledMetrics {
+	cgEnabledLabels := CGEnabledMetricLabels(drpc)
+	cgEnabledMetrics := NewCGEnabledMetric(cgEnabledLabels)
+
+	return &CGEnabledMetrics{
+		CGEnabled: cgEnabledMetrics.CGEnabled,
 	}
 }
 
@@ -682,7 +717,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// cleanup for VRG artifacts
-	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, vrgNamespace); err != nil {
+	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, placementObj, vrgNamespace); err != nil {
 		return err
 	}
 
@@ -710,6 +745,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	workloadProtectionLabels := WorkloadProtectionStatusLabels(drpc)
 	DeleteWorkloadProtectionStatusMetric(workloadProtectionLabels)
 
+	cgEnabledMetricLabels := CGEnabledMetricLabels(drpc)
+	DeleteCGEnabledMetric(cgEnabledMetricLabels)
+
 	return nil
 }
 
@@ -719,6 +757,7 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	log logr.Logger,
 	mwu rmnutil.MWUtil,
 	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
 	vrgNamespace string,
 ) error {
 	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
@@ -734,12 +773,12 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 
 	// We have to ensure the secondary VRG is deleted before deleting the primary VRG. This will fail until there
 	// is no secondary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Secondary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Secondary); err != nil {
 		return err
 	}
 
 	// This will fail until there is no primary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Primary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Primary); err != nil {
 		return err
 	}
 
@@ -761,6 +800,7 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 	mwu rmnutil.MWUtil,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
 	vrgNamespace string,
 	replicationState rmn.ReplicationState,
 ) error {
@@ -770,6 +810,10 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 		if vrg.Spec.ReplicationState == replicationState {
 			if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
 				return fmt.Errorf("%s VRG adoption in progress", replicationState)
+			}
+
+			if err := EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, cluster, r.Log); err != nil {
+				return fmt.Errorf("wait for annotation to propagate to the VRG. Msg: %w", err)
 			}
 
 			if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), cluster); err != nil {
@@ -1514,7 +1558,6 @@ func setConflictStatusCondition(existingConditions *[]metav1.Condition,
 	// TODO: Why not update lastTranTime if the above change?
 
 	if existingCondition.ObservedGeneration != newCondition.ObservedGeneration {
-		existingCondition.ObservedGeneration = newCondition.ObservedGeneration
 		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	}
 
@@ -1578,6 +1621,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
 	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+
+	cgEnabledMetrics := r.createCGEnabledMetricsInstance(drpc)
+	r.setCGEnabledMetric(drpc, cgEnabledMetrics, log)
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
@@ -2619,7 +2665,7 @@ func adoptOrphanVRG(
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
 	// Adopt the namespace as well
-	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations)
+	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations, map[string]string{})
 	if err != nil {
 		log.Info("error creating namespace via ManifestWork during adoption", "error", err, "cluster", cluster)
 
@@ -2660,6 +2706,8 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 		case DoNotDeletePVCAnnotation:
 			fallthrough
 		case rmnutil.IsCGEnabledAnnotation:
+			fallthrough
+		case rmnutil.IsSubmarinerEnabledAnnotation:
 			fallthrough
 		case rmnutil.UseVolSyncAnnotation:
 			fallthrough
@@ -2885,4 +2933,110 @@ func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementC
 	}
 
 	return false
+}
+
+// EnsureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
+// resource to the VRG resource on the specified cluster. If the annotation is set on the DRPC but not yet
+// present on the VRG, this function updates the VRG ManifestWork to include the annotation. This is used to
+// prevent deletion of app PVCs during DR disabling.
+func EnsureDoNotDeletePVCAnnotation(
+	mwu rmnutil.MWUtil,
+	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
+	vrg *rmn.VolumeReplicationGroup,
+	cluster string,
+	log logr.Logger,
+) error {
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		return nil // Only propagate the annotation if the VRG is in primary state
+	}
+
+	if rmnutil.ResourceIsDeleted(placementObj) {
+		return nil // Propagate the annotation only if the Placement resource is NOT being deleted
+	}
+
+	if IsRamenPlacementScheduler(placementObj) {
+		return nil // If Ramen is still the scheduler, no need to propagate the annotation
+	}
+
+	// Ramen is no longer the scheduler. We need to make sure the annotation exists; otherwise, the process will wait.
+	if drpc.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
+		return fmt.Errorf("do-not-delete-pvc annotation not yet applied to the DRPC")
+	}
+
+	// Check whether the annotation is already set on the VRG. If it is, no action is needed.
+	// If not, propagate the annotation to the VRG.
+	if vrg.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
+		err := propagateAnnotationToVRG(mwu, cluster, DoNotDeletePVCAnnotation, DoNotDeletePVCAnnotationVal, log)
+
+		return fmt.Errorf("annotation hasn't been propagated to cluster %s (%w)", cluster, err)
+	}
+
+	return nil
+}
+
+func IsRamenPlacementScheduler(placementObj client.Object) bool {
+	switch obj := placementObj.(type) {
+	case *plrv1.PlacementRule:
+		scName := obj.Spec.SchedulerName
+		if scName == RamenScheduler {
+			return true
+		}
+	case *clrapiv1beta1.Placement:
+		if val, ok := obj.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; ok && val == "true" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// propagateAnnotationToVRG adds or updates a specific annotation on a VRG resource in the ManifestWork
+// for the given cluster. This is typically used to propagate the "do-not-delete-pvc" annotation from
+// the DRPC to the VRG, to ensure that app PVCs are not deleted during DR disabling.
+func propagateAnnotationToVRG(
+	mwu rmnutil.MWUtil,
+	toCluster string,
+	annoKey, annoValue string,
+	log logr.Logger,
+) error {
+	log.Info("propagate Annotation to VRG")
+
+	mw, mwErr := mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, toCluster)
+	if mwErr != nil {
+		if k8serrors.IsNotFound(mwErr) {
+			return fmt.Errorf("failed to find ManifestWork for VRG and cluster %s", toCluster)
+		}
+
+		return fmt.Errorf("error (%w) in finding ManifestWork for VRG and cluster %s",
+			mwErr, toCluster)
+	}
+
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	if err != nil {
+		return fmt.Errorf("error extracting VRG from ManifestWork for cluster %s. Error: %w", toCluster, err)
+	}
+
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		return fmt.Errorf("invalid update for VRG in %s spec.replicationState on cluster %s",
+			vrg.Spec.ReplicationState, toCluster)
+	}
+
+	if vrg.GetAnnotations() == nil {
+		vrg.SetAnnotations(make(map[string]string))
+	}
+
+	if vrg.GetAnnotations()[annoKey] == annoValue {
+		log.Info(fmt.Sprintf("Annotation %s already exists with value %s on VRG %s in cluster %s",
+			annoKey, annoValue, vrg.Name, toCluster))
+
+		return nil
+	}
+
+	log.Info(fmt.Sprintf("Adding/Updating Annotation %s with value %s on VRG %s in cluster %s",
+		annoKey, annoValue, vrg.Name, toCluster))
+
+	vrg.GetAnnotations()[annoKey] = annoValue
+
+	return mwu.UpdateVRGManifestWork(vrg, mw)
 }

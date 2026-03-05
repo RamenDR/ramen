@@ -7,23 +7,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
+	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
+)
+
+const (
+	NetworkFencePrefix = "network-fence"
 )
 
 //nolint:interfacebloat
@@ -33,7 +39,7 @@ type ManagedClusterViewGetter interface {
 		annotations map[string]string) (*rmn.VolumeReplicationGroup, error)
 
 	GetNFFromManagedCluster(
-		resourceName, resourceNamespace, managedCluster string,
+		resourceName, networkFenceClassName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error)
 
 	GetMModeFromManagedCluster(
@@ -81,6 +87,9 @@ type ManagedClusterViewGetter interface {
 	GetVGRClassFromManagedCluster(
 		resourceName, managedCluster string,
 		annotations map[string]string) (*volrep.VolumeGroupReplicationClass, error)
+
+	GetNSFromManagedCluster(
+		managedCluster, resourceName string) (*corev1.Namespace, error)
 
 	ListVGRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
@@ -155,13 +164,18 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 	return vrg, err
 }
 
-func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string,
+func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(targetCluster, networkFenceClassName,
+	resourceNamespace, managedCluster string, annotations map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nf := &csiaddonsv1alpha1.NetworkFence{}
 
+	resourceName := strings.Join([]string{NetworkFencePrefix, targetCluster}, "-")
+	if networkFenceClassName != "" {
+		resourceName = strings.Join([]string{NetworkFencePrefix, networkFenceClassName, targetCluster}, "-")
+	}
+
 	err := m.getResourceFromManagedCluster(
-		"network-fence-"+resourceName,
+		resourceName,
 		resourceNamespace,
 		managedCluster,
 		annotations,
@@ -386,6 +400,24 @@ func (m ManagedClusterViewGetterImpl) GetVRClassFromManagedCluster(resourceName,
 	return vrc, err
 }
 
+func (m ManagedClusterViewGetterImpl) GetNSFromManagedCluster(cluster, resourceName string) (*corev1.Namespace, error) {
+	ns := &corev1.Namespace{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		cluster,
+		map[string]string{},
+		map[string]string{},
+		BuildManagedClusterViewName(resourceName, "", "ns"),
+		"Namespace",
+		corev1.SchemeGroupVersion.Group,
+		corev1.SchemeGroupVersion.Version,
+		ns)
+
+	return ns, err
+}
+
 func (m ManagedClusterViewGetterImpl) ListVRClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return m.listMCVsWithLabel(cluster, map[string]string{VRClassLabel: ""})
 }
@@ -532,12 +564,31 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 		}
 	}
 
+	needsUpdate := false
+
 	if mcv.Spec.Scope != viewscope {
 		// Expected once when uprading ramen if scope format or details have changed.
 		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s scope %s to %s",
 			key, mcv.Spec.Scope.Name, viewscope.Name))
 
 		mcv.Spec.Scope = viewscope
+		needsUpdate = true
+	}
+
+	mergedAnnotations := make(map[string]string)
+	maps.Copy(mergedAnnotations, mcv.Annotations)
+	maps.Copy(mergedAnnotations, meta.Annotations)
+
+	// Check if annotations actually changed.
+	if !maps.Equal(mcv.Annotations, mergedAnnotations) {
+		// Expected once when uprading ramen if annotations have changed.
+		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s annotations %s to %s",
+			key, mcv.Annotations, mergedAnnotations))
+		mcv.Annotations = mergedAnnotations
+		needsUpdate = true
+	}
+
+	if needsUpdate {
 		if err := m.Update(context.TODO(), mcv); err != nil {
 			return nil, fmt.Errorf("failed to update ManagedClusterView: %w", err)
 		}

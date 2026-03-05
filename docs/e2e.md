@@ -33,6 +33,12 @@ for VM workload testing:
 cat config-vm.yaml.sample ~/.config/drenv/rdr-kubevirt/config.yaml > config.yaml
 ```
 
+To test all recipe configurations use the config-recipe.yaml.sample:
+
+```sh
+cat config-recipe.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
+```
+
 #### For real cluster
 
 Create a `config.yaml` file by copying the `config.yaml.sample` template:

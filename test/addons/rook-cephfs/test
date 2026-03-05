@@ -26,7 +26,6 @@ def test_provisioning(cluster):
         f"pvc/{PVC_NAME}",
         "--for=jsonpath={.status.phase}=Bound",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
         context=cluster,
     )
 
@@ -35,7 +34,6 @@ def test_provisioning(cluster):
         f"volumesnapshot/{SNAP_NAME}",
         "--for=jsonpath={.status.readyToUse}=true",
         f"--namespace={NAMESPACE}",
-        "--timeout=300s",
         context=cluster,
     )
 

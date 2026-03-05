@@ -5,6 +5,7 @@ import (
 	"context"
 	"sync"
 
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 	v1 "k8s.io/api/core/v1"
 	v1a "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,33 +37,39 @@ type FakeVolumeGroupSourceHandler struct {
 	cleanVolumeGroupSnapshotReturnsOnCall map[int]struct {
 		result1 error
 	}
-	CreateOrUpdateReplicationSourceForRestoredPVCsStub        func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, error)
+	CreateOrUpdateReplicationSourceForRestoredPVCsStub        func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object, *ramendrv1alpha1.VolumeReplicationGroup, bool) ([]*v1.ObjectReference, bool, error)
 	createOrUpdateReplicationSourceForRestoredPVCsMutex       sync.RWMutex
 	createOrUpdateReplicationSourceForRestoredPVCsArgsForCall []struct {
 		arg1 context.Context
 		arg2 string
 		arg3 []cephfscg.RestoredPVC
 		arg4 v1a.Object
+		arg5 *ramendrv1alpha1.VolumeReplicationGroup
+		arg6 bool
 	}
 	createOrUpdateReplicationSourceForRestoredPVCsReturns struct {
 		result1 []*v1.ObjectReference
-		result2 error
+		result2 bool
+		result3 error
 	}
 	createOrUpdateReplicationSourceForRestoredPVCsReturnsOnCall map[int]struct {
 		result1 []*v1.ObjectReference
-		result2 error
+		result2 bool
+		result3 error
 	}
-	CreateOrUpdateVolumeGroupSnapshotStub        func(context.Context, v1a.Object) error
+	CreateOrUpdateVolumeGroupSnapshotStub        func(context.Context, v1a.Object) (bool, error)
 	createOrUpdateVolumeGroupSnapshotMutex       sync.RWMutex
 	createOrUpdateVolumeGroupSnapshotArgsForCall []struct {
 		arg1 context.Context
 		arg2 v1a.Object
 	}
 	createOrUpdateVolumeGroupSnapshotReturns struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	createOrUpdateVolumeGroupSnapshotReturnsOnCall map[int]struct {
-		result1 error
+		result1 bool
+		result2 error
 	}
 	RestoreVolumesFromVolumeGroupSnapshotStub        func(context.Context, v1a.Object) ([]cephfscg.RestoredPVC, error)
 	restoreVolumesFromVolumeGroupSnapshotMutex       sync.RWMutex
@@ -76,6 +83,32 @@ type FakeVolumeGroupSourceHandler struct {
 	}
 	restoreVolumesFromVolumeGroupSnapshotReturnsOnCall map[int]struct {
 		result1 []cephfscg.RestoredPVC
+		result2 error
+	}
+	WaitIfPVCTooNewStub        func(context.Context) (bool, error)
+	waitIfPVCTooNewMutex       sync.RWMutex
+	waitIfPVCTooNewArgsForCall []struct {
+		arg1 context.Context
+	}
+	waitIfPVCTooNewReturns struct {
+		result1 bool
+		result2 error
+	}
+	waitIfPVCTooNewReturnsOnCall map[int]struct {
+		result1 bool
+		result2 error
+	}
+	EnsureApplicationPVCsMountedStub        func(context.Context) (bool, error)
+	ensureApplicationPVCsMountedMutex       sync.RWMutex
+	ensureApplicationPVCsMountedArgsForCall []struct {
+		arg1 context.Context
+	}
+	ensureApplicationPVCsMountedReturns struct {
+		result1 bool
+		result2 error
+	}
+	ensureApplicationPVCsMountedReturnsOnCall map[int]struct {
+		result1 bool
 		result2 error
 	}
 	invocations      map[string][][]interface{}
@@ -213,7 +246,7 @@ func (fake *FakeVolumeGroupSourceHandler) CleanVolumeGroupSnapshotReturnsOnCall(
 	}{result1}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(arg1 context.Context, arg2 string, arg3 []cephfscg.RestoredPVC, arg4 v1a.Object) ([]*v1.ObjectReference, error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCs(arg1 context.Context, arg2 string, arg3 []cephfscg.RestoredPVC, arg4 v1a.Object, arg5 *ramendrv1alpha1.VolumeReplicationGroup, arg6 bool) ([]*v1.ObjectReference, bool, error) {
 	var arg3Copy []cephfscg.RestoredPVC
 	if arg3 != nil {
 		arg3Copy = make([]cephfscg.RestoredPVC, len(arg3))
@@ -226,18 +259,20 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 		arg2 string
 		arg3 []cephfscg.RestoredPVC
 		arg4 v1a.Object
-	}{arg1, arg2, arg3Copy, arg4})
+		arg5 *ramendrv1alpha1.VolumeReplicationGroup
+		arg6 bool
+	}{arg1, arg2, arg3Copy, arg4, arg5, arg6})
 	stub := fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub
 	fakeReturns := fake.createOrUpdateReplicationSourceForRestoredPVCsReturns
-	fake.recordInvocation("CreateOrUpdateReplicationSourceForRestoredPVCs", []interface{}{arg1, arg2, arg3Copy, arg4})
+	fake.recordInvocation("CreateOrUpdateReplicationSourceForRestoredPVCs", []interface{}{arg1, arg2, arg3Copy, arg4, arg5, arg6})
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2, arg3, arg4)
+		return stub(arg1, arg2, arg3, arg4, arg5, arg6)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1, ret.result2, ret.result3
 	}
-	return fakeReturns.result1, fakeReturns.result2
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
 }
 
 func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCallCount() int {
@@ -246,7 +281,7 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 	return len(fake.createOrUpdateReplicationSourceForRestoredPVCsArgsForCall)
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCalls(stub func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object) ([]*v1.ObjectReference, error)) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsCalls(stub func(context.Context, string, []cephfscg.RestoredPVC, v1a.Object, *ramendrv1alpha1.VolumeReplicationGroup, bool) ([]*v1.ObjectReference, bool, error)) {
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Lock()
 	defer fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub = stub
@@ -259,33 +294,36 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRest
 	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsReturns(result1 []*v1.ObjectReference, result2 error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsReturns(result1 []*v1.ObjectReference, result2 bool, result3 error) {
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Lock()
 	defer fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub = nil
 	fake.createOrUpdateReplicationSourceForRestoredPVCsReturns = struct {
 		result1 []*v1.ObjectReference
-		result2 error
-	}{result1, result2}
+		result2 bool
+		result3 error
+	}{result1, result2, result3}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsReturnsOnCall(i int, result1 []*v1.ObjectReference, result2 error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVCsReturnsOnCall(i int, result1 []*v1.ObjectReference, result2 bool, result3 error) {
 	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Lock()
 	defer fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.Unlock()
 	fake.CreateOrUpdateReplicationSourceForRestoredPVCsStub = nil
 	if fake.createOrUpdateReplicationSourceForRestoredPVCsReturnsOnCall == nil {
 		fake.createOrUpdateReplicationSourceForRestoredPVCsReturnsOnCall = make(map[int]struct {
 			result1 []*v1.ObjectReference
-			result2 error
+			result2 bool
+			result3 error
 		})
 	}
 	fake.createOrUpdateReplicationSourceForRestoredPVCsReturnsOnCall[i] = struct {
 		result1 []*v1.ObjectReference
-		result2 error
-	}{result1, result2}
+		result2 bool
+		result3 error
+	}{result1, result2, result3}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(arg1 context.Context, arg2 v1a.Object) error {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(arg1 context.Context, arg2 v1a.Object) (bool, error) {
 	fake.createOrUpdateVolumeGroupSnapshotMutex.Lock()
 	ret, specificReturn := fake.createOrUpdateVolumeGroupSnapshotReturnsOnCall[len(fake.createOrUpdateVolumeGroupSnapshotArgsForCall)]
 	fake.createOrUpdateVolumeGroupSnapshotArgsForCall = append(fake.createOrUpdateVolumeGroupSnapshotArgsForCall, struct {
@@ -300,9 +338,9 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(arg1
 		return stub(arg1, arg2)
 	}
 	if specificReturn {
-		return ret.result1
+		return ret.result1, ret.result2
 	}
-	return fakeReturns.result1
+	return fakeReturns.result1, fakeReturns.result2
 }
 
 func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCallCount() int {
@@ -311,7 +349,7 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCallC
 	return len(fake.createOrUpdateVolumeGroupSnapshotArgsForCall)
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCalls(stub func(context.Context, v1a.Object) error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotCalls(stub func(context.Context, v1a.Object) (bool, error)) {
 	fake.createOrUpdateVolumeGroupSnapshotMutex.Lock()
 	defer fake.createOrUpdateVolumeGroupSnapshotMutex.Unlock()
 	fake.CreateOrUpdateVolumeGroupSnapshotStub = stub
@@ -324,27 +362,30 @@ func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotArgsF
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotReturns(result1 error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotReturns(result1 bool, result2 error) {
 	fake.createOrUpdateVolumeGroupSnapshotMutex.Lock()
 	defer fake.createOrUpdateVolumeGroupSnapshotMutex.Unlock()
 	fake.CreateOrUpdateVolumeGroupSnapshotStub = nil
 	fake.createOrUpdateVolumeGroupSnapshotReturns = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
-func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotReturnsOnCall(i int, result1 error) {
+func (fake *FakeVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshotReturnsOnCall(i int, result1 bool, result2 error) {
 	fake.createOrUpdateVolumeGroupSnapshotMutex.Lock()
 	defer fake.createOrUpdateVolumeGroupSnapshotMutex.Unlock()
 	fake.CreateOrUpdateVolumeGroupSnapshotStub = nil
 	if fake.createOrUpdateVolumeGroupSnapshotReturnsOnCall == nil {
 		fake.createOrUpdateVolumeGroupSnapshotReturnsOnCall = make(map[int]struct {
-			result1 error
+			result1 bool
+			result2 error
 		})
 	}
 	fake.createOrUpdateVolumeGroupSnapshotReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
+		result1 bool
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeVolumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(arg1 context.Context, arg2 v1a.Object) ([]cephfscg.RestoredPVC, error) {
@@ -412,19 +453,137 @@ func (fake *FakeVolumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshotR
 	}{result1, result2}
 }
 
+func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNew(arg1 context.Context) (bool, error) {
+	fake.waitIfPVCTooNewMutex.Lock()
+	ret, specificReturn := fake.waitIfPVCTooNewReturnsOnCall[len(fake.waitIfPVCTooNewArgsForCall)]
+	fake.waitIfPVCTooNewArgsForCall = append(fake.waitIfPVCTooNewArgsForCall, struct {
+		arg1 context.Context
+	}{arg1})
+	stub := fake.WaitIfPVCTooNewStub
+	fakeReturns := fake.waitIfPVCTooNewReturns
+	fake.recordInvocation("WaitIfPVCTooNew", []interface{}{arg1})
+	fake.waitIfPVCTooNewMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNewCallCount() int {
+	fake.waitIfPVCTooNewMutex.RLock()
+	defer fake.waitIfPVCTooNewMutex.RUnlock()
+	return len(fake.waitIfPVCTooNewArgsForCall)
+}
+
+func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNewCalls(stub func(context.Context) (bool, error)) {
+	fake.waitIfPVCTooNewMutex.Lock()
+	defer fake.waitIfPVCTooNewMutex.Unlock()
+	fake.WaitIfPVCTooNewStub = stub
+}
+
+func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNewArgsForCall(i int) context.Context {
+	fake.waitIfPVCTooNewMutex.RLock()
+	defer fake.waitIfPVCTooNewMutex.RUnlock()
+	argsForCall := fake.waitIfPVCTooNewArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNewReturns(result1 bool, result2 error) {
+	fake.waitIfPVCTooNewMutex.Lock()
+	defer fake.waitIfPVCTooNewMutex.Unlock()
+	fake.WaitIfPVCTooNewStub = nil
+	fake.waitIfPVCTooNewReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeVolumeGroupSourceHandler) WaitIfPVCTooNewReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.waitIfPVCTooNewMutex.Lock()
+	defer fake.waitIfPVCTooNewMutex.Unlock()
+	fake.WaitIfPVCTooNewStub = nil
+	if fake.waitIfPVCTooNewReturnsOnCall == nil {
+		fake.waitIfPVCTooNewReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
+		})
+	}
+	fake.waitIfPVCTooNewReturnsOnCall[i] = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMounted(arg1 context.Context) (bool, error) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	ret, specificReturn := fake.ensureApplicationPVCsMountedReturnsOnCall[len(fake.ensureApplicationPVCsMountedArgsForCall)]
+	fake.ensureApplicationPVCsMountedArgsForCall = append(fake.ensureApplicationPVCsMountedArgsForCall, struct {
+		arg1 context.Context
+	}{arg1})
+	stub := fake.EnsureApplicationPVCsMountedStub
+	fakeReturns := fake.ensureApplicationPVCsMountedReturns
+	fake.recordInvocation("EnsureApplicationPVCsMounted", []interface{}{arg1})
+	fake.ensureApplicationPVCsMountedMutex.Unlock()
+	if stub != nil {
+		return stub(arg1)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedCallCount() int {
+	fake.ensureApplicationPVCsMountedMutex.RLock()
+	defer fake.ensureApplicationPVCsMountedMutex.RUnlock()
+	return len(fake.ensureApplicationPVCsMountedArgsForCall)
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedCalls(stub func(context.Context) (bool, error)) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	defer fake.ensureApplicationPVCsMountedMutex.Unlock()
+	fake.EnsureApplicationPVCsMountedStub = stub
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedArgsForCall(i int) context.Context {
+	fake.ensureApplicationPVCsMountedMutex.RLock()
+	defer fake.ensureApplicationPVCsMountedMutex.RUnlock()
+	argsForCall := fake.ensureApplicationPVCsMountedArgsForCall[i]
+	return argsForCall.arg1
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedReturns(result1 bool, result2 error) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	defer fake.ensureApplicationPVCsMountedMutex.Unlock()
+	fake.EnsureApplicationPVCsMountedStub = nil
+	fake.ensureApplicationPVCsMountedReturns = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeVolumeGroupSourceHandler) EnsureApplicationPVCsMountedReturnsOnCall(i int, result1 bool, result2 error) {
+	fake.ensureApplicationPVCsMountedMutex.Lock()
+	defer fake.ensureApplicationPVCsMountedMutex.Unlock()
+	fake.EnsureApplicationPVCsMountedStub = nil
+	if fake.ensureApplicationPVCsMountedReturnsOnCall == nil {
+		fake.ensureApplicationPVCsMountedReturnsOnCall = make(map[int]struct {
+			result1 bool
+			result2 error
+		})
+	}
+	fake.ensureApplicationPVCsMountedReturnsOnCall[i] = struct {
+		result1 bool
+		result2 error
+	}{result1, result2}
+}
+
 func (fake *FakeVolumeGroupSourceHandler) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
-	fake.checkReplicationSourceForRestoredPVCsCompletedMutex.RLock()
-	defer fake.checkReplicationSourceForRestoredPVCsCompletedMutex.RUnlock()
-	fake.cleanVolumeGroupSnapshotMutex.RLock()
-	defer fake.cleanVolumeGroupSnapshotMutex.RUnlock()
-	fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.RLock()
-	defer fake.createOrUpdateReplicationSourceForRestoredPVCsMutex.RUnlock()
-	fake.createOrUpdateVolumeGroupSnapshotMutex.RLock()
-	defer fake.createOrUpdateVolumeGroupSnapshotMutex.RUnlock()
-	fake.restoreVolumesFromVolumeGroupSnapshotMutex.RLock()
-	defer fake.restoreVolumesFromVolumeGroupSnapshotMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

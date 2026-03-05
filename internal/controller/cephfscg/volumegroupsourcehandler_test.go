@@ -48,7 +48,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 	BeforeEach(func() {
 		volumeGroupSourceHandler = cephfscg.NewVolumeGroupSourceHandler(
-			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, testLogger,
+			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, nil, testLogger,
 		)
 
 		CreatePVC(appPVCName)
@@ -56,7 +56,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 	})
 	Describe("CreateOrUpdateVolumeGroupSnapshot", func() {
 		It("Should be successful", func() {
-			err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+			_, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 			Expect(err).To(BeNil())
 			Eventually(func() []string {
 				volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
@@ -88,7 +88,8 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		})
 		Context("Restored PVC exist", func() {
 			BeforeEach(func() {
-				err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+				createdOrUpdatedVGS, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+				Expect(createdOrUpdatedVGS).To(BeTrue())
 				Expect(err).To(BeNil())
 				UpdateVGS(rgs, vsName, appPVCName)
 
@@ -121,7 +122,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 		})
 		Context("There is VolumeGroupSnapshot, but not ready", func() {
 			BeforeEach(func() {
-				err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
+				_, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 				Expect(err).To(BeNil())
 			})
 			It("Should be failed", func() {
@@ -145,11 +146,64 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 	Describe("CreateOrUpdateReplicationSourceForRestoredPVCs", func() {
 		It("Should be successful", func() {
-			rsList, err := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
+			vrg := &v1alpha1.VolumeReplicationGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      vrgName,
+					Namespace: "default",
+				},
+				Spec: v1alpha1.VolumeReplicationGroupSpec{
+					VolSync: v1alpha1.VolSyncSpec{
+						RSSpec: []v1alpha1.VolSyncReplicationSourceSpec{
+							{
+								ProtectedPVC: v1alpha1.ProtectedPVC{
+									Name: "mypvc",
+								},
+								RsyncTLS: &v1alpha1.RsyncTLSConfig{
+									Address: "dummy-address.default.svc",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			rsList, srcCreatedOrUpdated, err := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
 				context.Background(), "maunal",
-				[]cephfscg.RestoredPVC{{SourcePVCName: "source", RestoredPVCName: "resource", VolumeSnapshotName: "vs"}}, rgs)
+				[]cephfscg.RestoredPVC{{
+					SourcePVCName:      "source",
+					RestoredPVCName:    "vs-source",
+					VolumeSnapshotName: "vs",
+				}},
+				rgs, vrg, true)
 			Expect(err).To(BeNil())
+			Expect(srcCreatedOrUpdated).To(BeTrue())
 			Expect(len(rsList)).To(Equal(1))
+
+			rsList2, srcCreatedOrUpdated2, err2 := volumeGroupSourceHandler.CreateOrUpdateReplicationSourceForRestoredPVCs(
+				context.Background(), "manual",
+				[]cephfscg.RestoredPVC{{
+					SourcePVCName:      "source-for-finalsync",
+					RestoredPVCName:    "vs-source-for-finalsync",
+					VolumeSnapshotName: "vs",
+				}},
+				rgs, vrg, true)
+
+			Expect(err2).To(BeNil())
+			Expect(srcCreatedOrUpdated2).To(BeTrue())
+			Expect(len(rsList2)).To(Equal(1))
+
+			obj := rsList2[0]
+			rs := &volsyncv1alpha1.ReplicationSource{}
+
+			err3 := k8sClient.Get(context.TODO(),
+				types.NamespacedName{
+					Name:      obj.Name,
+					Namespace: obj.Namespace,
+				}, rs)
+			Expect(err3).To(BeNil())
+			Expect(rs.Name).To(Equal("source"))
+			Expect(*rs.Spec.RsyncTLS.Address).
+				To(Equal("volsync-rsync-tls-dst-source.default.svc.clusterset.local"))
 		})
 	})
 
@@ -240,7 +294,7 @@ func GenerateReplicationGroupSource(
 			Name:      vgsName,
 			Namespace: "default",
 			UID:       types.UID("123"),
-			Labels:    map[string]string{volsync.VRGOwnerNameLabel: vrgName},
+			Labels:    map[string]string{util.VRGOwnerNameLabel: vrgName},
 		},
 		Spec: v1alpha1.ReplicationGroupSourceSpec{
 			VolumeGroupSnapshotClassName: vgscName,

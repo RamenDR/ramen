@@ -5,8 +5,9 @@ package controllers
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
@@ -22,6 +23,11 @@ const (
 	LastSyncDurationSeconds  = "last_sync_duration_seconds"
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
+	CGEnabled                = "unsupported_consistency_grouping_enabled"
+)
+
+const (
+	InvalidCIDRsDetected = "invalid_cidrs_detected"
 )
 
 type SyncTimeMetrics struct {
@@ -42,6 +48,13 @@ type SyncDataBytesMetrics struct {
 
 type WorkloadProtectionMetrics struct {
 	WorkloadProtectionStatus prometheus.Gauge
+}
+type CGEnabledMetrics struct {
+	CGEnabled prometheus.Gauge
+}
+
+type InvalidCIDRsDetectedMetrics struct {
+	InvalidCIDRsDetected prometheus.Gauge
 }
 
 type SyncMetrics struct {
@@ -90,6 +103,17 @@ var (
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
 	}
+
+	cgEnabledMetricLabels = []string{
+		ObjType,      // Name of the type of the resource [drpc]
+		ObjName,      // Name of the resoure [drpc-name]
+		ObjNamespace, // DRPC namespace
+	}
+
+	invalidCIDRsLabels = []string{
+		ObjType, // Name of the type of the resource [DRCluster]
+		ObjName, // Name of the resoure [DRCluster-name]
+	}
 )
 
 var (
@@ -136,6 +160,24 @@ var (
 			Help:      "Status regarding workload protection health",
 		},
 		workloadProtectionStatusLabels,
+	)
+
+	cgEnabled = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      CGEnabled,
+			Namespace: metricNamespace,
+			Help:      "Unsupported consistency grouping enabled status",
+		},
+		cgEnabledMetricLabels,
+	)
+
+	invalidCIDRsDetected = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      InvalidCIDRsDetected,
+			Namespace: metricNamespace,
+			Help:      "Invalid CIDRs Detected status",
+		},
+		invalidCIDRsLabels,
 	)
 )
 
@@ -234,6 +276,43 @@ func DeleteWorkloadProtectionStatusMetric(labels prometheus.Labels) bool {
 	return workloadProtectionStatus.Delete(labels)
 }
 
+// CGEnabled Metric reports information if consistency grouping is enabled for a DRPC
+func CGEnabledMetricLabels(drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:      "DRPlacementControl",
+		ObjName:      drpc.Name,
+		ObjNamespace: drpc.Namespace,
+	}
+}
+
+func NewCGEnabledMetric(labels prometheus.Labels) CGEnabledMetrics {
+	return CGEnabledMetrics{
+		CGEnabled: cgEnabled.With(labels),
+	}
+}
+
+func DeleteCGEnabledMetric(labels prometheus.Labels) bool {
+	return cgEnabled.Delete(labels)
+}
+
+// InvalidCIDRsDetected Metric reports if CIDRs configured are valid for fencing
+func InvalidCIDRsDetectedMetricLabels(drc *rmn.DRCluster) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType: "DRCluster",
+		ObjName: drc.Name,
+	}
+}
+
+func NewInvalidCIDRsDetectedMetric(labels prometheus.Labels) InvalidCIDRsDetectedMetrics {
+	return InvalidCIDRsDetectedMetrics{
+		InvalidCIDRsDetected: invalidCIDRsDetected.With(labels),
+	}
+}
+
+func DeleteInvalidCIDRsDetectedMetric(labels prometheus.Labels) bool {
+	return invalidCIDRsDetected.Delete(labels)
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
@@ -241,4 +320,6 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDuration)
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
+	metrics.Registry.MustRegister(cgEnabled)
+	metrics.Registry.MustRegister(invalidCIDRsDetected)
 }

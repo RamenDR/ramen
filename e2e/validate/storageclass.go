@@ -16,10 +16,8 @@ func validateStorageClasses(ctx types.Context) error {
 	env := ctx.Env()
 	config := ctx.Config()
 
-	clusters := []*types.Cluster{env.C1, env.C2}
-
 	for _, spec := range config.PVCSpecs {
-		for _, cluster := range clusters {
+		for _, cluster := range env.ManagedClusters() {
 			_, err := getStorageClass(ctx, cluster, spec.StorageClassName)
 			if err != nil {
 				return fmt.Errorf("failed to validate pvcSpec %q storage class: %w", spec.Name, err)

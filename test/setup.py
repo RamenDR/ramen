@@ -21,12 +21,15 @@ setuptools.setup(
         "drenv",
         "drenv.providers",
         "drenv.providers.lima",
+        "drenv.providers.minikube",
+        "drenv.stress",
     ],
     include_package_data=True,
     install_requires=[
         "PyYAML",
         "toml",
         "packaging",
+        "matplotlib",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",

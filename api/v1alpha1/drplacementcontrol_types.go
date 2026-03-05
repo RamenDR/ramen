@@ -100,6 +100,7 @@ const (
 	ProgressionCreatingMW                          = ProgressionStatus("CreatingMW")
 	ProgressionUpdatingPlRule                      = ProgressionStatus("UpdatingPlRule")
 	ProgressionWaitForReadiness                    = ProgressionStatus("WaitForReadiness")
+	ProgressionCleanupReadiness                    = ProgressionStatus("CleanupReadiness")
 	ProgressionCleaningUp                          = ProgressionStatus("Cleaning Up")
 	ProgressionWaitOnUserToCleanUp                 = ProgressionStatus("WaitOnUserToCleanUp")
 	ProgressionCheckingFailoverPrerequisites       = ProgressionStatus("CheckingFailoverPrerequisites")
@@ -159,6 +160,9 @@ type DRPlacementControlSpec struct {
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
+
+	// +optional
+	VolSyncSpec *VolSyncSpec `json:"volSyncSpec,omitempty"`
 }
 
 // PlacementDecision defines the decision made by controller

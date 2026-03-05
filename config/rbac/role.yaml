@@ -90,12 +90,14 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
   - deployments
   - replicasets
   - statefulsets
   verbs:
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - apps.open-cluster-management.io
@@ -139,6 +141,17 @@ rules:
   - batch
   resources:
   - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - cdi.kubevirt.io
+  resources:
+  - datavolumes
   verbs:
   - get
   - list
@@ -200,6 +213,7 @@ rules:
 - apiGroups:
   - csiaddons.openshift.io
   resources:
+  - csiaddonsnodes
   - networkfenceclasses
   verbs:
   - get
@@ -229,10 +243,22 @@ rules:
 - apiGroups:
   - kubevirt.io
   resources:
-  - virtualmachines
+  - virtualmachineinstances
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - kubevirt.io
+  resources:
+  - virtualmachines
+  verbs:
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - multicluster.x-k8s.io
   resources:
@@ -375,6 +401,7 @@ rules:
   - velero.io
   resources:
   - backups
+  - backupstoragelocations
   - restores
   verbs:
   - create
@@ -392,17 +419,6 @@ rules:
   - restores/status
   verbs:
   - get
-- apiGroups:
-  - velero.io
-  resources:
-  - backupstoragelocations
-  verbs:
-  - create
-  - delete
-  - deletecollection
-  - get
-  - patch
-  - update
 - apiGroups:
   - view.open-cluster-management.io
   resources:
@@ -428,6 +444,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations/finalizers
+  - replicationsources/finalizers
+  verbs:
+  - update
 - apiGroups:
   - work.open-cluster-management.io
   resources:

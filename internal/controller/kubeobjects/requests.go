@@ -24,7 +24,7 @@ type Request interface {
 	StartTime() metav1.Time
 	EndTime() metav1.Time
 	Status(logr.Logger) error
-	Deallocate(context.Context, client.Writer, logr.Logger) error
+	Deallocate(context.Context, client.Client, logr.Logger) error
 }
 
 type Requests interface {
@@ -110,9 +110,18 @@ type HookSpec struct {
 	Timeout   int   `json:"timeout,omitempty"`
 	Essential *bool `json:"essential,omitempty"`
 
+	// Flag to skip a Hook.
+	SkipHookIfNotPresent bool `json:"skipHookIfNotPresent,omitempty"`
+
 	Op Operation `json:"operation,omitempty"`
 
 	Chk Check `json:"check,omitempty"`
+
+	Scale ScaleSpec `json:"scale,omitempty"`
+}
+
+type ScaleSpec struct {
+	Operation string `json:"operation,omitempty"`
 }
 
 type Check struct {
@@ -157,7 +166,7 @@ type RequestsManager interface {
 	ProtectRequestNew() ProtectRequest
 	RecoverRequestNew() RecoverRequest
 	ProtectRequestCreate(
-		c context.Context, w client.Writer, l logr.Logger,
+		c context.Context, w client.Client, l logr.Logger,
 		s3Url string,
 		s3BucketName string,
 		s3RegionName string,
@@ -171,7 +180,7 @@ type RequestsManager interface {
 		annotations map[string]string,
 	) (ProtectRequest, error)
 	RecoverRequestCreate(
-		c context.Context, w client.Writer, l logr.Logger,
+		c context.Context, w client.Client, l logr.Logger,
 		s3Url string,
 		s3BucketName string,
 		s3RegionName string,

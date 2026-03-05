@@ -17,7 +17,7 @@ const (
 	// Promote the protected PVCs to primary
 	Primary ReplicationState = "primary"
 
-	// Demote the proteced PVCs to secondary
+	// Demote the protected PVCs to secondary
 	Secondary ReplicationState = "secondary"
 )
 
@@ -79,12 +79,27 @@ type VRGSyncSpec struct {
 	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
 }
 
+// RsyncTLSConfig defines the TLS configuration used for secure rsync communication
+// between the source and destination clusters in VolSync-based replication.
+type RsyncTLSConfig struct {
+	// Address to expose the TLS server (RD)
+	//+optional
+	Address string `json:"address,omitempty"`
+
+	// Name of the Kubernetes secret containing TLS certs
+	//+optional
+	TLSSecretRef *corev1.LocalObjectReference `json:"tlsSecretRef,omitempty"`
+}
+
 // VolSyncReplicationDestinationSpec defines the configuration for the VolSync
 // protected PVC to be used by the destination cluster (Secondary)
 type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -93,6 +108,13 @@ type VolSyncReplicationSourceSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	// RsyncTLS specifies how TLS configuration used to securely connect from the source
+	// to the replication destination (RD).
+	//+optional
+	RsyncTLS *RsyncTLSConfig `json:"rsyncTLS,omitempty"`
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
@@ -102,8 +124,39 @@ type VolSyncSpec struct {
 	//+optional
 	RDSpec []VolSyncReplicationDestinationSpec `json:"rdSpec,omitempty"`
 
+	// rsSpec array contains VolSync source PVCs and how they securely connect to RDs via TLS.
+	//+optional
+	RSSpec []VolSyncReplicationSourceSpec `json:"rsSpec,omitempty"`
+
 	// disabled when set, all the VolSync code is bypassed. Default is 'false'
 	Disabled bool `json:"disabled,omitempty"`
+
+	//+optional
+	MoverConfig []MoverConfig `json:"moverConfig,omitempty"`
+}
+
+type MoverConfig struct {
+	// MoverSecurityContext allows specifying the PodSecurityContext that will
+	// be used by the data mover
+	MoverSecurityContext *corev1.PodSecurityContext `json:"moverSecurityContext,omitempty"`
+	// MoverServiceAccount allows specifying the name of the service account
+	// that will be used by the data mover. This should only be used by advanced
+	// users who want to override the service account normally used by the mover.
+	// The service account needs to exist in the same namespace as this CR.
+	//+optional
+	MoverServiceAccount *string `json:"moverServiceAccount,omitempty"`
+	// Labels that should be added to data mover pods
+	// These will be in addition to any labels that VolSync may add
+
+	// PVCName is a required field and must not be empty
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	PVCName string `json:"pvcName,omitempty"`
+
+	// PVCNameSpace is a required field and must not be empty
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	PVCNameSpace string `json:"pvcNamespace,omitempty"`
 }
 
 // VRGAction which will be either a Failover or Relocate
@@ -319,6 +372,20 @@ type KubeObjectProtectionStatus struct {
 	CaptureToRecoverFrom *KubeObjectsCaptureIdentifier `json:"captureToRecoverFrom,omitempty"`
 }
 
+// VolSyncReplicationDestinationInfo defines the configuration details for a PVC
+// that has been set up on the destination (secondary) cluster for replication
+// using VolSync.
+type VolSyncReplicationDestinationInfo struct {
+	// protectedPVC contains the information about the PVC to be replicated by VolSync
+	//+optional
+	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	// RsyncTLS specifies how TLS configuration used to securely connect from the source
+	// to the replication destination (RD).
+	//+optional
+	RsyncTLS *RsyncTLSConfig `json:"rsyncTLS,omitempty"`
+}
+
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 type VolumeReplicationGroupStatus struct {
 	State State `json:"state,omitempty"`
@@ -328,6 +395,10 @@ type VolumeReplicationGroupStatus struct {
 	// List of CGs that are protected by the VRG resource
 	//+optional
 	PVCGroups []Groups `json:"pvcgroups,omitempty"`
+
+	// Info about the created RDs (should only be filled out if using VolSync and VRG ReplicationState is secondary)
+	//+optional
+	RDInfo []VolSyncReplicationDestinationInfo `json:"rdInfo,omitempty"`
 
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

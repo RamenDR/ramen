@@ -6,8 +6,9 @@ package controllers
 import (
 	"time"
 
-	"github.com/ramendr/ramen/internal/controller/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 // VRG status condition types.  These condition are applicable at the VRG
@@ -40,14 +41,20 @@ const (
 	// protected from a disaster by uploading it to the required S3 store(s).
 	VRGConditionTypeClusterDataProtected = "ClusterDataProtected"
 
-	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
-
+	// Adds explicit visibility into the controller’s automatic cleanup workflow for VM/PVC
+	// resources after DR operations (e.g., failover/relocate). This condition helps operators
+	// and automation understand whether cleanup is in progress, blocked, or completed.
+	VRGConditionTypeAutoCleanup = "AutoCleanup"
 	// VolSync related conditions. These conditions are only applicable
 	// at individual PVCs and not generic VRG conditions.
 	VRGConditionTypeVolSyncRepSourceSetup      = "ReplicationSourceSetup"
 	VRGConditionTypeVolSyncFinalSyncInProgress = "FinalSyncInProgress"
 	VRGConditionTypeVolSyncRepDestinationSetup = "ReplicationDestinationSetup"
 	VRGConditionTypeVolSyncPVsRestored         = "PVsRestored"
+
+	// Indicates no conflict in PVC and Kubernetes resource data
+	// between primary and secondary clusters.
+	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
 )
 
 // VRG condition reasons
@@ -76,9 +83,18 @@ const (
 	VRGConditionReasonClusterDataAnnotationFailed = "AnnotationFailed"
 	VRGConditionReasonPeerClassNotFound           = "PeerClassNotFound"
 	VRGConditionReasonStorageIDNotFound           = "StorageIDNotFound"
-	VRGConditionReasonDataConflictPrimary         = "ClusterDataConflictPrimary"
-	VRGConditionReasonDataConflictSecondary       = "ClusterDataConflictSecondary"
-	VRGConditionReasonConflictResolved            = "ConflictResolved"
+	// Indicates a conflict in cluster data detected on the primary cluster.
+	VRGConditionReasonClusterDataConflictPrimary = "ClusterDataConflictPrimary"
+
+	// Indicates a conflict in cluster data detected on the secondary cluster.
+	VRGConditionReasonClusterDataConflictSecondary = "ClusterDataConflictSecondary"
+
+	// Indicates no conflict in cluster data detected on both the primary and secondary cluster.
+	VRGConditionReasonNoConflictDetected = "NoConflictDetected"
+
+	VRGConditionReasonAutoCleanupProgressing = "Progressing"
+	VRGConditionReasonAutoCleanupNotFeasible = "NotFeasible"
+	VRGConditionReasonAutoCleanupCompleted   = "Completed"
 )
 
 const (
@@ -133,6 +149,14 @@ func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration i
 	})
 	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
 		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             VRGConditionReasonInitializing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionUnknown,
+		LastTransitionTime: time,
+		Message:            message,
+	})
+	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+		Type:               VRGConditionTypeAutoCleanup,
 		Reason:             VRGConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -502,4 +526,17 @@ func updateVRGNoClusterDataConflictCondition(observedGeneration int64,
 		Reason:             reason,
 		Message:            message,
 	}
+}
+
+func setVRGAutoCleanupCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	status metav1.ConditionStatus, reason, message string,
+) {
+	autoCleanupCondition := &metav1.Condition{
+		Type:               VRGConditionTypeAutoCleanup,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	}
+	util.SetStatusCondition(conditions, *autoCleanupCondition)
 }

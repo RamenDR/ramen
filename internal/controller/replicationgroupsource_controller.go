@@ -6,7 +6,10 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
+	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
 	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,13 +20,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 
-	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-
-	"github.com/backube/volsync/controllers/statemachine"
 )
 
 /*
@@ -92,16 +92,6 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	logger.Info("Get vrg from ReplicationGroupSource")
-
-	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	if err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      rgs.GetLabels()[volsync.VRGOwnerNameLabel],
-		Namespace: rgs.GetLabels()[volsync.VRGOwnerNamespaceLabel],
-	}, vrg); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	logger.Info("Get ramen config from configmap")
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
@@ -111,21 +101,40 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+
+	logger.Info("Get vrg from ReplicationGroupSource")
+
+	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+	if err := r.Client.Get(ctx, types.NamespacedName{
+		Name:      rgs.GetLabels()[util.VRGOwnerNameLabel],
+		Namespace: rgs.GetLabels()[util.VRGOwnerNamespaceLabel],
+	}, vrg); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 
-	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
+		&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
+		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
+	)
+	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+
+	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
+		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
+
+		err := vgsHandler.CleanVolumeGroupSnapshot(ctx)
+
+		const retryDelay = 5 * time.Second
+
+		return ctrl.Result{RequeueAfter: retryDelay}, err
+	}
 
 	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 	result, err := statemachine.Run(
 		ctx,
-		cephfscg.NewRGSMachine(r.Client, rgs,
-			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
-				&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
-				volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
-			),
-			cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger),
-			logger,
-		),
+		cephfscg.NewRGSMachine(r.Client, rgs, vrg, vsHandler, vgsHandler, logger),
 		logger,
 	)
 	// Update instance status

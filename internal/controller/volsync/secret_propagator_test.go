@@ -8,20 +8,19 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
+	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
+	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
-	plrulev1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
-	cfgpolicyv1 "open-cluster-management.io/config-policy-controller/api/v1"
-	policyv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 )
 
 var _ = Describe("Secret_propagator", func() {

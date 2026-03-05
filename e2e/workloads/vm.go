@@ -6,8 +6,10 @@ package workloads
 import (
 	"fmt"
 
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	virtv1 "kubevirt.io/api/core/v1"
 
@@ -50,6 +52,24 @@ func (w *VM) GetPath() string {
 
 func (w *VM) GetBranch() string {
 	return w.Branch
+}
+
+func (w *VM) GetSelectResource() string {
+	return "kubevirt.io/v1/virtualmachines"
+}
+
+func (w *VM) GetLabelSelector() *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchLabels: map[string]string{"appname": vmAppName}}
+}
+
+// TODO: To be implemented according to the VM workload
+func (w *VM) GetChecks(namespace string) []*recipe.Check {
+	return nil
+}
+
+// TODO: To be implemented according to the VM workload
+func (w *VM) GetOperations(namespace string) []*recipe.Operation {
+	return nil
 }
 
 func (w *VM) Kustomize() string {
@@ -111,9 +131,7 @@ func (w *VM) Health(ctx types.TestContext, cluster *types.Cluster) error {
 func (w *VM) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) {
 	var statuses []types.WorkloadStatus
 
-	clusters := []*types.Cluster{ctx.Env().C1, ctx.Env().C2}
-
-	for _, cluster := range clusters {
+	for _, cluster := range ctx.Env().ManagedClusters() {
 		status, err := w.statusForCluster(ctx, cluster)
 		if err != nil {
 			return nil, fmt.Errorf("error checking application \"%s/%s\" on cluster %q: %w",

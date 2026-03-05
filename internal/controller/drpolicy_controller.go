@@ -295,7 +295,7 @@ func validatePolicyConflicts(ctx context.Context,
 		return fmt.Errorf("validate managed cluster in drpolicy %v failed: %w", drpolicy.Name, err)
 	}
 
-	err = hasConflictingDRPolicy(drpolicy, drpolicies, drClusterIDsToNames)
+	err = HasConflictingDRPolicy(drpolicy, drpolicies, drClusterIDsToNames)
 	if err != nil {
 		return fmt.Errorf("validate managed cluster in drpolicy failed: %w", err)
 	}
@@ -305,7 +305,7 @@ func validatePolicyConflicts(ctx context.Context,
 
 // If two drpolicies have common managed cluster(s) and at least one of them is
 // a metro supported drpolicy, then fail.
-func hasConflictingDRPolicy(
+func HasConflictingDRPolicy(
 	match *ramen.DRPolicy,
 	list ramen.DRPolicyList,
 	drClusterIDsToNames map[string]string,

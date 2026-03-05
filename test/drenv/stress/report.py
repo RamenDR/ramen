@@ -1,0 +1,162 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+Generate markdown report from stress test results.
+"""
+
+import io
+import json
+import os
+import statistics
+
+from . import failures
+from . import metrics
+from . import plot
+
+
+def command(args):
+    metrics.collect(args.directory)
+    has_plots = plot.create_plots(args.directory)
+
+    test = load_test(args.directory)
+    report = format_report(test)
+    failure_report = failures.analyze(args.directory)
+
+    output_path = os.path.join(args.directory, "report.md")
+    with open(output_path, "w") as f:
+        f.write(report)
+        if failure_report:
+            f.write("\n")
+            f.write(failure_report)
+        if has_plots:
+            f.write("\n## System Metrics\n\n")
+            f.write("See [metrics.md](metrics.md) for system metrics charts.\n")
+
+    print(f"Report written to: {output_path}")
+
+
+def load_test(directory):
+    path = os.path.join(directory, "test.json")
+    with open(path) as f:
+        return json.load(f)
+
+
+def compute_stats(test):
+    """
+    Compute statistics from test results.
+
+    Statistics are computed from successful runs only. Failed runs are excluded
+    since they may be very short (early failure) or very long (timeout).
+    """
+    results = test["results"]
+    times = [r["time"] for r in results if r["passed"]]
+
+    stats = {
+        "done": len(results),
+        "passed": len(times),
+        "failed": len(results) - len(times),
+    }
+
+    stats["rate"] = stats["passed"] / stats["done"] * 100 if stats["done"] > 0 else 0.0
+    stats["time"] = sum(r["time"] for r in results)
+
+    if times:
+        stats["mean"] = statistics.mean(times)
+        stats["median"] = statistics.median(times)
+        stats["min"] = min(times)
+        stats["max"] = max(times)
+        if len(times) >= 2:
+            stats["stdev"] = statistics.stdev(times)
+        if len(times) >= 20:
+            stats["p95"] = statistics.quantiles(times, n=100)[94]
+
+    if stats["done"] > 0:
+        stats["time/run"] = stats["time"] / stats["done"]
+
+    return stats
+
+
+def format_report(test):
+    """Format test results as markdown."""
+    config = test.get("config", {})
+    git = test.get("git", {})
+    results = test.get("results", [])
+    stats = compute_stats(test)
+
+    out = io.StringIO()
+    out.write("# Stress Test Results\n\n")
+
+    # Configuration
+    out.write("## Configuration\n\n")
+    out.write(f"- **Environment**: `{config.get('envfile', 'N/A')}`\n")
+    out.write(f"- **Runs**: {config.get('runs', 'N/A')}\n")
+    if git:
+        out.write(f"- **Branch**: {git.get('branch', 'N/A')}\n")
+        out.write(f"- **Commit**: {git.get('commit', 'N/A')}\n")
+    out.write("\n")
+
+    # Host
+    host = test.get("host")
+    if host:
+        out.write("## Host\n\n")
+        out.write(f"- **CPU**: {host.get('cpu', 'N/A')}\n")
+        out.write(f"- **CPU count**: {host.get('cpu_count', 'N/A')}\n")
+        if "memory_gb" in host:
+            out.write(f"- **Memory**: {host['memory_gb']:.1f} GiB\n")
+        out.write(f"- **OS**: {host.get('os', 'N/A')}\n")
+        out.write(f"- **Python**: {host.get('python', 'N/A')}\n")
+        out.write("\n")
+
+    # Summary
+    out.write("## Summary\n\n")
+    passed = stats["passed"]
+    failed = stats["failed"]
+    total = passed + failed
+    rate = stats["rate"]
+    out.write(f"- **Passed**: {passed}/{total} ({rate:.1f}%)\n")
+    out.write(f"- **Failed**: {failed}/{total}\n")
+    out.write(f"- **Total time**: {format_duration(stats['time'])}\n")
+    if "time/run" in stats:
+        out.write(f"- **Time per run**: {format_duration(stats['time/run'])}\n")
+    out.write("\n")
+
+    # Timing stats
+    if stats["passed"] > 0:
+        out.write("## Timing (passed runs)\n\n")
+        out.write("| Metric | Value |\n")
+        out.write("|--------|-------|\n")
+        out.write(f"| Mean | {format_duration(stats['mean'])} |\n")
+        out.write(f"| Median | {format_duration(stats['median'])} |\n")
+        out.write(f"| Min | {format_duration(stats['min'])} |\n")
+        out.write(f"| Max | {format_duration(stats['max'])} |\n")
+        if "stdev" in stats:
+            out.write(f"| Std Dev | {format_duration(stats['stdev'])} |\n")
+        if "p95" in stats:
+            out.write(f"| p95 | {format_duration(stats['p95'])} |\n")
+        out.write("\n")
+
+    # Results table
+    out.write("## Results\n\n")
+    out.write("| Run | Status | Duration |\n")
+    out.write("|-----|--------|----------|\n")
+    for r in results:
+        status = "Passed" if r.get("passed") else "**Failed**"
+        duration = format_duration(r.get("time", 0))
+        out.write(f"| {r['name']} | {status} | {duration} |\n")
+
+    return out.getvalue()
+
+
+def format_duration(seconds):
+    """Format duration in human-readable format (e.g., 7h 51m, 4m 42s)."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m {secs}s"
+    else:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"

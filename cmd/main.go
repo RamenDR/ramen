@@ -8,15 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"time"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -26,6 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	// to ensure that exec-entrypoint and run can make use of them.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	virtv1 "kubevirt.io/api/core/v1"
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -38,13 +40,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
-
 	controllers "github.com/ramendr/ramen/internal/controller"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
-	recipe "github.com/ramendr/recipe/api/v1alpha1"
-	virtv1 "kubevirt.io/api/core/v1"
 	// +kubebuilder:scaffold:imports
+	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
 var (
@@ -262,6 +262,11 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 }
 
 func main() {
+	if os.Getenv("PVC_INIT") == "true" {
+		runPVCInit()
+		os.Exit(0)
+	}
+
 	logOpts := configureLogOptions()
 	bindFlags(logOpts.BindFlags)
 	flag.Parse()
@@ -300,4 +305,24 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func runPVCInit() {
+	mountPath := os.Getenv("PVC_MOUNT_PATH")
+	if mountPath == "" {
+		fatal("PVC_MOUNT_PATH must be set when PVC_INIT=true")
+	}
+
+	for {
+		if _, err := os.Stat(mountPath); err == nil {
+			return
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func fatal(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
 }

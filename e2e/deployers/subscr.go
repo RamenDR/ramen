@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	subscriptionv1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/apps/v1"
 
@@ -23,7 +24,7 @@ func NewSubscription(deployer config.Deployer) types.Deployer {
 }
 
 func (s Subscription) GetName() string {
-	return "subscr"
+	return s.DeployerSpec.Name
 }
 
 func (s Subscription) GetNamespace(_ types.TestContext) string {
@@ -47,8 +48,7 @@ func (s Subscription) Deploy(ctx types.TestContext) error {
 	// Deploys the application on the first DR cluster (c1).
 	cluster := ctx.Env().C1
 
-	log.Infof("Deploying subscription app \"%s/%s\" in cluster %q",
-		ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+	log.Infof("Deploying in cluster %q", cluster.Name)
 
 	// create subscription namespace
 	err := util.CreateNamespace(ctx, ctx.Env().Hub, managementNamespace)
@@ -102,10 +102,9 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		}
 
 		log.Debugf("Could not retrieve the cluster name: %s", err)
-		log.Infof("Undeploying subscription app \"%s/%s\"", ctx.AppNamespace(), ctx.Workload().GetAppName())
+		log.Info("Undeploying")
 	} else {
-		log.Infof("Undeploying subscription app \"%s/%s\" in cluster %q",
-			ctx.AppNamespace(), ctx.Workload().GetAppName(), cluster.Name)
+		log.Infof("Undeploying from cluster %q", cluster.Name)
 	}
 
 	if err := s.DeleteResources(ctx); err != nil {
@@ -151,6 +150,16 @@ func (s Subscription) WaitForResourcesDelete(ctx types.TestContext) error {
 
 func (s Subscription) IsDiscovered() bool {
 	return false
+}
+
+// GetRecipe returns nil as Subscription deployer does not use Recipe.
+func (s Subscription) GetRecipe(ctx types.TestContext) (*recipe.Recipe, error) {
+	return nil, nil
+}
+
+// GetConfig returns the deployer configuration used by the Subscription deployer.
+func (s Subscription) GetConfig() *config.Deployer {
+	return &s.DeployerSpec
 }
 
 func init() {

@@ -6,6 +6,8 @@ package util_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/validation"
+
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
@@ -35,4 +37,18 @@ var _ = Describe("misc", func() {
 
 	Expect(util.GenerateCombinedName(pvcNamespace5, storageID2)).
 		Should(Equal("ce2e9aed-5b7c8892"))
+
+	longResourceName := "54a5f0ff705e7f7d94338c65839890abapp-busybox-rbd-1-cg-placement---------------..--"
+
+	validResourceName := util.TrimToK8sResourceNameLength(longResourceName)
+	errs := validation.NameIsDNSSubdomain(validResourceName, false)
+
+	Expect(errs).To(BeEmpty(), "expected a valid DNS subdomain name, got errors: %v", errs)
+
+	shortenedPVCName := util.GetLocalServiceNameForRD("long-pvc-name-50-chars-00000000000000000000000000000000000000")
+
+	Expect(shortenedPVCName).Should(Equal("volsync-rsync-tls-dst-6e0c095d"))
+
+	originalPVCName := util.GetLocalServiceNameForRD("normal-pvc-name")
+	Expect(originalPVCName).Should(Equal("volsync-rsync-tls-dst-normal-pvc-name"))
 })

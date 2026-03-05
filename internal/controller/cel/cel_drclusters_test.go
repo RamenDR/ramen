@@ -8,15 +8,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	// gomegaTypes "github.com/onsi/gomega/types"
-	ramen "github.com/ramendr/ramen/api/v1alpha1"
-	// corev1 "k8s.io/api/core/v1"
-	// validationErrors "k8s.io/kube-openapi/pkg/validation/errors"
-	// "sigs.k8s.io/controller-runtime/pkg/client"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 var _ = Describe("DRCluster-CEL", func() {

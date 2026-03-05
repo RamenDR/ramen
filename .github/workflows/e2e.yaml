@@ -39,7 +39,7 @@ jobs:
       working-directory: test
       run: |
         source ../venv
-        drenv setup -v envs/regional-dr.yaml
+        drenv setup envs/regional-dr.yaml
 
     - name: Delete clusters
       if: always()
@@ -102,7 +102,7 @@ jobs:
     # https://github.com/actions/upload-artifact/issues/546
     - name: Archive artifacts
       if: always()
-      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr e2e/*.log
+      run: tar czf e2e.${{ env.BUILD_ID }}.tar.gz test/gather.rdr test/*.log e2e/*.log
 
     - name: Upload artifacts
       if: always()
@@ -125,4 +125,4 @@ jobs:
       working-directory: test
       run: |
         source ../venv
-        drenv cleanup -v envs/regional-dr.yaml
+        drenv cleanup envs/regional-dr.yaml

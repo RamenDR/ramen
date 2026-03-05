@@ -1,0 +1,226 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+Run stress test.
+"""
+
+import json
+import os
+import platform
+import re
+import statistics
+import subprocess
+import sys
+import time
+
+PROGRESS = (
+    "[%(done)d/%(runs)d] "
+    "%(passed)d passed, "
+    "%(failed)d failed, "
+    "rate: %(rate).1f%%, "
+    "time/run: %(time/run).1fs"
+)
+
+
+def command(args):
+    os.mkdir(args.outdir)
+
+    test = {
+        "start_time": int(time.time()),
+        "host": host_info(),
+        "git": git_info(),
+        "config": {
+            "runs": args.runs,
+            "envfile": args.envfile,
+            "exit-first": args.exit_first,
+            "name-prefix": args.name_prefix,
+        },
+        "results": [],
+        "stats": {
+            "runs": args.runs,
+            "done": 0,
+            "passed": 0,
+            "failed": 0,
+            "rate": 0.0,
+            "time": 0.0,
+            "time/run": 0.0,
+        },
+    }
+
+    update_progress(test["stats"])
+
+    for i in range(args.runs):
+        name = f"{i:03d}"
+        r = run_test(name, args)
+        test["results"].append(r)
+        update_stats(test["stats"], r)
+        update_progress(test["stats"])
+        if not r["passed"] and args.exit_first:
+            break
+
+    update_progress(test["stats"], last=True)
+    compute_final_stats(test)
+    test["end_time"] = int(time.time())
+    write_output(test, args.outdir)
+
+
+def update_stats(stats, result):
+    stats["done"] += 1
+
+    if result["passed"]:
+        stats["passed"] += 1
+        stats["time"] += result["time"]
+        stats["time/run"] = stats["time"] / stats["passed"]
+    else:
+        stats["failed"] += 1
+
+    stats["rate"] = stats["passed"] / stats["done"] * 100
+
+
+def compute_final_stats(test):
+    """
+    Compute statistics from successful runs only.
+
+    Failed runs are excluded since they may be very short (early failure) or
+    very long (timeout at the last step).
+    """
+    times = [r["time"] for r in test["results"] if r["passed"]]
+    if not times:
+        return
+
+    stats = test["stats"]
+    stats["mean"] = statistics.mean(times)
+    stats["median"] = statistics.median(times)
+    stats["min"] = min(times)
+    stats["max"] = max(times)
+    # Standard deviation measures variation, which is undefined for a single value.
+    if len(times) >= 2:
+        stats["stdev"] = statistics.stdev(times)
+    if len(times) >= 20:
+        stats["p95"] = statistics.quantiles(times, n=100)[94]
+
+
+def update_progress(stats, last=False):
+    line = (PROGRESS % stats).ljust(79)
+    end = "\n" if last else "\r"
+    sys.stdout.write(line + end)
+
+
+def write_output(test, outdir):
+    test_file = os.path.join(outdir, "test.json")
+    with open(test_file, "w") as f:
+        json.dump(test, f, indent=2)
+        f.write("\n")
+
+
+def run_test(name, args):
+    log = os.path.join(args.outdir, name + ".log")
+
+    start_time = int(time.time())
+    start = time.monotonic()
+    cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix)
+    elapsed = time.monotonic() - start
+    end_time = int(time.time())
+    passed = cp.returncode == 0
+
+    drenv(
+        "gather",
+        args.envfile,
+        log,
+        name_prefix=args.name_prefix,
+        directory=os.path.join(args.outdir, name + ".gather"),
+    )
+
+    if passed or not args.exit_first:
+        drenv(
+            "delete",
+            args.envfile,
+            log,
+            name_prefix=args.name_prefix,
+            check=True,
+        )
+
+    return {
+        "name": name,
+        "passed": passed,
+        "time": elapsed,
+        "start_time": start_time,
+        "end_time": end_time,
+    }
+
+
+def drenv(
+    command,
+    envfile,
+    log,
+    name_prefix=None,
+    directory=None,
+    check=False,
+):
+    cmd = ["drenv", command, "--logfile", log]
+    if name_prefix:
+        cmd.extend(("--name-prefix", name_prefix))
+    if directory:
+        cmd.extend(("--directory", directory))
+    cmd.append(envfile)
+    return subprocess.run(cmd, stderr=subprocess.DEVNULL, check=check)
+
+
+def host_info():
+    system = platform.system()
+    if system == "Darwin":
+        return macos_info()
+    elif system == "Linux":
+        return linux_info()
+    else:
+        raise RuntimeError(f"Unsupported platform: {system}")
+
+
+def macos_info():
+    return {
+        "os": f"macOS {platform.mac_ver()[0]}",
+        "cpu": sysctl("machdep.cpu.brand_string"),
+        "cpu_count": os.cpu_count(),
+        "memory_gb": int(sysctl("hw.memsize")) / 2**30,
+        "python": platform.python_version(),
+    }
+
+
+def linux_info():
+    with open("/etc/os-release") as f:
+        m = re.search(r'^PRETTY_NAME="?(.+?)"?\s*$', f.read(), re.MULTILINE)
+    os_name = m.group(1) if m else f"Linux {platform.release()}"
+
+    with open("/proc/cpuinfo") as f:
+        m = re.search(r"^model name\s*:\s*(.+)$", f.read(), re.MULTILINE)
+    cpu = m.group(1) if m else platform.machine()
+
+    with open("/proc/meminfo") as f:
+        m = re.search(r"^MemTotal:\s*(\d+)\s*kB", f.read(), re.MULTILINE)
+    mem = int(m.group(1)) * 1024
+
+    return {
+        "os": os_name,
+        "cpu": cpu,
+        "cpu_count": os.cpu_count(),
+        "memory_gb": mem / 2**30,
+        "python": platform.python_version(),
+    }
+
+
+def git_info():
+    return {
+        "commit": git("rev-parse", "HEAD"),
+        "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+    }
+
+
+def git(*args):
+    cmd = ["git", *args]
+    return subprocess.check_output(cmd).decode().strip()
+
+
+def sysctl(name):
+    cmd = ["sysctl", "-n", name]
+    return subprocess.check_output(cmd).decode().strip()

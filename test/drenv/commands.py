@@ -1,17 +1,25 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import collections
 import os
 import platform
 import selectors
+import signal
 import subprocess
-import textwrap
 import time
 
 from . import shutdown
+from . import yaml
 
 OUT = "out"
 ERR = "err"
+
+# Default timeout for commands. Without a timeout commands can hang
+# indefinitely, wasting hours of CI time.
+_DEFAULT_TIMEOUT = 600
+
+Failure = collections.namedtuple("Failure", ["command", "exitcode", "error"])
 
 _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 
@@ -19,9 +27,11 @@ _Selector = getattr(selectors, "PollSelector", selectors.SelectSelector)
 # POSIX to 512 but is 4096 on Linux. See pipe(7).
 _PIPE_BUF = 4096 if platform.system() == "Linux" else 512
 
+# Default buffer size for reading from child process.
+_READ_BUF = 32 * 1024
+
 
 class Error(Exception):
-    INDENT = 3 * " "
 
     def __init__(self, command, error, exitcode=None, output=None):
         self.command = command
@@ -36,26 +46,39 @@ class Error(Exception):
         self.__cause__ = None
         return self.with_traceback(exc.__traceback__)
 
-    def _indent(self, s):
-        return textwrap.indent(s, self.INDENT)
+    def __str__(self):
+        info = {"command": list(self.command)}
+        if self.exitcode is not None:
+            info["exitcode"] = self.exitcode
+        if self.output:
+            info["output"] = self.output.rstrip()
+        if self.error:
+            info["error"] = self.error.rstrip()
+        return yaml.safe_dump({"command failed": info}).rstrip()
+
+
+class PipelineError(Error):
+    """
+    Error raised when one or more commands in a pipeline fail.
+    """
+
+    def __init__(self, failures):
+        """
+        failures is a list of (command, exitcode, error) tuples.
+        """
+        self.failures = failures
 
     def __str__(self):
-        lines = [
-            "Command failed:\n",
-            self._indent(f"command: {self.command}\n"),
-        ]
-
-        if self.exitcode is not None:
-            lines.append(self._indent(f"exitcode: {self.exitcode}\n"))
-
-        if self.output:
-            output = self._indent(self.output.rstrip())
-            lines.append(self._indent(f"output:\n{output}\n"))
-
-        error = self._indent(self.error.rstrip())
-        lines.append(self._indent(f"error:\n{error}\n"))
-
-        return "".join(lines)
+        items = []
+        for failure in self.failures:
+            item = {
+                "command": list(failure.command),
+                "exitcode": failure.exitcode,
+            }
+            if failure.error:
+                item["error"] = failure.error.rstrip()
+            items.append(item)
+        return yaml.safe_dump({"pipeline failed": items}).rstrip()
 
 
 class Timeout(Error):
@@ -70,9 +93,20 @@ class StreamTimeout(Exception):
     """
 
 
-def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
+def run(
+    *args,
+    input=None,
+    stdin=None,
+    decode=True,
+    env=None,
+    cwd=None,
+    timeout=_DEFAULT_TIMEOUT,
+):
     """
     Run command args and return the output of the command.
+
+    By default commands are terminated after the default timeout. Use
+    timeout=None to wait forever.
 
     Assumes that the child process output UTF-8. Will raise if the command
     outputs binary data. This is not a problem in this projects since all our
@@ -82,9 +116,11 @@ def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
     fail to raise an error about the failing command. Invalid characters will
     be replaced with unicode replacement character (U+FFFD).
 
-    Raises Error if creating a child process failed or the child process
-    terminated with non-zero exit code. The error includes all data read from
-    the child process stdout and stderr.
+    Raises:
+    - Error if creating a child process failed or the child process
+      terminated with non-zero exit code. The error includes all data read
+      from the child process stdout and stderr.
+    - Timeout if the command did not terminate within the specified timeout.
     """
     with shutdown.guard():
         try:
@@ -99,7 +135,15 @@ def run(*args, input=None, stdin=None, decode=True, env=None, cwd=None):
         except OSError as e:
             raise Error(args, f"Could not execute: {e}").with_exception(e)
 
-    output, error = p.communicate(input=input.encode() if input else None)
+    try:
+        output, error = p.communicate(
+            input=input.encode() if input else None,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait()
+        raise Timeout(args, f"Command did not finish in {timeout} seconds")
 
     if p.returncode != 0:
         error = error.decode(errors="replace")
@@ -113,7 +157,7 @@ def watch(
     input=None,
     keepends=False,
     decode=True,
-    timeout=None,
+    timeout=_DEFAULT_TIMEOUT,
     env=None,
     stdin=None,
     stderr=subprocess.PIPE,
@@ -121,6 +165,9 @@ def watch(
 ):
     """
     Run command args, iterating over lines read from the child process stdout.
+
+    By default commands are terminated after the default timeout. Use
+    timeout=None to wait forever.
 
     Some commands have no output and log everyting to stderr (like drenv). To
     watch the output call with stderr=subprocess.STDOUT. When such command
@@ -169,7 +216,7 @@ def watch(
         error = bytearray()
         partial = bytearray()
 
-        for src, data in stream(p, input=input, timeout=timeout):
+        for _, src, data in _stream(p, input=input, timeout=timeout):
             if src is ERR:
                 error += data
             else:
@@ -198,7 +245,9 @@ def watch(
         return
     except StreamTimeout as e:
         p.kill()
-        raise Timeout(args, "Timed watching command").with_exception(e)
+        raise Timeout(
+            args, f"Command did not finish in {timeout} seconds"
+        ).with_exception(e)
     finally:
         p.wait()
 
@@ -207,53 +256,152 @@ def watch(
         raise Error(args, error, exitcode=p.returncode)
 
 
-def stream(proc, input=None, bufsize=32 << 10, timeout=None):
+def pipeline(*commands, input=None, decode=True, timeout=_DEFAULT_TIMEOUT):
     """
-    Stream data from process stdout and stderr.
+    Run commands as a pipeline, piping stdout of each command to stdin of the
+    next.
 
-    proc is a subprocess.Popen instance created with stdout=subprocess.PIPE and
-    stderr=subprocess.PIPE. If only one stream is used don't use this, stream
-    directly from the single pipe.
+    By default pipelines are terminated after the default timeout. Use
+    timeout=None to wait forever.
 
-    If input is not None, proc must be created with stdin=subprocess.PIPE and
-    the pipe must be open.
+    If input is not None, it is written to the first command's stdin.
 
-    Yields either (OUT, data) or (ERR, data) read from proc stdout and stderr.
-    Returns when both streams are closed.
+    Returns the output of the last command.
+
+    Raises:
+    - PipelineError if any command in the pipeline fails.
+    - Timeout if the pipeline did not complete within the specified timeout.
+
+    Example:
+        pipeline(
+            ["grep", "pattern"],
+            ["sort"],
+            input="line1\nline2\n",
+        )
+    """
+    if len(commands) < 2:
+        raise ValueError("pipeline requires at least 2 commands")
+
+    procs = {}
+
+    with shutdown.guard():
+        last = None
+        for cmd in commands:
+            if last:
+                stdin = last.stdout
+            else:
+                stdin = _select_stdin(input=input)
+
+            try:
+                p = subprocess.Popen(
+                    cmd,
+                    stdin=stdin,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            except OSError as e:
+                for proc in procs:
+                    proc.kill()
+                for proc in procs:
+                    proc.wait()
+                raise PipelineError([Failure(cmd, None, f"Could not execute: {e}")])
+
+            # Close our reference so the previous process gets SIGPIPE if this
+            # one exits.
+            if last:
+                last.stdout.close()
+
+            procs[p] = bytearray()
+            last = p
+
+    # Collect output and stderr from all processes concurrently to avoid
+    # deadlock when a process blocks on stderr write.
+    output = bytearray()
+
+    try:
+        for proc, src, data in _stream(*procs, input=input, timeout=timeout):
+            if src is OUT:
+                output += data
+            else:
+                procs[proc] += data
+    except StreamTimeout as e:
+        for proc in procs:
+            proc.kill()
+        raise Timeout(
+            commands, f"Pipeline did not finish in {timeout} seconds"
+        ).with_exception(e)
+    except BaseException:
+        for proc in procs:
+            proc.kill()
+        raise
+    finally:
+        for proc in procs:
+            proc.wait()
+
+    # Collect all failures. SIGPIPE in non-last commands is normal in
+    # pipelines - it means a downstream command exited before consuming all
+    # input, same as how real shells handle it.
+    failures = []
+    for proc, stderr in procs.items():
+        if proc.returncode == 0:
+            continue
+        if proc is not last and proc.returncode == -signal.SIGPIPE:
+            continue
+        error = stderr.decode(errors="replace")
+        failures.append(Failure(proc.args, proc.returncode, error))
+
+    if failures:
+        raise PipelineError(failures)
+
+    return output.decode() if decode else bytes(output)
+
+
+def _stream(*procs, input=None, timeout=None):
+    """
+    Stream data from one or more processes stdout and stderr.
+
+    Each proc is a subprocess.Popen instance created with stdout=subprocess.PIPE
+    and/or stderr=subprocess.PIPE.
+
+    If input is not None, the first process must be created with
+    stdin=subprocess.PIPE, and input is written to the first process stdin.
+
+    Yields (proc, src, data) tuples where src is OUT or ERR.
+    Returns when all streams are closed.
     """
     if timeout is None:
         deadline = None
     else:
         deadline = time.monotonic() + timeout
 
+    first = procs[0]
     if input:
-        if proc.stdin is None:
-            raise RuntimeError("Cannot stream input: proc.stdin is None")
-        if proc.stdin.closed:
-            raise RuntimeError("Cannot stream input: proc.stdin is closed")
-    elif proc.stdin:
+        if first.stdin is None:
+            raise RuntimeError("Cannot stream input: first process stdin is None")
+        if first.stdin.closed:
+            raise RuntimeError("Cannot stream input: first process stdin is closed")
+    elif first.stdin:
         try:
-            proc.stdin.close()
+            first.stdin.close()
         except BrokenPipeError:
             pass
 
-    # Use only if input is not None, but it helps pylint.
-    input_view = ""
+    input_view = memoryview(input.encode()) if input else None
     input_offset = 0
 
     with _Selector() as sel:
-        for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
-            if f and not f.closed:
-                sel.register(f, selectors.EVENT_READ, src)
+        for proc in procs:
+            for f, src in (proc.stdout, OUT), (proc.stderr, ERR):
+                if f and not f.closed:
+                    sel.register(f, selectors.EVENT_READ, (proc, src))
         if input:
-            sel.register(proc.stdin, selectors.EVENT_WRITE)
-            input_view = memoryview(input.encode())
+            sel.register(first.stdin, selectors.EVENT_WRITE)
 
         while sel.get_map():
             remaining = _remaining_time(deadline)
             for key, event in sel.select(remaining):
-                if key.fileobj is proc.stdin:
-                    # Stream data from caller to child process.
+                if key.fileobj is first.stdin:
+                    # Stream data from caller to first process.
                     chunk = input_view[input_offset : input_offset + _PIPE_BUF]
                     try:
                         input_offset += os.write(key.fd, chunk)
@@ -266,13 +414,14 @@ def stream(proc, input=None, bufsize=32 << 10, timeout=None):
                             key.fileobj.close()
                 else:
                     # Stream data from child process to caller.
-                    data = os.read(key.fd, bufsize)
+                    data = os.read(key.fd, _READ_BUF)
                     if not data:
                         sel.unregister(key.fileobj)
                         key.fileobj.close()
                         continue
 
-                    yield key.data, data
+                    proc, src = key.data
+                    yield proc, src, data
 
 
 def _select_stdin(input=None, stdin=None):

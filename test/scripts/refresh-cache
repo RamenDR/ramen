@@ -14,7 +14,7 @@ source ../venv
 
 for i in $(seq 1 $attempts); do
 	echo "$(date) Refreshing drenv cache (attempt $i/$attempts)"
-	drenv cache -v "$env_file" && exit 0
+	drenv cache "$env_file" && exit 0
 	sleep $delay_seconds
 done
 
