@@ -19,7 +19,7 @@ from collections import defaultdict
 log = logging.getLogger("addons")
 
 _PATTERN = re.compile(
-    r"\[(\w+)/\d+\] (addons/\S+/(?:start|test)) completed in (\d+\.\d+) seconds"
+    r"\[(\w+)/\d+\] (addons/\S+/(?:start|test)) (?:completed|failed) in (\d+\.\d+) seconds"
 )
 
 
