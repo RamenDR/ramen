@@ -187,7 +187,7 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
-	if err = v.assignRDAndRSAsOwnerToProtectedPVC(rd, rdSpec.ProtectedPVC); err != nil {
+	if err = v.AssignRDAndRSAsOwnerToProtectedPVC(rd, rdSpec.ProtectedPVC); err != nil {
 		return nil, nil, err
 	}
 
@@ -325,7 +325,7 @@ func getKindRSorRD(obj runtime.Object) (string, error) {
 	}
 }
 
-func (v *VSHandler) assignRDAndRSAsOwnerToProtectedPVC(
+func (v *VSHandler) AssignRDAndRSAsOwnerToProtectedPVC(
 	obj client.Object,
 	protectedPVC ramendrv1alpha1.ProtectedPVC,
 ) error {
@@ -526,7 +526,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, nil // Requeue
 	}
 
-	if err = v.assignRDAndRSAsOwnerToProtectedPVC(replicationSource, rsSpec.ProtectedPVC); err != nil {
+	if err = v.AssignRDAndRSAsOwnerToProtectedPVC(replicationSource, rsSpec.ProtectedPVC); err != nil {
 		return false, replicationSource, err
 	}
 
@@ -1426,7 +1426,7 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string, skipPVCDisowne
 	return nil
 }
 
-func (v *VSHandler) removeOwnerFromPVC(
+func (v *VSHandler) RemoveOwnerFromPVC(
 	obj client.Object,
 	pvcName, pvcNamespace string,
 ) error {
@@ -1496,7 +1496,7 @@ func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pv
 	skipPVCDisownership bool,
 ) error {
 	if !skipPVCDisownership {
-		if err := v.removeOwnerFromPVC(rs, pvcName, pvcNamespace); err != nil {
+		if err := v.RemoveOwnerFromPVC(rs, pvcName, pvcNamespace); err != nil {
 			v.log.Error(err, "Failed to disown PVC before deleting RD", "rs", rs.GetName(), "error", err)
 
 			return err
@@ -1517,7 +1517,7 @@ func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcNam
 ) error {
 	// Step 1: Disown PVC, unless skipped
 	if !skipPVCDisownership {
-		if err := v.removeOwnerFromPVC(rd, pvcName, pvcNamespace); err != nil {
+		if err := v.RemoveOwnerFromPVC(rd, pvcName, pvcNamespace); err != nil {
 			v.log.Error(err, "Failed to disown PVC before deleting RD", "rd", rd.GetName(), "error", err)
 
 			return err
