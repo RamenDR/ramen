@@ -4,7 +4,6 @@
 ---
 resources:
 - namespace.yaml
-- vr-1m.yaml
 - rbd-pvc.yaml
 
 namespace: rbd-mirror-test
