@@ -16,6 +16,12 @@ import (
 var vrgLastUploadVersion sync.Map
 
 func (v *VRGInstance) vrgObjectProtect(result *ctrl.Result) {
+	if v.instance.Spec.DryRun {
+		v.log.Info("Skipping upload of VRG to S3 store(s) as VRG is in dry-run mode")
+
+		return
+	}
+
 	vrg := v.instance
 	log := v.log
 

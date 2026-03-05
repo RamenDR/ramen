@@ -639,6 +639,12 @@ func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bo
 
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
+	if v.instance.Spec.DryRun {
+		log.Info("Skipping upload of PV object to S3 store(s) as VRG is in dry-run mode")
+
+		return nil
+	}
+
 	if v.isArchivedAlready(pvc, log) {
 		msg := fmt.Sprintf("PV cluster data already protected for PVC %s", pvc.Name)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
