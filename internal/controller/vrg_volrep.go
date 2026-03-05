@@ -1640,6 +1640,26 @@ func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, vol
 		}
 	}
 
+	// For global VGRs, the external controller may not provide the Completed condition.
+	// If the VGR state already matches the desired replication state, treat as completed.
+	if _, isGlobal := v.globalVGRName(); isGlobal {
+		if v.isGlobalVGRStateMatched(status, state) {
+			msg := "Global VGR state matches desired replication state"
+
+			for idx := range pvcs {
+				pvc := pvcs[idx]
+
+				v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
+				v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
+			}
+
+			v.log.Info(fmt.Sprintf("Global VolumeGroupReplication %s/%s is ready for use",
+				volRep.GetNamespace(), volRep.GetName()))
+
+			return true
+		}
+	}
+
 	// Check completed for both primary and secondary.
 	if !v.validateVRCompletedStatus(pvcs, volRep, state, status) {
 		return false

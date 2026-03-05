@@ -545,6 +545,8 @@ const (
 	// VolumeGroupReplicationClass label
 	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
+	GlobalVGRLabel = "ramendr.openshift.io/global-vgr"
+
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 
@@ -752,6 +754,17 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
+		globallyOffloaded, err := v.usesGlobalVGRClass(pvcList)
+		if err != nil {
+			return err
+		}
+
+		if globallyOffloaded {
+			if err := v.addGlobalVGRLabel(pvcList); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 
@@ -863,6 +876,56 @@ func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaim
 	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for offloaded protection", len(v.volRepPVCs)))
 
 	return offloaded, nil
+}
+
+// usesGlobalVGRClass returns true if the offloaded PVCs use a globally scoped VGRClass.
+func (v *VRGInstance) usesGlobalVGRClass(pvcList *corev1.PersistentVolumeClaimList) (bool, error) {
+	if len(pvcList.Items) == 0 {
+		return false, nil
+	}
+
+	pvc := &pvcList.Items[0]
+
+	vgrClassObj, err := v.selectVolumeReplicationClass(pvc, true)
+	if err != nil {
+		return false, fmt.Errorf("failed to find VolumeGroupReplicationClass for PVC %s/%s: %w",
+			pvc.GetNamespace(), pvc.GetName(), err)
+	}
+
+	vgrClass, ok := vgrClassObj.(*volrep.VolumeGroupReplicationClass)
+	if !ok {
+		return false, fmt.Errorf("unexpected type for VolumeGroupReplicationClass: %T", vgrClassObj)
+	}
+
+	// TODO: Replace with vgrClass.Spec.Global once csi-addons adds the field
+	return vgrClass.Spec.Parameters["global"] == "true", nil
+}
+
+func (v *VRGInstance) addGlobalVGRLabel(pvcList *corev1.PersistentVolumeClaimList) error {
+	pvc := &pvcList.Items[0]
+
+	storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
+	if err != nil {
+		return err
+	}
+
+	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
+	if !ok {
+		return fmt.Errorf("storageClass %s missing label %s", storageClass.GetName(), StorageIDLabel)
+	}
+
+	vgrName := util.CreateGlobalVGRName(storageID)
+
+	if util.AddLabel(v.instance, GlobalVGRLabel, vgrName) {
+		if err := v.reconciler.Update(v.ctx, v.instance); err != nil {
+			return fmt.Errorf("failed to add label %s to VRG %s/%s: %w",
+				GlobalVGRLabel, v.instance.Namespace, v.instance.Name, err)
+		}
+
+		v.log.Info("Labeled VRG with global VGR", "vgrName", vgrName)
+	}
+
+	return nil
 }
 
 // addVolRepConsistencyGroupLabel ensures that the given PVC is labeled as part of a consistency group.
@@ -2165,6 +2228,17 @@ func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 		}
 	}
 
+	// For global VGRs, the external controller may not provide lastSyncTime per PVC.
+	// Use current time so the Protected condition on DRPC can pass.
+	if leastLastSyncTime == nil {
+		if _, isGlobal := v.globalVGRName(); isGlobal {
+			now := metav1.Now()
+			leastLastSyncTime = &now
+
+			v.log.Info("Global VGR: setting lastGroupSyncTime to now()")
+		}
+	}
+
 	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
 }
 
@@ -2296,8 +2370,45 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 		return []reconcile.Request{}
 	}
 
-	return filterVRGDependentObjects(r.Client, obj,
-		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
+	vgrLog := log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace})
+
+	if vgr.Namespace == RamenOperatorNamespace() {
+		return r.enqueueVRGsForGlobalVGR(vgr.Name, vgrLog)
+	}
+
+	return filterVRGDependentObjects(r.Client, obj, vgrLog)
+}
+
+func (r *VolumeReplicationGroupReconciler) enqueueVRGsForGlobalVGR(
+	vgrName string, log logr.Logger,
+) []reconcile.Request {
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := r.Client.List(context.TODO(), &vrgs,
+		client.MatchingLabels{GlobalVGRLabel: vgrName},
+	)
+	if err != nil {
+		log.Error(err, "Failed to list VRGs for global VGR")
+
+		return []reconcile.Request{}
+	}
+
+	req := make([]reconcile.Request, 0, len(vrgs.Items))
+
+	for idx := range vrgs.Items {
+		vrg := &vrgs.Items[idx]
+		log.Info("Enqueueing VRG for global VGR status change",
+			"vrg", vrg.Name, "namespace", vrg.Namespace)
+
+		req = append(req, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			},
+		})
+	}
+
+	return req
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {

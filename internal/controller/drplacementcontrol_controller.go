@@ -516,6 +516,15 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if d.mirrorGlobalVGRLabel() {
+		if err := r.Update(d.ctx, d.instance); err != nil {
+			log.Error(err, "Failed to persist global VGR label on DRPC")
+
+			return ctrl.Result{Requeue: true}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	requeue := d.startProcessing()
 	log.Info("Finished processing", "Requeue?", requeue)
 

@@ -402,6 +402,14 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 	d.setStatusInitiating()
 
+	if _, isGlobal := d.globalVGRName(); isGlobal {
+		if !d.checkAllGlobalVGRDRPCsReady() {
+			d.log.Info("Not all DRPCs in the global VGR group are ready for failover. Waiting.")
+
+			return !done, nil
+		}
+	}
+
 	return d.switchToFailoverCluster()
 }
 
@@ -920,6 +928,14 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		}
 
 		if !result {
+			return !done, nil
+		}
+	}
+
+	if _, isGlobal := d.globalVGRName(); isGlobal {
+		if !d.checkAllGlobalVGRDRPCsReady() {
+			d.log.Info("Not all DRPCs in the global VGR group are ready for relocate. Waiting.")
+
 			return !done, nil
 		}
 	}
@@ -2635,6 +2651,82 @@ func (d *DRPCInstance) shouldUpdateStatus() bool {
 	}
 
 	return !reflect.DeepEqual(d.instance.Status.ResourceConditions.Conditions, vrg.Status.Conditions)
+}
+
+func (d *DRPCInstance) globalVGRName() (string, bool) {
+	vgrName := d.instance.GetLabels()[GlobalVGRLabel]
+
+	return vgrName, vgrName != ""
+}
+
+func (d *DRPCInstance) mirrorGlobalVGRLabel() bool {
+	for _, vrg := range d.vrgs {
+		if vrg.Spec.ReplicationState != rmn.Primary {
+			continue
+		}
+
+		if vgrName, ok := vrg.GetLabels()[GlobalVGRLabel]; ok {
+			if rmnutil.AddLabel(d.instance, GlobalVGRLabel, vgrName) {
+				d.log.Info("Mirrored global VGR label from VRG to DRPC", "vgrName", vgrName)
+
+				return true
+			}
+		}
+
+		break
+	}
+
+	return false
+}
+
+func (d *DRPCInstance) checkAllGlobalVGRDRPCsReady() bool {
+	labelValue, _ := d.globalVGRName()
+
+	drpcList := &rmn.DRPlacementControlList{}
+	if err := d.reconciler.List(d.ctx, drpcList, client.MatchingLabels{
+		GlobalVGRLabel: labelValue,
+	}); err != nil {
+		d.log.Error(err, "Failed to list DRPCs for global VGR consensus check")
+		return false
+	}
+
+	for idx := range drpcList.Items {
+		drpc := &drpcList.Items[idx]
+
+		if drpc.Spec.Action != d.instance.Spec.Action {
+			d.log.Info("Global VGR consensus not reached, action mismatch",
+				"drpc", drpc.Namespace+"/"+drpc.Name,
+				"expectedAction", d.instance.Spec.Action,
+				"actualAction", drpc.Spec.Action)
+			return false
+		}
+
+		switch d.instance.Spec.Action {
+		case rmn.ActionFailover:
+			if drpc.Spec.FailoverCluster != d.instance.Spec.FailoverCluster {
+				d.log.Info("Global VGR consensus not reached, failover cluster mismatch",
+					"drpc", drpc.Namespace+"/"+drpc.Name,
+					"expected", d.instance.Spec.FailoverCluster,
+					"actual", drpc.Spec.FailoverCluster)
+				return false
+			}
+		case rmn.ActionRelocate:
+			if drpc.Spec.PreferredCluster != d.instance.Spec.PreferredCluster {
+				d.log.Info("Global VGR consensus not reached, preferred cluster mismatch",
+					"drpc", drpc.Namespace+"/"+drpc.Name,
+					"expected", d.instance.Spec.PreferredCluster,
+					"actual", drpc.Spec.PreferredCluster)
+				return false
+			}
+		}
+	}
+
+	d.log.Info("Global VGR consensus reached",
+		"globalVGR", labelValue,
+		"drpcCount", len(drpcList.Items),
+		"action", d.instance.Spec.Action)
+
+	return true
 }
 
 //nolint:exhaustive
