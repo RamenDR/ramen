@@ -45,7 +45,16 @@ var _ = Describe("Cghandler", func() {
 				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
-			}, nil, nil, rgdName, testLogger)
+			}, nil,
+				volsync.NewVSHandler(Ctx, k8sClient, testLogger, &ramendrv1alpha1.VolumeReplicationGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      vgdName,
+						Namespace: "default",
+						UID:       "123",
+					},
+				}, &ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+					"Snapshot", false,
+				), rgdName, testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default", nil)
 			Expect(err).To(BeNil())
 			Expect(len(rgd.Spec.RDSpecs)).To(Equal(0))
@@ -60,7 +69,16 @@ var _ = Describe("Cghandler", func() {
 				Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 					Async: &ramendrv1alpha1.VRGAsyncSpec{},
 				},
-			}, nil, nil, rgdName, testLogger)
+			}, nil,
+				volsync.NewVSHandler(Ctx, k8sClient, testLogger, &ramendrv1alpha1.VolumeReplicationGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      vgdName,
+						Namespace: "default",
+						UID:       "123",
+					},
+				}, &ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+					"Snapshot", false,
+				), rgdName, testLogger)
 			rgd, err := vsCGHandler.CreateOrUpdateReplicationGroupDestination(vgdName, "default",
 				[]ramendrv1alpha1.VolSyncReplicationDestinationSpec{{
 					ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
