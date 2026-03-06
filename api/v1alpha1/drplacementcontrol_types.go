@@ -119,6 +119,7 @@ const (
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
+	ProgressionTestingFailover                     = ProgressionStatus("TestingFailover")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
@@ -157,6 +158,12 @@ type DRPlacementControlSpec struct {
 
 	// Action is either Failover or Relocate operation
 	Action DRAction `json:"action,omitempty"`
+
+	// DryRun when set to true, makes the action Failover non-destructive.
+	// The secondary is temporarily promoted to primary to verify readiness and data consistency
+	// without committing to the actual failover. Can be aborted to return to the original state.
+	// +kubebuilder:validation:Optional
+	DryRun bool `json:"dryRun,omitempty"`
 
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`

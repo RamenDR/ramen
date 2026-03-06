@@ -1692,12 +1692,6 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 
 	v.instance.Status.LastGroupSyncTime = nil
 
-	if v.resetInitialStatusAsSecondary() {
-		v.result.Requeue = true
-
-		return v.result
-	}
-
 	result := v.reconcileAsSecondary()
 
 	// If requeue is false, then VRG was successfully processed as Secondary.
@@ -1707,6 +1701,14 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 	if !result.Requeue {
 		util.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeNormal,
 			util.EventReasonSecondarySuccess, "Secondary Success")
+	}
+
+	// IMPORTANT: resetInitialStatusAsSecondary() MUST be called AFTER reconcileAsSecondary()
+	// because reconcileAsSecondary() clears v.instance.Status.Conditions.
+	if v.resetInitialStatusAsSecondary() {
+		v.result.Requeue = true
+
+		return v.result
 	}
 
 	return v.updateVRGConditionsAndStatus(result)
@@ -2083,7 +2085,6 @@ func (v *VRGInstance) updateVRGAutoCleanupCondition() {
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
 	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
-
 	if v.instance.Spec.Sync == nil {
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
 
