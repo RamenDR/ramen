@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import concurrent.futures
 import json
 import os
 import sys
@@ -10,6 +11,7 @@ import time
 
 from drenv import kubectl
 
+NAMESPACE = "rbd-mirror-test"
 POOL_NAME = "replicapool"
 PVC_NAME = "rbd-pvc"
 VR_NAME = "vr-1m"
@@ -56,38 +58,47 @@ def rbd_mirror_image_status(cluster, image):
 
 
 def test_volume_replication(primary, secondary):
-    print(f"Deploying pvc {PVC_NAME} and vr {VR_NAME} in cluster '{primary}'")
+    print(f"Deploying pvc {NAMESPACE}/{PVC_NAME} in cluster '{primary}'")
     kubectl.apply("--kustomize=test-data", context=primary)
 
-    print(f"Waiting until pvc {PVC_NAME} is bound in cluster '{primary}'")
+    print(f"Waiting until pvc {NAMESPACE}/{PVC_NAME} is bound in cluster '{primary}'")
     kubectl.wait(
         f"pvc/{PVC_NAME}",
         "--for=jsonpath={.status.phase}=Bound",
-        "--namespace=rook-ceph",
+        f"--namespace={NAMESPACE}",
         context=primary,
     )
 
-    print(f"Waiting until vr {VR_NAME} is completed in cluster '{primary}'")
+    print(f"Deploying vr {NAMESPACE}/{VR_NAME} in cluster '{primary}'")
+    kubectl.apply(
+        f"--filename=test-data/{VR_NAME}.yaml",
+        f"--namespace={NAMESPACE}",
+        context=primary,
+    )
+
+    print(f"Waiting until vr {NAMESPACE}/{VR_NAME} is completed in cluster '{primary}'")
     kubectl.wait(
         f"volumereplication/{VR_NAME}",
         "--for=condition=Completed",
-        "--namespace=rook-ceph",
+        f"--namespace={NAMESPACE}",
         context=primary,
     )
 
-    print(f"Waiting until vr {VR_NAME} state is primary in cluster '{primary}'")
+    print(
+        f"Waiting until vr {NAMESPACE}/{VR_NAME} state is primary in cluster '{primary}'"
+    )
     kubectl.wait(
         f"volumereplication/{VR_NAME}",
         "--for=jsonpath={.status.state}=Primary",
-        "--namespace=rook-ceph",
+        f"--namespace={NAMESPACE}",
         context=primary,
     )
 
-    print(f"Looking up pvc {PVC_NAME} pv name in cluster '{primary}'")
+    print(f"Looking up pvc {NAMESPACE}/{PVC_NAME} pv name in cluster '{primary}'")
     pv_name = kubectl.get(
         f"pvc/{PVC_NAME}",
         "--output=jsonpath={.spec.volumeName}",
-        "--namespace=rook-ceph",
+        f"--namespace={NAMESPACE}",
         context=primary,
     )
 
@@ -95,7 +106,6 @@ def test_volume_replication(primary, secondary):
     rbd_image = kubectl.get(
         f"pv/{pv_name}",
         "--output=jsonpath={.spec.csi.volumeAttributes.imageName}",
-        "--namespace=rook-ceph",
         context=primary,
     )
 
@@ -114,11 +124,11 @@ def test_volume_replication(primary, secondary):
     else:
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
-    print(f"vr {VR_NAME} info on primary cluster '{primary}'")
+    print(f"vr {NAMESPACE}/{VR_NAME} info on primary cluster '{primary}'")
     kubectl.get(
         f"volumereplication/{VR_NAME}",
         "--output=yaml",
-        "--namespace=rook-ceph",
+        f"--namespace={NAMESPACE}",
         context=primary,
     )
 
@@ -126,7 +136,14 @@ def test_volume_replication(primary, secondary):
     image_status = rbd_mirror_image_status(primary, rbd_image)
     print(json.dumps(image_status, indent=2))
 
-    print(f"Deleting pvc {PVC_NAME} and vr {VR_NAME} in primary cluster '{primary}'")
+    print(f"Deleting vr {NAMESPACE}/{VR_NAME} in primary cluster '{primary}'")
+    kubectl.delete(
+        f"--filename=test-data/{VR_NAME}.yaml",
+        f"--namespace={NAMESPACE}",
+        context=primary,
+    )
+
+    print(f"Deleting pvc {NAMESPACE}/{PVC_NAME} in primary cluster '{primary}'")
     kubectl.delete("--kustomize=test-data", context=primary)
 
     print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")
@@ -140,5 +157,10 @@ os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
-test_volume_replication(cluster1, cluster2)
-test_volume_replication(cluster2, cluster1)
+with concurrent.futures.ThreadPoolExecutor() as e:
+    tests = [
+        e.submit(test_volume_replication, cluster1, cluster2),
+        e.submit(test_volume_replication, cluster2, cluster1),
+    ]
+    for t in concurrent.futures.as_completed(tests):
+        t.result()
