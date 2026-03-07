@@ -159,11 +159,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kubernetes_version: ["1.29.1"]
+        kubernetes_version: ["1.35.1"]
         include:
-          - kubernetes_version: "1.29.1"
-            kind_image: "1.29.1@sha256:a0cc28af37cf39b019e2b448c54d1a3f789de32536cb5a5db61a49623e527144"
-            kind_version: "v0.21.0"
+          - kubernetes_version: "1.35.1"
+            kind_image: "1.35.1@sha256:05d7bcdefbda08b4e038f644c4df690cdac3fba8b06f8289f30e10026720a1ab"
+            kind_version: "v0.31.0"
     env:
       KUBERNETES_VERSION: ${{ matrix.kubernetes_version }}
       KIND_VERSION: ${{ matrix.kind_version }}
