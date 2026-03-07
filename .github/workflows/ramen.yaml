@@ -180,8 +180,11 @@ jobs:
 
       - name: Install kubectl
         run: |
-          curl -LO "https://storage.googleapis.com/kubernetes-release/release/v${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
-          sudo install ./kubectl /usr/local/bin/
+          set -e -o pipefail
+          curl --fail --silent --show-error --location --remote-name \
+              "https://dl.k8s.io/release/v${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
+          sudo install kubectl /usr/local/bin/
+          kubectl version --client --output=yaml
 
       - name: Create Kind kubernetes cluster
         run: ./hack/setup-kind-cluster.sh
