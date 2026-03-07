@@ -192,7 +192,8 @@ func pvcPredicateFunc() predicate.Funcs {
 	pvcPredicate := predicate.Funcs{
 		// NOTE: Create predicate is retained, to help with logging the event
 		CreateFunc: func(e event.CreateEvent) bool {
-			log.Info("Create event for PersistentVolumeClaim")
+			o := e.Object
+			log.Info("Create event for PVC", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -210,13 +211,13 @@ func pvcPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info("Update event for PersistentVolumeClaim")
+			log.Info("Update event for PVC", "namespace", oldPVC.GetNamespace(), "name", oldPVC.GetName())
 
 			return updateEventDecision(oldPVC, newPVC, log)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			o := e.Object
-			log.Info("PVC Delete", "namespace", o.GetNamespace(), "name", o.GetName())
+			log.Info("Delete event for PVC", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -348,8 +349,6 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		// this. If not found, then reconcile request would not be sent
 		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
-			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
-
 			continue
 		}
 
@@ -1005,8 +1004,6 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 }
 
 func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim) {
-	v.log.Info("separating PVC using only sc provisioner")
-
 	replicationClassMatchFound := false
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1032,8 +1029,6 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
-	v.log.Info("separate PVC using peerClasses")
-
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
 		return err
@@ -2015,13 +2010,11 @@ func (v *VRGInstance) updateProtectedCGsForVolRep(pvcGroups *[]ramendrv1alpha1.G
 }
 
 func (v *VRGInstance) logAndSetConditions(conditionName string, subconditions ...*metav1.Condition) {
-	msg := fmt.Sprintf("merging %s condition", conditionName)
-	v.log.Info(msg, "subconditions", subconditions)
 	finalCondition := util.MergeConditions(util.SetStatusCondition,
 		&v.instance.Status.Conditions,
 		[]string{VRGConditionReasonUnused},
 		subconditions...)
-	msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+	msg := fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
 	v.log.Info(msg, "finalCondition", finalCondition)
 }
 
@@ -2291,8 +2284,6 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 
 	vgr, ok := obj.(*volrep.VolumeGroupReplication)
 	if !ok {
-		log.Info("map function received non-vgr resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2305,8 +2296,6 @@ func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj cl
 
 	vr, ok := obj.(*volrep.VolumeReplication)
 	if !ok {
-		log.Info("map function received non-vr resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2319,8 +2308,6 @@ func (r *VolumeReplicationGroupReconciler) RDMapFunc(ctx context.Context, obj cl
 
 	rd, ok := obj.(*volsyncv1alpha1.ReplicationDestination)
 	if !ok {
-		log.Info("map function received not a replication destination resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2333,8 +2320,6 @@ func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj cl
 
 	rs, ok := obj.(*volsyncv1alpha1.ReplicationSource)
 	if !ok {
-		log.Info("map function received not a replication source resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2347,8 +2332,6 @@ func (r *VolumeReplicationGroupReconciler) RGDMapFunc(ctx context.Context, obj c
 
 	rgd, ok := obj.(*ramendrv1alpha1.ReplicationGroupDestination)
 	if !ok {
-		log.Info("map function received not a replication group destination resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2361,8 +2344,6 @@ func (r *VolumeReplicationGroupReconciler) RGSMapFunc(ctx context.Context, obj c
 
 	rgs, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
 	if !ok {
-		log.Info("map function received not a replication group source resource")
-
 		return []reconcile.Request{}
 	}
 
