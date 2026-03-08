@@ -9,6 +9,18 @@ import sys
 from drenv import kubectl
 from drenv import cache
 
+COMPONENTS = {
+    "csi-addons-system": [
+        {"kind": "deployment", "name": "csi-addons-controller-manager"},
+    ],
+    "rook-ceph": [
+        {"kind": "daemonset", "name": "csi-rbdplugin"},
+        {"kind": "daemonset", "name": "csi-cephfsplugin"},
+        {"kind": "deployment", "name": "csi-rbdplugin-provisioner"},
+        {"kind": "deployment", "name": "csi-cephfsplugin-provisioner"},
+    ],
+}
+
 
 def deploy(cluster):
     print("Deploying csi addon for volume replication")
@@ -17,13 +29,17 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    print("Waiting until csi-addons-controller-manager is rolled out")
-    kubectl.rollout(
-        "status",
-        "deploy/csi-addons-controller-manager",
-        "--namespace=csi-addons-system",
-        context=cluster,
-    )
+    for namespace, components in COMPONENTS.items():
+        for comp in components:
+            print(
+                f"Waiting until {comp['kind']} '{namespace}/{comp['name']}' is rolled out"
+            )
+            kubectl.rollout(
+                "status",
+                f"{comp['kind']}/{comp['name']}",
+                f"--namespace={namespace}",
+                context=cluster,
+            )
 
 
 if len(sys.argv) != 2:
