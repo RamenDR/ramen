@@ -77,7 +77,7 @@ def deploy(args, cluster, deploy_type, platform="", timeout=120):
         "status",
         f"deploy/{deploy}",
         f"--namespace={args.ramen_namespace}",
-        f"--timeout={timeout}s",
+        timeout=timeout,
         context=cluster,
         log=command.debug,
     )
