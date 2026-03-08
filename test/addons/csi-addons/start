@@ -17,10 +17,12 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    print("Waiting until csi-addons-controller-manager is rolled out")
+    print(
+        "Waiting until deployment 'csi-addons-system/csi-addons-controller-manager' is rolled out"
+    )
     kubectl.rollout(
         "status",
-        "deploy/csi-addons-controller-manager",
+        "deployment/csi-addons-controller-manager",
         "--namespace=csi-addons-system",
         context=cluster,
     )

@@ -28,12 +28,13 @@ templates:
           - name: rook-pool
           - name: rook-cephfs
       - addons:
-          - name: external-snapshotter
           - name: csi-addons
           - name: olm
+          - name: recipe
+      - addons:
+          - name: external-snapshotter
           - name: minio
           - name: velero
-          - name: recipe
 
 profiles:
   - name: "dr1"
