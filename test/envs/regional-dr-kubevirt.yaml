@@ -27,7 +27,6 @@ templates:
     disk_size: "50g"
     workers:
       - addons:
-          - name: external-snapshotter
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
@@ -40,6 +39,7 @@ templates:
           - name: olm
       - addons:
           - name: csi-addons
+          - name: external-snapshotter
           - name: minio
           - name: velero
           - name: kubevirt

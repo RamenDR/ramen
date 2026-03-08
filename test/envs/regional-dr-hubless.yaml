@@ -28,8 +28,8 @@ templates:
           - name: rook-pool
           - name: rook-cephfs
       - addons:
-          - name: external-snapshotter
           - name: csi-addons
+          - name: external-snapshotter
           - name: olm
           - name: minio
           - name: velero

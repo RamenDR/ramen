@@ -38,9 +38,9 @@ templates:
           - name: recipe
           - name: olm
       - addons:
+          - name: csi-addons
           - name: odf-external-snapshotter
           - name: external-snapshotter
-          - name: csi-addons
           - name: minio
           - name: velero
   - name: "hub-cluster"
