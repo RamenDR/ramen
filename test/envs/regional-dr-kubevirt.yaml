@@ -37,9 +37,9 @@ templates:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: recipe
+          - name: olm
       - addons:
           - name: csi-addons
-          - name: olm
           - name: minio
           - name: velero
           - name: kubevirt
