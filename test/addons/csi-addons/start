@@ -6,6 +6,7 @@
 import os
 import sys
 
+import drenv
 from drenv import kubectl
 from drenv import cache
 
@@ -20,6 +21,20 @@ COMPONENTS = {
         {"kind": "deployment", "name": "csi-cephfsplugin-provisioner"},
     ],
 }
+
+# CSIAddonsNode resources are created by the csi-addons sidecar in the CSI
+# driver pods. The sidecar registers the node after the pod is ready.
+# Measured pod creation to CSIAddonsNode creation on Linux CI (100 runs):
+# median 103s, p95 121s, max 132s.
+#
+# Without these resources, the VolumeReplication controller cannot find the
+# CSI driver's replication client, causing VR reconciliation to fail with
+# "no leader for the ControllerService".
+CSIADDONS_NODES = [
+    "daemonset-csi-rbdplugin",
+    "deployment-csi-rbdplugin-provisioner",
+    "deployment-csi-cephfsplugin-provisioner",
+]
 
 
 def deploy(cluster):
@@ -40,6 +55,22 @@ def wait(cluster):
                 f"--namespace={namespace}",
                 context=cluster,
             )
+
+    for suffix in CSIADDONS_NODES:
+        name = f"{cluster}-rook-ceph-{suffix}"
+        resource = f"csiaddonsnodes.csiaddons.openshift.io/{name}"
+        # Wait for the resource to be created. Observed max on Linux CI
+        # was 132s. 300s provides margin for slower systems.
+        drenv.wait_for(resource, namespace="rook-ceph", timeout=300, profile=cluster)
+        # Wait for the sidecar to connect. Observed max delay from
+        # resource creation to Connected state was 1s on Linux CI.
+        kubectl.wait(
+            resource,
+            "--for=jsonpath={.status.state}=Connected",
+            "--namespace=rook-ceph",
+            timeout=60,
+            context=cluster,
+        )
 
 
 if len(sys.argv) != 2:
