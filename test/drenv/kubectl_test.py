@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import logging
 import os
 import json
 import secrets
+import threading
+import time
 from contextlib import closing
 
 import pytest
@@ -112,6 +115,106 @@ def test_wait(tmpenv, capsys):
     )
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment condition met"
+
+
+def test_wait_for_create(tmpenv):
+    """Wait for a resource that does not exist yet."""
+    name = f"test-wait-create-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+
+    def create_later():
+        time.sleep(1)
+        logging.debug("Creating %s", resource)
+        kubectl.create("configmap", name, context=tmpenv.profile)
+
+    t = threading.Thread(target=create_later, daemon=True)
+    t.start()
+    try:
+        logging.debug("Waiting for %s to be created", resource)
+        kubectl.wait(
+            resource,
+            "--for=create",
+            timeout=3,
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+        logging.debug("Wait for %s completed", resource)
+    finally:
+        t.join()
+        logging.debug("Deleting %s", resource)
+        kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
+
+
+def test_wait_for_jsonpath_value(tmpenv):
+    """Wait for a jsonpath field that does not exist yet."""
+    name = f"test-wait-jsonpath-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+    logging.debug("Creating %s", resource)
+    kubectl.create("configmap", name, context=tmpenv.profile)
+
+    def patch_later():
+        time.sleep(1)
+        logging.debug("Patching %s with data", resource)
+        kubectl.patch(
+            resource,
+            "--type=merge",
+            '--patch={"data":{"key":"value"}}',
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+
+    t = threading.Thread(target=patch_later, daemon=True)
+    t.start()
+    try:
+        logging.debug("Waiting for %s jsonpath {.data.key}=value", resource)
+        kubectl.wait(
+            resource,
+            "--for=jsonpath={.data.key}=value",
+            timeout=3,
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+        logging.debug("Wait for %s completed", resource)
+    finally:
+        t.join()
+        logging.debug("Deleting %s", resource)
+        kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
+
+
+def test_wait_for_jsonpath_any_value(tmpenv):
+    """Wait for a jsonpath field to have any non-empty value."""
+    name = f"test-wait-any-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+    logging.debug("Creating %s", resource)
+    kubectl.create("configmap", name, context=tmpenv.profile)
+
+    def patch_later():
+        time.sleep(1)
+        logging.debug("Patching %s with data", resource)
+        kubectl.patch(
+            resource,
+            "--type=merge",
+            '--patch={"data":{"key":"value"}}',
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+
+    t = threading.Thread(target=patch_later, daemon=True)
+    t.start()
+    try:
+        logging.debug("Waiting for %s jsonpath {.data.key} any value", resource)
+        kubectl.wait(
+            resource,
+            "--for=jsonpath={.data.key}",
+            timeout=3,
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+        logging.debug("Wait for %s completed", resource)
+    finally:
+        t.join()
+        logging.debug("Deleting %s", resource)
+        kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
 
 
 def test_patch(tmpenv, capsys):
