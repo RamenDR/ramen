@@ -119,8 +119,8 @@ def wait_for_secret_propagation(hub, clusters, args):
         kubectl.wait(
             f"policy/{policy}",
             "--for=jsonpath={.status.compliant}=Compliant",
-            "--timeout=60s",
             f"--namespace={cluster}",
+            timeout=60,
             context=hub,
             log=command.debug,
         )

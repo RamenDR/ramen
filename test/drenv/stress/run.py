@@ -7,6 +7,8 @@ Run stress test.
 
 import json
 import os
+import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -25,6 +27,8 @@ def command(args):
     os.mkdir(args.outdir)
 
     test = {
+        "start_time": int(time.time()),
+        "host": host_info(),
         "git": git_info(),
         "config": {
             "runs": args.runs,
@@ -57,16 +61,17 @@ def command(args):
 
     update_progress(test["stats"], last=True)
     compute_final_stats(test)
+    test["end_time"] = int(time.time())
     write_output(test, args.outdir)
 
 
 def update_stats(stats, result):
     stats["done"] += 1
-    stats["time"] += result["time"]
-    stats["time/run"] = stats["time"] / stats["done"]
 
     if result["passed"]:
         stats["passed"] += 1
+        stats["time"] += result["time"]
+        stats["time/run"] = stats["time"] / stats["passed"]
     else:
         stats["failed"] += 1
 
@@ -92,6 +97,8 @@ def compute_final_stats(test):
     # Standard deviation measures variation, which is undefined for a single value.
     if len(times) >= 2:
         stats["stdev"] = statistics.stdev(times)
+    if len(times) >= 20:
+        stats["p95"] = statistics.quantiles(times, n=100)[94]
 
 
 def update_progress(stats, last=False):
@@ -110,9 +117,11 @@ def write_output(test, outdir):
 def run_test(name, args):
     log = os.path.join(args.outdir, name + ".log")
 
+    start_time = int(time.time())
     start = time.monotonic()
     cp = drenv("start", args.envfile, log, name_prefix=args.name_prefix)
     elapsed = time.monotonic() - start
+    end_time = int(time.time())
     passed = cp.returncode == 0
 
     drenv(
@@ -136,6 +145,8 @@ def run_test(name, args):
         "name": name,
         "passed": passed,
         "time": elapsed,
+        "start_time": start_time,
+        "end_time": end_time,
     }
 
 
@@ -156,6 +167,48 @@ def drenv(
     return subprocess.run(cmd, stderr=subprocess.DEVNULL, check=check)
 
 
+def host_info():
+    system = platform.system()
+    if system == "Darwin":
+        return macos_info()
+    elif system == "Linux":
+        return linux_info()
+    else:
+        raise RuntimeError(f"Unsupported platform: {system}")
+
+
+def macos_info():
+    return {
+        "os": f"macOS {platform.mac_ver()[0]}",
+        "cpu": sysctl("machdep.cpu.brand_string"),
+        "cpu_count": os.cpu_count(),
+        "memory_gb": int(sysctl("hw.memsize")) / 2**30,
+        "python": platform.python_version(),
+    }
+
+
+def linux_info():
+    with open("/etc/os-release") as f:
+        m = re.search(r'^PRETTY_NAME="?(.+?)"?\s*$', f.read(), re.MULTILINE)
+    os_name = m.group(1) if m else f"Linux {platform.release()}"
+
+    with open("/proc/cpuinfo") as f:
+        m = re.search(r"^model name\s*:\s*(.+)$", f.read(), re.MULTILINE)
+    cpu = m.group(1) if m else platform.machine()
+
+    with open("/proc/meminfo") as f:
+        m = re.search(r"^MemTotal:\s*(\d+)\s*kB", f.read(), re.MULTILINE)
+    mem = int(m.group(1)) * 1024
+
+    return {
+        "os": os_name,
+        "cpu": cpu,
+        "cpu_count": os.cpu_count(),
+        "memory_gb": mem / 2**30,
+        "python": platform.python_version(),
+    }
+
+
 def git_info():
     return {
         "commit": git("rev-parse", "HEAD"),
@@ -165,4 +218,9 @@ def git_info():
 
 def git(*args):
     cmd = ["git", *args]
+    return subprocess.check_output(cmd).decode().strip()
+
+
+def sysctl(name):
+    cmd = ["sysctl", "-n", name]
     return subprocess.check_output(cmd).decode().strip()
