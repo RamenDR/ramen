@@ -7,7 +7,6 @@ import logging
 import os
 import sys
 
-import drenv
 from drenv import kubectl
 
 from . import ramen
@@ -286,12 +285,12 @@ def wait_for_drpc_status():
     drpc = _lookup_app_resource("drpc")
 
     info("Waiting until '%s' reports status", drpc)
-    drenv.wait_for(
+    kubectl.wait(
         drpc,
-        output="jsonpath={.status}",
-        namespace=config["namespace"],
+        "--for=jsonpath={.status}",
+        f"--namespace={config['namespace']}",
         timeout=60,
-        profile=env["hub"],
+        context=env["hub"],
         log=debug,
     )
 
@@ -339,12 +338,12 @@ def wait_until_drpc_is_stable(timeout=300):
     )
 
     info("Waiting for '%s' first replication", drpc)
-    drenv.wait_for(
+    kubectl.wait(
         drpc,
-        output="jsonpath={.status.lastGroupSyncTime}",
-        namespace=config["namespace"],
+        "--for=jsonpath={.status.lastGroupSyncTime}",
+        f"--namespace={config['namespace']}",
         timeout=timeout,
-        profile=env["hub"],
+        context=env["hub"],
         log=debug,
     )
 
