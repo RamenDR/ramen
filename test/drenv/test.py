@@ -275,10 +275,11 @@ def wait_for_drpc_status():
     inital deployment.
     """
     info("waiting for namespace %s", config["namespace"])
-    drenv.wait_for(
+    kubectl.wait(
         f"namespace/{config['namespace']}",
+        "--for=create",
         timeout=60,
-        profile=env["hub"],
+        context=env["hub"],
         log=debug,
     )
 
