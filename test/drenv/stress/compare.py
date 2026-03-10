@@ -60,6 +60,8 @@ def compute_stats(test):
         # Standard deviation measures variation, which is undefined for a single value.
         if len(times) >= 2:
             stats["stdev"] = statistics.stdev(times)
+        if len(times) >= 20:
+            stats["p95"] = statistics.quantiles(times, n=100)[94]
 
     return stats
 
@@ -95,6 +97,7 @@ def format_comparison(tests, labels):
         ("Min", "min"),
         ("Max", "max"),
         ("Std Dev", "stdev"),
+        ("p95", "p95"),
     ]
 
     for label, key in metrics:

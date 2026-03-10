@@ -688,6 +688,12 @@ def run_hook(hook, args, name, allow_failure=False):
     try:
         run(hook, *args, name=name)
     except Exception as e:
+        logging.info(
+            "[%s] %s failed in %.2f seconds",
+            name,
+            hook,
+            time.monotonic() - start,
+        )
         if not allow_failure:
             raise
         logging.warning("[%s] %s failed: %s", name, hook, e)

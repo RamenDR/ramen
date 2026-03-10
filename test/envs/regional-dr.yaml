@@ -18,7 +18,7 @@ templates:
     container_runtime: containerd
     containerd:
       plugins:
-        io.containerd.grpc.v1.cri:
+        io.containerd.cri.v1.runtime:
           device_ownership_from_security_context: true
     network: "$network"
     cpus: 4
@@ -36,11 +36,11 @@ templates:
           - name: ocm-cluster
             args: ["$name", "hub"]
           - name: recipe
+          - name: olm
       - addons:
           - name: odf-external-snapshotter
           - name: external-snapshotter
           - name: csi-addons
-          - name: olm
           - name: minio
           - name: velero
   - name: "hub-cluster"

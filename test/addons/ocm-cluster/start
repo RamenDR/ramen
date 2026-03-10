@@ -111,7 +111,6 @@ def join_cluster(cluster, hub):
         cluster_name=cluster,
         bundle_version=BUNDLE_VERSION,
         image_registry=IMAGE_REGISTRY,
-        wait=True,
         context=cluster,
     )
 
@@ -130,13 +129,16 @@ def label_cluster(cluster, hub):
 
 
 def wait_for_managed_cluster(cluster, hub):
-    # This takes less then a second, but sometimes it never complete, even if waiting 10 minutes.
+    # The managed cluster is created by the klusterlet deployed by
+    # clusteradm join. In stress testing, registration takes 16-53s on
+    # Linux CI (p95=45s) and 7-35s on macOS (p95=30s). Using 180s to
+    # cover slower environments.
     start = time.monotonic()
 
     print(f"Waiting until managed cluster '{cluster}' is created on the hub")
     drenv.wait_for(
         f"managedcluster/{cluster}",
-        timeout=60,
+        timeout=180,
         profile=hub,
     )
 
