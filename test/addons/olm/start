@@ -6,7 +6,6 @@
 import os
 import sys
 
-import drenv
 from drenv import kubectl
 from drenv import cache
 
@@ -47,13 +46,14 @@ def wait(cluster):
             context=cluster,
         )
 
-    print("Waiting until olm packageserver succeeds")
-    drenv.wait_for(
+    print(f"Waiting until csv '{NAMESPACE}/packageserver' exists")
+    kubectl.wait(
         "csv/packageserver",
-        output="jsonpath={.status.phase}",
-        namespace=NAMESPACE,
-        profile=cluster,
+        "--for=create",
+        f"--namespace={NAMESPACE}",
+        context=cluster,
     )
+    print(f"Waiting until csv '{NAMESPACE}/packageserver' succeeds")
     kubectl.wait(
         "csv/packageserver",
         f"--namespace={NAMESPACE}",
