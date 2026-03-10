@@ -6,7 +6,6 @@
 import os
 import sys
 
-import drenv
 from drenv import kubectl
 from drenv import clusteradm
 
@@ -72,7 +71,11 @@ def wait(cluster):
     for ns, names in DEPLOYMENTS.items():
         for name in names:
             deployment = f"deploy/{name}"
-            drenv.wait_for(deployment, namespace=ns, profile=cluster)
+            print(f"Waiting until deployment '{ns}/{name}' exists")
+            kubectl.wait(
+                deployment, "--for=create", f"--namespace={ns}", context=cluster
+            )
+            print(f"Waiting until deployment '{ns}/{name}' is rolled out")
             kubectl.rollout(
                 "status",
                 deployment,
