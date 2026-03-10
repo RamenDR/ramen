@@ -10,7 +10,6 @@ import time
 
 import yaml
 
-import drenv
 from drenv import commands
 from drenv import kubectl
 from drenv import cache
@@ -53,13 +52,14 @@ def deploy(cluster):
 
 
 def wait(cluster):
-    print("Waiting until rook ceph cluster is ready")
-    drenv.wait_for(
+    print("Waiting until cephcluster 'rook-ceph/my-cluster' exists")
+    kubectl.wait(
         "cephcluster/my-cluster",
-        output="jsonpath={.status.phase}",
-        namespace="rook-ceph",
-        profile=cluster,
+        "--for=create",
+        "--namespace=rook-ceph",
+        context=cluster,
     )
+    print("Waiting until cephcluster 'rook-ceph/my-cluster' is ready")
     kubectl.wait(
         "cephcluster/my-cluster",
         "--for=jsonpath={.status.phase}=Ready",
@@ -109,13 +109,13 @@ def wait_for_csiaddons_nodes(cluster):
             if remaining <= 0:
                 raise RuntimeError(f"Timeout waiting for {resource}")
 
-            print(f"Waiting until '{resource}' status.state is not empty")
-            drenv.wait_for(
+            print(f"Waiting until '{resource}' exists")
+            kubectl.wait(
                 resource,
-                output="jsonpath={.status.state}",
-                namespace="rook-ceph",
+                "--for=create",
+                "--namespace=rook-ceph",
                 timeout=remaining,
-                profile=cluster,
+                context=cluster,
             )
 
             remaining = deadline - time.monotonic()

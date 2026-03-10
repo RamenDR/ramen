@@ -120,12 +120,17 @@ def configure_rbd_mirroring(cluster, peer_info):
 
 
 def wait_until_rbd_mirror_is_ready(cluster):
-    print(f"Waiting until rbd mirror is ready in cluster '{cluster}'")
-    drenv.wait_for(
+    print(
+        f"Waiting until cephrbdmirror 'rook-ceph/my-rbd-mirror' exists in cluster '{cluster}'"
+    )
+    kubectl.wait(
         "cephrbdmirror/my-rbd-mirror",
-        output="jsonpath={.status.phase}",
-        namespace="rook-ceph",
-        profile=cluster,
+        "--for=create",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    print(
+        f"Waiting until cephrbdmirror 'rook-ceph/my-rbd-mirror' is ready in cluster '{cluster}'"
     )
     kubectl.wait(
         "cephrbdmirror/my-rbd-mirror",
