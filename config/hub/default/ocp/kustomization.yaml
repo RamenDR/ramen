@@ -44,14 +44,11 @@ transformers:
 # [PROMETHEUS] To enable prometheus monitor, uncomment all sections with 'PROMETHEUS'.
 #-../prometheus
 
-# Protect the /metrics endpoint by putting it behind auth.
-# If you want your controller-manager to expose the /metrics
-# endpoint w/o any authn/z, please comment the following line.
+# Metrics endpoint is protected by controller-runtime built-in auth (WithAuthenticationAndAuthorization).
 
 # Mount the controller config file for loading manager configurations
 # through a ComponentConfig type
 patches:
-- path: ../../../default/manager_auth_proxy_patch.yaml
 - path: ../../../default/manager_config_patch.yaml
 
 
@@ -63,8 +60,3 @@ resources:
 - ../../manager
 - ../../../prometheus
 - metrics_role_binding.yaml
-
-images:
-- name: kube-rbac-proxy
-  newName: gcr.io/kubebuilder/kube-rbac-proxy
-  newTag: v0.13.1
