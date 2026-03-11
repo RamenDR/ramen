@@ -32,7 +32,7 @@ Quickstart instructions are [here](https://github.com/prometheus-operator/kube-p
 
 #### Grant permission for prometheus to scrape metrics
 
-Go to `ramen/config/hub/default/k8s/kustomizations.yaml`
+Go to `ramen/config/hub/default/k8s/kustomization.yaml`
 and uncomment `../../../prometheus`
 and `metrics_role_binding.yaml` under `Kustomization` section.
 Next is to install and configure ramen.
@@ -44,17 +44,77 @@ Next is to install and configure ramen.
 ## 2. Basic testing (no Prometheus required)
 
 If running from minikube or a container, expose the port using `port-forward`
-on the hub. The endpoint exposed is `localhost:8443/metrics`.
+on the hub. The endpoint exposed is `localhost:8443/metrics`. The metrics
+endpoint is protected by controller-runtime built-in auth;
+use a service account token when scraping.
 
->*This way does not use kube-rbac-proxy, use this method only for any quick debugging*
+### Steps
 
-```bash
-kubectl port-forward -n ramen-system \
-deployment/ramen-hub-operator 8443:9289
+**Note:** All commands should be run against the hub cluster.
+
+#### 1. Create a ServiceAccount for metrics access
+
+Create a ServiceAccount and bind it to the `ramen-hub-metrics-reader`
+ClusterRole to access the metrics endpoint.
+
+Create a file named `metrics-reader-sa.yaml`:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metrics-reader-sa
+  namespace: ramen-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: metrics-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ramen-hub-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: metrics-reader-sa
+  namespace: ramen-system
 ```
 
-Verify that the metrics endpoint is exposed with curl:
-`curl http://localhost:8443/metrics`.
+Apply the manifest:
+
+```bash
+kubectl apply -f metrics-reader-sa.yaml
+```
+
+Verify the ServiceAccount was created:
+
+```bash
+kubectl get serviceaccount metrics-reader-sa -n ramen-system
+```
+
+#### 2. Port-forward
+
+Start port-forwarding to the Ramen operator:
+
+```bash
+kubectl port-forward -n ramen-system deployment/ramen-hub-operator 8443:8443
+```
+
+#### 3. Get a token
+
+In another terminal, generate a token for the ServiceAccount:
+
+```bash
+export TOKEN=$(kubectl create token metrics-reader-sa -n ramen-system)
+```
+
+#### 4. Call the metrics endpoint
+
+Call the metrics endpoint using the token:
+
+```bash
+curl -k -H "Authorization: Bearer $TOKEN" https://localhost:8443/metrics
+```
 
 If curl can connect, search for your metrics in the output.
 
@@ -63,5 +123,9 @@ If curl can connect, search for your metrics in the output.
 All metrics are prefixed with `ramen_`. This makes them easier to find.
 
 To get the list of all the Ramen metrics available and their descriptions,
-run the Ramen code, then run this command:
-`curl http://localhost:8443/metrics -s | grep "# HELP ramen_"`.
+run the Ramen code, then run this command (requires `$TOKEN` from the steps above):
+
+```bash
+curl -k -s -H "Authorization: Bearer $TOKEN" https://localhost:8443/metrics \
+  | grep "# HELP ramen_"
+```
