@@ -85,6 +85,42 @@ func protectedVrgListDeleteAndNotFoundWait(protectedVrgList *ramen.ProtectedVolu
 	)
 }
 
+// protectedVrgListContains returns true if the list (after re-get and normalization) contains all vrgsExpected.
+// Used with Eventually to tolerate list controller reconciling before our VRG is visible in the shared S3 store.
+func protectedVrgListContains(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
+	vrgsExpected []ramen.VolumeReplicationGroup,
+) bool {
+	if err := protectedVrgListGet(protectedVrgList); err != nil {
+		return false
+	}
+
+	if protectedVrgList.Status == nil || len(protectedVrgList.Status.Items) == 0 {
+		return len(vrgsExpected) == 0
+	}
+
+	items := make([]ramen.VolumeReplicationGroup, len(protectedVrgList.Status.Items))
+	copy(items, protectedVrgList.Status.Items)
+	vrgsStatusStateUpdate(items, vrgsExpected)
+
+	for _, exp := range vrgsExpected {
+		found := false
+
+		for i := range items {
+			if items[i].Namespace == exp.Namespace && items[i].Name == exp.Name {
+				found = true
+
+				break
+			}
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
 func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
@@ -95,6 +131,9 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
+	Eventually(func() error {
+		return protectedVrgListGet(protectedVrgList)
+	}, timeout, interval).Should(Succeed())
 	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
 	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
 }

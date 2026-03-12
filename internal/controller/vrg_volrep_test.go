@@ -2526,9 +2526,29 @@ func kubeObjectProtectionValidate(tests []*vrgTest) {
 		vrg := v.kubeObjectProtectionValidate()
 		vrgController.VrgTidyForList(vrg)
 		vrgs[i] = *vrg
+		Eventually(func() bool {
+			if protectedVrgListContains(protectedVrgList, vrgs[i:i+1]) {
+				return true
+			}
+
+			protectedVrgListRefresh(protectedVrgList)
+
+			return protectedVrgListContains(protectedVrgList, vrgs[i:i+1])
+		}, timeout, interval).Should(BeTrue(),
+			"ProtectedVolumeReplicationGroupList should contain VRG %s/%s", vrgs[i].Namespace, vrgs[i].Name)
 		protectedVrgListExpectInclude(protectedVrgList, vrgs[i:i+1])
 	}
 
+	Eventually(func() bool {
+		if protectedVrgListContains(protectedVrgList, vrgs) {
+			return true
+		}
+
+		protectedVrgListRefresh(protectedVrgList)
+
+		return protectedVrgListContains(protectedVrgList, vrgs)
+	}, timeout, interval).Should(BeTrue(),
+		"ProtectedVolumeReplicationGroupList should contain all %d VRGs", len(vrgs))
 	protectedVrgListExpectInclude(protectedVrgList, vrgs)
 	protectedVrgListDeleteAndNotFoundWait(protectedVrgList)
 }
