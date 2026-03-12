@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/yaml"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -81,7 +83,17 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 	}
 
 	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
-	options.Metrics.BindAddress = ramenConfig.Metrics.BindAddress
+
+	// Use controller-runtime built-in auth for metrics
+	if ramenConfig.Metrics.BindAddress == "0" {
+		options.Metrics = metricsserver.Options{BindAddress: "0"}
+	} else {
+		options.Metrics = metricsserver.Options{
+			BindAddress:    ramenConfig.Metrics.BindAddress,
+			SecureServing:  true,
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+		}
+	}
 
 	if ramenConfig.LeaderElection != nil {
 		if ramenConfig.LeaderElection.LeaderElect != nil {

@@ -38,7 +38,6 @@ IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
 PLATFORM ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
-RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
 RAMEN_OPS_NAMESPACE ?= ramen-ops
 AUTO_CONFIGURE_DR_CLUSTER ?= true
@@ -266,7 +265,6 @@ uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster sp
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/crd | kubectl delete -f -
 
 hub-config: kustomize
-	cd config/hub/default/$(PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-hub: manifests kustomize hub-config ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
@@ -282,7 +280,6 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl delete -f -
 
 dr-cluster-config: kustomize
-	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
@@ -334,7 +331,6 @@ bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
 
 .PHONY: bundle-hub
 bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests and metadata, then validate generated files.
-	cd config/hub/default/$(BUNDLE_PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/hub/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \

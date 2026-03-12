@@ -62,6 +62,10 @@ def analyze(directory):
     _plot(addons, len(results), png_path)
     log.info("Addon durations plot: %s", png_path)
 
+    trimmed_path = os.path.join(directory, "addons-trimmed.png")
+    _plot(addons, len(results), trimmed_path, show_outliers=False)
+    log.info("Addon durations plot (trimmed): %s", trimmed_path)
+
     return _format_report(addons)
 
 
@@ -96,11 +100,13 @@ def _parse_logs(directory, results):
     return addons
 
 
-def _plot(addons, num_runs, png_path):
+def _plot(addons, num_runs, png_path, show_outliers=True):
     """
     Create a horizontal box plot of addon durations.
 
-    Addons are sorted by median duration (slowest at top).
+    Addons are sorted by median duration (slowest at top). When
+    show_outliers is False, outlier markers are hidden so the x-axis
+    auto-scales to the whisker range.
     """
     # Imported locally to avoid slowing down all drenv commands.
     import matplotlib
@@ -123,13 +129,17 @@ def _plot(addons, num_runs, png_path):
         vert=False,
         tick_labels=names,
         patch_artist=True,
+        showfliers=show_outliers,
         flierprops=dict(marker="o", markersize=5, markerfacecolor="red"),
         boxprops=dict(facecolor="lightblue", edgecolor="black"),
         medianprops=dict(color="darkblue", linewidth=1.5),
     )
 
     ax.set_xlabel("Duration (seconds)")
-    ax.set_title(f"Addon durations across {num_runs} stress test runs")
+    title = f"Addon durations across {num_runs} stress test runs"
+    if not show_outliers:
+        title += " (trimmed)"
+    ax.set_title(title)
     ax.grid(axis="x", alpha=0.3)
 
     plt.tight_layout()
@@ -160,6 +170,7 @@ def _format_report(addons):
     out = io.StringIO()
     out.write("## Addon Durations\n\n")
     out.write("![Addon Durations](addons.png)\n\n")
+    out.write("![Addon Durations (trimmed)](addons-trimmed.png)\n\n")
 
     # Collect addons with meaningful outliers, sorted by median (slowest first).
     # Skip outliers that differ from the median by less than 5 seconds since
