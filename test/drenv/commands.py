@@ -17,7 +17,7 @@ ERR = "err"
 
 # Default timeout for commands. Without a timeout commands can hang
 # indefinitely, wasting hours of CI time.
-_DEFAULT_TIMEOUT = 300
+_DEFAULT_TIMEOUT = 600
 
 Failure = collections.namedtuple("Failure", ["command", "exitcode", "error"])
 

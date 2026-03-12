@@ -1,4 +1,4 @@
-# Configuration for RamenDR End to End testing.
+# Configuration for RamenDR End to End testing with recipe support
 
 ---
 # Git repository url and branch containing application manifests
@@ -26,65 +26,53 @@ pvcspecs:
 
 # List of Deployer specifications.
 # These define the configuration values for different deployers.
-# Available types: appset, subscr, disapp
+# Available types: disapp
 deployers:
-  - name: appset
-    type: appset
-    description: "ApplicationSet deployer for ArgoCD"
-  - name: subscr
-    type: subscr
-    description: "Subscription deployer for OCM subscriptions"
   - name: disapp
     type: disapp
-    description: "Discovered Application without recipe"
+    description: "Discovered Application deployer for discovered applications"
   - name: disapp-recipe
     type: disapp
     recipe:
       type: generate
-    description: "Discovered Application using recipe"
+    description: "Discovered Application deployer using a generated recipe"
   - name: disapp-recipe-check
     type: disapp
     recipe:
       type: generate
       checkHook: true
-    description: "Discovered Application using recipe with check hooks"
+    description: "Discovered Application deployer using a generated recipe
+      with check hooks"
   - name: disapp-recipe-exec
     type: disapp
     recipe:
       type: generate
       execHook: true
-    description: "Discovered Application using recipe with exec hooks"
+    description: "Discovered Application deployer using a generated recipe
+      with exec hooks"
   - name: disapp-recipe-check-exec
     type: disapp
     recipe:
       type: generate
       checkHook: true
       execHook: true
-    description: "Discovered Application using recipe with check and exec hooks"
+    description: "Discovered Application deployer using a generated recipe
+      with check and exec hooks"
 
 # List to tests to run.
 # Available workloads: deploy
 # Deployer should be the name of the deployer to use from the deployers list.
 # Test names are generated as "{deployer}-{workload}-{pvcspec}".
 tests:
-  - deployer: appset
+  - deployer: disapp-recipe
     workload: deploy
     pvcspec: rbd
-  - deployer: appset
-    workload: deploy
-    pvcspec: cephfs
-  - deployer: subscr
+  - deployer: disapp-recipe-check
     workload: deploy
     pvcspec: rbd
-  - deployer: subscr
-    workload: deploy
-    pvcspec: cephfs
-  - deployer: disapp
+  - deployer: disapp-recipe-exec
     workload: deploy
     pvcspec: rbd
-  - deployer: disapp
-    workload: deploy
-    pvcspec: cephfs
   - deployer: disapp-recipe-check-exec
     workload: deploy
     pvcspec: rbd

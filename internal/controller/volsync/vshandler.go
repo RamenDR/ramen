@@ -128,6 +128,18 @@ func (v *VSHandler) GetOwner() metav1.Object {
 	return v.owner
 }
 
+func (v *VSHandler) GetMoverConfigForPVC(pvcName, pvcNamespace string) *ramendrv1alpha1.MoverConfig {
+	if len(v.moverConfig) > 0 {
+		for _, mc := range v.moverConfig {
+			if mc.PVCName == pvcName && mc.PVCNameSpace == pvcNamespace {
+				return &mc
+			}
+		}
+	}
+
+	return nil
+}
+
 func (v *VSHandler) SetWorkloadStatus(status string) {
 	v.workloadStatus = status
 }
@@ -2025,8 +2037,9 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
+	moverConfig := v.GetMoverConfigForPVC(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback
-	lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, v.log)
+	lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, moverConfig, v.log)
 	if err != nil {
 		return err
 	}
@@ -2550,15 +2563,18 @@ func ValidateObjectExists(ctx context.Context, c client.Client, obj client.Objec
 func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
-	pskSecretName string, l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
+	pskSecretName string,
+	moverConfigSpec *ramendrv1alpha1.MoverConfig,
+	l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
 	*volsyncv1alpha1.ReplicationSource, error,
 ) {
-	lrd, err := v.reconcileLocalRD(rdSpec, pskSecretName)
+	lrd, err := v.reconcileLocalRD(rdSpec, pskSecretName, moverConfigSpec)
 	if lrd == nil || err != nil {
 		return nil, nil, fmt.Errorf("failed to reconcile fully localRD (%w)", err)
 	}
 
-	lrs, err := v.reconcileLocalRS(rd, &rdSpec, snapshotRef, pskSecretName, *lrd.Status.RsyncTLS.Address)
+	lrs, err := v.reconcileLocalRS(rd, &rdSpec, snapshotRef, pskSecretName, *lrd.Status.RsyncTLS.Address,
+		moverConfigSpec)
 	if err != nil {
 		return lrd, nil, fmt.Errorf("failed to reconcile localRS (%w)", err)
 	}
@@ -2570,7 +2586,8 @@ func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDes
 
 //nolint:funlen
 func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	pskSecretName string) (*volsyncv1alpha1.ReplicationDestination, error,
+	pskSecretName string,
+	moverConfigSpec *ramendrv1alpha1.MoverConfig) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
 	v.log.Info("Reconciling localRD", "rdSpec name", rdSpec.ProtectedPVC.Name)
 
@@ -2597,6 +2614,14 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
 		}
 
+		moverConfig := &volsyncv1alpha1.MoverConfig{}
+		if moverConfigSpec != nil {
+			moverConfig = &volsyncv1alpha1.MoverConfig{
+				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
+				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
+			}
+		}
+
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: &DefaultRsyncServiceType,
 			KeySecret:   &pskSecretName,
@@ -2608,6 +2633,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 				AccessModes:      pvcAccessModes,
 				DestinationPVC:   &rdSpec.ProtectedPVC.Name,
 			},
+			MoverConfig: *moverConfig,
 		}
 
 		return nil
@@ -2632,6 +2658,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 	pskSecretName, address string,
+	moverConfigSpec *ramendrv1alpha1.MoverConfig,
 ) (*volsyncv1alpha1.ReplicationSource, error,
 ) {
 	v.log.Info("Reconciling localRS", "RD", rd.GetName())
@@ -2663,6 +2690,15 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		}
 
 		lrs.Spec.SourcePVC = pvc.GetName()
+
+		moverConfig := &volsyncv1alpha1.MoverConfig{}
+		if moverConfigSpec != nil {
+			moverConfig = &volsyncv1alpha1.MoverConfig{
+				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
+				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
+			}
+		}
+
 		lrs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 			KeySecret: &pskSecretName,
 			Address:   &address,
@@ -2670,6 +2706,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				CopyMethod: volsyncv1alpha1.CopyMethodDirect,
 			},
+			MoverConfig: *moverConfig,
 		}
 
 		return nil
