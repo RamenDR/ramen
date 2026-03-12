@@ -872,9 +872,17 @@ var _ = Describe("VolSync_Handler", func() {
 						)
 						Expect(k8sClient.Status().Update(ctx, mountJob)).To(Succeed())
 
-						// Second reconcile: mount job is complete, ReplicationSource is created
-						finalSyncCompl, rs, err = vsHandler.ReconcileRS(rsSpec, false, nil)
-						Expect(err).ToNot(HaveOccurred())
+						// Second reconcile: mount job is complete, ReplicationSource is created.
+						// Use Eventually so the handler's client cache sees the Job status update
+						// (cache may lag behind Status().Update when test and handler share the same client).
+						Eventually(func() bool {
+							var e error
+
+							finalSyncCompl, rs, e = vsHandler.ReconcileRS(rsSpec, false, nil)
+
+							return e == nil && rs != nil
+						}, maxWait, interval).Should(BeTrue(),
+							"ReplicationSource should be created after mount Job completes")
 						Expect(finalSyncCompl).To(BeFalse())
 						Expect(rs).ToNot(BeNil())
 					})
