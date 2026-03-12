@@ -177,15 +177,16 @@ tests:
 ```
 
 The tests are generated from the configuration as
-"TestDR/{deployer}-{workload}-{pvcspec}-busybox".
+"TestDR/{deployer}-{workload}-{pvcspec}".
 See [Running DR tests](#running-dr-tests) section for complete test list.
 
 #### Deployers
 
 The deployers section defines the available deployment methods. Each deployer
 has a name, type, and description. The type is used to identify the deployer
-implementation. There are 3 types available, appset, subscr, and disapp. The
-description provides additional context about the deployer.
+implementation. There are 3 types available, appset, subscr, and disapp. For
+disapp, optional fields for recipe are added. The description provides
+additional context about the deployer.
 
 ### Run specific DR tests
 
@@ -199,7 +200,7 @@ expressions, making it easier to focus on specific scenarios.
 Example:
 
 ```sh
-./run.sh -test.run TestDR/subscr-deploy-rbd-busybox
+./run.sh -test.run TestDR/subscr-deploy-rbd
 ```
 
 This command runs the specific test for subscription based RBD busybox application.
