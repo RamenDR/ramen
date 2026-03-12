@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,6 +34,8 @@ const (
 	configMapNameSuffix                               = "-config"
 	HubOperatorConfigMapName                          = hubOperatorNameDefault + configMapNameSuffix
 	DrClusterOperatorConfigMapName                    = drClusterOperatorNameDefault + configMapNameSuffix
+	HubOperatorDefaultConfigMapName                   = hubOperatorNameDefault + configMapNameSuffix + "-default"
+	DrClusterOperatorDefaultConfigMapName             = drClusterOperatorNameDefault + configMapNameSuffix + "-default"
 	leaderElectionResourceNameSuffix                  = ".ramendr.openshift.io"
 	HubLeaderElectionResourceName                     = hubName + leaderElectionResourceNameSuffix
 	drClusterLeaderElectionResourceName               = drClusterName + leaderElectionResourceNameSuffix
@@ -135,6 +139,140 @@ func ReadRamenConfigFile(log logr.Logger) (ramenConfig *ramendrv1alpha1.RamenCon
 	}
 
 	return
+}
+
+func CreateOrUpdateConfigMap(
+	ctx context.Context,
+	c client.Client,
+	r client.Reader,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
+	if defaultRamenConfig == nil {
+		return nil, fmt.Errorf("defaultRamenConfig is nil")
+	}
+
+	configMapName := HubOperatorConfigMapName
+	defaultConfigMapName := HubOperatorDefaultConfigMapName
+
+	if ControllerType != ramendrv1alpha1.DRHubType {
+		configMapName = DrClusterOperatorConfigMapName
+		defaultConfigMapName = DrClusterOperatorDefaultConfigMapName
+	}
+
+	desiredRamenConfig, err := defaultRamenConfigLoad(ctx, r, defaultConfigMapName, defaultRamenConfig, log)
+	if err != nil {
+		return nil, err
+	}
+
+	userConfigMap, userRamenConfig, err := ConfigMapGet(ctx, r)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return nil, err
+	}
+
+	if k8serrors.IsNotFound(err) {
+		return configMapCreate(ctx, c, configMapName, desiredRamenConfig, log)
+	}
+
+	desiredRamenConfig.S3StoreProfiles = userRamenConfig.S3StoreProfiles
+	desiredRamenConfig.KubeObjectProtection.Disabled = userRamenConfig.KubeObjectProtection.Disabled
+
+	return configMapUpdate(ctx, c, userConfigMap, desiredRamenConfig, log)
+}
+
+func defaultRamenConfigLoad(
+	ctx context.Context,
+	r client.Reader,
+	defaultConfigMapName string,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	defaultsKey := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      defaultConfigMapName,
+	}
+
+	defaultsConfigMap := &corev1.ConfigMap{}
+	if err := r.Get(ctx, defaultsKey, defaultsConfigMap); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		log.Info("default configmap not found, using defaults from file",
+			"namespace", defaultsKey.Namespace, "name", defaultsKey.Name, "file", cachedRamenConfigFileName)
+
+		return defaultRamenConfig, nil
+	}
+
+	if defaultsConfigMap.Data == nil {
+		return nil, fmt.Errorf("default configmap %s/%s has nil data", defaultsKey.Namespace, defaultsKey.Name)
+	}
+
+	defaultsYAML, ok := defaultsConfigMap.Data[ConfigMapRamenConfigKeyName]
+	if !ok || strings.TrimSpace(defaultsYAML) == "" {
+		return nil, fmt.Errorf("default configmap %s/%s is missing or has empty %q key",
+			defaultsKey.Namespace, defaultsKey.Name, ConfigMapRamenConfigKeyName)
+	}
+
+	cfg := &ramendrv1alpha1.RamenConfig{}
+	if err := yaml.Unmarshal([]byte(defaultsYAML), cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func configMapCreate(
+	ctx context.Context,
+	c client.Client,
+	configMapName string,
+	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	userKey := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      configMapName,
+	}
+
+	newConfigMap, err := ConfigMapNew(userKey.Namespace, userKey.Name, desiredRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.Create(ctx, newConfigMap); err != nil {
+		return nil, err
+	}
+
+	log.Info("created configmap", "namespace", newConfigMap.Namespace, "name", newConfigMap.Name)
+
+	return desiredRamenConfig, nil
+}
+
+func configMapUpdate(
+	ctx context.Context,
+	c client.Client,
+	userConfigMap *corev1.ConfigMap,
+	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	desiredBytes, err := yaml.Marshal(desiredRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if userConfigMap.Data == nil {
+		userConfigMap.Data = map[string]string{}
+	}
+
+	userConfigMap.Data[ConfigMapRamenConfigKeyName] = string(desiredBytes)
+	if err := c.Update(ctx, userConfigMap); err != nil {
+		return nil, err
+	}
+
+	log.Info("updated configmap (preserved S3StoreProfiles)",
+		"namespace", userConfigMap.Namespace, "name", userConfigMap.Name)
+
+	return desiredRamenConfig, nil
 }
 
 func GetRamenConfigS3StoreProfile(ctx context.Context, apiReader client.Reader, profileName string) (
