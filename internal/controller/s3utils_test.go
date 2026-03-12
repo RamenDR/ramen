@@ -173,6 +173,27 @@ func (f *fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
 	return nil
 }
 
+func (f *fakeObjectStorer) CheckFailoverMarkerForVRG(pathPrefix string,
+	currentCluster string) (shouldSuspend bool,
+	failoverCluster string, err error,
+) {
+	return false, "", nil
+}
+
+func (f *fakeObjectStorer) CreateFailoverMarkerForVRG(pathPrefix string, marker controllers.S3FailoverMarker) error {
+	return nil
+}
+
+func (f *fakeObjectStorer) RemoveFailoverMarkerForVRG(pathPrefix, expectedCluster string, log logr.Logger) error {
+	return nil
+}
+
+func (f *fakeObjectStorer) UpdateFailoverMarkerPhase(pathPrefix, expectedCluster string,
+	phase controllers.FailoverPhase, log logr.Logger,
+) error {
+	return nil
+}
+
 var _ = Describe("FakeObjectStorer", func() {
 	var objectStorer controllers.ObjectStorer
 	object := "o"

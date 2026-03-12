@@ -89,6 +89,15 @@ func (v *VRGInstance) kubeObjectsProtect(
 		return
 	}
 
+	// Check for failover marker BEFORE any S3 writes
+	if suspend, err := v.checkFailoverMarkerBeforeWrites(); err != nil {
+		v.log.Info("Failed to check failover marker", "Error:", err.Error())
+	} else if suspend {
+		result.Requeue = true
+
+		return
+	}
+
 	vrg := v.instance
 	status := &vrg.Status.KubeObjectProtection
 
@@ -611,6 +620,14 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 		return nil
 	}
 
+	pathPrefix := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+	currentCluster := v.instance.Annotations[DestinationClusterAnnotationKey]
+
+	if currentCluster != "" {
+		// Update S3 failover-marker phase to "recovering"
+		v.updateS3FailoverMarkerPhase(pathPrefix, currentCluster, FailoverPhaseRecovering)
+	}
+
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		if err := v.kubeObjectsRecoverFromS3(result, s3StoreAccessor); err != nil {
 			v.log.Info("Kube objects restore error", "profile", s3StoreAccessor.S3ProfileName, "error", err)
@@ -619,6 +636,11 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 		}
 
 		v.log.Info("Kube objects restore complete", "profile", s3StoreAccessor.S3ProfileName)
+
+		if currentCluster != "" {
+			// Update S3 failover-marker phase to "Completed"
+			v.updateS3FailoverMarkerPhase(pathPrefix, currentCluster, FailoverPhaseCompleted)
+		}
 
 		return nil
 	}
@@ -1355,4 +1377,53 @@ func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
 	}
 
 	return metav1.Time{}
+}
+
+// checkFailoverMarkerBeforeWrites inspects S3 failover markers and suspend writes if it is the failed cluster
+func (v *VRGInstance) checkFailoverMarkerBeforeWrites() (bool, error) {
+	currentCluster := v.instance.GetAnnotations()[DestinationClusterAnnotationKey]
+	if currentCluster == "" {
+		return false, nil
+	}
+
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
+		s3Store, ok := s3StoreAccessor.ObjectStorer.(*s3ObjectStore)
+		if !ok {
+			continue
+		}
+
+		pathPrefix := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+
+		shouldSuspend, failoverCluster, err := s3Store.CheckFailoverMarkerForVRG(pathPrefix, currentCluster)
+		if err != nil {
+			return false, fmt.Errorf("check S3 failover marker: %w", err)
+		}
+
+		if shouldSuspend {
+			v.log.Info("Failover marker detected - suspending S3 writes",
+				"currentCluster", currentCluster, "failoverCluster", failoverCluster)
+			v.kubeObjectsCaptureStatusFalse("FailoverInProgress", "Writes suspended due to failover")
+
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// updateMarkerPhaseAllProfilesBestEffort sets the marker phase on all S3 stores; logs and continues on errors.
+func (v *VRGInstance) updateS3FailoverMarkerPhase(prefix, cluster string, phase FailoverPhase) {
+	v.log.Info("Updating failover-marker with phase " + string(phase))
+
+	for _, acc := range v.s3StoreAccessors {
+		s3, ok := acc.ObjectStorer.(*s3ObjectStore)
+		if !ok {
+			continue
+		}
+		// Signature assumed: UpdateFailoverMarkerPhase(prefix, cluster, phase, log)
+		if err := s3.UpdateFailoverMarkerPhase(prefix, cluster, phase, v.log); err != nil {
+			v.log.Error(err, "Failed to update failover marker phase",
+				"phase", phase, "profile", acc.S3ProfileName)
+		}
+	}
 }
