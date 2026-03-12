@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -177,6 +178,32 @@ func vrgStatusStateUpdate(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
 
 	if vrgS3.Status.State == vrgK8s.Status.State {
 		vrgS3.Status.LastUpdateTime = vrgK8s.Status.LastUpdateTime
+	}
+
+	// Normalize ClusterDataProtected message: controller may append ". VRG object protected"
+	// so S3 and cluster can differ; treat as equivalent for test comparison.
+	vrgConditionMessageNormalizeClusterDataProtected(vrgS3, vrgK8s)
+}
+
+// vrgConditionMessageNormalizeClusterDataProtected makes ClusterDataProtected condition
+// messages comparable when one is "Cluster data of all PVs are protected" and the other
+// is "Cluster data of all PVs are protected. VRG object protected".
+func vrgConditionMessageNormalizeClusterDataProtected(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
+	const baseMsg = "Cluster data of all PVs are protected"
+
+	const suffixMsg = ". VRG object protected"
+
+	c := meta.FindStatusCondition(vrgS3.Status.Conditions, "ClusterDataProtected")
+	k := meta.FindStatusCondition(vrgK8s.Status.Conditions, "ClusterDataProtected")
+
+	if c == nil || k == nil {
+		return
+	}
+
+	if c.Message == baseMsg+suffixMsg && k.Message == baseMsg {
+		c.Message = baseMsg
+	} else if c.Message == baseMsg && k.Message == baseMsg+suffixMsg {
+		c.Message = baseMsg + suffixMsg
 	}
 }
 
