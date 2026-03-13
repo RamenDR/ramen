@@ -451,6 +451,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					pvcNamesSelected = nil
 					pvcNamesSelected = append(append(
 						pvcNamesSelected, pvcNamespacedNamesUnqualified[1:]...), pvcNamespacedNamesQualified[1:]...)
+					// Ensure StorageClass exists so the controller can process PVCs and update VRG status.
+					// Use t.storageClass (name on the PVCs), not t.template.storageClassName, which may
+					// have been overwritten by another test (e.g. Sync Basic Test's manual-kumbaya template).
+					tmpTemplate := *t.template
+					tmpTemplate.storageClassName = t.storageClass
+					t.createSC(&tmpTemplate)
 					vrgResourceVersion = vrgResourceVersionGet()
 					forPVCs(pvcNamesDeselected, func(pvc corev1.PersistentVolumeClaim) {
 						util.ObjectLabelsDelete(&pvc, t.pvcLabels)
