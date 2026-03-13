@@ -2483,9 +2483,19 @@ func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus,
 }
 
 func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicationGroup) {
-	vrgs := []ramendrv1alpha1.VolumeReplicationGroup{}
-	Expect(vrgController.DownloadTypedObjects(*vrgObjectStorer, v.s3KeyPrefix(), &vrgs)).To(Succeed())
-	Expect(vrgs).To(HaveLen(1))
+	var vrgs []ramendrv1alpha1.VolumeReplicationGroup
+
+	Eventually(func() bool {
+		vrgs = []ramendrv1alpha1.VolumeReplicationGroup{}
+
+		if err := vrgController.DownloadTypedObjects(*vrgObjectStorer, v.s3KeyPrefix(), &vrgs); err != nil {
+			return false
+		}
+
+		return len(vrgs) == 1
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"VRG %s/%s should be downloadable from S3", v.namespace, v.vrgName)
+
 	vrgS3 := &vrgs[0]
 	// TODO fix in controller and remove
 	for i := range vrgS3.Status.Conditions {
