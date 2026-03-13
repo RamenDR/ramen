@@ -272,6 +272,83 @@ func DRPolicyPredicateFunc() predicate.Funcs {
 	return drPolicyPredicate
 }
 
+func GlobalVGRDRPCPredicateFunc() predicate.Funcs {
+	globalVGRDRPCPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			vgrLabel := e.Object.GetLabels()[GlobalVGRLabel]
+
+			return vgrLabel != ""
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			vgrLabel := e.ObjectNew.GetLabels()[GlobalVGRLabel]
+			if vgrLabel == "" {
+				return false
+			}
+
+			oldDRPC, ok := e.ObjectOld.(*rmn.DRPlacementControl)
+			if !ok {
+				return false
+			}
+
+			newDRPC, ok := e.ObjectNew.(*rmn.DRPlacementControl)
+			if !ok {
+				return false
+			}
+
+			return oldDRPC.Spec.Action != newDRPC.Spec.Action ||
+				oldDRPC.Spec.FailoverCluster != newDRPC.Spec.FailoverCluster ||
+				oldDRPC.Spec.PreferredCluster != newDRPC.Spec.PreferredCluster
+		},
+	}
+
+	return globalVGRDRPCPredicate
+}
+
+// FilterDRPCsForGlobalVGR returns reconcile requests for all DRPCs that share
+// the same global VGR label, so they are reconciled when any one of them
+// changes action or is deleted.
+func (r *DRPlacementControlReconciler) filterDRPCsForGlobalVGR(drpc *rmn.DRPlacementControl) []ctrl.Request {
+	vgrLabel := drpc.GetLabels()[GlobalVGRLabel]
+	log := ctrl.Log.WithName("DRPCFilter").WithName("GlobalVGR").WithValues("globalVGR", vgrLabel)
+
+	drpcs := &rmn.DRPlacementControlList{}
+
+	err := r.List(context.TODO(), drpcs,
+		client.MatchingLabels{GlobalVGRLabel: vgrLabel},
+	)
+	if err != nil {
+		log.Error(err, "Failed to list DRPCs for global VGR reconciliation")
+
+		return []ctrl.Request{}
+	}
+
+	requests := make([]ctrl.Request, 0, len(drpcs.Items))
+
+	for idx := range drpcs.Items {
+		matchingDRPC := &drpcs.Items[idx]
+		if matchingDRPC.GetName() == drpc.GetName() && matchingDRPC.GetNamespace() == drpc.GetNamespace() {
+			continue
+		}
+
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      matchingDRPC.GetName(),
+				Namespace: matchingDRPC.GetNamespace(),
+			},
+		})
+	}
+
+	log.Info("Filtered DRPCs for reconciliation", "count", len(requests))
+
+	return requests
+}
+
 // DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
 // requires any attention, it checks for the following updates:
 //   - If any maintenance mode is reported as activated
@@ -679,6 +756,20 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 			return r.FilterDRPCsForDRPolicyUpdate(drPolicy)
 		}))
 
+	globalVGRDRPCPred := GlobalVGRDRPCPredicateFunc()
+
+	globalVGRDRPCMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			drpc, ok := obj.(*rmn.DRPlacementControl)
+			if !ok {
+				return []reconcile.Request{}
+			}
+
+			ctrl.Log.Info("DRPC: Filtering global VGR DRPCs", "drpc", drpc.GetNamespace()+"/"+drpc.GetName())
+
+			return r.filterDRPCsForGlobalVGR(drpc)
+		}))
+
 	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
 
 	options := ctrlcontroller.Options{
@@ -697,5 +788,6 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 		Watches(&clrapiv1beta1.Placement{}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
 		Watches(&rmn.DRCluster{}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
 		Watches(&rmn.DRPolicy{}, drPolicyMapFun, builder.WithPredicates(drPolicyPred)).
+		Watches(&rmn.DRPlacementControl{}, globalVGRDRPCMapFun, builder.WithPredicates(globalVGRDRPCPred)).
 		Complete(r)
 }
