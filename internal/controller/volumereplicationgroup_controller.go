@@ -756,7 +756,7 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
-		return nil
+		return v.processGloballyOffloadedPVCs(pvcList)
 	}
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
@@ -1269,6 +1269,8 @@ func (v *VRGInstance) findPeerClassMatchingSC(
 }
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
+//
+//nolint:cyclop,funlen
 func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
@@ -1300,6 +1302,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
 		return v.result
+	}
+
+	if v.hasGlobalVGRLabel() {
+		if v.deleteGlobalVGR() {
+			return ctrl.Result{Requeue: true}
+		}
 	}
 
 	result := ctrl.Result{}

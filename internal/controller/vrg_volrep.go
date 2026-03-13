@@ -93,10 +93,8 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 
 			continue
 		}
@@ -175,10 +173,8 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 
 			continue
 		}
@@ -921,10 +917,8 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 				cg = grID
 			}
 
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 
 			continue
 		}
