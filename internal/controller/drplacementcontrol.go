@@ -339,6 +339,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
+//
+//nolint:cyclop,funlen
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -401,6 +403,14 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() {
+		if !d.isGlobalVGRDRPCsInConsensus() {
+			d.setProgression(rmn.ProgressionWaitingForGlobalVGRConsensus)
+
+			return !done, nil
+		}
+	}
 
 	return d.switchToFailoverCluster()
 }
@@ -898,6 +908,14 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() {
+		if !d.isGlobalVGRDRPCsInConsensus() {
+			d.setProgression(rmn.ProgressionWaitingForGlobalVGRConsensus)
+
+			return !done, nil
+		}
+	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
 	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
@@ -1839,6 +1857,11 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+	}
+
+	// Propagate global VGR label to VRG for consensus checks.
+	if d.hasGlobalVGRLabel() {
+		rmnutil.AddLabel(vrg, GlobalVGRLabel, d.globalVGRLabel())
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
@@ -2935,4 +2958,115 @@ func removeSCCAnnotations(annotations map[string]string) map[string]string {
 	}
 
 	return filteredAnnotations
+}
+
+func (d *DRPCInstance) globalVGRLabel() string {
+	return d.instance.GetLabels()[GlobalVGRLabel]
+}
+
+func (d *DRPCInstance) hasGlobalVGRLabel() bool {
+	return d.globalVGRLabel() != ""
+}
+
+// ensureGlobalVGRLabel mirrors the global VGR label from the primary VRG to the DRPC,
+// so the hub can perform DRPC level consensus checks.
+func (d *DRPCInstance) ensureGlobalVGRLabel() bool {
+	if d.hasGlobalVGRLabel() {
+		return true
+	}
+
+	for _, vrg := range d.vrgs {
+		if vrg.Spec.ReplicationState != rmn.Primary {
+			continue
+		}
+
+		if vgrLabel, ok := vrg.GetLabels()[GlobalVGRLabel]; ok && vgrLabel != "" {
+			rmnutil.AddLabel(d.instance, GlobalVGRLabel, vgrLabel)
+
+			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+				d.log.Error(err, "Failed to update global VGR label on DRPC", "vgrLabel", vgrLabel)
+
+				return false
+			}
+
+			d.log.Info("Mirrored global VGR label from VRG to DRPC", "vgrLabel", vgrLabel)
+
+			// Requeue so the reconciler picks up the updated label
+			return false
+		}
+
+		break
+	}
+
+	return true
+}
+
+// isGlobalVGRDRPCsInConsensus checks that all DRPCs sharing the same global VGR label
+// have the same action and target cluster. This prevents any single app from proceeding
+// with an action until all apps in the group agree.
+//
+//nolint:cyclop,funlen
+func (d *DRPCInstance) isGlobalVGRDRPCsInConsensus() bool {
+	vgrLabel := d.globalVGRLabel()
+	log := d.log.WithName("GlobalVGRConsensus").WithValues("globalVGR", vgrLabel)
+
+	var drpcs rmn.DRPlacementControlList
+
+	if err := d.reconciler.List(d.ctx, &drpcs,
+		client.MatchingLabels{GlobalVGRLabel: vgrLabel},
+	); err != nil {
+		log.Error(err, "Failed to list DRPCs for consensus check")
+
+		return false
+	}
+
+	for idx := range drpcs.Items {
+		drpc := &drpcs.Items[idx]
+		if drpc.Name == d.instance.Name && drpc.Namespace == d.instance.Namespace {
+			continue
+		}
+
+		if drpc.Spec.Action != d.instance.Spec.Action {
+			log.Info("Consensus not reached, action differs",
+				"pendingDRPC", drpc.Namespace+"/"+drpc.Name,
+				"expectedAction", d.instance.Spec.Action,
+				"actualAction", drpc.Spec.Action)
+
+			return false
+		}
+
+		switch d.instance.Spec.Action {
+		case rmn.ActionFailover:
+			if drpc.Spec.FailoverCluster != d.instance.Spec.FailoverCluster {
+				log.Info("Consensus not reached, failover cluster differs",
+					"pendingDRPC", drpc.Namespace+"/"+drpc.Name,
+					"expected", d.instance.Spec.FailoverCluster,
+					"actual", drpc.Spec.FailoverCluster)
+
+				return false
+			}
+		case rmn.ActionRelocate:
+			if drpc.Spec.PreferredCluster != d.instance.Spec.PreferredCluster {
+				log.Info("Consensus not reached, preferred cluster differs",
+					"pendingDRPC", drpc.Namespace+"/"+drpc.Name,
+					"expected", d.instance.Spec.PreferredCluster,
+					"actual", drpc.Spec.PreferredCluster)
+
+				return false
+			}
+		default:
+			log.Info("Consensus not reached, unsupported action",
+				"pendingDRPC", drpc.Namespace+"/"+drpc.Name,
+				"action", d.instance.Spec.Action)
+
+			return false
+		}
+	}
+
+	log.Info("Consensus reached", "drpcCount", len(drpcs.Items),
+		"action", d.instance.Spec.Action,
+		"failoverCluster", d.instance.Spec.FailoverCluster,
+		"preferredCluster", d.instance.Spec.PreferredCluster)
+
+	return true
 }

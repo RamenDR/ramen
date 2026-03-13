@@ -119,6 +119,7 @@ const (
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
+	ProgressionWaitingForGlobalVGRConsensus        = ProgressionStatus("WaitingForGlobalVGRConsensus")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl

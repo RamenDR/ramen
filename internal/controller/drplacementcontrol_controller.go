@@ -516,6 +516,10 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if !d.ensureGlobalVGRLabel() {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	requeue := d.startProcessing()
 	log.Info("Finished processing", "Requeue?", requeue)
 

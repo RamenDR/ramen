@@ -752,6 +752,15 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
+		isGlobal, err := v.usesGlobalVGRClass(pvcList)
+		if err != nil {
+			return err
+		}
+
+		if isGlobal {
+			return v.addGlobalVGRLabel(pvcList)
+		}
+
 		return nil
 	}
 
@@ -2165,6 +2174,17 @@ func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 		}
 	}
 
+	// For global VGRs, the external controller may not provide lastSyncTime per PVC.
+	// Use current time so the Protected condition on DRPC can pass.
+	if leastLastSyncTime == nil {
+		if v.hasGlobalVGRLabel() {
+			now := metav1.Now()
+			leastLastSyncTime = &now
+
+			v.log.Info("Setting lastGroupSyncTime to current time for global VGR")
+		}
+	}
+
 	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
 }
 
@@ -2296,8 +2316,48 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 		return []reconcile.Request{}
 	}
 
-	return filterVRGDependentObjects(r.Client, obj,
-		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
+	vgrLog := log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace})
+
+	// Filter VRGs by global VGR label, if VGR exists in operator namespace.
+	if vgr.Namespace == RamenOperatorNamespace() {
+		return r.filterGlobalVGRVRGs(vgr.Name, vgrLog)
+	}
+
+	return filterVRGDependentObjects(r.Client, obj, vgrLog)
+}
+
+// filterGlobalVGRVRGs returns reconcile requests for all VRGs that share the
+// given global VGR, so they are reconciled when the global VGR changes.
+func (r *VolumeReplicationGroupReconciler) filterGlobalVGRVRGs(
+	vgrName string, log logr.Logger,
+) []reconcile.Request {
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := r.Client.List(context.TODO(), &vrgs,
+		client.MatchingLabels{GlobalVGRLabel: vgrName},
+	)
+	if err != nil {
+		log.Error(err, "Failed to list VRGs for global VGR")
+
+		return []reconcile.Request{}
+	}
+
+	req := make([]reconcile.Request, 0, len(vrgs.Items))
+
+	for idx := range vrgs.Items {
+		vrg := &vrgs.Items[idx]
+
+		req = append(req, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			},
+		})
+	}
+
+	log.Info("Filtered VRGs for reconciliation", "count", len(req))
+
+	return req
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
