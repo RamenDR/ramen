@@ -752,6 +752,15 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
+		isGlobal, err := v.usesGlobalVGRClass(pvcList)
+		if err != nil {
+			return err
+		}
+
+		if isGlobal {
+			return v.addGlobalVGRLabel(pvcList)
+		}
+
 		return nil
 	}
 
