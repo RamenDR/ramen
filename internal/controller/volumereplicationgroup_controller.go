@@ -2174,6 +2174,17 @@ func (v *VRGInstance) updateVRGLastGroupSyncTime() {
 		}
 	}
 
+	// For global VGRs, the external controller may not provide lastSyncTime per PVC.
+	// Use current time so the Protected condition on DRPC can pass.
+	if leastLastSyncTime == nil {
+		if v.hasGlobalVGRLabel() {
+			now := metav1.Now()
+			leastLastSyncTime = &now
+
+			v.log.Info("Setting lastGroupSyncTime to current time for global VGR")
+		}
+	}
+
 	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
 }
 

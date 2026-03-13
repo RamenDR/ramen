@@ -146,3 +146,16 @@ func (v *VRGInstance) isGlobalVGRDeletionInConsensus() bool {
 
 	return true
 }
+
+func (v *VRGInstance) isGlobalVGRStateMatched(
+	status *volrep.VolumeReplicationStatus, desiredState ramendrv1alpha1.ReplicationState,
+) bool {
+	switch desiredState {
+	case ramendrv1alpha1.Primary:
+		return status.State == volrep.PrimaryState
+	case ramendrv1alpha1.Secondary:
+		return status.State == volrep.SecondaryState
+	default:
+		return false
+	}
+}
