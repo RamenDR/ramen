@@ -1471,8 +1471,11 @@ var _ = Describe("VolSync_Handler", func() {
 
 						//
 						// Now should be able to re-try ensurePVC and get a new one with proper datasource
+						// Retry with Eventually to tolerate client cache lag after the PVC was just created.
 						//
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).NotTo(HaveOccurred())
+						Eventually(func() error {
+							return vsHandler.EnsurePVCfromRD(rdSpec, false)
+						}, maxWait, interval).Should(Succeed())
 
 						pvcNew := &corev1.PersistentVolumeClaim{}
 
