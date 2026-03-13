@@ -128,6 +128,9 @@ func updateDRClusterConfigMWStatus(k8sClient client.Client, apiReader client.Rea
 	updateMWAsApplied(k8sClient, apiReader, drClusterConfigkey)
 }
 
+// manifestWorkWaitTimeout allows the controller time to create the ManifestWork after manager start.
+const manifestWorkWaitTimeout = 10 * time.Second
+
 func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key types.NamespacedName) {
 	mw := &workv1.ManifestWork{}
 
@@ -135,7 +138,7 @@ func updateMWAsApplied(k8sClient client.Client, apiReader client.Reader, key typ
 		err := apiReader.Get(context.TODO(), key, mw)
 
 		return err == nil
-	}, timeout, interval).Should(BeTrue(),
+	}, manifestWorkWaitTimeout, interval).Should(BeTrue(),
 		fmt.Sprintf("failed to get manifest %s for DRCluster %s", key.Name, key.Namespace))
 
 	timeOld := time.Now().Local()
