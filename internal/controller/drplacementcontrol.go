@@ -339,6 +339,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
+//
+//nolint:cyclop
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -396,6 +398,10 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() && !d.isGlobalActionInConsensus() {
+		return !done, nil
+	}
 
 	return d.switchToFailoverCluster()
 }
@@ -877,6 +883,10 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() && !d.isGlobalActionInConsensus() {
+		return !done, nil
+	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
 	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
@@ -1822,6 +1832,11 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+	}
+
+	// Propagate global VGR label to VRG for consensus checks.
+	if d.hasGlobalVGRLabel() {
+		rmnutil.AddLabel(vrg, GlobalVGRLabel, d.globalVGRLabel())
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces

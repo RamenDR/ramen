@@ -76,6 +76,10 @@ const (
 	// Protected condition provides the latest available observation regarding the protection status of the workload,
 	// on the cluster it is expected to be available on.
 	ConditionProtected = "Protected"
+
+	// GlobalActionConsensus condition indicates whether all DRPCs sharing the same global VGR label
+	// agree on the DR action and target cluster.
+	ConditionGlobalAction = "GlobalAction"
 )
 
 const (
@@ -112,6 +116,7 @@ const (
 	ProgressionRunningFinalSync                    = ProgressionStatus("RunningFinalSync")
 	ProgressionFinalSyncComplete                   = ProgressionStatus("FinalSyncComplete")
 	ProgressionEnsuringVolumesAreSecondary         = ProgressionStatus("EnsuringVolumesAreSecondary")
+	ProgressionWaitOnGlobalAction                  = ProgressionStatus("WaitOnGlobalAction")
 	ProgressionWaitingForResourceRestore           = ProgressionStatus("WaitingForResourceRestore")
 	ProgressionUpdatedPlacement                    = ProgressionStatus("UpdatedPlacement")
 	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
