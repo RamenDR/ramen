@@ -272,7 +272,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
+			asyncPeerClass := genPeerClass(replicationID, vtest.template.storageClassName, []string{storageID}, false)
 			vtest.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			vtest.skipCreationPVandPVC = true
 			pvList := vtest.generateFakePVs("pv", numPVs)
@@ -316,7 +316,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
+			asyncPeerClass := genPeerClass(replicationID, vrgTestBoundPV.template.storageClassName, []string{storageID}, false)
 			vrgTestBoundPV.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
 			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
@@ -886,9 +886,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgVGRDeleteEnsureTestCase = newVRGTestCaseCreate(1, createTestTemplate, true, false)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			asyncPeerClass := genPeerClass(replicationID,
+				vrgVGRDeleteEnsureTestCase.template.storageClassName, []string{storageID}, true)
 			vrgVGRDeleteEnsureTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
-			vrgVGRDeleteEnsureTestCase.createVGRC(createTestTemplate)
+			vrgVGRDeleteEnsureTestCase.createVGRC(vrgVGRDeleteEnsureTestCase.template)
 			vrgVGRDeleteEnsureTestCase.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VGR for all PVCs", func() {
@@ -960,9 +961,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgCreateVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, true, false)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			asyncPeerClass := genPeerClass(replicationID,
+				vrgCreateVGRTestCase.template.storageClassName, []string{storageID}, true)
 			vrgCreateVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
-			vrgCreateVGRTestCase.createVGRC(createTestTemplate)
+			vrgCreateVGRTestCase.createVGRC(vrgCreateVGRTestCase.template)
 			vrgCreateVGRTestCase.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VGR for all PVCs", func() {
@@ -1005,9 +1007,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgPVCnotBoundVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, false, false)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			asyncPeerClass := genPeerClass(replicationID,
+				vrgPVCnotBoundVGRTestCase.template.storageClassName, []string{storageID}, true)
 			vrgPVCnotBoundVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
-			vrgPVCnotBoundVGRTestCase.createVGRC(createTestTemplate)
+			vrgPVCnotBoundVGRTestCase.createVGRC(vrgPVCnotBoundVGRTestCase.template)
 			vrgPVCnotBoundVGRTestCase.VRGTestCaseStart()
 		})
 		It("expect no VR to be created as PVC not bound", func() {
@@ -1753,23 +1756,27 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 		return fmt.Sprintf("%s.%s", name, objectNameSuffix)
 	}
 
-	if testTemplate.storageClassName != "" {
-		testTemplate.storageClassName = appendSuffix(testTemplate.storageClassName)
+	// Mutate a copy so the same template can be passed again without double suffix (e.g. in a loop).
+	templateCopy := &template{}
+
+	*templateCopy = *testTemplate
+	if templateCopy.storageClassName != "" {
+		templateCopy.storageClassName = appendSuffix(templateCopy.storageClassName)
 	}
 
-	testTemplate.replicationClassName = appendSuffix(testTemplate.replicationClassName)
+	templateCopy.replicationClassName = appendSuffix(templateCopy.replicationClassName)
 
 	v := &vrgTest{
 		uniqueID:         objectNameSuffix,
 		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
 		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
-		storageClass:     testTemplate.storageClassName,
-		replicationClass: testTemplate.replicationClassName,
+		storageClass:     templateCopy.storageClassName,
+		replicationClass: templateCopy.replicationClassName,
 		pvcLabels:        make(map[string]string),
 		pvcCount:         pvcCount,
 		checkBind:        checkBind,
 		vrgFirst:         vrgFirst,
-		template:         testTemplate,
+		template:         templateCopy,
 	}
 
 	if pvcCount > 0 {
@@ -1828,7 +1835,7 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 
 	storageID := testTemplate.storageIDLabels[vrgController.StorageIDLabel]
 	if includePeerClasses {
-		asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID}, false)
+		asyncPeerClass := genPeerClass(replicationID, v.template.storageClassName, []string{storageID}, false)
 		v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 	}
 
