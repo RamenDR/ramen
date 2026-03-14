@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -85,6 +86,42 @@ func protectedVrgListDeleteAndNotFoundWait(protectedVrgList *ramen.ProtectedVolu
 	)
 }
 
+// protectedVrgListContains returns true if the list (after re-get and normalization) contains all vrgsExpected.
+// Used with Eventually to tolerate list controller reconciling before our VRG is visible in the shared S3 store.
+func protectedVrgListContains(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
+	vrgsExpected []ramen.VolumeReplicationGroup,
+) bool {
+	if err := protectedVrgListGet(protectedVrgList); err != nil {
+		return false
+	}
+
+	if protectedVrgList.Status == nil || len(protectedVrgList.Status.Items) == 0 {
+		return len(vrgsExpected) == 0
+	}
+
+	items := make([]ramen.VolumeReplicationGroup, len(protectedVrgList.Status.Items))
+	copy(items, protectedVrgList.Status.Items)
+	vrgsStatusStateUpdate(items, vrgsExpected)
+
+	for _, exp := range vrgsExpected {
+		found := false
+
+		for i := range items {
+			if items[i].Namespace == exp.Namespace && items[i].Name == exp.Name {
+				found = true
+
+				break
+			}
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
 func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
@@ -95,6 +132,9 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
+	Eventually(func() error {
+		return protectedVrgListGet(protectedVrgList)
+	}, timeout, interval).Should(Succeed())
 	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
 	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
 }
@@ -138,6 +178,32 @@ func vrgStatusStateUpdate(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
 
 	if vrgS3.Status.State == vrgK8s.Status.State {
 		vrgS3.Status.LastUpdateTime = vrgK8s.Status.LastUpdateTime
+	}
+
+	// Normalize ClusterDataProtected message: controller may append ". VRG object protected"
+	// so S3 and cluster can differ; treat as equivalent for test comparison.
+	vrgConditionMessageNormalizeClusterDataProtected(vrgS3, vrgK8s)
+}
+
+// vrgConditionMessageNormalizeClusterDataProtected makes ClusterDataProtected condition
+// messages comparable when one is "Cluster data of all PVs are protected" and the other
+// is "Cluster data of all PVs are protected. VRG object protected".
+func vrgConditionMessageNormalizeClusterDataProtected(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
+	const baseMsg = "Cluster data of all PVs are protected"
+
+	const suffixMsg = ". VRG object protected"
+
+	c := meta.FindStatusCondition(vrgS3.Status.Conditions, "ClusterDataProtected")
+	k := meta.FindStatusCondition(vrgK8s.Status.Conditions, "ClusterDataProtected")
+
+	if c == nil || k == nil {
+		return
+	}
+
+	if c.Message == baseMsg+suffixMsg && k.Message == baseMsg {
+		c.Message = baseMsg
+	} else if c.Message == baseMsg && k.Message == baseMsg+suffixMsg {
+		c.Message = baseMsg + suffixMsg
 	}
 }
 
