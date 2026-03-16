@@ -1040,6 +1040,10 @@ var _ = Describe("VolSync_Handler", func() {
 									return false
 								}
 
+								if createdRS.Spec.SourcePVC != rsSpec.ProtectedPVC.Name {
+									return false
+								}
+
 								return ownerMatches(createdRS, owner.GetName(), "ConfigMap",
 									true /* Should be controller */)
 							}, maxWait, interval).Should(BeFalse())
