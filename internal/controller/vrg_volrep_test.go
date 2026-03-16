@@ -2596,7 +2596,8 @@ func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus,
 	return
 }
 
-func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicationGroup) {
+func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicationGroup,
+) *ramendrv1alpha1.VolumeReplicationGroup {
 	vrgs := []ramendrv1alpha1.VolumeReplicationGroup{}
 	Expect(vrgController.DownloadTypedObjects(*vrgObjectStorer, v.s3KeyPrefix(), &vrgs)).To(Succeed())
 	Expect(vrgs).To(HaveLen(1))
@@ -2614,13 +2615,14 @@ func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicati
 
 	vrgStatusStateUpdate(vrgS3, vrgK8s)
 	// Expect(vrgS3).To(Equal(vrgK8s)) TODO re-enable: fails on github despite matching VRGs output
+
+	return vrgS3
 }
 
 func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicationGroup {
 	vrg := v.clusterDataProtectedWait(metav1.ConditionTrue)
-	v.vrgDownloadAndValidate(vrg)
 
-	return vrg
+	return v.vrgDownloadAndValidate(vrg)
 }
 
 func kubeObjectProtectionValidate(tests []*vrgTest) {
