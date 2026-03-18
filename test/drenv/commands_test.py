@@ -666,7 +666,7 @@ def test_pipeline_incomplete_output():
     with pytest.raises(commands.PipelineError) as e:
         commands.pipeline(
             ["echo", "not-valid-tar-data"],
-            ["tar", "--extract", "--file=-"],
+            ["tar", "--list", "--file=-"],
         )
     assert len(e.value.failures) == 1
     assert e.value.failures[0].exitcode != 0
