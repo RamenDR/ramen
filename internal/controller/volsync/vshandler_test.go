@@ -1059,6 +1059,17 @@ var _ = Describe("VolSync_Handler", func() {
 								return ownerMatches(dummyPSKSecret, owner.GetName(), "ConfigMap", false)
 							}, maxWait, interval).Should(BeTrue())
 
+							Eventually(func() bool {
+								err := k8sClient.Get(ctx,
+									types.NamespacedName{
+										Name:      rsSpec.ProtectedPVC.Name,
+										Namespace: testNamespace.GetName(),
+									},
+									createdRS)
+
+								return err == nil && createdRS.Spec.SourcePVC == rsSpec.ProtectedPVC.Name
+							}, maxWait, interval).Should(BeTrue())
+
 							// Check common fields
 							Expect(createdRS.Spec.SourcePVC).To(Equal(rsSpec.ProtectedPVC.Name))
 							Expect(createdRS.Spec.RsyncTLS).NotTo(BeNil())
