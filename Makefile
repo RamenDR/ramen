@@ -43,6 +43,13 @@ RAMEN_OPS_NAMESPACE ?= ramen-ops
 AUTO_CONFIGURE_DR_CLUSTER ?= true
 VELERO_NAMESPACE ?= velero
 
+# PLATFORM sets the target platform for the container image. Defaults to the
+# host architecture. To build for a different architecture (e.g. building an
+# amd64 image on an arm64 Mac), use:
+#   make docker-build PLATFORM=amd64
+# Non-native builds may use emulation and be much slower.
+PLATFORM ?= $(shell go env GOARCH)
+
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
 	DRCLUSTER_NAME ?= $(IMAGE_NAME)-cluster-operator
@@ -241,7 +248,7 @@ run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 	go run ./cmd/main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: ## Build docker image with the manager.
-	$(DOCKERCMD) build -t ${IMG} .
+	$(DOCKERCMD) build --platform linux/$(PLATFORM) -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
 	$(DOCKERCMD) push ${IMG}
