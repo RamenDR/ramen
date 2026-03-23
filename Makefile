@@ -36,7 +36,7 @@ IMAGE_REGISTRY ?= quay.io
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
-PLATFORM ?= k8s
+DISTRO ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
 RAMEN_OPS_NAMESPACE ?= ramen-ops
@@ -268,10 +268,10 @@ hub-config: kustomize
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-hub: manifests kustomize hub-config ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl apply -f -
 
 undeploy-hub: kustomize ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl delete -f - --ignore-not-found
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl delete -f - --ignore-not-found
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl apply -f -
