@@ -154,7 +154,7 @@ var _ = Describe("DRPolicyController", func() {
 	}
 	drClusters := []ramen.DRCluster{}
 	populateDRClusters := func() {
-		drClusters = nil
+		drClusters = make([]ramen.DRCluster, 0, 5)
 		drClusters = append(drClusters,
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster0"},

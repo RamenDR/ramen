@@ -20,7 +20,7 @@ import (
 var _ = Describe("DRClusterConfig-CEL", func() {
 	drclusterconfigs := []ramen.DRClusterConfig{}
 	populateDRClusterConfigs := func() {
-		drclusterconfigs = nil
+		drclusterconfigs = make([]ramen.DRClusterConfig, 0, 3)
 		drclusterconfigs = append(drclusterconfigs,
 			ramen.DRClusterConfig{
 				ObjectMeta: metav1.ObjectMeta{

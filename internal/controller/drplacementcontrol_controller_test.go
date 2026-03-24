@@ -731,7 +731,7 @@ func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) {
 }
 
 func populateDRClusters() {
-	drClusters = nil
+	drClusters = make([]rmn.DRCluster, 0, 3)
 	drClusters = append(drClusters,
 		rmn.DRCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: East1ManagedCluster, Annotations: map[string]string{
