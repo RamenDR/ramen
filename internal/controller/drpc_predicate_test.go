@@ -176,6 +176,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 						},
 					}, drClusterNew.Status.MaintenanceModes[idx].Conditions...)
 				}
+
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeFalse())
 			})
 		})
@@ -191,6 +192,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 						drClusterOld.Status.MaintenanceModes[mModeidx].Conditions[condIdx].Status = metav1.ConditionFalse
 					}
 				}
+
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeTrue())
 			})
 		})
@@ -200,6 +202,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 				for mModeidx := range drClusterOld.Status.MaintenanceModes {
 					drClusterOld.Status.MaintenanceModes[mModeidx].Conditions = nil
 				}
+
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeTrue())
 			})
 		})
@@ -233,6 +236,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 
 		BeforeAll(func() {
 			By("bootstrapping test environment")
+
 			testEnv = &envtest.Environment{
 				CRDDirectoryPaths: []string{
 					filepath.Join("..", "..", "config", "crd", "bases"),
@@ -245,12 +249,17 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 			}
 
 			var err error
+
 			done := make(chan interface{})
+
 			go func() {
 				defer GinkgoRecover()
+
 				cfg, err = testEnv.Start()
+
 				close(done)
 			}()
+
 			Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg).NotTo(BeNil())
@@ -477,6 +486,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 
 		AfterAll(func() {
 			By("tearing down the test environment")
+
 			err := testEnv.Stop()
 			Expect(err).NotTo(HaveOccurred())
 		})

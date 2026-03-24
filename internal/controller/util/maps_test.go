@@ -14,6 +14,7 @@ import (
 
 var _ = Describe("Maps", func() {
 	type t map[int]int
+
 	DescribeTable("MapCopy",
 		func(a, b, bExpected t, diffExpected bool) {
 			aExpected := maps.Clone(a)

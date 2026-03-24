@@ -119,12 +119,17 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		}
 
 		var err error
+
 		done := make(chan interface{})
+
 		go func() {
 			defer GinkgoRecover()
+
 			cfg, err = testEnv.Start()
+
 			close(done)
 		}()
+
 		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg).NotTo(BeNil())
@@ -155,6 +160,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
+
 		apiReader = k8sManager.GetAPIReader()
 		Expect(apiReader).ToNot(BeNil())
 
@@ -172,6 +178,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())
+
 		go func() {
 			err = k8sManager.Start(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -292,6 +299,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
+
 		err := testEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -856,6 +864,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		When("there is a NetworkFenceClass created", func() {
 			It("updates DRClusterConfig Status with StorageAccessDetails", func() {
 				By("creating a NetworkFenceClass")
+
 				nfc1 = baseNFC.DeepCopy()
 				nfc1.Name = "nfc1"
 				Expect(k8sClient.Create(context.TODO(), nfc1)).To(Succeed())

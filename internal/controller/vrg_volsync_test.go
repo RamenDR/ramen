@@ -171,6 +171,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					foundBoundPVC0 := false
 					foundBoundPVC1 := false
 					foundBoundPVC2 := false
+
 					for _, vsPvc := range testVsrg.Status.ProtectedPVCs {
 						switch vsPvc.Name {
 						case boundPvcs[0].GetName():
@@ -181,6 +182,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 							foundBoundPVC2 = true
 						}
 					}
+
 					Expect(foundBoundPVC0).To(BeTrue())
 					Expect(foundBoundPVC1).To(BeTrue())
 					Expect(foundBoundPVC2).To(BeTrue())
@@ -210,6 +212,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 				Context("When RSSpec entries are added to vrg spec", func() {
 					It("Should create ReplicationSources for each", func() {
 						allRSs := &volsyncv1alpha1.ReplicationSourceList{}
+
 						Eventually(func() int {
 							Expect(k8sClient.List(testCtx, allRSs,
 								client.InNamespace(testNamespace.GetName()))).To(Succeed())
@@ -341,6 +344,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					Expect(k8sClient.Update(testCtx, testVrg)).To(Succeed())
 
 					allRDs := &volsyncv1alpha1.ReplicationDestinationList{}
+
 					Eventually(func() int {
 						Expect(k8sClient.List(testCtx, allRDs,
 							client.InNamespace(testNamespace.GetName()))).To(Succeed())
@@ -381,6 +385,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 				Context("When ReplicationDestinations have address set in status", func() {
 					rd0Address := "99.98.97.96"
 					rd1Address := "99.88.77.66"
+
 					JustBeforeEach(func() {
 						// fake address set in status on the ReplicationDestinations
 						rd0.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
