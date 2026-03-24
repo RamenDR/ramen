@@ -30,9 +30,11 @@ const (
 )
 
 var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
-	var testCtx context.Context
-	var cancel context.CancelFunc
-	var vrgTestNamespace string
+	var (
+		testCtx          context.Context
+		cancel           context.CancelFunc
+		vrgTestNamespace string
+	)
 
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())

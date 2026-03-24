@@ -16,8 +16,10 @@ import (
 )
 
 var _ = Describe("Secretgen", func() {
-	var testNamespace *corev1.Namespace
-	var owner metav1.Object
+	var (
+		testNamespace *corev1.Namespace
+		owner         metav1.Object
+	)
 
 	BeforeEach(func() {
 		// Create namespace for test

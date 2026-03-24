@@ -181,11 +181,13 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 	})
 
 	Describe("ModifyRSSpecForCephFS", func() {
-		var vsHandler *volsync.VSHandler
-		var testNamespace *corev1.Namespace
-		var testSourcePVC *corev1.PersistentVolumeClaim
-		var testRsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec
-		var testRsSpecOrig ramendrv1alpha1.VolSyncReplicationSourceSpec
+		var (
+			vsHandler      *volsync.VSHandler
+			testNamespace  *corev1.Namespace
+			testSourcePVC  *corev1.PersistentVolumeClaim
+			testRsSpec     ramendrv1alpha1.VolSyncReplicationSourceSpec
+			testRsSpecOrig ramendrv1alpha1.VolSyncReplicationSourceSpec
+		)
 
 		capacity := resource.MustParse("1Gi")
 
@@ -291,9 +293,11 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 })
 
 var _ = Describe("VolSync_Handler", func() {
-	var testNamespace *corev1.Namespace
-	var owner client.Object
-	var vsHandler *volsync.VSHandler
+	var (
+		testNamespace *corev1.Namespace
+		owner         client.Object
+		vsHandler     *volsync.VSHandler
+	)
 
 	asyncSpec := &ramendrv1alpha1.VRGAsyncSpec{
 		SchedulingInterval:          "5m",
@@ -352,8 +356,11 @@ var _ = Describe("VolSync_Handler", func() {
 			}
 
 			createdRD := &volsyncv1alpha1.ReplicationDestination{}
-			var returnedRD *volsyncv1alpha1.ReplicationDestination
-			var returnedRDInfo *ramendrv1alpha1.VolSyncReplicationDestinationInfo
+
+			var (
+				returnedRD     *volsyncv1alpha1.ReplicationDestination
+				returnedRDInfo *ramendrv1alpha1.VolSyncReplicationDestinationInfo
+			)
 
 			Context("When the psk secret for volsync does not exist", func() {
 				JustBeforeEach(func() {
@@ -613,9 +620,12 @@ var _ = Describe("VolSync_Handler", func() {
 			})
 
 			Context("Workload deletion: RD deletion should leave RD as PVC owner (GC cleans PVC)", func() {
-				var vsHandlerDirect *volsync.VSHandler
-				var rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec
-				var pvc *corev1.PersistentVolumeClaim
+				var (
+					vsHandlerDirect *volsync.VSHandler
+					rdSpec          ramendrv1alpha1.VolSyncReplicationDestinationSpec
+					pvc             *corev1.PersistentVolumeClaim
+				)
+
 				capacity := resource.MustParse("1Gi")
 
 				BeforeEach(func() {
@@ -743,8 +753,10 @@ var _ = Describe("VolSync_Handler", func() {
 				var returnedRS *volsyncv1alpha1.ReplicationSource
 				JustBeforeEach(func() {
 					// Run ReconcileRD
-					var err error
-					var finalSyncCompl bool
+					var (
+						err            error
+						finalSyncCompl bool
+					)
 					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					finalSyncCompl, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false, nil)
 					Expect(err).ToNot(HaveOccurred())
@@ -908,8 +920,10 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				Context("When the PVC to be protected is mounted by a running and Ready pod", func() {
-					var podMountingPVC *corev1.Pod
-					var testPVC *corev1.PersistentVolumeClaim
+					var (
+						podMountingPVC *corev1.Pod
+						testPVC        *corev1.PersistentVolumeClaim
+					)
 
 					// Fake out pod mounting and in Running/Ready state
 					JustBeforeEach(func() {
@@ -1455,8 +1469,10 @@ var _ = Describe("VolSync_Handler", func() {
 		pvcNamePrefixOtherOwner := "otherowner-test-pvc-rdcleanuptests-"
 		pvcCapacity := resource.MustParse("1Gi")
 
-		var rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec
-		var rdSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationDestinationSpec
+		var (
+			rdSpecList           []ramendrv1alpha1.VolSyncReplicationDestinationSpec
+			rdSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationDestinationSpec
+		)
 
 		BeforeEach(func() {
 			rdSpecList = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
@@ -1655,8 +1671,10 @@ var _ = Describe("VolSync_Handler", func() {
 		pvcNamePrefix := "test-pvc-rscleanuptests-"
 		pvcNamePrefixOtherOwner := "otherowner-test-pvc-rscleanuptests-"
 
-		var rsSpecList []ramendrv1alpha1.VolSyncReplicationSourceSpec
-		var rsSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationSourceSpec
+		var (
+			rsSpecList           []ramendrv1alpha1.VolSyncReplicationSourceSpec
+			rsSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationSourceSpec
+		)
 
 		BeforeEach(func() {
 			rsSpecList = []ramendrv1alpha1.VolSyncReplicationSourceSpec{}
@@ -1831,8 +1849,10 @@ var _ = Describe("VolSync_Handler", func() {
 				testPVC = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, initialAnnotations)
 			})
 
-			var pvcPreparationComplete bool
-			var pvcPreparationErr error
+			var (
+				pvcPreparationComplete bool
+				pvcPreparationErr      error
+			)
 
 			JustBeforeEach(func() {
 				pvcNamespacedName := types.NamespacedName{

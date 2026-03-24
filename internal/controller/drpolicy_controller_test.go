@@ -226,8 +226,12 @@ var _ = Describe("DRPolicyController", func() {
 	drpolicyObjectMetaReset := func(i uint) {
 		drpolicies[i].ObjectMeta = drpolicyObjectMetas[i]
 	}
-	var drpolicy *ramen.DRPolicy
-	var drpolicyNumber uint
+
+	var (
+		drpolicy       *ramen.DRPolicy
+		drpolicyNumber uint
+	)
+
 	Specify("initialize tests", func() {
 		populateDRClusters()
 		createManagedClusters()

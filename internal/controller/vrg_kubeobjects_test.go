@@ -16,8 +16,10 @@ import (
 var _ = Describe("VRG_KubeObjectProtection", func() {
 	const namespaceName = "my-ns"
 
-	var hook *Recipe.Hook
-	var group *Recipe.Group
+	var (
+		hook  *Recipe.Hook
+		group *Recipe.Group
+	)
 
 	BeforeEach(func() {
 		duration := 30
