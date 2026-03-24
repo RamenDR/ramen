@@ -203,6 +203,7 @@ func pvcPredicateFunc() predicate.Funcs {
 
 				return false
 			}
+
 			newPVC, ok := e.ObjectNew.DeepCopyObject().(*corev1.PersistentVolumeClaim)
 			if !ok {
 				log.Info("Failed to deep copy newer PersistentVolumeClaim")
