@@ -27,6 +27,7 @@ import (
 
 var _ = Describe("Replicationgroupdestination", func() {
 	var replicationGroupDestinationMachine statemachine.ReplicationMachine
+
 	BeforeEach(func() {
 		metaTime := metav1.NewTime(time.Now())
 		rgd := &ramendrv1alpha1.ReplicationGroupDestination{

@@ -159,6 +159,7 @@ var _ = Describe("CephfsCg", func() {
 					if err != nil {
 						return err
 					}
+
 					address := "address"
 					rd.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
 						RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
@@ -445,6 +446,7 @@ var _ = Describe("CephfsCg", func() {
 						if err != nil {
 							return err
 						}
+
 						vs.Status = &vsv1.VolumeSnapshotStatus{
 							ReadyToUse: &readyToUse,
 						}

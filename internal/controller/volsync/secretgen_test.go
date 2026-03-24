@@ -66,6 +66,7 @@ var _ = Describe("Secretgen", func() {
 			It("Should create a volsync rsync secret", func() {
 				// Re-load secret to make sure it's been created properly
 				newSecret := &corev1.Secret{}
+
 				Eventually(func() error {
 					return k8sClient.Get(ctx,
 						types.NamespacedName{Name: testSecretName, Namespace: testNamespace.GetName()}, newSecret)
@@ -90,6 +91,7 @@ var _ = Describe("Secretgen", func() {
 
 		Context("When the secret already exists", func() {
 			var existingSecret *corev1.Secret
+
 			BeforeEach(func() {
 				existingSecret = &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -112,6 +114,7 @@ var _ = Describe("Secretgen", func() {
 			It("Should leave the existing secret unchanged", func() {
 				// Re-load secret to make sure it's been created properly
 				secret := &corev1.Secret{}
+
 				Eventually(func() error {
 					return k8sClient.Get(ctx,
 						types.NamespacedName{Name: testSecretName, Namespace: testNamespace.GetName()}, secret)

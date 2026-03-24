@@ -60,10 +60,12 @@ var _ = BeforeSuite(func() {
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 	logf.SetLogger(testLogger)
+
 	testLog := ctrl.Log.WithName("tester")
 	testLog.Info("Starting the utils test suite", "time", time.Now())
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
+
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		testLog.Info("Setting up KUBEBUILDER_ASSETS for envtest")
 
@@ -77,6 +79,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	By("Bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "..", "config", "crd", "bases"),
@@ -85,11 +88,13 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
+
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
 	By("Setting up required schemes in envtest")
+
 	err = plrv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -112,6 +117,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating a k8s client")
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
@@ -126,6 +132,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

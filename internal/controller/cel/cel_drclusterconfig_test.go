@@ -144,6 +144,7 @@ var _ = Describe("DRClusterConfig-CEL", func() {
 					},
 				)
 			}()
+
 			Expect(k8sClient.Create(context.TODO(), drcc)).To(MatchError(errDrcc))
 			Expect(k8sClient.Create(context.TODO(), drccSec)).To(MatchError(errDrccSec))
 		})
