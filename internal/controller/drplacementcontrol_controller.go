@@ -1488,7 +1488,7 @@ func (r *DRPlacementControlReconciler) getVRG(
 
 // extractProtectedPVCNames extracts protected PVC names from a VRG
 func extractProtectedPVCNames(vrg *rmn.VolumeReplicationGroup) []string {
-	protectedPVCs := []string{}
+	protectedPVCs := make([]string, 0, len(vrg.Status.ProtectedPVCs))
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
 		protectedPVCs = append(protectedPVCs, protectedPVC.Name)
 	}

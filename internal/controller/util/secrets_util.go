@@ -202,7 +202,7 @@ func newPlacementRuleBinding(
 func newPlacementRule(name string, namespace string,
 	clusters []string,
 ) *plrv1.PlacementRule {
-	plRuleClusters := []plrv1.GenericClusterReference{}
+	plRuleClusters := make([]plrv1.GenericClusterReference, 0, len(clusters))
 	for _, clusterRef := range clusters {
 		plRuleClusters = append(plRuleClusters, plrv1.GenericClusterReference{
 			Name: clusterRef,
