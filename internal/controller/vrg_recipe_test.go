@@ -424,8 +424,12 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			BeforeEach(OncePerOrdered, func() {
 				vrgRecipeRefDefine(r.Name)
 			})
-			var pvcSelector util.PvcSelector
-			var err error
+
+			var (
+				pvcSelector util.PvcSelector
+				err         error
+			)
+
 			JustBeforeEach(func() {
 				pvcSelector, err = vrgPvcSelectorGet()
 			})
@@ -452,10 +456,12 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				Context("parametrically", func() {
 					var recipeExpanded *recipe.Recipe
 					BeforeEach(func() {
-						const nssParameterName = "nss"
-						const nssParameterRef = "$" + nssParameterName
-						const ns0ParameterName = "ns0"
-						const ns0ParameterRef = "$" + ns0ParameterName
+						const (
+							nssParameterName = "nss"
+							nssParameterRef  = "$" + nssParameterName
+							ns0ParameterName = "ns0"
+							ns0ParameterRef  = "$" + ns0ParameterName
+						)
 
 						parameters := map[string][]string{
 							nssParameterName: nsNamesSlice,

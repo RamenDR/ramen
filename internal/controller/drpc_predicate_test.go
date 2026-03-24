@@ -22,8 +22,10 @@ import (
 )
 
 var _ = Describe("DRPCPredicateDRCluster", func() {
-	var drClusterOld, drClusterNew *rmn.DRCluster
-	var baseTime time.Time
+	var (
+		drClusterOld, drClusterNew *rmn.DRCluster
+		baseTime                   time.Time
+	)
 
 	BeforeEach(func() {
 		// Initialize the DRClusters to their defaults

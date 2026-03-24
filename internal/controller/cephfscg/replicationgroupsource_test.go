@@ -26,8 +26,11 @@ import (
 var rgsName = "rgs"
 
 var _ = Describe("Replicationgroupsource", func() {
-	var replicationGroupSourceMachine statemachine.ReplicationMachine
-	var fakeVolumeGroupSourceHandler *fakes.FakeVolumeGroupSourceHandler
+	var (
+		replicationGroupSourceMachine statemachine.ReplicationMachine
+		fakeVolumeGroupSourceHandler  *fakes.FakeVolumeGroupSourceHandler
+	)
+
 	BeforeEach(func() {
 		fakeVolumeGroupSourceHandler = &fakes.FakeVolumeGroupSourceHandler{}
 		fakeVolumeGroupSourceHandler.EnsureApplicationPVCsMountedReturns(true, nil)

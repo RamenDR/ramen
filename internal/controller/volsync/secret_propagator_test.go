@@ -27,10 +27,12 @@ var _ = Describe("Secret_propagator", func() {
 	genericCodecs := serializer.NewCodecFactory(scheme.Scheme)
 	genericCodec := genericCodecs.UniversalDeserializer()
 
-	var testNamespace *corev1.Namespace
-	var testLongNamespaceName *corev1.Namespace
-	var owner metav1.Object
-	var ownerWithLongNameNamespace metav1.Object
+	var (
+		testNamespace              *corev1.Namespace
+		testLongNamespaceName      *corev1.Namespace
+		owner                      metav1.Object
+		ownerWithLongNameNamespace metav1.Object
+	)
 
 	BeforeEach(func() {
 		// Create namespace for test
@@ -107,9 +109,11 @@ var _ = Describe("Secret_propagator", func() {
 				destSecName := "my-secret-on-mgd"
 				destSecNamespace := "managed-cluster-ns-1"
 
-				var createdPolicy *policyv1.Policy
-				var createdPlacementRule *plrulev1.PlacementRule
-				var createdPlacementBinding *policyv1.PlacementBinding
+				var (
+					createdPolicy           *policyv1.Policy
+					createdPlacementRule    *plrulev1.PlacementRule
+					createdPlacementBinding *policyv1.PlacementBinding
+				)
 
 				BeforeEach(func() {
 					policyRuleAndBindingName := owner.GetName() + "-vs-secret"

@@ -53,9 +53,11 @@ var (
 )
 
 var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
-	var testNamespace *corev1.Namespace
-	var testCtx context.Context
-	var cancel context.CancelFunc
+	var (
+		testNamespace *corev1.Namespace
+		testCtx       context.Context
+		cancel        context.CancelFunc
+	)
 
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())

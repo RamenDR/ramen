@@ -179,8 +179,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				}, vrg.Name)))
 			})
 		})
-		var pv0 *corev1.PersistentVolume
-		var pvc0 *corev1.PersistentVolumeClaim
+
+		var (
+			pv0  *corev1.PersistentVolume
+			pvc0 *corev1.PersistentVolumeClaim
+		)
+
 		When("PV exists, is bound, and its claim's deletion timestamp is non-zero", func() {
 			BeforeEach(func() {
 				pv := pv("pv0", "pvc0", vrg.Namespace, testcaseTemplate.storageClassName)
@@ -329,8 +333,12 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			vrgTestBoundPV.promoteVolReps()
 			vrgTestBoundPV.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
 		})
-		var pvcNamespacedNamesActual [pvcCount]types.NamespacedName
-		var pvcNamespacedNamesUnqualified, pvcNamespacedNamesQualified []types.NamespacedName
+
+		var (
+			pvcNamespacedNamesActual                                   [pvcCount]types.NamespacedName
+			pvcNamespacedNamesUnqualified, pvcNamespacedNamesQualified []types.NamespacedName
+		)
+
 		When("a VRG, reconciled by a controller without multi-namespace support,", func() {
 			var t *vrgTest
 			const (

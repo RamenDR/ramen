@@ -1923,8 +1923,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		populateDRClusters()
 	})
 	Context("DRPlacementControl Reconciler Async DR using PlacementRule (Subscription)", func() {
-		var userPlacementRule *plrv1.PlacementRule
-		var drpc *rmn.DRPlacementControl
+		var (
+			userPlacementRule *plrv1.PlacementRule
+			drpc              *rmn.DRPlacementControl
+		)
+
 		When("An Application is deployed for the first time", func() {
 			It("Should deploy to East1ManagedCluster", func() {
 				By("Initial Deployment")
@@ -2032,8 +2035,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 	})
 	// TEST WITH Placement AND Subscription
 	Context("DRPlacementControl Reconciler Async DR using Placement (Subscription)", func() {
-		var placement *clrapiv1beta1.Placement
-		var drpc *rmn.DRPlacementControl
+		var (
+			placement *clrapiv1beta1.Placement
+			drpc      *rmn.DRPlacementControl
+		)
+
 		Specify("DRClusters", func() {
 			populateDRClusters()
 		})
@@ -2106,8 +2112,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 	})
 	// TEST WITH Placement AND ApplicationSet
 	Context("DRPlacementControl Reconciler Async DR using Placement (ApplicationSet)", func() {
-		var placement *clrapiv1beta1.Placement
-		var drpc *rmn.DRPlacementControl
+		var (
+			placement *clrapiv1beta1.Placement
+			drpc      *rmn.DRPlacementControl
+		)
 		Specify("DRClusters", func() {
 			populateDRClusters()
 		})
@@ -2660,8 +2668,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 	})*/
 
 	Context("Test DRPlacementControl With VolSync Setup", func() {
-		var userPlacementRule *plrv1.PlacementRule
-		var drpc *rmn.DRPlacementControl
+		var (
+			userPlacementRule *plrv1.PlacementRule
+			drpc              *rmn.DRPlacementControl
+		)
 
 		Specify("DRClusters", func() {
 			RunningVolSyncTests = true
