@@ -1882,7 +1882,7 @@ func (v *vrgTest) generateFakePVs(pvNamePrefix string, count int) []corev1.Persi
 }
 
 func (v *vrgTest) generateFakePVCs(pvList []corev1.PersistentVolume) []corev1.PersistentVolumeClaim {
-	pvcList := []corev1.PersistentVolumeClaim{}
+	pvcList := make([]corev1.PersistentVolumeClaim, 0, len(pvList))
 
 	for _, pv := range pvList {
 		pvc := v.generatePVC(pv.Spec.ClaimRef.Name, pv.Spec.ClaimRef.Namespace, pv.Name, v.pvcLabels)

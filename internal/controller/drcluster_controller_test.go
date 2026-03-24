@@ -222,7 +222,7 @@ var _ = Describe("DRClusterController", func() {
 
 	drclusters := []ramen.DRCluster{}
 	populateDRClusters := func() {
-		drclusters = nil
+		drclusters = make([]ramen.DRCluster, 0, 2)
 		drclusters = append(drclusters,
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{
