@@ -49,6 +49,7 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 
 				return false
 			}
+
 			newMW, ok := e.ObjectNew.DeepCopyObject().(*ocmworkv1.ManifestWork)
 			if !ok {
 				log.Info("Failed to deep copy newer ManifestWork")
@@ -100,6 +101,7 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 
 				return false
 			}
+
 			newMCV, ok := e.ObjectNew.DeepCopyObject().(*viewv1beta1.ManagedClusterView)
 			if !ok {
 				log.Info("Failed to deep copy newer MCV")
