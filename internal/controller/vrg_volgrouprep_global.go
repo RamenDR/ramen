@@ -209,3 +209,59 @@ func (v *VRGInstance) setGlobalStateCondition(status metav1.ConditionStatus, rea
 		Message:            message,
 	})
 }
+
+func (v *VRGInstance) isGlobalVGRStateMatched(
+	status *volrep.VolumeReplicationStatus, desiredState ramendrv1alpha1.ReplicationState,
+) bool {
+	switch desiredState {
+	case ramendrv1alpha1.Primary:
+		return status.State == volrep.PrimaryState
+	case ramendrv1alpha1.Secondary:
+		return status.State == volrep.SecondaryState
+	default:
+		return false
+	}
+}
+
+// validateGlobalVGRStatus short-circuits VGR status validation for global VGRs
+// with schedulingInterval "0m". Since the storage provider manages replication
+// externally and does not report Completed/Degraded/Resyncing conditions,
+// DataReady is derived from the VGR state match and DataProtected is set based
+// on the storage provider managing protection externally.
+// For non-zero intervals, returns false to let the normal validation path handle it.
+//
+// TODO: When storage providers with schedulingInterval "0m" start reporting
+// status conditions, update this function to fall through to the normal
+// validation path instead of short-circuiting.
+func (v *VRGInstance) validateGlobalVGRStatus(
+	volRep client.Object, pvcs []*corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus, state ramendrv1alpha1.ReplicationState,
+) bool {
+	if v.instance.Spec.Async == nil || v.instance.Spec.Async.SchedulingInterval != "0m" {
+		return false
+	}
+
+	if !v.isGlobalVGRStateMatched(status, state) {
+		return false
+	}
+
+	dataReadyReason := VRGConditionReasonReady
+	if state != ramendrv1alpha1.Primary {
+		dataReadyReason = VRGConditionReasonReplicated
+	}
+
+	dataReadyMsg := "PVC in the VolumeReplicationGroup is ready for use"
+	dataProtectedMsg := "PVC in the VolumeReplicationGroup is data protected by storage provider"
+
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, dataReadyReason, dataReadyMsg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonDataProtected, dataProtectedMsg)
+		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, status)
+	}
+
+	v.log.Info("Global VGR status validated", "vgr", volRep.GetName(), "namespace", volRep.GetNamespace(), "state", state)
+
+	return true
+}

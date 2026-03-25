@@ -1567,6 +1567,13 @@ func (v *VRGInstance) getStorageClass(pvc *corev1.PersistentVolumeClaim) (*stora
 func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep client.Object,
 	status *volrep.VolumeReplicationStatus,
 ) bool {
+	// For global VGRs with schedulingInterval "0m", the storage provider manages
+	// replication externally and does not update observedGeneration. Skip the
+	// generation check and validate based on VGR state alone.
+	if v.hasGlobalVGRLabel() && v.validateGlobalVGRStatus(volRep, pvcs, status, v.instance.Spec.ReplicationState) {
+		return true
+	}
+
 	// When the generation in the status is updated, VRG would get a reconcile
 	// as it owns VolumeReplication resource.
 	if volRep.GetGeneration() != status.ObservedGeneration {
@@ -1613,6 +1620,8 @@ func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep
 //     deleted safely.
 //   - Primary VRG: Validated condition is checked, and if successful the Completed conditions is also checked.
 //   - Secondary VRG: Completed, Degraded and Resyncing conditions are checked and ensured healthy.
+//
+//nolint:gocognit,cyclop
 func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep client.Object,
 	state ramendrv1alpha1.ReplicationState, status *volrep.VolumeReplicationStatus,
 ) bool {
