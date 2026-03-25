@@ -1690,6 +1690,11 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		return nil
 	}
 
+	// Async with 0m SchedulingInterval, skip setting sync metrics
+	if drPolicy.Spec.SchedulingInterval == "0m" {
+		return nil
+	}
+
 	log.Info("setting SyncMetrics")
 
 	syncMetrics := r.createSyncMetricsInstance(drPolicy, drpc)
