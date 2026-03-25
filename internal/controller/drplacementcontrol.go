@@ -1600,7 +1600,7 @@ func equalClusterIDSlices(a, b []string) bool {
 
 // updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
 // a replicationID then the from should also claim a replicationID, else both should not.  Similarly existing peerClass
-// offloaded property should be the same as from. This ensures that a peerClass is updated with latest
+// offloaded and global properties should be the same as from. This ensures that a peerClass is updated with latest
 // storage/replication IDs but only if the underlying replication scheme remains unchanged.
 // If DRPC is annotated with CG values, then grouping is also updated to true.
 
@@ -1613,6 +1613,10 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 		}
 
 		if to[toIdx].Offloaded != from.Offloaded {
+			break
+		}
+
+		if to[toIdx].Global != from.Global {
 			break
 		}
 
