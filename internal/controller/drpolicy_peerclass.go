@@ -62,6 +62,11 @@ type peerInfo struct {
 	// offloaded represents replication is offloaded for the storageClassName across both peers, and is applicable
 	// when an asynchronous pairing is detected across the peer clusters
 	offloaded bool
+
+	// global represents replication is managed via a globally scoped VolumeGroupReplication for the
+	// storageClassName across both peers, and is applicable when the peer is offloaded and the VGRClass is
+	// labeled with "ramendr.openshift.io/groupreplicationid"
+	global bool
 }
 
 // peerClassMatchesPeer compares the GroupReplicationID (if available) or storage class name between the PeerClass
@@ -117,6 +122,7 @@ func peerClassFromPeer(peer peerInfo) ramen.PeerClass {
 		GroupReplicationID: peer.groupReplicationID,
 		Grouping:           peer.grouping,
 		Offloaded:          peer.offloaded,
+		Global:             peer.global,
 	}
 }
 
