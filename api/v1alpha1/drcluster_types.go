@@ -59,6 +59,10 @@ const (
 	// Fencing CR to fence off this cluster
 	// has been created
 	DRClusterConditionTypeFenced = "Fenced"
+
+	DRClusterConditionS3UpdateFailed = "S3ConditionUpdateFailed"
+
+	DRClusterConditionS3Healthy = "S3Healthy"
 )
 
 type DRClusterPhase string
