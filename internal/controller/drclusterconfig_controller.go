@@ -16,7 +16,9 @@ import (
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	"golang.org/x/time/rate"
+	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,16 +53,20 @@ const (
 	DRClusterConfigConditionConfigurationProcessed = "Succeeded"
 	DRClusterConfigConditionConfigurationFailed    = "Failed"
 
-	DRClusterConfigS3Reachable   = "Reachable"
-	DRClusterConfigS3Unreachable = "Unreachable"
+	DRClusterConfigS3Reachable        = "S3Reachable"
+	DRClusterConfigS3Unreachable      = "S3Unreachable"
+	DRClusterConfigS3ConnectionFailed = "S3ConnectionFailed"
+	DRClusterConfigS3BucketNotFound   = "S3BucketNotFound"
+	DRClusterConfigS3ListFailed       = "S3ListFailed"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
 type DRClusterConfigReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Log         logr.Logger
-	RateLimiter *workqueue.TypedRateLimiter[reconcile.Request]
+	Scheme            *runtime.Scheme
+	Log               logr.Logger
+	RateLimiter       *workqueue.TypedRateLimiter[reconcile.Request]
+	ObjectStoreGetter ObjectStoreGetter
 }
 
 // NADDRNetworkLabel is an opt-in marker for Ramen's static-IP disaster
@@ -171,7 +177,7 @@ func setDRClusterConfigInitialCondition(conditions *[]metav1.Condition, observed
 		Message:            message,
 	})
 	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               ramen.DRClusterConfigS3Reachable,
+		Type:               ramen.DRClusterConfigS3Healthy,
 		Reason:             DRClusterConfigConditionReasonInitializing,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionUnknown,
@@ -184,6 +190,18 @@ func setDRClusterConfigConfigurationProcessedCondition(conditions *[]metav1.Cond
 ) {
 	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConfigConfigurationProcessed,
+		Reason:             reason,
+		ObservedGeneration: observedGeneration,
+		Status:             conditionStatus,
+		Message:            message,
+	})
+}
+
+func setDRClusterConfigS3HealthyCondition(conditions *[]metav1.Condition, observedGeneration int64,
+	message string, conditionStatus metav1.ConditionStatus, reason string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConfigS3Healthy,
 		Reason:             reason,
 		ObservedGeneration: observedGeneration,
 		Status:             conditionStatus,
@@ -298,7 +316,82 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
 		"Configuration processed and validated", metav1.ConditionTrue, DRClusterConfigConditionConfigurationProcessed)
 
+	if err := r.reconcileDRClusterConfigS3Healthy(ctx, drCConfig); err != nil {
+		log.Info("Reconcile error", "error", err)
+
+		return ctrl.Result{Requeue: true}, err
+	}
+
 	return ctrl.Result{}, nil
+}
+
+func (r *DRClusterConfigReconciler) reconcileDRClusterConfigS3Healthy(
+	ctx context.Context, drCConfig *ramen.DRClusterConfig,
+) error {
+	// Fetch the ramen config resource
+	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to get Ramen configmap: %w", err)
+	}
+
+	// Iterate all profiles listed in it and check for existing healthy ones
+	for profileIdx := range ramenConfig.S3StoreProfiles {
+		// for each profile, check that it has an actual secret attached to its secretRef ID
+		profile := ramenConfig.S3StoreProfiles[profileIdx]
+		secretRef := profile.S3SecretRef
+		secret := &v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: secretRef.Name, Namespace: secretRef.Namespace},
+		}
+
+		if err := r.Client.Get(ctx, types.NamespacedName{
+			Namespace: secret.Namespace,
+			Name:      secret.Name,
+		}, secret); err != nil {
+			if !k8serrors.IsNotFound(err) {
+				setDRClusterConfigS3HealthyCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+					fmt.Sprintf("Found an unhealthy S3 profile %q for which there's a faulty secret", profile.S3ProfileName),
+					metav1.ConditionFalse, DRClusterConfigS3Unreachable)
+
+				return fmt.Errorf("failed to get secret: %w", err)
+			}
+			// If there's no secret attached to the secretRef's namespacedname -- mark profile as unhealthy
+			setDRClusterConfigS3HealthyCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+				fmt.Sprintf("Found an unhealthy S3 profile %q for which there's no secret", profile.S3ProfileName),
+				metav1.ConditionFalse, DRClusterConfigS3Unreachable)
+
+			return fmt.Errorf("secret not found: %w", err)
+		}
+		// Profile does have a secret. Check if it has connectivity and record in status accordingly
+		objectStore, reason, err := S3ProfileValidate(ctx, r.Client, r.ObjectStoreGetter, profile.S3ProfileName, r.Log)
+		if err != nil {
+			setDRClusterConfigS3HealthyCondition(&drCConfig.Status.Conditions, drCConfig.Generation, err.Error(),
+				metav1.ConditionFalse, reason)
+
+			return fmt.Errorf("failed to validate s3 profile: %w", err)
+		}
+
+		if err := objectStore.HeadBucket(); err != nil {
+			setDRClusterConfigS3HealthyCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+				fmt.Sprintf("%s: %s", profile.S3ProfileName, err.Error()),
+				metav1.ConditionFalse, DRClusterConfigS3BucketNotFound)
+
+			return fmt.Errorf("failed to validate s3 profile: %s: %w", profile.S3ProfileName, err)
+		}
+
+		listKeyPrefix := types.NamespacedName{Name: drCConfig.Name, Namespace: drCConfig.Namespace}.String()
+		if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
+			setDRClusterConfigS3HealthyCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+				fmt.Sprintf("%s: %s", profile.S3ProfileName, err.Error()),
+				metav1.ConditionFalse, DRClusterConfigS3ListFailed)
+
+			return fmt.Errorf("failed to validate s3 profile: %s: %w", profile.S3ProfileName, err)
+		}
+	}
+	// All S3 profiles are healthy -- record to status and exit
+	setDRClusterConfigS3HealthyCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+		fmt.Sprintf("All S3 profiles are healthy"), metav1.ConditionTrue, DRClusterConfigS3Reachable)
+
+	return nil
 }
 
 // UpdateStatus updates DRClusterConfig status with a list of storage related classes that are marked for DR
