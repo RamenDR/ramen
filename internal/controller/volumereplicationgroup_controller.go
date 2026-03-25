@@ -546,6 +546,9 @@ const (
 	// VolumeGroupReplicationClass label
 	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
+	// VolumeGroupReplicationClass global label
+	GlobalReplicationLabel = "ramendr.openshift.io/global"
+
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 

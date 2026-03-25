@@ -328,11 +328,28 @@ func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string,
 	return ""
 }
 
+// isAsyncVGRClassPeerGlobal checks if the VGRClasses with the given GroupReplicationID on both peers
+// are labeled as global. Returns true only if both peers have the global label.
+func isAsyncVGRClassPeerGlobal(clA, clB classLists, grID string) bool {
+	hasGlobal := func(cl classLists) bool {
+		for idx := range cl.vgrClasses {
+			if cl.vgrClasses[idx].GetLabels()[GroupReplicationIDLabel] == grID {
+				return util.HasLabelWithValue(cl.vgrClasses[idx], GlobalReplicationLabel, "true")
+			}
+		}
+
+		return false
+	}
+
+	return hasGlobal(clA) && hasGlobal(clB)
+}
+
 // getAsyncPeers determines if scName in the first classList has asynchronous peers in the remaining classLists.
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
 // the desired asynchronous schedule that requires to be matched.
 // Grouping logic:
-//   - Offloaded storage: Uses VGRC only, grouping = true when VGRC with ReplicationID exists
+//   - Offloaded storage: Uses VGRC only, grouping = true when VGRC with GroupReplicationID exists.
+//     Additionally, global = true when both peer VGRCs are labeled with GlobalReplicationLabel.
 //   - Non-offloaded storage: Uses VRC and VGRC, grouping = true when both exist with ReplicationID,
 //     not necessarily requiring them to have identical ReplicationIDs.
 //   - Snapshots: Uses VGSC and VSC, grouping = true when VGSC exists on both clusters for the same storageClass
@@ -343,7 +360,7 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 
 	for _, cl := range cls[1:] {
 		for scIdx := range cl.sClasses {
-			var grouping bool
+			var grouping, global bool
 
 			var rID, grID string
 
@@ -369,6 +386,10 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 			switch offloaded {
 			case true:
 				grouping = true
+
+				if isAsyncVGRClassPeerGlobal(cls[0], cl, grID) {
+					global = true
+				}
 			case false:
 				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 				grouping = rID != "" && grID != ""
@@ -392,6 +413,7 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 				groupReplicationID: grID,
 				grouping:           grouping,
 				offloaded:          offloaded,
+				global:             global,
 			})
 
 			break
