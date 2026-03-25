@@ -191,10 +191,11 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 	}
 
 	if err := (&controllers.DRClusterConfigReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Log:       ctrl.Log.WithName("drcc"),
-		APIReader: mgr.GetAPIReader(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Log:               ctrl.Log.WithName("drcc"),
+		APIReader:         mgr.GetAPIReader(),
+		ObjectStoreGetter: controllers.S3ObjectStoreGetter(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRClusterConfig")
 		os.Exit(1)
