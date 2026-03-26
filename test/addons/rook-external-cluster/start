@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+import sys
+import subprocess
+import logging
+
+import drenv
+from drenv import cache
+from drenv import kubectl
+from drenv import commands
+
+# Update this when upgrading rook.
+VERSION = "v1.17.7"
+BASE_URL = (
+    f"https://raw.githubusercontent.com/rook/rook/refs/tags/{VERSION}/deploy/examples"
+)
+IMPORT_SCRIPT_URL = f"{BASE_URL}/import-external-cluster.sh"
+CREATE_EXTERNAL_CLUSTER_RESOURCES_URL = (
+    f"{BASE_URL}/create-external-cluster-resources.py"
+)
+CACHE_KEY = f"addons/rook-import-external-cluster-{VERSION}.sh"
+ROOK_CEPH_NAMESPACE = "rook-ceph"
+
+IMPORT_STORAGE_CLASS_NAMES = ["ceph-rbd", "ceph-rbd-topology", "cephfs"]
+
+STORAGE_CLASSES = [
+    {"name": "rook-ceph-block", "pool": "replicapool"},
+    {"name": "rook-ceph-block-2", "pool": "replicapool-2"},
+]
+
+
+def get_cluster_details_from_external_storage_cluster(external_storage_cluster):
+    wait_for_ceph_cluster_phase(external_storage_cluster, "Ready")
+    podname = get_ceph_toolbox_pod_name(external_storage_cluster)
+    cluster_details = get_rook_ceph_external_cluster_details(
+        podname, external_storage_cluster
+    )
+    return cluster_details
+
+
+def download_import_external_cluster_file(log=logging.debug):
+    path = cache.get_file(CACHE_KEY, IMPORT_SCRIPT_URL, log=log)
+    return path
+
+
+def rook_connect_to_external_storage_cluster(managed_cluster, external_storage_cluster):
+    cluster_details = get_cluster_details_from_external_storage_cluster(
+        external_storage_cluster
+    )
+    env = os.environ.copy()
+
+    env["NAMESPACE"] = ROOK_CEPH_NAMESPACE
+    env["KUBECONTEXT"] = managed_cluster
+
+    for line in cluster_details.split("\n"):
+        if line.startswith("export "):
+            _, rest = line.split("export ", 1)
+            k, v = rest.split("=", 1)
+            env[k] = v
+
+    f = download_import_external_cluster_file()
+
+    run_script_result = subprocess.run(
+        ["/bin/bash", f], capture_output=True, encoding="utf-8", env=env
+    )
+
+    if run_script_result.returncode != 0:
+        print("Failed to run script: " + run_script_result.stderr)
+        sys.exit(1)
+
+
+def delete_import_storage_classes(managed_cluster):
+    """Delete StorageClasses left by import-external-cluster."""
+    print(
+        f"Deleting imported StorageClasses on '{managed_cluster}': "
+        f"{', '.join(IMPORT_STORAGE_CLASS_NAMES)}"
+    )
+    for sc_name in IMPORT_STORAGE_CLASS_NAMES:
+        kubectl.delete(
+            "storageclass", sc_name, "--ignore-not-found", context=managed_cluster
+        )
+
+
+def create_storage_classes(managed_cluster, external_storage_cluster):
+    print(
+        f"Creating StorageClasses on '{managed_cluster}', "
+        f"with storageid matching that of StorageClasses on cluster "
+        f"'{external_storage_cluster}'"
+    )
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(script_dir, "..", "rook-pool", "storage-class.yaml")
+    template = drenv.template(template_path)
+    for sc in STORAGE_CLASSES:
+        yaml = template.substitute(
+            cluster=external_storage_cluster,
+            name=sc["name"],
+            pool=sc["pool"],
+        )
+        kubectl.apply("--filename=-", input=yaml, context=managed_cluster)
+
+
+def create_network_fence_classes(managed_cluster, external_storage_cluster):
+    print(
+        f"Creating NetworkFenceClasses on '{managed_cluster}', "
+        f"with storageid matching StorageClasses on cluster "
+        f"'{external_storage_cluster}'"
+    )
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    template_path = os.path.join(script_dir, "networkfenceclass.yaml")
+    template = drenv.template(template_path)
+    for sc in STORAGE_CLASSES:
+        yaml = template.substitute(
+            cluster=external_storage_cluster,
+            name=sc["name"],
+        )
+        kubectl.apply("--filename=-", input=yaml, context=managed_cluster)
+
+
+def get_ceph_toolbox_pod_name(cluster):
+    return kubectl.get(
+        "pod",
+        "-l app=rook-ceph-tools",
+        "--output=jsonpath={.items[0].metadata.name}",
+        f"--namespace={ROOK_CEPH_NAMESPACE}",
+        context=cluster,
+    )
+
+
+def get_rook_ceph_external_cluster_details(podname, cluster):
+    try:
+        kubectl.exec(
+            podname,
+            f"--namespace={ROOK_CEPH_NAMESPACE}",
+            "--",
+            "curl",
+            "-o",
+            "/tmp/create-external-cluster-resources.py",
+            CREATE_EXTERNAL_CLUSTER_RESOURCES_URL,
+            context=cluster,
+        )
+    except commands.Error as e:
+        print("kubectl.exec failed:", e)
+        raise
+
+    try:
+        out = kubectl.exec(
+            podname,
+            f"--namespace={ROOK_CEPH_NAMESPACE}",
+            "--",
+            "python3",
+            "/tmp/create-external-cluster-resources.py",
+            "--format",
+            "bash",
+            "--rbd-data-pool-name",
+            "replicapool",
+            "--skip-monitoring-endpoint",
+            context=cluster,
+        )
+    except commands.Error as e:
+        print("kubectl.exec failed:", e)
+        raise
+
+    return out
+
+
+def wait_for_ceph_cluster_phase(cluster, phase):
+    print("Waiting until rook ceph external cluster is connected")
+    kubectl.wait(
+        "cephcluster/my-cluster",
+        "--for=create",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    kubectl.wait(
+        "cephcluster/my-cluster",
+        f"--for=jsonpath={{.status.phase}}={phase}",
+        "--namespace=rook-ceph",
+        "--timeout=300s",
+        context=cluster,
+    )
+
+
+def deploy(cluster, external_storage_cluster):
+    print("Deploying rook ceph cluster in external mode")
+    with drenv.kustomization(
+        "kustomization.yaml",
+        base_url=BASE_URL,
+    ) as kustomization:
+        kubectl.apply("--kustomize", kustomization, context=cluster)
+
+    rook_connect_to_external_storage_cluster(cluster, external_storage_cluster)
+    delete_import_storage_classes(cluster)
+    create_storage_classes(cluster, external_storage_cluster)
+    create_network_fence_classes(cluster, external_storage_cluster)
+
+
+def wait(cluster):
+    print("Waiting until rook ceph external cluster is connected")
+    wait_for_ceph_cluster_phase(cluster, "Connected")
+
+
+if len(sys.argv) != 3:
+    print(f"Usage: {sys.argv[0]} cluster external_storage_cluster")
+    sys.exit(1)
+
+os.chdir(os.path.dirname(__file__))
+cluster = sys.argv[1]
+external_storage_cluster = sys.argv[2]
+
+# Deploy rook ceph cluster in external mode
+deploy(cluster, external_storage_cluster)
+wait(cluster)
