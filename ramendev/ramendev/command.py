@@ -9,9 +9,23 @@ from drenv import ramen
 
 RAMEN_NAMESPACE = "ramen-system"
 DRPOLICY_INTERVALS = ["1m", "5m"]
+DR_POLICY_PREFIX = "dr-policy-"
 SOURCE_DIR = "."
 
 log = logging.getLogger("ramendev")
+
+
+def dr_policy_template(topology):
+    """
+    List of dicts passed to dr-policy.yaml template.substitute (with cluster1/cluster2 added by callers).
+    Regional entries include interval from DRPOLICY_INTERVALS — same values used for policy_name.
+    """
+    if topology == "metro-dr":
+        return [{"policy_name": f"{DR_POLICY_PREFIX}{topology}"}]
+    return [
+        {"policy_name": f"{DR_POLICY_PREFIX}{interval}", "interval": interval}
+        for interval in DRPOLICY_INTERVALS
+    ]
 
 
 def resource(name):
