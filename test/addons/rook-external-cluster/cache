@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import os
+from drenv import cache
+
+# Keep this VERSION in sync with test/addons/rook-external-cluster/start when upgrading Rook.
+VERSION = "v1.17.7"
+BASE_URL = f"https://raw.githubusercontent.com/rook/rook/refs/tags/{VERSION}/deploy/examples"
+
+os.chdir(os.path.dirname(__file__))
+cache.refresh_file(
+    f"addons/rook-import-external-cluster-{VERSION}.sh",
+    f"{BASE_URL}/import-external-cluster.sh",
+)
