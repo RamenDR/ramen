@@ -10,7 +10,7 @@ import sys
 from drenv import mc
 
 # Sync with start.
-BUCKET = "bucket"
+BUCKET_PREFIX = "bucket"
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
@@ -18,11 +18,12 @@ if len(sys.argv) != 2:
 
 os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
+bucket = f"{BUCKET_PREFIX}-{cluster}"
 
 with open("minio.yaml", "rb") as f:
     c1 = hashlib.sha256(f.read()).hexdigest()
 
-target = f"{cluster}/{BUCKET}/drenv/addons/minio/test"
+target = f"{cluster}/{bucket}/drenv/addons/minio/test"
 
 print(f"Copying minio.yaml to {target}")
 mc.cp("minio.yaml", target)
