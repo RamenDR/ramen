@@ -44,14 +44,14 @@ data:
     ramenOpsNamespace: ramen-ops
     s3StoreProfiles:
     - s3ProfileName: minio-on-$cluster1
-      s3Bucket: bucket
+      s3Bucket: bucket-$cluster1
       s3CompatibleEndpoint: $minio_url_cluster1
       s3Region: us-west-1
       s3SecretRef:
         name: ramen-s3-secret-$cluster1
         namespace: ramen-system
     - s3ProfileName: minio-on-$cluster2
-      s3Bucket: bucket
+      s3Bucket: bucket-$cluster2
       s3CompatibleEndpoint: $minio_url_cluster2
       s3Region: us-east-1
       s3SecretRef:
