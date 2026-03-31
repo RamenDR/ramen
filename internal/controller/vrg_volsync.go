@@ -278,7 +278,9 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	return v.instance.Spec.RunFinalSync && !finalSyncComplete
 }
 
-func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) (*ramendrv1alpha1.ProtectedPVC, bool, bool) {
+func (v *VRGInstance) buildProtectedPVCForPVC(
+	pvc corev1.PersistentVolumeClaim,
+) (*ramendrv1alpha1.ProtectedPVC, bool, bool) {
 	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
 		Name:               pvc.Name,
 		Namespace:          pvc.Namespace,
