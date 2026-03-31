@@ -157,9 +157,13 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 ) (requeue bool) {
 	var rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec
 
-	protectedPVC, requeue := v.buildProtectedPVCForPVC(pvc)
+	protectedPVC, requeue, skip := v.buildProtectedPVCForPVC(pvc)
 	if requeue {
 		return true
+	}
+
+	if skip {
+		return false
 	}
 
 	if util.IsSubmarinerEnabled(v.instance.GetAnnotations()) {
@@ -274,7 +278,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	return v.instance.Spec.RunFinalSync && !finalSyncComplete
 }
 
-func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) (*ramendrv1alpha1.ProtectedPVC, bool) {
+func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) (*ramendrv1alpha1.ProtectedPVC, bool, bool) {
 	newProtectedPVC := &ramendrv1alpha1.ProtectedPVC{
 		Name:               pvc.Name,
 		Namespace:          pvc.Namespace,
@@ -288,7 +292,7 @@ func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) 
 	}
 
 	if v.pvcUnprotectVolSyncIfDeleted(pvc, v.log) {
-		return nil, false
+		return nil, false, true
 	}
 
 	err := util.NewResourceUpdater(&pvc).
@@ -299,7 +303,7 @@ func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) 
 	if err != nil {
 		v.log.Info(fmt.Sprintf("Unable to add finalizer for PVC. We'll retry later. %v", err))
 
-		return nil, true // requeue
+		return nil, true, false // requeue
 	}
 
 	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
@@ -311,7 +315,7 @@ func (v *VRGInstance) buildProtectedPVCForPVC(pvc corev1.PersistentVolumeClaim) 
 		newProtectedPVC.DeepCopyInto(protectedPVC)
 	}
 
-	return protectedPVC, false
+	return protectedPVC, false, false
 }
 
 // getRSSpecForPVC searches the VRG spec for a VolSyncReplicationSourceSpec matching the given PVC.
