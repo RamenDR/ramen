@@ -24,6 +24,7 @@ const (
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
 	CGEnabled                = "unsupported_consistency_grouping_enabled"
+	GlobalActionStatus       = "global_action_consensus_status"
 	// Added for drpc progression state
 	DRProgressionState = "progression_state"
 )
@@ -53,6 +54,10 @@ type WorkloadProtectionMetrics struct {
 }
 type CGEnabledMetrics struct {
 	CGEnabled prometheus.Gauge
+}
+
+type GlobalActionMetrics struct {
+	GlobalActionStatus prometheus.Gauge
 }
 
 type InvalidCIDRsDetectedMetrics struct {
@@ -112,6 +117,12 @@ var (
 	}
 
 	cgEnabledMetricLabels = []string{
+		ObjType,      // Name of the type of the resource [drpc]
+		ObjName,      // Name of the resoure [drpc-name]
+		ObjNamespace, // DRPC namespace
+	}
+
+	globalActionLabels = []string{
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
@@ -183,6 +194,15 @@ var (
 			Help:      "Unsupported consistency grouping enabled status",
 		},
 		cgEnabledMetricLabels,
+	)
+
+	globalAction = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      GlobalActionStatus,
+			Namespace: metricNamespace,
+			Help:      "Status regarding global action consensus",
+		},
+		globalActionLabels,
 	)
 
 	invalidCIDRsDetected = prometheus.NewGaugeVec(
@@ -318,6 +338,24 @@ func DeleteCGEnabledMetric(labels prometheus.Labels) bool {
 	return cgEnabled.Delete(labels)
 }
 
+func GlobalActionLabels(drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:      "DRPlacementControl",
+		ObjName:      drpc.Name,
+		ObjNamespace: drpc.Namespace,
+	}
+}
+
+func NewGlobalActionMetric(labels prometheus.Labels) GlobalActionMetrics {
+	return GlobalActionMetrics{
+		GlobalActionStatus: globalAction.With(labels),
+	}
+}
+
+func DeleteGlobalActionMetric(labels prometheus.Labels) bool {
+	return globalAction.Delete(labels)
+}
+
 // InvalidCIDRsDetected Metric reports if CIDRs configured are valid for fencing
 func InvalidCIDRsDetectedMetricLabels(drc *rmn.DRCluster) prometheus.Labels {
 	return prometheus.Labels{
@@ -364,6 +402,7 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
 	metrics.Registry.MustRegister(cgEnabled)
+	metrics.Registry.MustRegister(globalAction)
 	metrics.Registry.MustRegister(invalidCIDRsDetected)
 	metrics.Registry.MustRegister(drpcProgressionState)
 }
