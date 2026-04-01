@@ -45,9 +45,6 @@ const (
 	DefaultVolSyncCopyMethod                          = "Snapshot"
 )
 
-// FIXME
-const NoS3StoreAvailable = "NoS3"
-
 var ControllerType ramendrv1alpha1.ControllerType
 
 var cachedRamenConfigFileName string
