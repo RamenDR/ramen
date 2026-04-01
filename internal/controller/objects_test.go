@@ -53,6 +53,7 @@ func objectOrItsFinalizerAbsentVerify(namespacedName types.NamespacedName, objec
 	Eventually(func() []string {
 		if err := objectGet(namespacedName, object); err != nil {
 			Expect(err).To(objectNotFoundErrorMatch(groupResource, namespacedName.Name), format.Object(object, 0))
+
 			objectAbsent = true
 
 			return nil

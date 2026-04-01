@@ -16,11 +16,15 @@ import (
 )
 
 var _ = Describe("Deploy VolSync via ManagedClusterAddOn to managed clusters", func() {
-	var testManagedClusterNamespace1 *corev1.Namespace
-	var testManagedClusterName1 string
+	var (
+		testManagedClusterNamespace1 *corev1.Namespace
+		testManagedClusterName1      string
+	)
 
-	var testManagedClusterNamespace2 *corev1.Namespace
-	var testManagedClusterName2 string
+	var (
+		testManagedClusterNamespace2 *corev1.Namespace
+		testManagedClusterName2      string
+	)
 
 	BeforeEach(func() {
 		// Create namespaces for test - will be for the "managedclusters"
@@ -38,8 +42,10 @@ var _ = Describe("Deploy VolSync via ManagedClusterAddOn to managed clusters", f
 	})
 
 	Context("When calling DeployVolSyncToClusters", func() {
-		var cluster1ManagedClusterAddOn *unstructured.Unstructured
-		var cluster2ManagedClusterAddOn *unstructured.Unstructured
+		var (
+			cluster1ManagedClusterAddOn *unstructured.Unstructured
+			cluster2ManagedClusterAddOn *unstructured.Unstructured
+		)
 
 		BeforeEach(func() {
 			Expect(volsync.DeployVolSyncToCluster(ctx, k8sClient, testManagedClusterName1, logger)).To(Succeed())

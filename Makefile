@@ -36,12 +36,19 @@ IMAGE_REGISTRY ?= quay.io
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
-PLATFORM ?= k8s
+DISTRO ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
 RAMEN_OPS_NAMESPACE ?= ramen-ops
 AUTO_CONFIGURE_DR_CLUSTER ?= true
 VELERO_NAMESPACE ?= velero
+
+# PLATFORM sets the target platform for the container image. Defaults to the
+# host architecture. To build for a different architecture (e.g. building an
+# amd64 image on an arm64 Mac), use:
+#   make docker-build PLATFORM=amd64
+# Non-native builds may use emulation and be much slower.
+PLATFORM ?= $(shell go env GOARCH)
 
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
@@ -241,7 +248,7 @@ run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 	go run ./cmd/main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: ## Build docker image with the manager.
-	$(DOCKERCMD) build -t ${IMG} .
+	$(DOCKERCMD) build --platform linux/$(PLATFORM) -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
 	$(DOCKERCMD) push ${IMG}
@@ -268,10 +275,10 @@ hub-config: kustomize
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-hub: manifests kustomize hub-config ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl apply -f -
 
 undeploy-hub: kustomize ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl delete -f - --ignore-not-found
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl delete -f - --ignore-not-found
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl apply -f -

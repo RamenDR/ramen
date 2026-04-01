@@ -27,10 +27,12 @@ var _ = Describe("Secret_propagator", func() {
 	genericCodecs := serializer.NewCodecFactory(scheme.Scheme)
 	genericCodec := genericCodecs.UniversalDeserializer()
 
-	var testNamespace *corev1.Namespace
-	var testLongNamespaceName *corev1.Namespace
-	var owner metav1.Object
-	var ownerWithLongNameNamespace metav1.Object
+	var (
+		testNamespace              *corev1.Namespace
+		testLongNamespaceName      *corev1.Namespace
+		owner                      metav1.Object
+		ownerWithLongNameNamespace metav1.Object
+	)
 
 	BeforeEach(func() {
 		// Create namespace for test
@@ -107,9 +109,11 @@ var _ = Describe("Secret_propagator", func() {
 				destSecName := "my-secret-on-mgd"
 				destSecNamespace := "managed-cluster-ns-1"
 
-				var createdPolicy *policyv1.Policy
-				var createdPlacementRule *plrulev1.PlacementRule
-				var createdPlacementBinding *policyv1.PlacementBinding
+				var (
+					createdPolicy           *policyv1.Policy
+					createdPlacementRule    *plrulev1.PlacementRule
+					createdPlacementBinding *policyv1.PlacementBinding
+				)
 
 				BeforeEach(func() {
 					policyRuleAndBindingName := owner.GetName() + "-vs-secret"
@@ -124,6 +128,7 @@ var _ = Describe("Secret_propagator", func() {
 
 						// Find the new policy, pl rule and pl binding
 						createdPolicy = &policyv1.Policy{}
+
 						err = k8sClient.Get(ctx, types.NamespacedName{
 							Name:      policyRuleAndBindingName,
 							Namespace: testNamespace.GetName(),
@@ -133,6 +138,7 @@ var _ = Describe("Secret_propagator", func() {
 						}
 
 						createdPlacementRule = &plrulev1.PlacementRule{}
+
 						err = k8sClient.Get(ctx, types.NamespacedName{
 							Name:      policyRuleAndBindingName,
 							Namespace: testNamespace.GetName(),
@@ -162,6 +168,7 @@ var _ = Describe("Secret_propagator", func() {
 					// Decode the embedded config policy and confirm it looks good
 					embeddedObj, _, err := genericCodec.Decode(policyTemplate.ObjectDefinition.Raw, nil, nil)
 					Expect(err).NotTo(HaveOccurred())
+
 					embeddedConfigPolicy, ok := embeddedObj.(*cfgpolicyv1.ConfigurationPolicy)
 					Expect(ok).To(BeTrue())
 
@@ -234,6 +241,7 @@ var _ = Describe("Secret_propagator", func() {
 
 							// Find the new policy, pl rule and pl binding
 							createdPolicy = &policyv1.Policy{}
+
 							err = k8sClient.Get(ctx, types.NamespacedName{
 								Name:      generatedPolicyName,
 								Namespace: ownerWithLongNameNamespace.GetNamespace(),
@@ -261,6 +269,7 @@ var _ = Describe("Secret_propagator", func() {
 
 							// Find the new pl rule to check if its been updated
 							updatedPlacementRule := &plrulev1.PlacementRule{}
+
 							err = k8sClient.Get(ctx, types.NamespacedName{
 								Name:      createdPlacementRule.GetName(),
 								Namespace: testNamespace.GetName(),

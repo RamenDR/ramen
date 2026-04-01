@@ -78,6 +78,7 @@ var _ = Describe("Secrets_Util", func() {
 
 		for _, cluster := range clusters {
 			found := false
+
 			for _, specCluster := range plRule.Spec.Clusters {
 				if specCluster.Name == cluster {
 					found = true
@@ -131,6 +132,7 @@ var _ = Describe("Secrets_Util", func() {
 			secret); err != nil {
 			return false
 		}
+
 		for _, finalizer := range secret.Finalizers {
 			if finalizer == util.SecretFinalizer(format) {
 				return true
@@ -150,6 +152,7 @@ var _ = Describe("Secrets_Util", func() {
 			secret); err != nil {
 			return false
 		}
+
 		for _, finalizer := range secret.Finalizers {
 			if finalizer == util.SecretFinalizer(format) {
 				return false

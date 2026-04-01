@@ -30,21 +30,26 @@ import (
 
 var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	const recipeErrorMessagePrefix = "Failed to get recipe"
+
 	extraVrgNamespacesFeatureEnabledSetAndDeferRestore := func(enable bool) {
 		enabled := ramenConfig.MultiNamespace.FeatureEnabled
 		ramenConfig.MultiNamespace.FeatureEnabled = enable
+
 		configMapUpdate()
 		DeferCleanup(func() {
 			ramenConfig.MultiNamespace.FeatureEnabled = enabled
+
 			configMapUpdate()
 		})
 	}
+
 	const (
 		scName          = "a"
 		vrcName         = "b"
 		provisionerName = "x"
 		vrInterval      = "0m"
 	)
+
 	var (
 		storageIDs     = []string{"sid-1"}
 		replicationIDs = []string{"repl-1", "repl-2", "repl-3"}
@@ -52,9 +57,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 
 	var (
 		scLabels = func() map[string]string {
-			return map[string]string{
-				controllers.StorageIDLabel: storageIDs[0],
-			}
+			return map[string]string{controllers.StorageIDLabel: storageIDs[0]}
 		}
 		vrcLabels = func() map[string]string {
 			return map[string]string{
@@ -63,14 +66,8 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			}
 		}
 		peerClass = func(replicationID, storageClassName string, sIDs []string) ramen.PeerClass {
-			return ramen.PeerClass{
-				ReplicationID:    replicationID,
-				StorageID:        sIDs,
-				StorageClassName: storageClassName,
-			}
+			return ramen.PeerClass{ReplicationID: replicationID, StorageID: sIDs, StorageClassName: storageClassName}
 		}
-	)
-	var (
 		r                   *recipe.Recipe
 		vrg                 *ramen.VolumeReplicationGroup
 		vrgDataReadyPointer *metav1.Condition
@@ -315,18 +312,22 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 	}
 
 	const nsCount = 3
+
 	var (
 		nsNames      [nsCount]string
 		pvcs         [nsCount]*corev1.PersistentVolumeClaim
 		nsNamesSlice []string
 		pvcsSlice    []*corev1.PersistentVolumeClaim
 	)
+
 	nsSlices := func(low, high uint) {
 		nsNamesSlice, pvcsSlice = nsNames[low:high], pvcs[low:high]
 	}
+
 	BeforeEach(OncePerOrdered, func() {
 		scCreateAndDeferDelete()
 		vrcCreateAndDeferDelete()
+
 		for i := range nsNames {
 			ns := nsCreate()
 			DeferCleanup(nsDelete, ns)
@@ -334,14 +335,18 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			pvcs[i] = pvcCreate(ns.Name)
 			DeferCleanup(pvcDelete, pvcs[i])
 		}
+
 		recipeDefine(nsNames[0])
 		vrgDefine(ramenNamespace)
 	})
+
 	var err error
+
 	JustBeforeEach(OncePerOrdered, func() {
 		recipeRecoverWorkflowDefine(allGroupsAllHooksWorkflow())
 		recipeCreate()
 		DeferCleanup(recipeDelete)
+
 		err = vrgCreate()
 	})
 
@@ -424,14 +429,19 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 			BeforeEach(OncePerOrdered, func() {
 				vrgRecipeRefDefine(r.Name)
 			})
-			var pvcSelector util.PvcSelector
-			var err error
+
+			var (
+				pvcSelector util.PvcSelector
+				err         error
+			)
+
 			JustBeforeEach(func() {
 				pvcSelector, err = vrgPvcSelectorGet()
 			})
 			Context("in an administrator namespace specifies only other namespaces", func() {
 				BeforeEach(func() {
 					vrg.Namespace = ramenNamespace
+
 					nsSlices(1, nsCount)
 				})
 				Context("statically", func() {
@@ -451,11 +461,14 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				})
 				Context("parametrically", func() {
 					var recipeExpanded *recipe.Recipe
+
 					BeforeEach(func() {
-						const nssParameterName = "nss"
-						const nssParameterRef = "$" + nssParameterName
-						const ns0ParameterName = "ns0"
-						const ns0ParameterRef = "$" + ns0ParameterName
+						const (
+							nssParameterName = "nss"
+							nssParameterRef  = "$" + nssParameterName
+							ns0ParameterName = "ns0"
+							ns0ParameterRef  = "$" + ns0ParameterName
+						)
 
 						parameters := map[string][]string{
 							nssParameterName: nsNamesSlice,
@@ -500,6 +513,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				Context("whose recipe references no namespaces", func() {
 					BeforeEach(func() {
 						nsSlices(1, 2)
+
 						vrg.Namespace = nsNamesSlice[0]
 						recipeGroupsDefine(resources(vrg.Namespace))
 					})
@@ -514,6 +528,7 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				Context("whose recipe references only the same namespace", func() {
 					BeforeEach(func() {
 						nsSlices(1, 2)
+
 						vrg.Namespace = nsNamesSlice[0]
 						recipeVolumesDefine(volumes(vrg.Namespace))
 						recipeGroupsDefine(resources(vrg.Namespace))
@@ -529,7 +544,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				Context("whose recipe references", Ordered, func() {
 					BeforeAll(func() {
 						nsSlices(1, nsCount)
+
 						vrg.Namespace = nsNamesSlice[0]
+
 						skipIfAdmissionValidationDenies()
 					})
 					Context("the same namespace and another namespace initially", func() {
@@ -577,7 +594,9 @@ var _ = Describe("VolumeReplicationGroupRecipe", func() {
 				Context("whose recipe references", func() {
 					BeforeEach(func() {
 						nsSlices(1, nsCount)
+
 						vrg.Namespace = nsNamesSlice[0]
+
 						skipIfAdmissionValidationDenies()
 					})
 					Context("recovery hooks in another namespace", func() {

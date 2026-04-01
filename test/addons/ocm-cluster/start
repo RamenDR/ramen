@@ -8,7 +8,6 @@ import os
 import sys
 import time
 
-import drenv
 from drenv import cluster
 from drenv import clusteradm
 from drenv import kubectl
@@ -69,7 +68,18 @@ def wait(cluster):
     print("Waiting until deployments are rolled out")
     for addon in ADDONS:
         deployment = f"deploy/{addon['deployment']}"
-        drenv.wait_for(deployment, namespace=ADDONS_NAMESPACE, profile=cluster)
+        print(
+            f"Waiting until deployment '{ADDONS_NAMESPACE}/{addon['deployment']}' exists"
+        )
+        kubectl.wait(
+            deployment,
+            "--for=create",
+            f"--namespace={ADDONS_NAMESPACE}",
+            context=cluster,
+        )
+        print(
+            f"Waiting until deployment '{ADDONS_NAMESPACE}/{addon['deployment']}' is rolled out"
+        )
         kubectl.rollout(
             "status",
             deployment,
@@ -85,12 +95,19 @@ def wait_for_hub(hub):
 
     for namespace, deployments in HUB_DEPLOYMENTS.items():
         print(f"Waiting until namespace '{namespace}' is created on cluster '{hub}'")
-        drenv.wait_for(f"namespace/{namespace}", profile=hub)
+        kubectl.wait(f"namespace/{namespace}", "--for=create", context=hub)
 
         for name in deployments:
             deployment = f"deploy/{name}"
-            print(f"Waiting until deplyment '{name}' is rolled out on cluster '{hub}'")
-            drenv.wait_for(deployment, namespace=namespace, profile=hub)
+            print(
+                f"Waiting until deployment '{namespace}/{name}' exists on cluster '{hub}'"
+            )
+            kubectl.wait(
+                deployment, "--for=create", f"--namespace={namespace}", context=hub
+            )
+            print(
+                f"Waiting until deployment '{namespace}/{name}' is rolled out on cluster '{hub}'"
+            )
             kubectl.rollout(
                 "status",
                 deployment,
@@ -136,10 +153,11 @@ def wait_for_managed_cluster(cluster, hub):
     start = time.monotonic()
 
     print(f"Waiting until managed cluster '{cluster}' is created on the hub")
-    drenv.wait_for(
+    kubectl.wait(
         f"managedcluster/{cluster}",
+        "--for=create",
         timeout=180,
-        profile=hub,
+        context=hub,
     )
 
     print(f"Waiting until managed cluster '{cluster}' hubAcceptsClient is true")

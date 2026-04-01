@@ -68,12 +68,17 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		}
 
 		var err error
+
 		done := make(chan interface{})
+
 		go func() {
 			defer GinkgoRecover()
+
 			cfg, err = testEnv.Start()
+
 			close(done)
 		}()
+
 		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg).NotTo(BeNil())
@@ -173,6 +178,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())
+
 		go func() {
 			err = k8sManager.Start(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -291,6 +297,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 	AfterAll(func() {
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
+
 		err := testEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})

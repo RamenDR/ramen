@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import concurrent.futures
 import json
 import os
 import sys
@@ -156,5 +157,10 @@ os.chdir(os.path.dirname(__file__))
 cluster1 = sys.argv[1]
 cluster2 = sys.argv[2]
 
-test_volume_replication(cluster1, cluster2)
-test_volume_replication(cluster2, cluster1)
+with concurrent.futures.ThreadPoolExecutor() as e:
+    tests = [
+        e.submit(test_volume_replication, cluster1, cluster2),
+        e.submit(test_volume_replication, cluster2, cluster1),
+    ]
+    for t in concurrent.futures.as_completed(tests):
+        t.result()

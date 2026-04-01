@@ -99,10 +99,16 @@ def wait_for_cluster(cluster):
 def wait_for_deployments(cluster, names, namespace):
     for name in names:
         deployment = f"deploy/{name}"
-        print(f"Waiting until deployment '{name}' exists in cluster '{cluster}'")
-        drenv.wait_for(deployment, namespace=namespace, profile=cluster)
+        print(
+            f"Waiting until deployment '{namespace}/{name}' exists in cluster '{cluster}'"
+        )
+        kubectl.wait(
+            deployment, "--for=create", f"--namespace={namespace}", context=cluster
+        )
 
-        print(f"Waiting until deployment '{name}' is rolled out in cluster '{cluster}'")
+        print(
+            f"Waiting until deployment '{namespace}/{name}' is rolled out in cluster '{cluster}'"
+        )
         kubectl.rollout(
             "status",
             deployment,

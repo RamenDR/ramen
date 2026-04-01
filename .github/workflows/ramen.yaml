@@ -22,7 +22,6 @@ env:
   IMAGE_NAME: ${{ vars.IMAGE_NAME || 'ramen' }}
   OPERATOR_SUGGESTED_NAMESPACE: ${{ vars.OPERATOR_SUGGESTED_NAMESPACE || 'ramen-system' }}
   # Constants
-  GO_VERSION: "1.24"
   IMAGE_REGISTRY: "quay.io"
   IMAGE_TAG: "ci"
   DOCKERCMD: "podman"
@@ -35,12 +34,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
 
       - name: Install prereqs
         run: |
@@ -76,10 +75,10 @@ jobs:
         # see https://github.com/golangci/golangci-lint/issues/828
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           # when the files to be extracted are already present,
           # tar extraction in Golangci Lint fails with the "File exists"
@@ -87,13 +86,13 @@ jobs:
           # cache in setup-go, on disabling the cache we are no more seeing
           # such error. Cache is to be enabled once the fix is available for
           # this issue.
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: false
 
       - name: GolangCI Lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.2.2
+          version: v2.9.0
           working-directory: ${{ matrix.directory }}
 
   unit-test:
@@ -101,12 +100,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
 
       - name: Run unit tests
         run: make test
@@ -116,12 +115,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
 
       - name: Run unit tests
         working-directory: e2e
@@ -132,12 +131,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
 
       - name: Build image
         run: make docker-build
@@ -146,7 +145,7 @@ jobs:
         run: ${{env.DOCKERCMD}} save -o /tmp/ramen-operator.tar ${IMAGE_TAG_BASE}-operator:${IMAGE_TAG}
 
       - name: Save image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ramen-operator
           path: /tmp/ramen-operator.tar
@@ -159,11 +158,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kubernetes_version: ["1.29.1"]
+        kubernetes_version: ["1.35.1"]
         include:
-          - kubernetes_version: "1.29.1"
-            kind_image: "1.29.1@sha256:a0cc28af37cf39b019e2b448c54d1a3f789de32536cb5a5db61a49623e527144"
-            kind_version: "v0.21.0"
+          - kubernetes_version: "1.35.1"
+            kind_image: "1.35.1@sha256:05d7bcdefbda08b4e038f644c4df690cdac3fba8b06f8289f30e10026720a1ab"
+            kind_version: "v0.31.0"
     env:
       KUBERNETES_VERSION: ${{ matrix.kubernetes_version }}
       KIND_VERSION: ${{ matrix.kind_version }}
@@ -171,23 +170,26 @@ jobs:
       KIND_CLUSTER_NAME: "ci"
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
 
       - name: Install kubectl
         run: |
-          curl -LO "https://storage.googleapis.com/kubernetes-release/release/v${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
-          sudo install ./kubectl /usr/local/bin/
+          set -e -o pipefail
+          curl --fail --silent --show-error --location --remote-name \
+              "https://dl.k8s.io/release/v${KUBERNETES_VERSION}/bin/linux/amd64/kubectl"
+          sudo install kubectl /usr/local/bin/
+          kubectl version --client --output=yaml
 
       - name: Create Kind kubernetes cluster
         run: ./hack/setup-kind-cluster.sh
 
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ramen-operator
           path: /tmp
@@ -235,7 +237,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ramen-operator
           path: /tmp
@@ -245,7 +247,7 @@ jobs:
           ${{env.DOCKERCMD}} load -i /tmp/ramen-operator.tar
 
       - name: Login to Quay
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -278,12 +280,12 @@ jobs:
 
       # TODO: We do not need to build bundles and catalogs each time, fix once we reach alpha
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
 
       - name: Build and push bundle images to Quay
         run: |

@@ -25,13 +25,13 @@ jobs:
     if: github.repository == 'RamenDR/ramen'
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Create virtual environment
         run: hack/make-venv .venv
 
       - name: Refresh cache
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 2
           retry_wait_seconds: 60
