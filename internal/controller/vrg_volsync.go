@@ -163,6 +163,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	if skip {
+		v.log.Info("Skipping PVC for VolSync",
+			"PVC", pvc.Name,
+			"namespace", pvc.Namespace,
+			"reason", "not valid for unprotection",
+		)
+
 		return false
 	}
 
