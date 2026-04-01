@@ -19,7 +19,7 @@ var _ = Describe("DRCluster-CEL", func() {
 	s3Profiles := []string{"s3profile1", "s3profile2"}
 	drclusters := []ramen.DRCluster{}
 	populateDRClusters := func() {
-		drclusters = nil
+		drclusters = make([]ramen.DRCluster, 0, 2)
 		drclusters = append(drclusters,
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{

@@ -106,16 +106,16 @@ def wait_for_secret_propagation(hub, clusters, args):
     command.info("Waiting until s3 secrets are propagated to managed clusters")
     for cluster in clusters:
         policy = f"{args.ramen_namespace}.ramen-s3-secret-{cluster}"
-        command.debug("Waiting until policy '%s' reports status", policy)
-        drenv.wait_for(
+        command.debug("Waiting until policy '%s/%s' exists", cluster, policy)
+        kubectl.wait(
             f"policy/{policy}",
-            output="jsonpath={.status}",
-            namespace=cluster,
+            "--for=create",
+            f"--namespace={cluster}",
             timeout=60,
-            profile=hub,
+            context=hub,
             log=command.debug,
         )
-        command.debug("Waiting until policy %s is compliant", policy)
+        command.debug("Waiting until policy '%s/%s' is compliant", cluster, policy)
         kubectl.wait(
             f"policy/{policy}",
             "--for=jsonpath={.status.compliant}=Compliant",
@@ -127,13 +127,13 @@ def wait_for_secret_propagation(hub, clusters, args):
 
 
 def wait_for_dr_clusters(hub, clusters, args):
-    command.info("Waiting until DRClusters report phase")
+    command.info("Waiting until DRClusters exist")
     for name in clusters:
-        drenv.wait_for(
+        kubectl.wait(
             f"drcluster/{name}",
-            output="jsonpath={.status.phase}",
+            "--for=create",
             timeout=180,
-            profile=hub,
+            context=hub,
             log=command.debug,
         )
 

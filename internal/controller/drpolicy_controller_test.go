@@ -102,6 +102,7 @@ var _ = Describe("DRPolicyController", func() {
 			if _, ok := plRuleNames[plRule.Name]; !ok {
 				continue
 			}
+
 			foundPlRules[plRule.Name] = plRule
 		}
 
@@ -154,7 +155,7 @@ var _ = Describe("DRPolicyController", func() {
 	}
 	drClusters := []ramen.DRCluster{}
 	populateDRClusters := func() {
-		drClusters = nil
+		drClusters = make([]ramen.DRCluster, 0, 5)
 		drClusters = append(drClusters,
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "drp-cluster0"},
@@ -217,17 +218,24 @@ var _ = Describe("DRPolicyController", func() {
 			Spec:       ramen.DRPolicySpec{DRClusters: clusters[1:3], SchedulingInterval: `9999999d`},
 		},
 	}
+
 	var drpolicyObjectMetas [len(drpolicies)]metav1.ObjectMeta
+
 	func() {
 		for i := range drpolicies {
 			drpolicyObjectMetas[i] = drpolicies[i].ObjectMeta
 		}
 	}()
+
 	drpolicyObjectMetaReset := func(i uint) {
 		drpolicies[i].ObjectMeta = drpolicyObjectMetas[i]
 	}
-	var drpolicy *ramen.DRPolicy
-	var drpolicyNumber uint
+
+	var (
+		drpolicy       *ramen.DRPolicy
+		drpolicyNumber uint
+	)
+
 	Specify("initialize tests", func() {
 		populateDRClusters()
 		createManagedClusters()
@@ -322,6 +330,7 @@ var _ = Describe("DRPolicyController", func() {
 		It("should start as invalidated and transition to validated", func() {
 			drp := drpolicy.DeepCopy()
 			drp.Spec.DRClusters = clusters[3:5]
+
 			By("creating the DRPolicy first")
 			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
 			By("ensuring DRPolicy is not validated")
@@ -385,6 +394,7 @@ var _ = Describe("DRPolicyController", func() {
 			}
 
 			By("testing for conflicting DRPolicy")
+
 			err := controllers.HasConflictingDRPolicy(dp2, existingPolicies, drClusterIDsToNames)
 
 			By("verifying that conflict is detected")
@@ -442,6 +452,7 @@ var _ = Describe("DRPolicyController", func() {
 			}
 
 			By("testing for conflicting DRPolicy")
+
 			err := controllers.HasConflictingDRPolicy(dp2, existingPolicies, drClusterIDsToNames)
 
 			By("verifying that conflict is detected")
@@ -500,6 +511,7 @@ var _ = Describe("DRPolicyController", func() {
 			}
 
 			By("testing for non-conflicting DRPolicy")
+
 			err := controllers.HasConflictingDRPolicy(dp2, existingPolicies, drClusterIDsToNames)
 
 			By("verifying that no conflict is detected")

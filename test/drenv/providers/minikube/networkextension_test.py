@@ -58,6 +58,21 @@ def test_parse_disabled_and_inactive():
     assert extensions[1].team_id == "X9E956P446"
 
 
+def test_parse_terminated_waiting_to_uninstall():
+    out = _load_testdata("terminated-waiting-to-uninstall.stdout")
+    extensions = networkextension.parse_output(out)
+    assert len(extensions) == 2
+
+    assert extensions[0].enabled is True
+    assert extensions[0].active is True
+    assert extensions[0].team_id == "DE8Y96K9QP"
+
+    assert extensions[1].enabled is False
+    assert extensions[1].active is False
+    assert extensions[1].team_id == "X9E956P446"
+    assert extensions[1].state == "terminated waiting to uninstall on reboot"
+
+
 def test_parse_no_extesions():
     out = _load_testdata("no-extensions.stdout")
     assert networkextension.parse_output(out) == []

@@ -26,11 +26,15 @@ import (
 var rgsName = "rgs"
 
 var _ = Describe("Replicationgroupsource", func() {
-	var replicationGroupSourceMachine statemachine.ReplicationMachine
-	var fakeVolumeGroupSourceHandler *fakes.FakeVolumeGroupSourceHandler
+	var (
+		replicationGroupSourceMachine statemachine.ReplicationMachine
+		fakeVolumeGroupSourceHandler  *fakes.FakeVolumeGroupSourceHandler
+	)
+
 	BeforeEach(func() {
 		fakeVolumeGroupSourceHandler = &fakes.FakeVolumeGroupSourceHandler{}
 		fakeVolumeGroupSourceHandler.EnsureApplicationPVCsMountedReturns(true, nil)
+
 		metaTime := metav1.NewTime(time.Now())
 		rgs := &ramendrv1alpha1.ReplicationGroupSource{
 			ObjectMeta: metav1.ObjectMeta{
@@ -83,6 +87,7 @@ var _ = Describe("Replicationgroupsource", func() {
 		Context("pskSecret exist", func() {
 			It("Should be success", func() {
 				fakeVolumeGroupSourceHandler.CheckReplicationSourceForRestoredPVCsCompletedReturns(true, nil)
+
 				pskSecretName := volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName)
 				err := k8sClient.Create(
 					context.Background(),
@@ -99,6 +104,7 @@ var _ = Describe("Replicationgroupsource", func() {
 		Context("CleanVolumeGroupSnapshotReturns nil", func() {
 			It("Should be success", func() {
 				fakeVolumeGroupSourceHandler.CleanVolumeGroupSnapshotReturns(nil)
+
 				result, err := replicationGroupSourceMachine.Cleanup(context.Background())
 				Expect(err).To(BeNil())
 				Expect(result.Completed).To(BeTrue())
@@ -107,6 +113,7 @@ var _ = Describe("Replicationgroupsource", func() {
 		Context("CleanVolumeGroupSnapshotReturns error", func() {
 			It("Should be failed", func() {
 				fakeVolumeGroupSourceHandler.CleanVolumeGroupSnapshotReturns(errors.New("an error"))
+
 				_, err := replicationGroupSourceMachine.Cleanup(context.Background())
 				Expect(err).NotTo(BeNil())
 			})

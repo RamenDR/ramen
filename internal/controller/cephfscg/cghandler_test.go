@@ -247,6 +247,7 @@ var _ = Describe("Cghandler", func() {
 							Namespace: "default",
 						},
 					}
+
 					Eventually(func() error {
 						err := k8sClient.Create(Ctx, rgd)
 

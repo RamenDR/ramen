@@ -5,8 +5,8 @@
 
 set -e -o pipefail
 
-KIND_IMAGE="${KIND_IMAGE:-1.29.1@sha256:a0cc28af37cf39b019e2b448c54d1a3f789de32536cb5a5db61a49623e527144}"
-KIND_VERSION="${KIND_VERSION:-v0.21.0}"
+KIND_IMAGE="${KIND_IMAGE:-1.35.1@sha256:05d7bcdefbda08b4e038f644c4df690cdac3fba8b06f8289f30e10026720a1ab}"
+KIND_VERSION="${KIND_VERSION:-v0.31.0}"
 KIND_DIR="$(mktemp -d --tmpdir kind-XXXXXX)"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-"$(basename "${KIND_DIR}" | tr "[:upper:]" "[:lower:]")"}"
 rmdir "${KIND_DIR}"

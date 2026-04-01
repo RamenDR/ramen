@@ -33,16 +33,16 @@ templates:
           - name: rook-pool
           - name: rook-cephfs
       - addons:
+          - name: csi-addons
           - name: ocm-cluster
             args: ["$name", "hub"]
-          - name: recipe
-          - name: olm
       - addons:
           - name: odf-external-snapshotter
           - name: external-snapshotter
-          - name: csi-addons
           - name: minio
           - name: velero
+          - name: olm
+          - name: recipe
   - name: "hub-cluster"
     driver: "$vm"
     container_runtime: containerd

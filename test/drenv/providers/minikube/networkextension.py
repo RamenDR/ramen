@@ -80,6 +80,6 @@ def _parse_line(line):
 
 def _parse_bool(char):
     """
-    Return True for "*", False for " ", None for unknown.
+    Return True for "*", False for " " or "" (empty), None for unknown.
     """
-    return {"*": True, " ": False}.get(char)
+    return {"*": True, " ": False, "": False}.get(char)

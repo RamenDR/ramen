@@ -115,14 +115,25 @@ def setup_replication_service(cluster1, cluster2, variant):
     )
 
     print(
-        f"Waiting until service import is ready in namespace '{NAMESPACE}-{variant}' cluster '{cluster1}'"
+        f"Waiting until serviceimport '{NAMESPACE}-{variant}/{VOLSYNC_SERVICE}' exists in cluster '{cluster1}'"
     )
-    drenv.wait_for(
+    kubectl.wait(
         f"serviceimports/{VOLSYNC_SERVICE}",
-        output="jsonpath={.status.clusters}",
-        namespace=f"{NAMESPACE}-{variant}",
+        "--for=create",
+        f"--namespace={NAMESPACE}-{variant}",
         timeout=120,
-        profile=cluster1,
+        context=cluster1,
+    )
+
+    print(
+        f"Waiting until serviceimport '{NAMESPACE}-{variant}/{VOLSYNC_SERVICE}' has clusters in cluster '{cluster1}'"
+    )
+    kubectl.wait(
+        f"serviceimports/{VOLSYNC_SERVICE}",
+        "--for=jsonpath={.status.clusters}",
+        f"--namespace={NAMESPACE}-{variant}",
+        timeout=120,
+        context=cluster1,
     )
 
 
@@ -141,14 +152,14 @@ def run_replication(cluster, variant):
     )
 
     print(
-        f"Waiting until replication source reports sync status in namespace '{NAMESPACE}-{variant}' cluster '{cluster}'"
+        f"Waiting until replicationsource '{NAMESPACE}-{variant}/busybox-src' reports sync status in cluster '{cluster}'"
     )
-    drenv.wait_for(
+    kubectl.wait(
         "replicationsource/busybox-src",
-        output="jsonpath={.status.lastManualSync}",
-        namespace=f"{NAMESPACE}-{variant}",
+        "--for=jsonpath={.status.lastManualSync}",
+        f"--namespace={NAMESPACE}-{variant}",
         timeout=120,
-        profile=cluster,
+        context=cluster,
     )
 
     print(

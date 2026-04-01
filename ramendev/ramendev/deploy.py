@@ -41,7 +41,7 @@ def run(args):
         futures = []
 
         if env["hub"]:
-            f = executor.submit(deploy, args, env["hub"], "hub", platform="k8s")
+            f = executor.submit(deploy, args, env["hub"], "hub", distro="k8s")
             futures.append(f)
 
         for cluster in env["clusters"]:
@@ -65,9 +65,9 @@ def load_image(args):
         command.watch(*cmd, stderr=subprocess.STDOUT, cwd=work_dir)
 
 
-def deploy(args, cluster, deploy_type, platform="", timeout=120):
+def deploy(args, cluster, deploy_type, distro="", timeout=120):
     command.info("Deploying ramen operator in cluster '%s'", cluster)
-    overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", platform)
+    overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", distro)
     yaml = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")
     kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
 

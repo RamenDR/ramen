@@ -32,12 +32,21 @@ def log_blocklist(cluster):
 def fetch_secret_info(cluster):
     info = {}
 
-    print(f"Getting mirroring info site name for cluster '{cluster}'")
-    info["name"] = drenv.wait_for(
+    print(
+        f"Waiting until cephblockpool 'rook-ceph/{POOL_NAME}' has mirroring info site name"
+    )
+    kubectl.wait(
         f"cephblockpools.ceph.rook.io/{POOL_NAME}",
-        output="jsonpath={.status.mirroringInfo.site_name}",
-        namespace="rook-ceph",
-        profile=cluster,
+        "--for=jsonpath={.status.mirroringInfo.site_name}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    info["name"] = kubectl.get(
+        "cephblockpools.ceph.rook.io",
+        POOL_NAME,
+        "--output=jsonpath={.status.mirroringInfo.site_name}",
+        "--namespace=rook-ceph",
+        context=cluster,
     )
 
     print(f"Getting rbd mirror boostrap peer secret name for cluster '{cluster}'")
@@ -120,12 +129,17 @@ def configure_rbd_mirroring(cluster, peer_info):
 
 
 def wait_until_rbd_mirror_is_ready(cluster):
-    print(f"Waiting until rbd mirror is ready in cluster '{cluster}'")
-    drenv.wait_for(
+    print(
+        f"Waiting until cephrbdmirror 'rook-ceph/my-rbd-mirror' exists in cluster '{cluster}'"
+    )
+    kubectl.wait(
         "cephrbdmirror/my-rbd-mirror",
-        output="jsonpath={.status.phase}",
-        namespace="rook-ceph",
-        profile=cluster,
+        "--for=create",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    print(
+        f"Waiting until cephrbdmirror 'rook-ceph/my-rbd-mirror' is ready in cluster '{cluster}'"
     )
     kubectl.wait(
         "cephrbdmirror/my-rbd-mirror",

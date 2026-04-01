@@ -263,7 +263,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 
 	util.AddLabel(placementRule, util.CreatedByRamenLabel, "true")
 
-	clustersToApply := []plrulev1.GenericClusterReference{}
+	clustersToApply := make([]plrulev1.GenericClusterReference, 0, len(sp.DestClusters))
 	for _, clusterName := range sp.DestClusters {
 		clustersToApply = append(clustersToApply, plrulev1.GenericClusterReference{Name: clusterName})
 	}

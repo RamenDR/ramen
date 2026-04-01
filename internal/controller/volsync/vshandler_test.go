@@ -127,14 +127,17 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 
 				vscAFound := false
 				vscBFound := false
+
 				for _, vsc := range vsClasses {
 					if vsc.GetName() == volumeSnapshotClassA.GetName() {
 						vscAFound = true
 					}
+
 					if vsc.GetName() == volumeSnapshotClassB.GetName() {
 						vscBFound = true
 					}
 				}
+
 				Expect(vscAFound).To(BeTrue())
 				Expect(vscBFound).To(BeTrue())
 			})
@@ -181,11 +184,13 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 	})
 
 	Describe("ModifyRSSpecForCephFS", func() {
-		var vsHandler *volsync.VSHandler
-		var testNamespace *corev1.Namespace
-		var testSourcePVC *corev1.PersistentVolumeClaim
-		var testRsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec
-		var testRsSpecOrig ramendrv1alpha1.VolSyncReplicationSourceSpec
+		var (
+			vsHandler      *volsync.VSHandler
+			testNamespace  *corev1.Namespace
+			testSourcePVC  *corev1.PersistentVolumeClaim
+			testRsSpec     ramendrv1alpha1.VolSyncReplicationSourceSpec
+			testRsSpecOrig ramendrv1alpha1.VolSyncReplicationSourceSpec
+		)
 
 		capacity := resource.MustParse("1Gi")
 
@@ -253,6 +258,7 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 				storageClassForTest)).To(Succeed())
 
 			vsHandler.ModifyRSSpecForCephFS(&testRsSpec, storageClassForTest)
+
 			if storageClassForTest.Provisioner == testCephFSStorageDriverName {
 				Expect(testRsSpec.ProtectedPVC.AccessModes).To(Equal(
 					[]corev1.PersistentVolumeAccessMode{
@@ -291,9 +297,11 @@ var _ = Describe("VolSync Handler - Volume Replication Class tests", func() {
 })
 
 var _ = Describe("VolSync_Handler", func() {
-	var testNamespace *corev1.Namespace
-	var owner client.Object
-	var vsHandler *volsync.VSHandler
+	var (
+		testNamespace *corev1.Namespace
+		owner         client.Object
+		vsHandler     *volsync.VSHandler
+	)
 
 	asyncSpec := &ramendrv1alpha1.VRGAsyncSpec{
 		SchedulingInterval:          "5m",
@@ -352,13 +360,17 @@ var _ = Describe("VolSync_Handler", func() {
 			}
 
 			createdRD := &volsyncv1alpha1.ReplicationDestination{}
-			var returnedRD *volsyncv1alpha1.ReplicationDestination
-			var returnedRDInfo *ramendrv1alpha1.VolSyncReplicationDestinationInfo
+
+			var (
+				returnedRD     *volsyncv1alpha1.ReplicationDestination
+				returnedRDInfo *ramendrv1alpha1.VolSyncReplicationDestinationInfo
+			)
 
 			Context("When the psk secret for volsync does not exist", func() {
 				JustBeforeEach(func() {
 					// Run ReconcileRD
 					var err error
+
 					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					returnedRD, returnedRDInfo, err = vsHandler.ReconcileRD(rdSpec, nil)
 					Expect(err).To(HaveOccurred())
@@ -378,6 +390,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummyPSKSecret *corev1.Secret
+
 				JustBeforeEach(func() {
 					rdSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					// Create a dummy volsync psk secret so the reconcile can proceed properly
@@ -402,6 +415,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 				Context("When a RS exists for the pvc, failover scenario (primary -> secondary)", func() {
 					var rs *volsyncv1alpha1.ReplicationSource
+
 					JustBeforeEach(func() {
 						// Pre-create an RS for the PVC (simulate scenario where primary has failed over to secondary)
 						// so the replication source is still present
@@ -426,6 +440,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 						// Run ReconcileRD
 						var err error
+
 						_, _, err = vsHandler.ReconcileRD(rdSpec, nil)
 						Expect(err).ToNot(HaveOccurred())
 					})
@@ -443,6 +458,7 @@ var _ = Describe("VolSync_Handler", func() {
 					JustBeforeEach(func() {
 						// Run ReconcileRD
 						var err error
+
 						returnedRD, returnedRDInfo, err = vsHandler.ReconcileRD(rdSpec, nil)
 						Expect(err).ToNot(HaveOccurred())
 
@@ -499,6 +515,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 					Context("When replication destination already exists with status.address specified", func() {
 						myTestAddress := "https://fakeaddress.abc.org:8888"
+
 						BeforeEach(func() {
 							// Pre-create a replication destination - and fill out Status.Address
 							rdPrecreate := &volsyncv1alpha1.ReplicationDestination{
@@ -558,7 +575,9 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(*dstPVCName).To(Equal(rdSpec.ProtectedPVC.Name))
+
 					pvc := &corev1.PersistentVolumeClaim{}
+
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
 							Name:      rdSpec.ProtectedPVC.Name,
@@ -575,7 +594,9 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(*dstPVCName).To(Equal(rdSpec.ProtectedPVC.Name))
+
 					pvc := &corev1.PersistentVolumeClaim{}
+
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
 							Name:      rdSpec.ProtectedPVC.Name,
@@ -590,6 +611,7 @@ var _ = Describe("VolSync_Handler", func() {
 				It("PrecreateDestPVCIfEnabled() should create PVC with volumeMode: Block", func() {
 					util.AddAnnotation(owner, util.UseVolSyncAnnotation, "true")
 					Expect(k8sClient.Update(ctx, owner)).To(Succeed())
+
 					rdSpecForBlockPVC := rdSpec.DeepCopy()
 					block := corev1.PersistentVolumeBlock
 					rdSpecForBlockPVC.ProtectedPVC.VolumeMode = &block
@@ -598,7 +620,9 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					Expect(*dstPVCName).To(Equal(rdSpecForBlockPVC.ProtectedPVC.Name))
+
 					pvc := &corev1.PersistentVolumeClaim{}
+
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
 							Name:      rdSpecForBlockPVC.ProtectedPVC.Name,
@@ -613,9 +637,12 @@ var _ = Describe("VolSync_Handler", func() {
 			})
 
 			Context("Workload deletion: RD deletion should leave RD as PVC owner (GC cleans PVC)", func() {
-				var vsHandlerDirect *volsync.VSHandler
-				var rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec
-				var pvc *corev1.PersistentVolumeClaim
+				var (
+					vsHandlerDirect *volsync.VSHandler
+					rdSpec          ramendrv1alpha1.VolSyncReplicationDestinationSpec
+					pvc             *corev1.PersistentVolumeClaim
+				)
+
 				capacity := resource.MustParse("1Gi")
 
 				BeforeEach(func() {
@@ -643,6 +670,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(*dstPVCName).To(Equal(rdSpec.ProtectedPVC.Name))
 
 					pvc = &corev1.PersistentVolumeClaim{}
+
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
 							Name:      rdSpec.ProtectedPVC.Name,
@@ -670,6 +698,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					rd := &volsyncv1alpha1.ReplicationDestination{}
+
 					Eventually(func() error {
 						return k8sClient.Get(ctx, types.NamespacedName{
 							Name:      rdSpec.ProtectedPVC.Name,
@@ -741,10 +770,14 @@ var _ = Describe("VolSync_Handler", func() {
 
 			Context("When the psk secret for volsync does not exist", func() {
 				var returnedRS *volsyncv1alpha1.ReplicationSource
+
 				JustBeforeEach(func() {
 					// Run ReconcileRD
-					var err error
-					var finalSyncCompl bool
+					var (
+						err            error
+						finalSyncCompl bool
+					)
+
 					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					finalSyncCompl, returnedRS, err = vsHandler.ReconcileRS(rsSpec, false, nil)
 					Expect(err).ToNot(HaveOccurred())
@@ -764,6 +797,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 			Context("When the psk secret for volsync exists (will be pushed down by drpc from hub", func() {
 				var dummyPSKSecret *corev1.Secret
+
 				JustBeforeEach(func() {
 					rsSpec.ProtectedPVC.Namespace = testNamespace.GetName()
 					// Create a dummy volsync psk secret so the reconcile can proceed properly
@@ -812,6 +846,7 @@ var _ = Describe("VolSync_Handler", func() {
 						// Mount Job should exist
 						jobName := util.GetJobName(volsync.VolSyncMountJobNamePrefix, testPVCName)
 						mountJob := &batchv1.Job{}
+
 						Eventually(func() error {
 							return k8sClient.Get(ctx,
 								types.NamespacedName{Name: jobName, Namespace: testNamespace.GetName()}, mountJob)
@@ -908,10 +943,13 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				Context("When the PVC to be protected is mounted by a running and Ready pod", func() {
-					var podMountingPVC *corev1.Pod
-					var testPVC *corev1.PersistentVolumeClaim
+					var (
+						podMountingPVC *corev1.Pod
+						testPVC        *corev1.PersistentVolumeClaim
+					)
 
 					// Fake out pod mounting and in Running/Ready state
+
 					JustBeforeEach(func() {
 						// Create PVC and pod that is mounting it (and set pod phase to "Running")
 						testPVC, podMountingPVC = createDummyPVCAndMountingPod(testPVCName, testNamespace.GetName(),
@@ -920,6 +958,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 					Context("When a RD exists for the pvc to protect, failover scenario (secondary -> primary)", func() {
 						var rd *volsyncv1alpha1.ReplicationDestination
+
 						JustBeforeEach(func() {
 							// Pre-create an RD for the PVC (simulate scenario where secondary has failed over to primary)
 							rd = &volsyncv1alpha1.ReplicationDestination{
@@ -973,6 +1012,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 						JustBeforeEach(func() {
 							finalSyncDone := false
+
 							var err error
 
 							// Run ReconcileRS - Not running final sync so this should return false
@@ -1128,6 +1168,7 @@ var _ = Describe("VolSync_Handler", func() {
 		pvcCapacity := resource.MustParse("1Gi")
 
 		var rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec
+
 		BeforeEach(func() {
 			rdSpec = ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 				ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
@@ -1145,6 +1186,7 @@ var _ = Describe("VolSync_Handler", func() {
 		})
 
 		var ensurePVCErr error
+
 		JustBeforeEach(func() {
 			ensurePVCErr = vsHandler.EnsurePVCfromRD(rdSpec, false)
 		})
@@ -1195,6 +1237,7 @@ var _ = Describe("VolSync_Handler", func() {
 					},
 				}
 				Expect(k8sClient.Create(ctx, rd)).To(Succeed())
+
 				apiGrp := APIGrp
 				// Now force update the status to report a volume snapshot as latestImage
 				rd.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
@@ -1235,6 +1278,7 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 
 				pvc := &corev1.PersistentVolumeClaim{}
+
 				JustBeforeEach(func() {
 					// Common checks for everything in this context - pvc should be created with correct spec
 					Eventually(func() error {
@@ -1247,6 +1291,7 @@ var _ = Describe("VolSync_Handler", func() {
 					Expect(pvc.GetName()).To(Equal(pvcName))
 					Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 					Expect(*pvc.Spec.StorageClassName).To(Equal(testStorageClassName))
+
 					apiGrp := APIGrp
 					Expect(pvc.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
 						Name:     latestImageSnapshotName,
@@ -1273,7 +1318,6 @@ var _ = Describe("VolSync_Handler", func() {
 
 				Context("When the snapshot has restoreSize specified in Gi but PVC had storage in G", func() {
 					// See: https://github.com/RamenDR/ramen/issues/578
-
 					sizeGB := resource.MustParse("3G")
 					sizeGi := resource.MustParse("3Gi")
 
@@ -1407,7 +1451,6 @@ var _ = Describe("VolSync_Handler", func() {
 									// PVC protection finalizer is added automatically to PVC - but testenv
 									// doesn't have anything that will remove it for us - we're good as long
 									// as the pvc is marked for deletion
-
 									pvc.Finalizers = []string{} // Clear finalizers
 									Expect(k8sClient.Update(ctx, pvc)).To(Succeed())
 								}
@@ -1424,6 +1467,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).NotTo(HaveOccurred())
 
 						pvcNew := &corev1.PersistentVolumeClaim{}
+
 						Eventually(func() error {
 							return k8sClient.Get(ctx, types.NamespacedName{
 								Name:      pvcName,
@@ -1434,6 +1478,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Expect(pvcNew.GetName()).To(Equal(pvcName))
 						Expect(pvcNew.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 						Expect(*pvcNew.Spec.StorageClassName).To(Equal(testStorageClassName))
+
 						apiGrp := APIGrp
 						Expect(pvcNew.Spec.DataSource).To(Equal(&corev1.TypedLocalObjectReference{
 							Name:     updatedImageSnap.GetName(),
@@ -1455,8 +1500,10 @@ var _ = Describe("VolSync_Handler", func() {
 		pvcNamePrefixOtherOwner := "otherowner-test-pvc-rdcleanuptests-"
 		pvcCapacity := resource.MustParse("1Gi")
 
-		var rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec
-		var rdSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationDestinationSpec
+		var (
+			rdSpecList           []ramendrv1alpha1.VolSyncReplicationDestinationSpec
+			rdSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationDestinationSpec
+		)
 
 		BeforeEach(func() {
 			rdSpecList = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{}
@@ -1552,6 +1599,7 @@ var _ = Describe("VolSync_Handler", func() {
 				_, _, err := vsHandler.ReconcileRD(rdSpec, nil)
 				Expect(err).NotTo(HaveOccurred())
 			}
+
 			for _, rdSpecOtherOwner := range rdSpecListOtherOwner {
 				// create other RDs using another vsHandler (will be owned by another VRG)
 				_, _, err := otherVSHandler.ReconcileRD(rdSpecOtherOwner, nil)
@@ -1560,6 +1608,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 			// Check the RDs were created correctly
 			allRDs := &volsyncv1alpha1.ReplicationDestinationList{}
+
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, allRDs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1574,6 +1623,7 @@ var _ = Describe("VolSync_Handler", func() {
 					ramendrv1alpha1.Primary)).To(Succeed())
 
 				rdList := &volsyncv1alpha1.ReplicationDestinationList{}
+
 				Eventually(func() int {
 					Expect(k8sClient.List(ctx, rdList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1598,6 +1648,7 @@ var _ = Describe("VolSync_Handler", func() {
 				Expect(vsHandler.CleanupRDNotInSpecList(sList, ramendrv1alpha1.Secondary)).To(Succeed())
 
 				rdList := &volsyncv1alpha1.ReplicationDestinationList{}
+
 				Eventually(func() int {
 					Expect(k8sClient.List(ctx, rdList, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1624,6 +1675,7 @@ var _ = Describe("VolSync_Handler", func() {
 			Expect(vsHandler.DeleteRD(rdToDelete2, rdToDeleteNS2, true)).To(Succeed())
 
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
+
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRDs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1643,6 +1695,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 			// No RDs should have been deleted
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
+
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRDs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1655,8 +1708,10 @@ var _ = Describe("VolSync_Handler", func() {
 		pvcNamePrefix := "test-pvc-rscleanuptests-"
 		pvcNamePrefixOtherOwner := "otherowner-test-pvc-rscleanuptests-"
 
-		var rsSpecList []ramendrv1alpha1.VolSyncReplicationSourceSpec
-		var rsSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationSourceSpec
+		var (
+			rsSpecList           []ramendrv1alpha1.VolSyncReplicationSourceSpec
+			rsSpecListOtherOwner []ramendrv1alpha1.VolSyncReplicationSourceSpec
+		)
 
 		BeforeEach(func() {
 			rsSpecList = []ramendrv1alpha1.VolSyncReplicationSourceSpec{}
@@ -1750,6 +1805,7 @@ var _ = Describe("VolSync_Handler", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(returnedRS).NotTo(BeNil())
 			}
+
 			for _, rsSpecOtherOwner := range rsSpecListOtherOwner {
 				// Create the PVC to be protected and pod that is mounting it (and set pod Running/Ready)
 				createDummyPVCAndMountingPod(rsSpecOtherOwner.ProtectedPVC.Name, testNamespace.GetName(),
@@ -1762,6 +1818,7 @@ var _ = Describe("VolSync_Handler", func() {
 			}
 
 			allRSs := &volsyncv1alpha1.ReplicationSourceList{}
+
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, allRSs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1779,6 +1836,7 @@ var _ = Describe("VolSync_Handler", func() {
 			Expect(vsHandler.DeleteRS(rsToDelete2, rsToDeleteNs2, false)).To(Succeed())
 
 			remainingRSs := &volsyncv1alpha1.ReplicationSourceList{}
+
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRSs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1793,6 +1851,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 			// No RSs should have been deleted
 			remainingRSs := &volsyncv1alpha1.ReplicationSourceList{}
+
 			Eventually(func() int {
 				Expect(k8sClient.List(ctx, remainingRSs, client.InNamespace(testNamespace.GetName()))).To(Succeed())
 
@@ -1817,6 +1876,7 @@ var _ = Describe("VolSync_Handler", func() {
 
 		Context("When the PVC exists", func() {
 			var testPVC *corev1.PersistentVolumeClaim
+
 			initialAnnotations := map[string]string{
 				"pv.kubernetes.io/bind-completed":                      "yes",
 				"apps.open-cluster-management.io/cluster-admin":        "true",
@@ -1825,14 +1885,17 @@ var _ = Describe("VolSync_Handler", func() {
 				"volume.beta.kubernetes.io/storage-provisioner":        "ebs.csi.aws.com",
 				"apps.open-cluster-management.io/reconcile-option":     "mergeAndOwn",
 			}
+
 			BeforeEach(func() {
 				testPVCName := "my-test-pvc-aabbcc"
 				capacity := resource.MustParse("1Gi")
 				testPVC = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, initialAnnotations)
 			})
 
-			var pvcPreparationComplete bool
-			var pvcPreparationErr error
+			var (
+				pvcPreparationComplete bool
+				pvcPreparationErr      error
+			)
 
 			JustBeforeEach(func() {
 				pvcNamespacedName := types.NamespacedName{
