@@ -72,3 +72,92 @@ Here is an example of the command for three different scenarios
    update the version of the transitive dependency or you can use a replace
    directive in the go.mod file to update the version of the transitive
    dependency.
+
+## CVEs filed on Golang
+
+When a CVE is filed against Golang, you need to
+check both the upstream Ramen repository and the downstream container images.
+
+### Checking the upstream Ramen repository
+
+**Note**: This check is only relevant for upstream container images built from
+the Ramen repository. Downstream builds use a different Dockerfile and build
+process, so this method does not apply to downstream images.
+
+The relevant Go version for CVE checking is the one used to build the Ramen
+container image, not the `go.mod` compatibility version. Check the Dockerfile
+to see which Go version is used:
+
+```bash
+grep "FROM.*golang" Dockerfile
+```
+
+**Example output:**
+
+```
+FROM docker.io/library/golang:1.25 as builder
+```
+
+This shows the image uses Go 1.25, which will pick the latest 1.25.x patch
+version available. If a CVE was fixed in Go 1.25.7, the Ramen image is not
+affected even if `go.mod` specifies `go 1.25.0`.
+
+Compare the Go version from the Dockerfile against the CVE fix versions to
+determine if the upstream code is vulnerable.
+
+### Checking downstream container images
+
+#### Prerequisites
+
+- Access to the downstream container registry (e.g., `quay.io/rhceph-dev`)
+- `podman` or `docker` installed and authenticated
+
+#### Step 1: Identify the downstream image
+
+For ODF (OpenShift Data Foundation) builds, the downstream Ramen operator
+images are typically located at:
+
+```
+quay.io/rhceph-dev/odf4-odr-rhel9-operator:<version>
+```
+
+Where `<version>` corresponds to the ODF version.
+
+#### Step 2: Pull the downstream image
+
+```bash
+# Example for ODF 4.18
+podman pull quay.io/rhceph-dev/odf4-odr-rhel9-operator:v4.18
+```
+
+#### Step 3: Extract the Go version from the binary
+
+The Go version is embedded in the compiled binary. Extract and check it using
+these commands:
+
+```bash
+podman run --rm --entrypoint cat quay.io/rhceph-dev/odf4-odr-rhel9-operator:v4.18 /manager > manager
+go version manager
+rm manager
+```
+
+**Example output:**
+
+```
+manager: go1.23.10 (Red Hat 1.23.10-11.el9)
+```
+
+This shows the binary was compiled with Go 1.23.10 from Red Hat's patched
+distribution.
+
+**Note**: This works because the Ramen image contains the `cat` executable.
+
+#### Step 4: Compare against CVE fix versions
+
+Once you have the Go version from the downstream image, compare it against the
+CVE fix versions:
+
+1. Check the CVE announcement for which Go versions include the fix
+1. Note that Red Hat's Go builds may include backported security fixes
+1. Go versions from Red Hat (indicated by "Red Hat" in the version string)
+   often have security patches backported to older minor versions
