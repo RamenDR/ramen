@@ -32,3 +32,4 @@ drClusterOperator:
   catalogSourceNamespaceName: ramen-system
   clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1
 veleroNamespaceName: "openshift-adp"
+retainNamespaceSCCAcrossPeers: false
