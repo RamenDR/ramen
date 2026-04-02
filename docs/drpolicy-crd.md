@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: The RamenDR authors
-SPDX-License-Identifier: Apache-1.0
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # DRPolicy CRD
@@ -81,8 +81,8 @@ schedulingInterval: ""     # Synchronous (no scheduling)
 
 **Typical values:**
 
-- Production Async (Regional DR): `"1h"` or `"30m"`
-- Testing: `"5m"` or `"10m"`
+- Production Async (Regional DR): `"10m"` or `"30m"`
+- Testing: `"5m"`
 - Sync (Metro DR): `""` (empty)
 
 #### `replicationClassSelector` (metav1.LabelSelector)
@@ -91,7 +91,8 @@ Label selector to identify VolumeReplicationClass resources for
 Async (Regional DR).
 
 **When to use:** Set this for Async (Regional DR) when using
-VolumeReplication with schedulingInterval.
+VolumeReplication with schedulingInterval and there are multiple VolumeReplicationClass
+that match the requirements.
 
 **How it works:**
 
@@ -115,7 +116,8 @@ Label selector to identify VolumeSnapshotClass resources for
 Async (Regional DR).
 
 **When to use:** Set this for Async (Regional DR) when using VolSync
-with schedulingInterval.
+with schedulingInterval and there are multiple VolumeSnapshotClass
+that match the requirements.
 
 **How it works:**
 
@@ -139,7 +141,8 @@ Label selector to identify VolumeGroupSnapshotClass resources for grouped
 snapshot operations with VolSync in Async (Regional DR).
 
 **When to use:** For Async (Regional DR) workloads with multiple PVCs that need
-consistent point-in-time snapshots.
+consistent point-in-time snapshots and there are multiple VolumeGroupSnapshotClass
+that match the requirements.
 
 **Example:**
 

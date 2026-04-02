@@ -20,7 +20,7 @@ A VRG controls:
 - VolumeReplication or VolSync resource creation and management for data
   replication
 - PV metadata storage in S3 for cross-cluster recovery
-- Kubernetes object capture and recovery (via Velero or Recipe)
+- Kubernetes object capture and recovery (via Velero and Recipe)
 
 **Lifecycle:** Created by DRPC when enabling DR protection. Exists on the
 active cluster as Primary and on the peer cluster as Secondary. Deleted when
@@ -66,9 +66,9 @@ Desired replication state for all volumes in this group.
 replicationState: primary
 ```
 
-**Important:** This is managed by DRPC. When DRPC fails over, it changes
-this from primary→secondary on the source and secondary→primary on the
-target.
+**Important:** This is managed by DRPC. When DRPC orchestrates `Failover` or `Relocate`
+actions, it changes this from primary->secondary on the source and secondary->primary
+on the target as required.
 
 #### `s3Profiles` ([]string)
 
@@ -81,8 +81,8 @@ s3Profiles:
   - s3-profile-east
 ```
 
-**Purpose:** PV specs are stored in S3 so the peer cluster can recreate them
-during failover.
+**Purpose:** PV and PVC specs are stored in S3 so the peer cluster can recreate
+them during failover or relocation.
 
 ### Optional Fields
 
@@ -416,7 +416,8 @@ When `replicationState: secondary`:
 
 - DRPC changes peer VRG from `secondary` → `primary`
 - Application deploys on peer cluster
-- Source VRG remains or is deleted (if source is down)
+- Source VRG remains as `primary` till source is down, and is moved to `secondary`
+  once it is reachable
 
 **Relocate:**
 
