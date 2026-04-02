@@ -163,6 +163,13 @@ type DRPlacementControlSpec struct {
 
 	// +optional
 	VolSyncSpec *VolSyncSpec `json:"volSyncSpec,omitempty"`
+
+	// RetainNamespaceSCCAcrossPeers controls whether Security Context Constraints (SCC) annotations
+	// should be retained when creating namespaces on secondary clusters during DR enablement.
+	// This flag works in conjunction with the RamenConfig flag of the same name.
+	// Both flags must be true for SCC annotations to be retained.
+	// +optional
+	RetainNamespaceSCCAcrossPeers bool `json:"retainNamespaceSCCAcrossPeers,omitempty"`
 }
 
 // PlacementDecision defines the decision made by controller
