@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: The RamenDR authors
-SPDX-License-Identifier: Apache-1.0
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # DRCluster CRD
@@ -71,7 +71,6 @@ a failed cluster.
 ```yaml
 cidrs:
   - "10.0.1.0/24"
-  - "10.0.1.0/24"
 ```
 
 **When to set:** Required for Sync (Metro) deployments where network
@@ -83,7 +82,8 @@ Desired fencing state of the cluster.
 
 **Valid values:**
 
-- `Unfenced` - Cluster is not fenced (default/normal state)
+- `Unfenced` - Cluster is not fenced or should be unfenced
+  (default/normal state; automated)
 - `Fenced` - Cluster should be fenced (automated)
 - `ManuallyFenced` - Cluster was manually fenced by admin
 - `ManuallyUnfenced` - Cluster was manually unfenced by admin
@@ -95,7 +95,7 @@ clusterFence: Unfenced
 ```
 
 **How it works:** During failover in Sync (Metro), Ramen may fence the
-source cluster to prevent split-brain scenarios.
+source cluster to prevent potential concurrent writes to storage.
 
 ## Status Fields
 
@@ -349,7 +349,7 @@ kubectl get drpolicy -o yaml | grep drClusters
 
 ## Best Practices
 
-1. **Use descriptive names** that match the ManagedCluster name:
+1. **Use names** that match the ManagedCluster name:
 
    ```yaml
    metadata:

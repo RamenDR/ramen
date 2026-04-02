@@ -12,7 +12,7 @@ for protecting and managing applications with disaster recovery capabilities.
 Created by users in the application namespace on the OCM hub cluster, it
 orchestrates:
 
-- Initial deployment of applications to the preferred cluster
+- Initial DR protection of applications deployed on the preferred cluster
 - Failover operations to peer clusters during disasters
 - Planned relocation between clusters
 
@@ -37,14 +37,13 @@ modified to trigger DR operations, deleted when removing DR protection.
 
 #### `placementRef` (v1.ObjectReference)
 
-Reference to the OCM Placement or PlacementRule resource that selects where
-the application runs.
+Reference to the OCM Placement resource that selects where the application runs.
 
 **Requirements:**
 
 - Must exist in the same namespace as DRPC
 - Immutable after creation
-- Supported kinds: `Placement`, `PlacementRule`
+- Supported kinds: `Placement`, `PlacementRule` (deprecated)
 
 **Example:**
 
@@ -77,8 +76,7 @@ drPolicyRef:
 
 #### `pvcSelector` (metav1.LabelSelector)
 
-Label selector to identify which PVCs in the application namespace need DR
-protection.
+Label selector to identify which PVCs in the application namespace need DR protection.
 
 **Requirements:**
 
@@ -101,12 +99,12 @@ pvcSelector:
 
 #### `preferredCluster` (string)
 
-The cluster name where the application should initially run and return to
-after relocate.
+The cluster name where the application should run and return to after relocate.
 
 **Behavior:**
 
-- If set, application deploys to this cluster
+- If set, application deploys to this cluster, if not already deployed or deployed
+  elsewhere
 - During relocate, application returns to this cluster
 - Can be changed to relocate application
 
@@ -129,7 +127,8 @@ failoverCluster: west-cluster
 action: Failover
 ```
 
-**Note:** For relocate operations, change `preferredCluster` instead.
+**Note:** For relocate operations, change `preferredCluster` instead and `action`
+to `Relocate`
 
 #### `action` (DRAction)
 
@@ -137,9 +136,8 @@ The DR action to perform: `Failover` or `Relocate`.
 
 **Valid values:**
 
-- `Failover` - Recover application on `failoverCluster` (assumes source is
-  down)
-- `Relocate` - Migrate application to target cluster (planned operation)
+- `Failover` - Recover application on `failoverCluster` (assumes source is down)
+- `Relocate` - Migrate/Relocate application to target cluster (planned operation)
 
 **Example:**
 
@@ -155,12 +153,9 @@ action: Relocate
 preferredCluster: east-cluster
 ```
 
-**State machine:** Set action to trigger operation, DRPC clears it when
-complete.
-
 #### `protectedNamespaces` ([]string)
 
-List of additional namespaces to protect beyond the DRPC namespace.
+List of namespaces to protect when DRPC is created in the RamenOpsNamespace namespace.
 
 **Requirements:**
 

@@ -1,6 +1,6 @@
 <!--
 SPDX-FileCopyrightText: The RamenDR authors
-SPDX-License-Identifier: Apache-1.0
+SPDX-License-Identifier: Apache-2.0
 -->
 
 # MaintenanceMode CRD
