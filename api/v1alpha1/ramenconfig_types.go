@@ -193,6 +193,11 @@ type RamenConfig struct {
 
 	// RamenOpsNamespace is the namespace where resources for unmanaged apps are created
 	RamenOpsNamespace string `json:"ramenOpsNamespace,omitempty"`
+
+	// RetainNamespaceSCCAcrossPeers controls whether Security Context Constraints (SCC) annotations
+	// should be retained when creating namespaces on secondary clusters during DR enablement.
+	// +optional
+	RetainNamespaceSCCAcrossPeers bool `json:"retainNamespaceSCCAcrossPeers,omitempty"`
 }
 
 func init() {
