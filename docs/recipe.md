@@ -9,17 +9,15 @@ SPDX-License-Identifier: Apache-2.0
 
 A recipe is a Kubernetes Custom Resource that defines custom workflows for
 capturing and recovering application resources and volumes during disaster
-recovery (DR) operations. Recipes are part of Ramen's OpenShift-native Disaster
+recovery (DR) operations. Recipes are part of Ramen's Kubernetes-native Disaster
 Recovery ecosystem, providing vendor-supplied or custom disaster recovery
 specifications for complex stateful applications. While Ramen supports
 multiple workload protection methods (GitOps, discovered applications),
 Recipes are specifically designed for applications that require:
 
-- Application-specific quiesce operations before capture
-    (e.g., database flush)
 - Strict resource ordering during capture or recovery
 - Custom pre/post hooks for DR operations
-- Vendor-defined DR workflows that ensure data consistency
+- Vendor-defined DR workflows for application resources
 
 **Target Audience:**
 
@@ -32,14 +30,10 @@ Recipes are specifically designed for applications that require:
 
 - **Complex stateful applications** (e.g., databases, middleware) requiring
  custom workflows
-- **Applications needing quiesce operations** before capture (e.g., database
- flush, application freeze)
 - **Strict resource ordering** required during capture/recovery (e.g.,
  ConfigMaps before Deployments)
 - **Custom hooks needed** for pre/post DR operations
 - **Vendor-provided Recipes** are available for your application
-- **Standard volume replication alone** doesn't guarantee application
- consistency
 
 **When NOT to use Recipes:**
 
@@ -56,7 +50,8 @@ A Recipe defines custom workflows for disaster recovery operations through
 - **Groups**: Collections of Kubernetes resources with specific selection
  criteria.
 - **Hooks**: Custom operations (exec, scale, check) executed during workflows.
- These are treated as pre/post operations for backup and restore.
+ These are treated as pre/post operations for backup and restore of application
+ resources.
 - **Workflows**: Ordered sequences of groups and hooks for capture (backup)
  and recovery (restore).
 - **Volumes**: Persistent volume selectors for data protection. If provided,
@@ -67,8 +62,7 @@ Recipe, Ramen executes the Recipe's workflows according to VRG's schedule.
 The workflows define the exact order in which resources are captured or
 recovered, ensuring application consistency.
 
-Recipe source code and additional information can be found
-[here](https://github.com/RamenDR/recipe).
+Recipe source code and additional information can be found [here](https://github.com/RamenDR/recipe).
 
 By default, without Recipes, Kubernetes resources are captured and recovered as
 single, namespaced groups without specific ordering. Recipes provide the
@@ -76,7 +70,7 @@ flexibility to define custom sequences tailored to application requirements.
 
 **Note:** The terms "capture" and "recover" refer to the DR operations, while
 Recipe workflows are named "backup" and "restore" respectively. Ramen
- automatically maps these operations to the corresponding workflows.
+automatically maps these operations to the corresponding workflows.
 
 ## Requirements
 
