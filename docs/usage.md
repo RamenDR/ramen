@@ -171,7 +171,6 @@ For complex stateful applications requiring custom workflows (e.g., databases, m
 
 **Use cases:**
 
-- Applications needing quiesce operations before backup
 - Specific resource ordering during capture/recovery
 - Custom pre/post hooks for DR operations
 - Vendor-supplied DR specifications
@@ -263,8 +262,7 @@ For detailed Recipe documentation, see [recipe.md](recipe.md).
 **Advantages:**
 
 - Application-specific protection logic
-- Ensures data consistency
-- Vendor-supported DR workflows
+- Vendor-supported DR workflows for application resources
 - Custom hook execution
 
 ## Common DR Operations
