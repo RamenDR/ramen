@@ -395,30 +395,9 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
-	// Use the DRPC Protected condition to check if it is true and then allow failover
-	if !d.isProtected() {
-		return !done, nil
-	}
-
 	d.setStatusInitiating()
 
 	return d.switchToFailoverCluster()
-}
-
-func (d *DRPCInstance) isProtected() bool {
-	for _, cond := range d.instance.Status.Conditions {
-		if cond.Type == rmn.ConditionProtected && cond.Status == metav1.ConditionTrue {
-			return true
-		}
-	}
-
-	const msg = "cannot start failover because workload is not protected"
-	d.log.Info("Failover blocked", "reason", msg)
-
-	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
-
-	return false
 }
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
