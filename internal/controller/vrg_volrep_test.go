@@ -473,6 +473,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			pvcsVerify := func(pvcNames []types.NamespacedName,
 				verify func(vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string),
 			) {
+				vrgGet()
+
 				for _, pvcName := range pvcNames {
 					verify(*vrg, pvcName, t.pvcVolumeNames[pvcName])
 				}
@@ -573,6 +575,18 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("reprotects it", func() {
+					// DataReady can flip true before the controller re-adds the reselected PVC to status.
+					Eventually(func() bool {
+						vrgGet()
+
+						for _, pvcName := range pvcNamesReselected {
+							if vrgController.FindProtectedPVC(vrg, pvcName.Namespace, pvcName.Name) == nil {
+								return false
+							}
+						}
+
+						return true
+					}, vrgtimeout, vrginterval).Should(BeTrue())
 					pvcsVerify(pvcNamesReselected, pvcProtectedVerify)
 				})
 			})
