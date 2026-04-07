@@ -56,3 +56,11 @@ spec:
           annotations:
             description: "Invalid or undetected CIDRs Specified (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
             alert_type: "DisasterRecovery"
+        - alert: ApplicationCleanupPending
+          expr: ramen_progression_state{state="WaitOnUserToCleanUp"} == 1
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            description: "DRPC '{{ $labels.obj_name }}' in namespace '{{ $labels.obj_namespace }}' requires manual cleanup. Check DRPC status for details."
+          alert_type: "DisasterRecovery"
