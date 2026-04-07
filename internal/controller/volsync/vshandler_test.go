@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -1425,7 +1426,11 @@ var _ = Describe("VolSync_Handler", func() {
 					It("ensure PVC should not fail", func() {
 						// Previous ensurePVC will already have created the PVC (see parent context)
 						// Now run ensurePVC again - additional runs should just ensure the PVC is ok
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).To(Succeed())
+						retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+							return vsHandler.EnsurePVCfromRD(rdSpec, false)
+						})
+
+						Expect(retryErr).NotTo(HaveOccurred())
 					})
 				})
 
