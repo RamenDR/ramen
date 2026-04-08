@@ -395,8 +395,11 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 	}
 
 	vrg := &rmn.VolumeReplicationGroup{}
+
 	err = yaml.Unmarshal(mw.Spec.Workload.Manifests[0].Raw, vrg)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal VRG: %w", err)
+	}
 
 	vrg.Generation = 1
 	vrg.Status.ObservedGeneration = 1
