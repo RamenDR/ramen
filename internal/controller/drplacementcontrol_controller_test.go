@@ -606,17 +606,20 @@ func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster s
 
 //nolint:unparam
 func deleteUserPlacementRule(name, namespace string) {
-	userPlacementRule := getLatestUserPlacementRule(name, namespace)
+	userPlacementRule, err := getLatestUserPlacementRule(name, namespace)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient.Delete(context.TODO(), userPlacementRule)).Should(Succeed())
 }
 
 func deleteUserPlacement() {
-	userPlacement := getLatestUserPlacement(UserPlacementName, DefaultDRPCNamespace)
+	userPlacement, err := getLatestUserPlacement(UserPlacementName, DefaultDRPCNamespace)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient.Delete(context.TODO(), userPlacement)).Should(Succeed())
 }
 
 func deleteDRPC() {
-	drpc := getLatestDRPC(DefaultDRPCNamespace)
+	drpc, err := getLatestDRPC(DefaultDRPCNamespace)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient.Delete(context.TODO(), drpc)).Should(Succeed())
 }
 
@@ -661,22 +664,28 @@ func setDRPCSpecExpectationTo(namespace, preferredCluster, failoverCluster strin
 	Expect(retryErr).NotTo(HaveOccurred())
 
 	Eventually(func() bool {
-		latestDRPC = getLatestDRPC(namespace)
+		var err error
+		latestDRPC, err = getLatestDRPC(namespace)
+		if err != nil {
+			return false
+		}
 
 		return latestDRPC.Spec.Action == action
 	}, timeout, interval).Should(BeTrue(), "failed to update DRPC DR action on time")
 }
 
-func getLatestDRPC(namespace string) *rmn.DRPlacementControl {
+func getLatestDRPC(namespace string) (*rmn.DRPlacementControl, error) {
 	drpcLookupKey := types.NamespacedName{
 		Name:      DRPCCommonName,
 		Namespace: namespace,
 	}
 	latestDRPC := &rmn.DRPlacementControl{}
 	err := apiReader.Get(context.TODO(), drpcLookupKey, latestDRPC)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 
-	return latestDRPC
+	return latestDRPC, nil
 }
 
 func clearDRPCStatus() {
@@ -1132,22 +1141,25 @@ func verifyVRGManifestWorkCreatedAsPrimary(namespace, managedCluster string) {
 	Expect(vrg.Spec.ReplicationState).Should(Equal(rmn.Primary))
 
 	// ensure DRPC copied KubeObjectProtection contents to VRG
-	drpc := getLatestDRPC(namespace)
+	drpc, err := getLatestDRPC(namespace)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(vrg.Spec.KubeObjectProtection).Should(Equal(drpc.Spec.KubeObjectProtection))
 }
 
-func getManifestWorkCount(homeClusterNamespace string) int {
+func getManifestWorkCount(homeClusterNamespace string) (int, error) {
 	manifestWorkList := &ocmworkv1.ManifestWorkList{}
 	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
 
-	Expect(apiReader.List(context.TODO(), manifestWorkList, listOptions)).NotTo(HaveOccurred())
+	if err := apiReader.List(context.TODO(), manifestWorkList, listOptions); err != nil {
+		return 0, err
+	}
 
 	if len(manifestWorkList.Items) == 0 {
-		return 0
+		return 0, nil
 	}
 
 	// Reduce by one to accommodate for DRClusterConfig ManifestWork
-	return len(manifestWorkList.Items) - 1
+	return len(manifestWorkList.Items) - 1, nil
 }
 
 func verifyNSManifestWork(resourceName, namespaceString, managedCluster string) {
@@ -1165,13 +1177,15 @@ func verifyNSManifestWork(resourceName, namespaceString, managedCluster string) 
 }
 
 //nolint:unparam
-func getManagedClusterViewCount(homeClusterNamespace string) int {
+func getManagedClusterViewCount(homeClusterNamespace string) (int, error) {
 	mcvList := &viewv1beta1.ManagedClusterViewList{}
 	listOptions := &client.ListOptions{Namespace: homeClusterNamespace}
 
-	Expect(k8sClient.List(context.TODO(), mcvList, listOptions)).NotTo(HaveOccurred())
+	if err := k8sClient.List(context.TODO(), mcvList, listOptions); err != nil {
+		return 0, err
+	}
 
-	return len(mcvList.Items)
+	return len(mcvList.Items), nil
 }
 
 func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
@@ -1213,7 +1227,10 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 
 func waitForDRPCProtected(namespace string) {
 	Eventually(func() bool {
-		drpc := getLatestDRPC(namespace)
+		drpc, err := getLatestDRPC(namespace)
+		if err != nil {
+			return false
+		}
 		_, cond := getDRPCCondition(&drpc.Status, rmn.ConditionProtected)
 
 		return cond != nil && cond.Status == metav1.ConditionTrue
@@ -1300,7 +1317,7 @@ func verifyDRPCStatusPreferredClusterExpectation(namespace string, drState rmn.D
 	Expect(condition.Reason).Should(Equal(string(drState)))
 }
 
-func getLatestUserPlacementRule(name, namespace string) *plrv1.PlacementRule {
+func getLatestUserPlacementRule(name, namespace string) (*plrv1.PlacementRule, error) {
 	usrPlRuleLookupKey := types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
@@ -1309,12 +1326,14 @@ func getLatestUserPlacementRule(name, namespace string) *plrv1.PlacementRule {
 	usrPlRule := &plrv1.PlacementRule{}
 
 	err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 
-	return usrPlRule
+	return usrPlRule, nil
 }
 
-func getLatestUserPlacement(name, namespace string) *clrapiv1beta1.Placement {
+func getLatestUserPlacement(name, namespace string) (*clrapiv1beta1.Placement, error) {
 	key := types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
@@ -1323,12 +1342,14 @@ func getLatestUserPlacement(name, namespace string) *clrapiv1beta1.Placement {
 	plmnt := &clrapiv1beta1.Placement{}
 
 	err := k8sClient.Get(context.TODO(), key, plmnt)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 
-	return plmnt
+	return plmnt, nil
 }
 
-func getLatestUserPlacementDecision(name, namespace string) *clrapiv1beta1.ClusterDecision {
+func getLatestUserPlacementDecision(name, namespace string) (*clrapiv1beta1.ClusterDecision, error) {
 	key := types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
@@ -1341,24 +1362,26 @@ func getLatestUserPlacementDecision(name, namespace string) *clrapiv1beta1.Clust
 		return &clrapiv1beta1.ClusterDecision{
 			ClusterName: usrPlRule.Status.Decisions[0].ClusterName,
 			Reason:      "PlacementRule Testing",
-		}
+		}, nil
 	}
 
 	if k8serrors.IsNotFound(err) {
 		usrPlmnt := &clrapiv1beta1.Placement{}
 		err = k8sClient.Get(context.TODO(), key, usrPlmnt)
-		Expect(err).NotTo(HaveOccurred())
+		if err != nil {
+			return nil, err
+		}
 
 		plDecision := getPlacementDecision(usrPlmnt.GetName(), usrPlmnt.GetNamespace())
 		if plDecision != nil {
 			return &clrapiv1beta1.ClusterDecision{
 				ClusterName: plDecision.Status.Decisions[0].ClusterName,
 				Reason:      "Placement Testing",
-			}
+			}, nil
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func waitForCompletion(expectedState string) {
@@ -1371,7 +1394,10 @@ func waitForCompletion(expectedState string) {
 //nolint:unparam
 func waitForDRPCPhaseAndProgression(namespace string, drState rmn.DRState) {
 	Eventually(func() bool {
-		drpc := getLatestDRPC(namespace)
+		drpc, err := getLatestDRPC(namespace)
+		if err != nil {
+			return false
+		}
 
 		return drpc.Status.Phase == drState && drpc.Status.Progression == rmn.ProgressionCompleted
 	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("Timed out waiting for Phase to match. Expected %s for drpcNS %s",
@@ -1417,7 +1443,8 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 
 	Expect(getManifestWorkCount(fromCluster)).Should(Equal(3)) // DRCluster + NS MW + VRG MW
 
-	drpc := getLatestDRPC(placementObj.GetNamespace())
+	drpc, err := getLatestDRPC(placementObj.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	// At this point expect the DRPC status condition to have 2 types
 	// {Available and PeerReady}
 	// Final state is 'FailedOver'
@@ -1427,7 +1454,8 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 	Expect(drpc.Status.ActionStartTime).ShouldNot(BeNil())
 
-	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
+	decision, err := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	Expect(decision.ClusterName).To(Equal(toCluster))
 }
 
@@ -1470,7 +1498,8 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 		Expect(getManifestWorkCount(fromCluster)).Should(BeElementOf(2, 3))
 	}
 
-	drpc := getLatestDRPC(placementObj.GetNamespace())
+	drpc, err := getLatestDRPC(placementObj.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	// At this point expect the DRPC status condition to have 2 types
 	// {Available and PeerReady}
 	// Final state is 'Relocated'
@@ -1479,7 +1508,8 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 
-	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
+	decision, err := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	Expect(decision.ClusterName).To(Equal(toCluster1))
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
 	Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(toCluster1))
@@ -1489,7 +1519,8 @@ func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferre
 	setDRPCSpecExpectationTo(userPlacementRule.GetNamespace(), preferredCluster, failoverCluster, "")
 	waitForCompletion(string(rmn.Deployed))
 
-	drpc := getLatestDRPC(userPlacementRule.GetNamespace())
+	drpc, err := getLatestDRPC(userPlacementRule.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	// At this point expect the DRPC status condition to have 2 types
 	// {Available and PeerReady}
 	// Final state didn't change and it is 'Relocated' even though we tried to run
@@ -1499,7 +1530,8 @@ func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferre
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Deployed)))
 
-	decision := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
+	decision, err := getLatestUserPlacementDecision(userPlacementRule.Name, userPlacementRule.Namespace)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(decision.ClusterName).To(Equal(preferredCluster))
 }
 
@@ -1639,7 +1671,8 @@ func verifyInitialDRPCDeployment(userPlacement client.Object, preferredCluster s
 	Expect(getManifestWorkCount(preferredCluster)).Should(BeElementOf(3, 4)) // MWs for VRG, 2 namespaces, and DRCluster
 	waitForCompletion(string(rmn.Deployed))
 
-	latestDRPC := getLatestDRPC(userPlacement.GetNamespace())
+	latestDRPC, err := getLatestDRPC(userPlacement.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	// At this point expect the DRPC status condition to have 2 types
 	// {Available and PeerReady}
 	// Final state is 'Deployed'
@@ -1673,7 +1706,8 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 
 	Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(3)) // DRClustern + NS + VRG-MW
 
-	drpc := getLatestDRPC(placementObj.GetNamespace())
+	drpc, err := getLatestDRPC(placementObj.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	// At this point expect the DRPC status condition to have 2 types
 	// {Available and PeerReady}
 	// Final state is 'FailedOver'
@@ -1682,7 +1716,8 @@ func verifyFailoverToSecondary(placementObj client.Object, toCluster string,
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 
-	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
+	decision, err := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
+	Expect(err).NotTo(HaveOccurred())
 	Expect(decision.ClusterName).To(Equal(toCluster))
 	Expect(drpc.GetAnnotations()[controllers.LastAppDeploymentCluster]).To(Equal(toCluster))
 }
@@ -1976,7 +2011,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				userPlacementRule = placementObj.(*plrv1.PlacementRule)
 				Expect(userPlacementRule).NotTo(BeNil())
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
-				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC(DefaultDRPCNamespace))
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				verifyDRPCOwnedByPlacement(userPlacementRule, latestDRPC)
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -2094,7 +2131,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(placement).NotTo(BeNil())
 				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
 				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithSubscription)
-				verifyDRPCOwnedByPlacement(placement, getLatestDRPC(DefaultDRPCNamespace))
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				verifyDRPCOwnedByPlacement(placement, latestDRPC)
 			})
 		})
 		When("DRAction changes to Failover using Placement with Subscription", func() {
@@ -2129,8 +2168,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should cleanup DRPC", func() {
 				deleteUserPlacement()
 
-				drpc := getLatestDRPC(DefaultDRPCNamespace)
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionPeerReady)
 				Expect(condition).NotTo(BeNil())
 			})
 		})
@@ -2177,7 +2217,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				Expect(placement).NotTo(BeNil())
 				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
 				verifyActionResultForPlacement(placement, East1ManagedCluster, UsePlacementWithAppSet)
-				verifyDRPCOwnedByPlacement(placement, getLatestDRPC(DefaultDRPCNamespace))
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				verifyDRPCOwnedByPlacement(placement, latestDRPC)
 			})
 		})
 		When("DRAction changes to Failover using Placement", func() {
@@ -2224,8 +2266,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should cleanup DRPC", func() {
 				deleteUserPlacement()
 
-				drpc := getLatestDRPC(DefaultDRPCNamespace)
-				_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionPeerReady)
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionPeerReady)
 				Expect(condition).NotTo(BeNil())
 			})
 		})
@@ -2262,7 +2305,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				userPlacementRule, _ = InitialDeploymentSync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster)
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
-				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC(DefaultDRPCNamespace))
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				verifyDRPCOwnedByPlacement(userPlacementRule, latestDRPC)
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -2338,7 +2383,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				userPlacementRule, _ = InitialDeploymentSync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster)
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
-				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC(DefaultDRPCNamespace))
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				verifyDRPCOwnedByPlacement(userPlacementRule, latestDRPC)
 			})
 		})
 		When("DRAction changes to Failover", func() {
@@ -2745,7 +2792,9 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				userPlacementRule = placementObj.(*plrv1.PlacementRule)
 				Expect(userPlacementRule).NotTo(BeNil())
 				verifyInitialDRPCDeployment(userPlacementRule, East1ManagedCluster)
-				verifyDRPCOwnedByPlacement(userPlacementRule, getLatestDRPC(DefaultDRPCNamespace))
+				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
+				Expect(err).NotTo(HaveOccurred())
+				verifyDRPCOwnedByPlacement(userPlacementRule, latestDRPC)
 			})
 		})
 		When("DRAction is changed to Failover", func() {
@@ -2861,7 +2910,9 @@ func getVRGFromManifestWork(clusterNamespace string) (*rmn.VolumeReplicationGrou
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: mwName, Namespace: clusterNamespace}, mw)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 
 	return rmnutil.ExtractVRGFromManifestWork(mw)
 }
@@ -2885,7 +2936,10 @@ func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rm
 	var progression rmn.ProgressionStatus
 
 	Eventually(func() bool {
-		drpc := getLatestDRPC(DefaultDRPCNamespace)
+		drpc, err := getLatestDRPC(DefaultDRPCNamespace)
+		if err != nil {
+			return false
+		}
 		phase = drpc.Status.Phase
 		progression = drpc.Status.Progression
 
@@ -2894,7 +2948,8 @@ func verifyDRPCStateAndProgression(expectedAction rmn.DRAction, expectedPhase rm
 		fmt.Sprintf("Phase has not been updated yet! Phase:%s Expected:%s - progression:%s expected:%s",
 			phase, expectedPhase, progression, expectedPorgression))
 
-	drpc := getLatestDRPC(DefaultDRPCNamespace)
+	drpc, err := getLatestDRPC(DefaultDRPCNamespace)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(drpc.Spec.Action).Should(Equal(expectedAction))
 	Expect(drpc.Status.Phase).Should(Equal(expectedPhase))
 	Expect(drpc.Status.Progression).Should(Equal(expectedPorgression))
@@ -2906,7 +2961,11 @@ func checkConditionAllowFailover(namespace string) {
 	var availableCondition metav1.Condition
 
 	Eventually(func() bool {
-		drpc = getLatestDRPC(namespace)
+		var err error
+		drpc, err = getLatestDRPC(namespace)
+		if err != nil {
+			return false
+		}
 		for _, availableCondition = range drpc.Status.Conditions {
 			if availableCondition.Type != rmn.ConditionPeerReady {
 				if availableCondition.Status == metav1.ConditionTrue {
