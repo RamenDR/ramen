@@ -176,6 +176,30 @@ var (
 	}
 )
 
+func waitForCondition(d, poll time.Duration, desc string, cond func() bool) error {
+	deadline := time.Now().Add(d)
+	for {
+		if cond() {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out: %s", desc)
+		}
+		time.Sleep(poll)
+	}
+}
+
+func ensureConsistent(d, poll time.Duration, desc string, cond func() bool) error {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if !cond() {
+			return fmt.Errorf("consistency violated: %s", desc)
+		}
+		time.Sleep(poll)
+	}
+	return nil
+}
+
 func getSyncDRPolicy() *rmn.DRPolicy {
 	return &rmn.DRPolicy{
 		ObjectMeta: metav1.ObjectMeta{
