@@ -1319,21 +1319,15 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 }
 
 func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
-	// For Secondary state during Failover action, enable autoResync
-	if state == volrep.Secondary && v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover {
-		return true
+	if state != volrep.Secondary {
+		return false
 	}
 
-	// For Primary state during real Failover (not dry-run), enable autoResync
-	// This handles the case when promoting from test to real failover
-	// The Primary needs autoResync enabled to sync data to the Secondary
-	if state == volrep.Primary &&
-		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover &&
-		!v.instance.Spec.DryRun {
-		return true
+	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover {
+		return false
 	}
 
-	return false
+	return true
 }
 
 // updateVR updates the VR to the desired state and returns,
@@ -2358,13 +2352,9 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 
 func handleExistingObject[
 	ObjectType any,
-	ClientObject interface {
-		*ObjectType
-		client.Object
-	},
 ](
 	v *VRGInstance,
-	object *ObjectType, obj ClientObject,
+	object *ObjectType,
 	validateExistingObject func(*ObjectType) error,
 ) bool {
 	if err := validateExistingObject(object); err != nil {
@@ -2406,7 +2396,7 @@ func restoreClusterDataObjects[
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				if handleExistingObject(v, object, obj, validateExistingObject) {
+				if handleExistingObject(v, object, validateExistingObject) {
 					numRestored++
 				}
 
@@ -3238,9 +3228,10 @@ func (v *VRGInstance) shouldCleanupDryRunSnapshots() bool {
 	// - DryRun is omitted/removed from DRPC spec (defaults to false)
 
 	// Scenario 1: Aborting test failover - transitioning to Secondary
-	// Only cleanup if snapshots actually exist to avoid unnecessary API calls
+	// Always return true to attempt cleanup - the cleanup function will handle the case
+	// where no snapshots exist (it will be a no-op)
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && !v.instance.Spec.DryRun {
-		return v.hasDryRunSnapshots()
+		return true
 	}
 
 	// Scenario 2: Promoting test to real failover - staying Primary
@@ -3249,24 +3240,6 @@ func (v *VRGInstance) shouldCleanupDryRunSnapshots() bool {
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
 		!v.instance.Spec.DryRun &&
 		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover {
-		// Check if dry-run snapshots exist (indicates we're transitioning from test to real)
-		return v.hasDryRunSnapshots()
-	}
-
-	return false
-}
-
-// hasDryRunSnapshots checks if any snapshots with dry-run label exist for this VRG
-// This helps determine if we're transitioning from test (DryRun=true) to real (DryRun=false)
-func (v *VRGInstance) hasDryRunSnapshots() bool {
-	// List all snapshots with dry-run label for this specific VRG across all namespaces
-	snapshots := &snapv1.VolumeSnapshotList{}
-	if err := v.reconciler.Client.List(v.ctx, snapshots,
-		client.MatchingLabels{
-			dryRunSnapshotLabel: "true",
-			dryRunVRGLabel:      v.instance.Name,
-		},
-	); err == nil && len(snapshots.Items) > 0 {
 		return true
 	}
 
@@ -3503,6 +3476,13 @@ func cleanupDryRunSnapshots(
 		log.Error(err, "failed to list dry-run snapshots for cleanup", "vrg", instance.Name)
 
 		return fmt.Errorf("failed to list dry-run snapshots: %w", err)
+	}
+
+	// Early return if no snapshots to clean up
+	if len(snapshots.Items) == 0 {
+		log.Info("No dry-run snapshots found for cleanup")
+
+		return nil
 	}
 
 	// Delete each snapshot
