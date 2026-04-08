@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-logr/logr"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -28,9 +30,11 @@ import (
 )
 
 const (
-	WorkflowAnyError       = "any-error"
-	WorkflowEssentialError = "essential-error"
-	WorkflowFullError      = "full-error"
+	WorkflowAnyError         = "any-error"
+	WorkflowEssentialError   = "essential-error"
+	WorkflowFullError        = "full-error"
+	veleroDeployment         = "velero"
+	KubevirtVeleroPluginName = "kubevirt-velero-plugin"
 )
 
 func captureWorkflowDefault(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) []kubeobjects.CaptureSpec {
@@ -191,6 +195,7 @@ func isRecipeReconcileToStop(parameters map[string][]string) bool {
 
 func getRecipeParameters(vrg ramen.VolumeReplicationGroup, ramenConfig ramen.RamenConfig) map[string][]string {
 	parameters := vrg.Spec.KubeObjectProtection.RecipeParameters
+
 	if vrg.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(ramenConfig) &&
 		vrg.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
 		parameters["VM_NAMESPACE"] = append(parameters["VM_NAMESPACE"], *vrg.Spec.ProtectedNamespaces...)
@@ -328,6 +333,128 @@ func recipeNamespacesValidate(recipeElements util.RecipeElements, vrg ramen.Volu
 
 	// vrg is in the ramen operator namespace, allow it to protect any namespace
 	return nil
+}
+
+// If VM protection is requested, Velero and the kubevirt plugin must be present,
+// unless an alternate supported solution is configured.
+func recipeVMBackupValidate(ctx context.Context, reader client.Reader,
+	recipeElements util.RecipeElements, vrg ramen.VolumeReplicationGroup,
+	ramenConfig ramen.RamenConfig, log logr.Logger,
+) error {
+	if !isVirtualMachineCRDInstalled(ctx, reader, log) {
+		return nil
+	}
+
+	vmProtection := isProtectingVirtualMachine(recipeElements, vrg, log)
+
+	if !vmProtection {
+		return nil
+	}
+
+	if ramenConfig.KubeObjectProtection.VeleroNamespaceName != "" ||
+		len(ramenConfig.KubeObjectProtection.VeleroNamespaceName) > 0 {
+		if isKubeVirtEnabled(ctx, reader, ramenConfig, log) {
+			return nil
+		}
+
+		return fmt.Errorf(KubevirtVeleroPluginName + " is disabled")
+	}
+
+	log.Info("Skipping " + KubevirtVeleroPluginName + " validation as Velero is not configured;" +
+		"VM protection requires Velero and the kubevirt plugin unless an alternate supported solution is in place.")
+
+	return nil
+}
+
+// isVirtualMachineCRDInstalled checks if the KubeVirt VirtualMachine CRD exists
+func isVirtualMachineCRDInstalled(ctx context.Context, reader client.Reader, log logr.Logger) bool {
+	var vmCRD apiextensionsv1.CustomResourceDefinition
+
+	crdName := "virtualmachines.kubevirt.io"
+
+	err := reader.Get(ctx, client.ObjectKey{Name: crdName}, &vmCRD)
+	if err != nil {
+		log.Error(err, "VirtualMachine CRD not found; skipping kubevirt-velero-plugin validation")
+
+		return false
+	}
+
+	log.Info(fmt.Sprintf("VirtualMachine CRD found: %s", vmCRD.Name))
+
+	return true
+}
+
+func isProtectingVirtualMachine(recipeElements util.RecipeElements, vrg ramen.VolumeReplicationGroup,
+	log logr.Logger,
+) bool {
+	vmResourceTypes := map[string]bool{
+		"virtualmachine":             true,
+		"virtualmachine.kubevirt.io": true,
+	}
+
+	if vrg.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
+		log.Info("Recipe protects VM resources")
+
+		return true
+	}
+
+	// ToDO: Add validatation on recipe protecting VMs without using inbuilt VM-recipe
+	for _, group := range recipeElements.RecipeWithParams.Spec.Groups {
+		if len(group.IncludedResourceTypes) > 0 {
+			for _, resourceTypes := range group.IncludedResourceTypes {
+				if vmResourceTypes[strings.ToLower(strings.TrimSpace(resourceTypes))] {
+					log.Info("Recipe protects VM resources")
+
+					return true
+				}
+			}
+		}
+	}
+
+	log.Info(fmt.Sprintf("%s recipe is not protecting VM resource", recipeElements.RecipeWithParams.Name))
+
+	return false
+}
+
+func isKubeVirtEnabled(ctx context.Context, reader client.Reader,
+	ramenConfig ramen.RamenConfig, log logr.Logger,
+) bool {
+	// Read Velero deployment and check if kubevirt plugin is enabled
+	var veleroDeploy appsv1.Deployment
+
+	veleroLookUpKey := types.NamespacedName{
+		Name:      veleroDeployment,
+		Namespace: ramenConfig.KubeObjectProtection.VeleroNamespaceName,
+	}
+	// Fetch the Velero deployment
+	if err := reader.Get(ctx, veleroLookUpKey, &veleroDeploy); err != nil {
+		log.Error(err, "failed to get Velero deployment")
+
+		return false
+	}
+
+	// Go through InitContainers to check if kubevirt plugin is enabled
+	initContainers := veleroDeploy.Spec.Template.Spec.InitContainers
+
+	initContainerNames := make([]string, 0, len(initContainers))
+
+	for i := range initContainers {
+		if strings.Contains(initContainers[i].Name, KubevirtVeleroPluginName) {
+			log.Info(KubevirtVeleroPluginName + " is enabled; cluster configuration validated" +
+				" — safe to proceed with DR operations")
+
+			return true
+		}
+
+		initContainerNames = append(initContainerNames, initContainers[i].Name)
+	}
+
+	log.Info(fmt.Sprintf("InitContainers were [%v]; '%s' init-container not found in the list",
+		initContainerNames, KubevirtVeleroPluginName))
+	log.Info(KubevirtVeleroPluginName + " is not enabled; Disaster Recovery operations cannot proceed." +
+		" Please enable the plugin before proceeding with any DR operations.")
+
+	return false
 }
 
 func recipeNamespaceNames(recipeElements util.RecipeElements) sets.Set[string] {
