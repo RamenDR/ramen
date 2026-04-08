@@ -611,22 +611,43 @@ func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster s
 }
 
 //nolint:unparam
-func deleteUserPlacementRule(name, namespace string) {
+func deleteUserPlacementRule(name, namespace string) error {
 	userPlacementRule, err := getLatestUserPlacementRule(name, namespace)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient.Delete(context.TODO(), userPlacementRule)).Should(Succeed())
+	if err != nil {
+		return err
+	}
+
+	if err := k8sClient.Delete(context.TODO(), userPlacementRule); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func deleteUserPlacement() {
+func deleteUserPlacement() error {
 	userPlacement, err := getLatestUserPlacement(UserPlacementName, DefaultDRPCNamespace)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient.Delete(context.TODO(), userPlacement)).Should(Succeed())
+	if err != nil {
+		return err
+	}
+
+	if err := k8sClient.Delete(context.TODO(), userPlacement); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func deleteDRPC() {
+func deleteDRPC() error {
 	drpc, err := getLatestDRPC(DefaultDRPCNamespace)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient.Delete(context.TODO(), drpc)).Should(Succeed())
+	if err != nil {
+		return err
+	}
+
+	if err := k8sClient.Delete(context.TODO(), drpc); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func ensureNamespaceMWsDeletedFromAllClusters(namespace string) {
@@ -837,7 +858,9 @@ func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) error {
 }
 
 func createPlacementDecision() error {
-	deletePlacementDecision()
+	if err := deletePlacementDecision(); err != nil {
+		return err
+	}
 
 	plDecision := placementDecision.DeepCopy()
 
@@ -890,48 +913,60 @@ func createAppSet() error {
 	return k8sClient.Create(context.TODO(), &appSet)
 }
 
-func deleteAppSet() {
-	Expect(k8sClient.Delete(context.TODO(), &appSet)).To(Succeed())
+func deleteAppSet() error {
+	if err := k8sClient.Delete(context.TODO(), &appSet); err != nil {
+		return err
+	}
 
-	Eventually(func() bool {
+	return waitForCondition(timeout, interval, "waiting for AppSet to be deleted", func() bool {
 		resource := &argocdv1alpha1hack.ApplicationSet{}
 
 		return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: appSet.Namespace,
 			Name:      appSet.Name,
 		}, resource))
-	}, timeout, interval).Should(BeTrue())
+	})
 }
 
-func deleteDRCluster(inDRCluster *rmn.DRCluster) {
-	Expect(k8sClient.Delete(context.TODO(), inDRCluster)).To(Succeed())
+func deleteDRCluster(inDRCluster *rmn.DRCluster) error {
+	if err := k8sClient.Delete(context.TODO(), inDRCluster); err != nil {
+		return err
+	}
 
-	Eventually(func() bool {
+	return waitForCondition(timeout, interval, "waiting for DRCluster to be deleted", func() bool {
 		drcluster := &rmn.DRCluster{}
 
 		return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: inDRCluster.Namespace,
 			Name:      inDRCluster.Name,
 		}, drcluster))
-	}, timeout, interval).Should(BeTrue())
+	})
 }
 
-func deleteDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
+func deleteDRClusters(inClusters []*spokeClusterV1.ManagedCluster) error {
 	for _, managedCluster := range inClusters {
 		for idx := range drClusters {
 			if managedCluster.Name == drClusters[idx].Name {
-				deleteDRCluster(&drClusters[idx])
+				if err := deleteDRCluster(&drClusters[idx]); err != nil {
+					return err
+				}
 			}
 		}
 	}
+
+	return nil
 }
 
-func deleteDRClustersAsync() {
-	deleteDRClusters(asyncClusters)
+func deleteDRClustersAsync() error {
+	return deleteDRClusters(asyncClusters)
 }
 
-func deleteDRPolicyAsync() {
-	Expect(k8sClient.Delete(context.TODO(), asyncDRPolicy)).To(Succeed())
+func deleteDRPolicyAsync() error {
+	if err := k8sClient.Delete(context.TODO(), asyncDRPolicy); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // createVRGMW creates a basic (always Primary) ManifestWork for a VRG, used to fake existing VRG MW
@@ -1646,26 +1681,31 @@ func createDRPolicySync() error {
 	return createDRPolicy(policy)
 }
 
-func deleteDRClustersSync() {
-	deleteDRClusters(syncClusters)
+func deleteDRClustersSync() error {
+	return deleteDRClusters(syncClusters)
 }
 
-func deleteDRPolicySync() {
-	Expect(k8sClient.Delete(context.TODO(), getSyncDRPolicy())).To(Succeed())
+func deleteDRPolicySync() error {
+	if err := k8sClient.Delete(context.TODO(), getSyncDRPolicy()); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func deletePlacementDecision() {
-	err := k8sClient.Delete(context.TODO(), placementDecision)
-	Expect(client.IgnoreNotFound(err)).To(Succeed())
+func deletePlacementDecision() error {
+	if err := client.IgnoreNotFound(k8sClient.Delete(context.TODO(), placementDecision)); err != nil {
+		return err
+	}
 
-	Eventually(func() bool {
+	return waitForCondition(timeout, interval, "waiting for PlacementDecision to be deleted", func() bool {
 		resource := &clrapiv1beta1.PlacementDecision{}
 
 		return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: placementDecision.Namespace,
 			Name:      placementDecision.Name,
 		}, resource))
-	}, timeout, interval).Should(BeTrue())
+	})
 }
 
 func fenceCluster(cluster string, manual bool) {
@@ -1980,12 +2020,12 @@ var _ = Describe("DRPlacementControl - Ensure do-not-delete PVC Annotation", fun
 			Expect(err).To(BeNil())
 
 			if plType == UsePlacementRule {
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			} else {
-				deleteUserPlacement()
+				Expect(deleteUserPlacement()).To(Succeed())
 			}
 
-			deleteDRPC()
+			Expect(deleteDRPC()).To(Succeed())
 		})
 	}
 
@@ -2017,7 +2057,7 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 			err := retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRClusters)
 			Expect(err).ToNot(HaveOccurred())
 
-			deleteDRPC()
+			Expect(deleteDRPC()).To(Succeed())
 
 			errCount := 0
 
@@ -2121,7 +2161,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should retain the deleted DRPolicy in the API server", func() {
 				// ----------------------------- DELETE DRPolicy  --------------------------------------
 				By("\n\n*** DELETE drpolicy ***\n\n")
-				deleteDRPolicyAsync()
+				Expect(deleteDRPolicyAsync()).To(Succeed())
 				ensureDRPolicyIsNotDeleted(drpc)
 			})
 		})
@@ -2136,7 +2176,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should cleanup DRPC", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			})
 		})
 
@@ -2145,7 +2185,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE DRPC ***\n\n")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG MW
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
@@ -2157,7 +2197,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 		})
 		Specify("delete drclusters", func() {
-			deleteDRClustersAsync()
+			Expect(deleteDRClustersAsync()).To(Succeed())
 		})
 	})
 	// TEST WITH Placement AND Subscription
@@ -2211,14 +2251,13 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("Deleting DRPolicy with DRPC references when using Placement", func() {
 			It("Should retain the deleted DRPolicy in the API server", func() {
-				deleteDRPolicyAsync()
+				Expect(deleteDRPolicyAsync()).To(Succeed())
 				ensureDRPolicyIsNotDeleted(drpc)
 			})
 		})
 		When("Deleting user Placement", func() {
 			It("Should cleanup DRPC", func() {
-				deleteUserPlacement()
-
+				Expect(deleteUserPlacement()).To(Succeed())
 				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
 				Expect(err).NotTo(HaveOccurred())
 				_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionPeerReady)
@@ -2228,7 +2267,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting DRPC when using Placement", func() {
 			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG + NS MW
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
@@ -2240,7 +2279,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 		})
 		Specify("delete drclusters when using Placement", func() {
-			deleteDRClustersAsync()
+			Expect(deleteDRClustersAsync()).To(Succeed())
 		})
 	})
 	// TEST WITH Placement AND ApplicationSet
@@ -2309,14 +2348,13 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("Deleting DRPolicy with DRPC references when using Placement", func() {
 			It("Should retain the deleted DRPolicy in the API server", func() {
-				deleteDRPolicyAsync()
+				Expect(deleteDRPolicyAsync()).To(Succeed())
 				ensureDRPolicyIsNotDeleted(drpc)
 			})
 		})
 		When("Deleting user Placement", func() {
 			It("Should cleanup DRPC", func() {
-				deleteUserPlacement()
-
+				Expect(deleteUserPlacement()).To(Succeed())
 				latestDRPC, err := getLatestDRPC(DefaultDRPCNamespace)
 				Expect(err).NotTo(HaveOccurred())
 				_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionPeerReady)
@@ -2326,13 +2364,12 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting DRPC when using Placement", func() {
 			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG + NS MW
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				ensureNamespaceMWsDeletedFromAllClusters(ApplicationNamespace)
-				deleteAppSet()
-
+				Expect(deleteAppSet()).To(Succeed())
 				UseApplicationSet = false
 			})
 			It("should delete the DRPC causing its referenced drpolicy to be deleted"+
@@ -2341,7 +2378,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			})
 		})
 		Specify("delete drclusters when using Placement", func() {
-			deleteDRClustersAsync()
+			Expect(deleteDRClustersAsync()).To(Succeed())
 		})
 	})
 	Context("DRPlacementControl Reconciler Sync DR", func() {
@@ -2408,17 +2445,17 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting user PlacementRule", func() {
 			It("Should cleanup DRPC", func() {
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			})
 		})
 		When("Deleting DRPC", func() {
 			It("Should delete VRG from Primary (East1ManagedCluster)", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // DRCluster
-				deleteDRPolicySync()
-				deleteDRClustersSync()
+				Expect(deleteDRPolicySync()).To(Succeed())
+				Expect(deleteDRClustersSync()).To(Succeed())
 			})
 		})
 
@@ -2480,7 +2517,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting user PlacementRule", func() {
 			It("Should cleanup DRPC", func() {
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			})
 		})
 
@@ -2488,11 +2525,11 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should delete VRG from Primary (East1ManagedCluster)", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + NS + VRG MW
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // DRCluster
-				deleteDRPolicySync()
-				deleteDRClustersSync()
+				Expect(deleteDRPolicySync()).To(Succeed())
+				Expect(deleteDRClustersSync()).To(Succeed())
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
 			})
 		})
@@ -2697,26 +2734,26 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should retain the deleted DRPolicy in the API server", func() {
 				// ----------------------------- DELETE DRPolicy  --------------------------------------
 				By("\n\n*** DELETE drpolicy ***\n\n")
-				deleteDRPolicyAsync()
+				Expect(deleteDRPolicyAsync()).To(Succeed())
 			})
 		})
 		When("Deleting user PlacementRule", func() {
 			It("Should cleanup DRPC", func() {
 				// ----------------------------- DELETE DRPC from PRIMARY --------------------------------------
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			})
 		})
 
 		When("Deleting DRPC", func() {
 			It("Should delete all VRGs", func() {
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
 			})
 		})
 		Specify("delete drclusters", func() {
-			deleteDRClustersAsync()
+			Expect(deleteDRClustersAsync()).To(Succeed())
 		})
 	})
 
@@ -2754,27 +2791,27 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting DRPolicy with DRPC references", func() {
 			It("Should retain the deleted DRPolicy in the API server", func() {
 				By("\n\n*** DELETE drpolicy ***\n\n")
-				deleteDRPolicyAsync()
+				Expect(deleteDRPolicyAsync()).To(Succeed())
 			})
 		})
 
 		When("Deleting user PlacementRule", func() {
 			It("Should cleanup DRPC", func() {
 				By("\n\n*** DELETE User PlacementRule ***\n\n")
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			})
 		})
 
 		When("Deleting DRPC", func() {
 			It("Should delete all VRGs", func() {
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
 			})
 		})
 
 		Specify("delete drclusters", func() {
-			deleteDRClustersAsync()
+			Expect(deleteDRClustersAsync()).To(Succeed())
 		})
 	})
 
@@ -2908,20 +2945,20 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("Deleting DRPolicy with DRPC references", func() {
 			It("Should retain the deleted DRPolicy in the API server", func() {
-				deleteDRPolicyAsync()
+				Expect(deleteDRPolicyAsync()).To(Succeed())
 				ensureDRPolicyIsNotDeleted(drpc)
 			})
 		})
 		When("Deleting user PlacementRule", func() {
 			It("Should cleanup DRPC", func() {
-				deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+				Expect(deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)).To(Succeed())
 			})
 		})
 
 		When("Deleting DRPC", func() {
 			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG MW
-				deleteDRPC()
+				Expect(deleteDRPC()).To(Succeed())
 				waitForCompletion("deleted")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
@@ -2934,8 +2971,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		Specify("delete drclusters", func() {
 			RunningVolSyncTests = false
-
-			deleteDRClustersAsync()
+			Expect(deleteDRClustersAsync()).To(Succeed())
 		})
 	})
 })
