@@ -1318,8 +1318,8 @@ func verifyUserPlacementRuleDecision(name, namespace, homeCluster string) {
 	Expect(placementObj.GetAnnotations()[controllers.DRPCNamespaceAnnotation]).Should(Equal(namespace))
 }
 
-func waitForDRPCProtected(namespace string) {
-	Eventually(func() bool {
+func waitForDRPCProtected(namespace string) error {
+	return waitForCondition(timeout, interval, "DRPC to be protected", func() bool {
 		drpc, err := getLatestDRPC(namespace)
 		if err != nil {
 			return false
@@ -1327,7 +1327,7 @@ func waitForDRPCProtected(namespace string) {
 		_, cond := getDRPCCondition(&drpc.Status, rmn.ConditionProtected)
 
 		return cond != nil && cond.Status == metav1.ConditionTrue
-	}, timeout, interval).Should(BeTrue())
+	})
 }
 
 func getPlacementDecision(plName, plNamespace string) *clrapiv1beta1.PlacementDecision {
@@ -1480,24 +1480,25 @@ func getLatestUserPlacementDecision(name, namespace string) (*clrapiv1beta1.Clus
 	return nil, nil
 }
 
-func waitForCompletion(expectedState string) {
-	Eventually(func() bool {
+func waitForCompletion(expectedState string) error {
+	msg := fmt.Sprintf("failed waiting for state to match. expecting: %s, found %s", expectedState, drstate)
+
+	return waitForCondition(timeout*2, interval, msg, func() bool {
 		return drstate == expectedState
-	}, timeout*2, interval).Should(BeTrue(),
-		fmt.Sprintf("failed waiting for state to match. expecting: %s, found %s", expectedState, drstate))
+	})
 }
 
-//nolint:unparam
-func waitForDRPCPhaseAndProgression(namespace string, drState rmn.DRState) {
-	Eventually(func() bool {
+func waitForDRPCPhaseAndProgression(namespace string, drState rmn.DRState) error {
+	msg := fmt.Sprintf("Timed out waiting for Phase to match. Expected %s for drpcNS %s", drState, namespace)
+
+	return waitForCondition(timeout, interval, msg, func() bool {
 		drpc, err := getLatestDRPC(namespace)
 		if err != nil {
 			return false
 		}
 
 		return drpc.Status.Phase == drState && drpc.Status.Progression == rmn.ProgressionCompleted
-	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("Timed out waiting for Phase to match. Expected %s for drpcNS %s",
-		drState, namespace))
+	})
 }
 
 func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string) (int, *metav1.Condition) {
@@ -1660,7 +1661,7 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 
 func clearDRActionAfterRelocate(userPlacementRule *plrv1.PlacementRule, preferredCluster, failoverCluster string) {
 	Expect(setDRPCSpecExpectationTo(userPlacementRule.GetNamespace(), preferredCluster, failoverCluster, "")).To(Succeed())
-	waitForCompletion(string(rmn.Deployed))
+	Expect(waitForCompletion(string(rmn.Deployed))).To(Succeed())
 
 	drpc, err := getLatestDRPC(userPlacementRule.GetNamespace())
 	Expect(err).NotTo(HaveOccurred())
@@ -1685,13 +1686,13 @@ func relocateToPreferredCluster(placementObj client.Object, fromCluster string) 
 
 	Expect(updateManifestWorkStatus(toCluster1, placementObj.GetNamespace(), "vrg", ocmworkv1.WorkApplied)).To(Succeed())
 
-	waitForDRPCProtected(placementObj.GetNamespace())
+	Expect(waitForDRPCProtected(placementObj.GetNamespace())).To(Succeed())
 
 	verifyUserPlacementRuleDecision(placementObj.GetName(), placementObj.GetNamespace(), toCluster1)
 	verifyDRPCStatusPreferredClusterExpectation(placementObj.GetNamespace(), rmn.Relocated)
 	verifyVRGManifestWorkCreatedAsPrimary(placementObj.GetNamespace(), toCluster1)
 
-	waitForCompletion(string(rmn.Relocated))
+	Expect(waitForCompletion(string(rmn.Relocated))).To(Succeed())
 }
 
 func recoverToFailoverCluster(placementObj client.Object, fromCluster, toCluster string) {
@@ -1699,13 +1700,13 @@ func recoverToFailoverCluster(placementObj client.Object, fromCluster, toCluster
 
 	Expect(updateManifestWorkStatus(toCluster, placementObj.GetNamespace(), "vrg", ocmworkv1.WorkApplied)).To(Succeed())
 
-	waitForDRPCProtected(placementObj.GetNamespace())
+	Expect(waitForDRPCProtected(placementObj.GetNamespace())).To(Succeed())
 
 	verifyUserPlacementRuleDecision(placementObj.GetName(), placementObj.GetNamespace(), toCluster)
 	verifyDRPCStatusPreferredClusterExpectation(placementObj.GetNamespace(), rmn.FailedOver)
 	verifyVRGManifestWorkCreatedAsPrimary(placementObj.GetNamespace(), toCluster)
 
-	waitForCompletion(string(rmn.FailedOver))
+	Expect(waitForCompletion(string(rmn.FailedOver))).To(Succeed())
 }
 
 func createNamespacesSync() error {
@@ -1827,7 +1828,7 @@ func verifyInitialDRPCDeployment(userPlacement client.Object, preferredCluster s
 	verifyUserPlacementRuleDecision(userPlacement.GetName(), userPlacement.GetNamespace(), preferredCluster)
 	verifyDRPCStatusPreferredClusterExpectation(userPlacement.GetNamespace(), rmn.Deployed)
 	Expect(getManifestWorkCount(preferredCluster)).Should(BeElementOf(3, 4)) // MWs for VRG, 2 namespaces, and DRCluster
-	waitForCompletion(string(rmn.Deployed))
+	Expect(waitForCompletion(string(rmn.Deployed))).To(Succeed())
 
 	latestDRPC, err := getLatestDRPC(userPlacement.GetNamespace())
 	Expect(err).NotTo(HaveOccurred())
@@ -2168,8 +2169,7 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 		It("Should return an error", func(ctx SpecContext) {
 			_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
 				UsePlacementRule)
-
-			waitForCompletion(string(rmn.Deployed))
+			Expect(waitForCompletion(string(rmn.Deployed))).To(Succeed())
 
 			err := retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRClusters)
 			Expect(err).ToNot(HaveOccurred())
@@ -2353,7 +2353,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG MW
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
@@ -2435,7 +2435,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG + NS MW
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
@@ -2532,7 +2532,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG + NS MW
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				ensureNamespaceMWsDeletedFromAllClusters(ApplicationNamespace)
@@ -2619,7 +2619,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should delete VRG from Primary (East1ManagedCluster)", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // DRCluster
 				Expect(deleteDRPolicySync()).To(Succeed())
 				Expect(deleteDRClustersSync()).To(Succeed())
@@ -2693,7 +2693,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				By("\n\n*** DELETE DRPC ***\n\n")
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + NS + VRG MW
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1)) // DRCluster
 				Expect(deleteDRPolicySync()).To(Succeed())
 				Expect(deleteDRClustersSync()).To(Succeed())
@@ -2721,7 +2721,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 					DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster, UsePlacementRule)
 				userPlacementRule1 = placementObj.(*plrv1.PlacementRule)
 				Expect(userPlacementRule1).NotTo(BeNil())
-				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)
+				Expect(waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)).To(Succeed())
 				Expect(uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster, rmn.VRGAction(""))).To(Succeed())
 			})
 		})
@@ -2779,7 +2779,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 				resetClusterDown()
 				runFailoverAction(userPlacementRule1, from, to, false, false)
-				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.FailedOver)
+				Expect(waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.FailedOver)).To(Succeed())
 				Expect(uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, West1ManagedCluster, rmn.VRGActionFailover)).To(Succeed())
 				resetClusterDown()
 			})
@@ -2816,7 +2816,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				expectedPhase = rmn.FailedOver
 				expectedPorgression = rmn.ProgressionCompleted
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
-				waitForCompletion(string(rmn.FailedOver))
+				Expect(waitForCompletion(string(rmn.FailedOver))).To(Succeed())
 			})
 		})
 
@@ -2827,7 +2827,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				from := West1ManagedCluster
 				runRelocateAction(userPlacementRule1, from, false, false)
 				Expect(uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster, rmn.VRGAction(rmn.ActionRelocate))).To(Succeed())
-				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Relocated)
+				Expect(waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Relocated)).To(Succeed())
 			})
 		})
 		//nolint:lll
@@ -2857,7 +2857,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				expectedPhase = rmn.Relocated
 				expectedPorgression = rmn.ProgressionCompleted
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
-				waitForCompletion(string(rmn.Relocated))
+				Expect(waitForCompletion(string(rmn.Relocated))).To(Succeed())
 			})
 		})
 		//nolint:lll
@@ -2889,7 +2889,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 				expectedPhase = rmn.Relocated
 				expectedPorgression = rmn.ProgressionCompleted
 				verifyDRPCStateAndProgression(expectedAction, expectedPhase, expectedPorgression)
-				waitForCompletion(string(rmn.Relocated))
+				Expect(waitForCompletion(string(rmn.Relocated))).To(Succeed())
 			})
 		})
 
@@ -2911,7 +2911,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting DRPC", func() {
 			It("Should delete all VRGs", func() {
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
 			})
 		})
@@ -2945,7 +2945,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 					DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster, UsePlacementRule)
 				userPlacementRule1 = placementObj.(*plrv1.PlacementRule)
 				Expect(userPlacementRule1).NotTo(BeNil())
-				waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)
+				Expect(waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)).To(Succeed())
 				Expect(uploadVRGtoS3Store(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster, rmn.VRGAction(""))).To(Succeed())
 				resetToggleUIDChecks()
 			})
@@ -2968,7 +2968,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		When("Deleting DRPC", func() {
 			It("Should delete all VRGs", func() {
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
 			})
 		})
@@ -3012,7 +3012,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		Specify("Cleanup after tests", func() {
 			deleteUserPlacement()
 			deleteDRPC()
-			waitForCompletion("deleted")
+			Expect(waitForCompletion("deleted")).To(Succeed())
 			Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 			Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 			ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
@@ -3122,7 +3122,7 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			It("Should delete VRG and NS MWs and MCVs from Primary (East1ManagedCluster)", func() {
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(BeElementOf(3, 4)) // DRCluster + VRG MW
 				Expect(deleteDRPC()).To(Succeed())
-				waitForCompletion("deleted")
+				Expect(waitForCompletion("deleted")).To(Succeed())
 				Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
 				Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
 				ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
