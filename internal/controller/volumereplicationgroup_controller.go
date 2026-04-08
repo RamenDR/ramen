@@ -2468,10 +2468,16 @@ func (v *VRGInstance) IsDRActionInProgress() bool {
 	isRepStatePrimary := spec.ReplicationState == ramendrv1alpha1.Primary
 	switchedToPrimary := status.State == ramendrv1alpha1.PrimaryState
 
-	if (isRepStateSecondary && !switchedToSecondary) ||
-		(isRepStatePrimary && !switchedToPrimary) ||
-		v.instance.Generation != status.ObservedGeneration {
-		return true
+	if isRepStateSecondary {
+		if !switchedToSecondary || (v.instance.Generation != status.ObservedGeneration) {
+			return true
+		}
+	}
+
+	if isRepStatePrimary {
+		if !switchedToPrimary || (v.instance.Generation != status.ObservedGeneration) {
+			return true
+		}
 	}
 
 	return false
