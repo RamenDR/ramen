@@ -525,7 +525,7 @@ func fakeVRGWithMModesProtectedPVC(vrgNamespace string) *rmn.VolumeReplicationGr
 	return vrg
 }
 
-func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
+func createPlacementRule(name, namespace string) (*plrv1.PlacementRule, error) {
 	namereq := metav1.LabelSelectorRequirement{}
 	namereq.Key = "key1"
 	namereq.Operator = metav1.LabelSelectorOpIn
@@ -549,12 +549,14 @@ func createPlacementRule(name, namespace string) *plrv1.PlacementRule {
 	}
 
 	err := k8sClient.Create(context.TODO(), placementRule)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 
-	return placementRule
+	return placementRule, nil
 }
 
-func createPlacement(name, namespace string) *clrapiv1beta1.Placement {
+func createPlacement(name, namespace string) (*clrapiv1beta1.Placement, error) {
 	var numberOfClustersToDeployTo int32 = 1
 
 	placement := &clrapiv1beta1.Placement{
@@ -572,12 +574,14 @@ func createPlacement(name, namespace string) *clrapiv1beta1.Placement {
 	}
 
 	err := k8sClient.Create(context.TODO(), placement)
-	Expect(err).NotTo(HaveOccurred())
+	if err != nil {
+		return nil, err
+	}
 
-	return placement
+	return placement, nil
 }
 
-func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster string) *rmn.DRPlacementControl {
+func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster string) (*rmn.DRPlacementControl, error) {
 	drpc := &rmn.DRPlacementControl{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -600,9 +604,11 @@ func createDRPC(placementName, name, namespace, drPolicyName, preferredCluster s
 			PreferredCluster:     preferredCluster,
 		},
 	}
-	Expect(k8sClient.Create(context.TODO(), drpc)).Should(Succeed())
+	if err := k8sClient.Create(context.TODO(), drpc); err != nil {
+		return nil, err
+	}
 
-	return drpc
+	return drpc, nil
 }
 
 //nolint:unparam
@@ -730,23 +736,32 @@ func clearFakeUserPlacementRuleStatus(name, namespace string) {
 	Expect(retryErr).NotTo(HaveOccurred())
 }
 
-func createNamespace(ns *corev1.Namespace) {
+func createNamespace(ns *corev1.Namespace) error {
 	nsName := types.NamespacedName{Name: ns.Name}
 
 	err := k8sClient.Get(context.TODO(), nsName, &corev1.Namespace{})
 	if err != nil {
-		Expect(k8sClient.Create(context.TODO(), ns)).NotTo(HaveOccurred(),
-			"failed to create %v managed cluster namespace", ns.Name)
+		if err := k8sClient.Create(context.TODO(), ns); err != nil {
+			return fmt.Errorf("failed to create %v managed cluster namespace: %w", ns.Name, err)
+		}
 	}
+
+	return nil
 }
 
-func createNamespacesAsync(appNamespace *corev1.Namespace) {
-	createNamespace(east1ManagedClusterNamespace)
-	createNamespace(west1ManagedClusterNamespace)
-	createNamespace(appNamespace)
+func createNamespacesAsync(appNamespace *corev1.Namespace) error {
+	if err := createNamespace(east1ManagedClusterNamespace); err != nil {
+		return err
+	}
+
+	if err := createNamespace(west1ManagedClusterNamespace); err != nil {
+		return err
+	}
+
+	return createNamespace(appNamespace)
 }
 
-func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) {
+func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) error {
 	for _, cl := range managedClusters {
 		mcLookupKey := types.NamespacedName{Name: cl.Name}
 		mcObj := &spokeClusterV1.ManagedCluster{}
@@ -756,7 +771,9 @@ func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) {
 			clinstance := cl.DeepCopy()
 
 			err := k8sClient.Create(context.TODO(), clinstance)
-			Expect(err).NotTo(HaveOccurred())
+			if err != nil {
+				return err
+			}
 
 			updateManagedClusterStatus(k8sClient, clinstance)
 
@@ -765,6 +782,8 @@ func createManagedClusters(managedClusters []*spokeClusterV1.ManagedCluster) {
 
 		updateManagedClusterStatus(k8sClient, mcObj)
 	}
+
+	return nil
 }
 
 func populateDRClusters() {
@@ -800,37 +819,47 @@ func populateDRClusters() {
 	)
 }
 
-func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
+func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) error {
 	for _, managedCluster := range inClusters {
 		for idx := range drClusters {
 			if managedCluster.Name == drClusters[idx].Name {
 				err := k8sClient.Create(context.TODO(), &drClusters[idx])
-				Expect(err).NotTo(HaveOccurred())
+				if err != nil {
+					return err
+				}
+
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drClusters[idx].Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drClusters[idx].Name)
 			}
 		}
 	}
+
+	return nil
 }
 
-func createPlacementDecision() {
+func createPlacementDecision() error {
 	deletePlacementDecision()
 
 	plDecision := placementDecision.DeepCopy()
-	err := k8sClient.Create(context.TODO(), plDecision)
-	Expect(err).NotTo(HaveOccurred())
+
+	return k8sClient.Create(context.TODO(), plDecision)
 }
 
-func createDRClustersAsync() {
-	createDRClusters(asyncClusters)
+func createDRClustersAsync() error {
+	return createDRClusters(asyncClusters)
 }
 
-func createDRPolicy(inDRPolicy *rmn.DRPolicy) {
+func createDRPolicy(inDRPolicy *rmn.DRPolicy) error {
 	err := k8sClient.Create(context.TODO(), inDRPolicy)
-	Expect(err).NotTo(HaveOccurred())
-	Eventually(func() bool {
+	if err != nil {
+		return err
+	}
+
+	return waitForCondition(timeout, interval, "waiting for DRPolicy to be validated", func() bool {
 		drpolicy := &rmn.DRPolicy{}
-		Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: inDRPolicy.Name}, drpolicy)).To(Succeed())
+		if err := apiReader.Get(context.TODO(), types.NamespacedName{Name: inDRPolicy.Name}, drpolicy); err != nil {
+			return false
+		}
 
 		for _, condition := range drpolicy.Status.Conditions {
 			if condition.Type != rmn.DRPolicyValidated {
@@ -849,17 +878,17 @@ func createDRPolicy(inDRPolicy *rmn.DRPolicy) {
 		}
 
 		return false
-	}, timeout, interval).Should(BeTrue())
+	})
 }
 
-func createDRPolicyAsync() {
+func createDRPolicyAsync() error {
 	policy := asyncDRPolicy.DeepCopy()
-	createDRPolicy(policy)
+
+	return createDRPolicy(policy)
 }
 
-func createAppSet() {
-	err := k8sClient.Create(context.TODO(), &appSet)
-	Expect(err).NotTo(HaveOccurred())
+func createAppSet() error {
+	return k8sClient.Create(context.TODO(), &appSet)
 }
 
 func deleteAppSet() {
@@ -908,7 +937,7 @@ func deleteDRPolicyAsync() {
 
 // createVRGMW creates a basic (always Primary) ManifestWork for a VRG, used to fake existing VRG MW
 // to test upgrade cases for DRPC based UID adoption
-func createVRGMW(name, namespace, homeCluster string) {
+func createVRGMW(name, namespace, homeCluster string) error {
 	vrg := getDefaultVRG(namespace)
 	vrg.Generation = 1
 
@@ -922,7 +951,8 @@ func createVRGMW(name, namespace, homeCluster string) {
 	}
 
 	_, err := mwu.CreateOrUpdateVRGManifestWork(name, namespace, homeCluster, *vrg, nil)
-	Expect(err).To(Succeed())
+
+	return err
 }
 
 func updateManifestWorkStatus(clusterNamespace, vrgNamespace, mwType, workType string) {
@@ -1042,12 +1072,12 @@ const (
 func InitialDeploymentAsync(namespace, placementName, homeCluster string, plType PlacementType) (
 	client.Object, *rmn.DRPlacementControl,
 ) {
-	createNamespacesAsync(getNamespaceObj(namespace))
+	Expect(createNamespacesAsync(getNamespaceObj(namespace))).To(Succeed())
 
-	createManagedClusters(asyncClusters)
-	createDRClustersAsync()
-	createDRPolicyAsync()
-	createPlacementDecision()
+	Expect(createManagedClusters(asyncClusters)).To(Succeed())
+	Expect(createDRClustersAsync()).To(Succeed())
+	Expect(createDRPolicyAsync()).To(Succeed())
+	Expect(createPlacementDecision()).To(Succeed())
 
 	return CreatePlacementAndDRPC(namespace, placementName, homeCluster, plType)
 }
@@ -1057,29 +1087,40 @@ func CreatePlacementAndDRPC(namespace, placementName, homeCluster string, plType
 ) {
 	var placementObj client.Object
 
+	var err error
+
 	switch plType {
 	case UsePlacementRule:
-		placementObj = createPlacementRule(placementName, namespace)
+		placementObj, err = createPlacementRule(placementName, namespace)
+		Expect(err).NotTo(HaveOccurred())
 	case UsePlacementWithSubscription:
-		placementObj = createPlacement(placementName, namespace)
+		placementObj, err = createPlacement(placementName, namespace)
+		Expect(err).NotTo(HaveOccurred())
 	case UsePlacementWithAppSet:
-		createAppSet()
+		Expect(createAppSet()).To(Succeed())
 
-		placementObj = createPlacement(placementName, namespace)
+		placementObj, err = createPlacement(placementName, namespace)
+		Expect(err).NotTo(HaveOccurred())
 	default:
 		Fail("Wrong placement type")
 	}
 
-	return placementObj, createDRPC(placementName, DRPCCommonName, namespace, AsyncDRPolicyName, homeCluster)
+	drpc, err := createDRPC(placementName, DRPCCommonName, namespace, AsyncDRPolicyName, homeCluster)
+	Expect(err).NotTo(HaveOccurred())
+
+	return placementObj, drpc
 }
 
 func FollowOnDeploymentAsync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl,
 ) {
-	createNamespace(appNamespace2)
+	Expect(createNamespace(appNamespace2)).To(Succeed())
 
-	placementRule := createPlacementRule(placementName, namespace)
-	drpc := createDRPC(placementName, DRPCCommonName, namespace, AsyncDRPolicyName, homeCluster)
+	placementRule, err := createPlacementRule(placementName, namespace)
+	Expect(err).NotTo(HaveOccurred())
+
+	drpc, err := createDRPC(placementName, DRPCCommonName, namespace, AsyncDRPolicyName, homeCluster)
+	Expect(err).NotTo(HaveOccurred())
 
 	return placementRule, drpc
 }
@@ -1616,34 +1657,44 @@ func recoverToFailoverCluster(placementObj client.Object, fromCluster, toCluster
 	waitForCompletion(string(rmn.FailedOver))
 }
 
-func createNamespacesSync() {
-	createNamespace(east1ManagedClusterNamespace)
-	createNamespace(east2ManagedClusterNamespace)
-	createNamespace(appNamespace)
+func createNamespacesSync() error {
+	if err := createNamespace(east1ManagedClusterNamespace); err != nil {
+		return err
+	}
+
+	if err := createNamespace(east2ManagedClusterNamespace); err != nil {
+		return err
+	}
+
+	return createNamespace(appNamespace)
 }
 
 func InitialDeploymentSync(namespace, placementName, homeCluster string) (*plrv1.PlacementRule,
 	*rmn.DRPlacementControl,
 ) {
-	createNamespacesSync()
+	Expect(createNamespacesSync()).To(Succeed())
 
-	createManagedClusters(syncClusters)
-	createDRClustersSync()
-	createDRPolicySync()
+	Expect(createManagedClusters(syncClusters)).To(Succeed())
+	Expect(createDRClustersSync()).To(Succeed())
+	Expect(createDRPolicySync()).To(Succeed())
 
-	placementRule := createPlacementRule(placementName, namespace)
-	drpc := createDRPC(UserPlacementRuleName, DRPCCommonName, DefaultDRPCNamespace, SyncDRPolicyName, homeCluster)
+	placementRule, err := createPlacementRule(placementName, namespace)
+	Expect(err).NotTo(HaveOccurred())
+
+	drpc, err := createDRPC(UserPlacementRuleName, DRPCCommonName, DefaultDRPCNamespace, SyncDRPolicyName, homeCluster)
+	Expect(err).NotTo(HaveOccurred())
 
 	return placementRule, drpc
 }
 
-func createDRClustersSync() {
-	createDRClusters(syncClusters)
+func createDRClustersSync() error {
+	return createDRClusters(syncClusters)
 }
 
-func createDRPolicySync() {
+func createDRPolicySync() error {
 	policy := syncDRPolicy.DeepCopy()
-	createDRPolicy(policy)
+
+	return createDRPolicy(policy)
 }
 
 func deleteDRClustersSync() {
@@ -2606,10 +2657,10 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		When("Application deployed for the first time", func() {
 			It("Should deploy drpc", func() {
-				createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))
-				createManagedClusters(asyncClusters)
-				createDRClustersAsync()
-				createDRPolicyAsync()
+				Expect(createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))).To(Succeed())
+				Expect(createManagedClusters(asyncClusters)).To(Succeed())
+				Expect(createDRClustersAsync()).To(Succeed())
+				Expect(createDRPolicyAsync()).To(Succeed())
 
 				var placementObj client.Object
 
@@ -2829,15 +2880,15 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 
 		When("Application deployed for the first time", func() {
 			It("Should deploy drpc", func() {
-				createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))
-				createManagedClusters(asyncClusters)
-				createDRClustersAsync()
-				createDRPolicyAsync()
+				Expect(createNamespacesAsync(getNamespaceObj(DefaultDRPCNamespace))).To(Succeed())
+				Expect(createManagedClusters(asyncClusters)).To(Succeed())
+				Expect(createDRClustersAsync()).To(Succeed())
+				Expect(createDRPolicyAsync()).To(Succeed())
 				setToggleUIDChecks()
 
 				// Create an existing VRG MW on East, to simulate upgrade cases (West1 will report an
 				// orphan VRG for orphan cases)
-				createVRGMW(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster)
+				Expect(createVRGMW(DRPCCommonName, DefaultDRPCNamespace, East1ManagedCluster)).To(Succeed())
 
 				var placementObj client.Object
 
