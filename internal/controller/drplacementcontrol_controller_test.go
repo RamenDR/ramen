@@ -1885,6 +1885,53 @@ var _ = Describe("DRPlacementControl - Ensure do-not-delete PVC Annotation", fun
 	})
 })
 
+var _ = Describe("DRPlacementControl - EnableDiff Annotation Propagation", func() {
+	BeforeEach(func() {
+		populateDRClusters()
+	})
+
+	AfterEach(func() {
+		err := forceCleanupClusterAfterAErrorTest()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("Should propagate EnableDiffAnnotation from DRPC to VRG in ManifestWork", func(ctx SpecContext) {
+		_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
+			UsePlacementRule)
+
+		waitForCompletion(string(rmn.Deployed))
+
+		// Set EnableDiffAnnotation on DRPC
+		retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			drpc := getLatestDRPC(DefaultDRPCNamespace)
+
+			annotations := drpc.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+
+			annotations[rmnutil.EnableDiffAnnotation] = "true"
+			drpc.SetAnnotations(annotations)
+
+			return k8sClient.Update(context.TODO(), drpc)
+		})
+		Expect(retryErr).NotTo(HaveOccurred())
+
+		// Wait for the VRG ManifestWork to contain the annotation
+		Eventually(func() string {
+			vrg, err := getVRGFromManifestWork(East1ManagedCluster)
+			if err != nil {
+				return ""
+			}
+
+			return vrg.GetAnnotations()[rmnutil.EnableDiffAnnotation]
+		}, timeout, interval).Should(Equal("true"))
+
+		deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+		deleteDRPC()
+	})
+})
+
 var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 	BeforeEach(func() {
 		populateDRClusters()

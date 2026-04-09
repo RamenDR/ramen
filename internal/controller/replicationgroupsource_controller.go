@@ -119,7 +119,13 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
 		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
 	)
-	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+
+	var vgsHandler cephfscg.VolumeGroupSourceHandler
+	if util.IsDiffSyncEnabled(rgs.GetAnnotations()) {
+		vgsHandler = cephfscg.NewDiffVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+	} else {
+		vgsHandler = cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+	}
 
 	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
 		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")

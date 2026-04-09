@@ -35,10 +35,11 @@ import (
 )
 
 const (
-	vrgtimeout   = time.Second
-	vrginterval  = time.Millisecond * 10
-	letters      = "abcdefghijklmnopqrstuxwxyz"
-	namespaceLen = 5
+	vrgtimeout          = time.Second
+	vrginterval         = time.Millisecond * 10
+	vrgReconcileTimeout = 5 * time.Second
+	letters             = "abcdefghijklmnopqrstuxwxyz"
+	namespaceLen        = 5
 )
 
 var (
@@ -508,7 +509,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet, timeout, interval).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgReconcileTimeout, interval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -525,7 +526,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					configMapUpdate()
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgReconcileTimeout, interval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -553,7 +554,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgReconcileTimeout, interval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -593,7 +594,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet).ShouldNot(Equal(vrgResourceVersion))
+					Eventually(vrgResourceVersionGet, vrgReconcileTimeout, interval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the deselected unprotected", func() {
 					pvcsVerify(pvcNamesDeselected, pvcUnprotectedVerify)

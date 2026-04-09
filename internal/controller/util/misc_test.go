@@ -17,6 +17,15 @@ var _ = Describe("misc", func() {
 	Expect(util.IsPVCMarkedForVolSync(map[string]string{util.UseVolSyncAnnotation: "true"})).
 		Should(Equal(true))
 
+	// Tests for IsDiffSyncEnabled
+	Expect(util.IsDiffSyncEnabled(nil)).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{"other-key": "true"})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: ""})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: "false"})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: "True"})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: "true"})).Should(Equal(true))
+
 	pvcNamespace1 := "busybox-box-appT"
 	pvcNamespace2 := "busybox-box-appppppppXppppT"
 	pvcNamespace3 := "busybox-box-appppppppXppppddffghT"

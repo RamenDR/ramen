@@ -95,7 +95,7 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	for _, rdSpec := range m.ReplicationGroupDestination.Spec.RDSpecs {
 		m.Logger.Info("Create replication destination for PVC", "PVCName", rdSpec.ProtectedPVC.Name)
 
-		rd, err := m.ReconcileRD(rdSpec, m.ReplicationGroupDestination.Status.LastSyncStartTime.String())
+		rd, err := m.ReconcileRD(ctx, rdSpec, m.ReplicationGroupDestination.Status.LastSyncStartTime.String())
 		if err != nil {
 			return mover.InProgress(), fmt.Errorf("failed to create replication destination: %w", err)
 		}
@@ -117,34 +117,9 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	m.ReplicationGroupDestination.Status.ReplicationDestinations = rds
 	latestImages := make(map[string]*corev1.TypedLocalObjectReference)
 
-	for _, rd := range createdRDs {
-		m.Logger.Info("Check if replication destination is completed", "ReplicationDestinationName", rd.Name)
-
-		if rd.Spec.Trigger.Manual != rd.Status.LastManualSync {
-			m.Logger.Info("replication destination is not completed", "ReplicationDestinationName", rd.Name)
-
-			return mover.InProgress(), nil
-		}
-
-		if rd.Status.LatestImage != nil && rd.Spec.RsyncTLS != nil && rd.Spec.RsyncTLS.DestinationPVC != nil {
-			m.Logger.Info("Append latest image in the list",
-				"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
-
-			latestImages[*rd.Spec.RsyncTLS.DestinationPVC] = rd.Status.LatestImage
-		}
-
-		m.Logger.Info("Set DoNotDeleteLabel to the image",
-			"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
-
-		rgdName := m.ReplicationGroupDestination.Name
-		vrgName := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel]
-		vrgNamespace := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNamespaceLabel]
-
-		if err := util.DeferDeleteImage(
-			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rgdName, vrgName, vrgNamespace,
-		); err != nil {
-			return mover.InProgress(), err
-		}
+	result, err := m.processCompletedRDs(ctx, createdRDs, latestImages)
+	if err != nil || result.ReconcileResult().Requeue {
+		return result, err
 	}
 
 	readytoUse, err := util.CheckImagesReadyToUse(
@@ -169,6 +144,52 @@ func (m *rgdMachine) Synchronize(ctx context.Context) (mover.Result, error) {
 	return mover.Complete(), nil
 }
 
+func (m *rgdMachine) processCompletedRDs(
+	ctx context.Context,
+	createdRDs []*volsyncv1alpha1.ReplicationDestination,
+	latestImages map[string]*corev1.TypedLocalObjectReference,
+) (mover.Result, error) {
+	for i, rd := range createdRDs {
+		m.Logger.Info("Check if replication destination is completed", "ReplicationDestinationName", rd.Name)
+
+		if rd.Spec.Trigger.Manual != rd.Status.LastManualSync {
+			m.Logger.Info("replication destination is not completed", "ReplicationDestinationName", rd.Name)
+
+			return mover.InProgress(), nil
+		}
+
+		if rd.Status.LatestImage != nil {
+			pvcName := m.getDestinationPVCName(rd, i)
+			if pvcName == "" {
+				m.Logger.Info("WARNING: Skipping RD with empty destination PVC name, check spec",
+					"ReplicationDestinationName", rd.Name)
+
+				continue
+			}
+
+			m.Logger.Info("Append latest image in the list",
+				"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
+
+			latestImages[pvcName] = rd.Status.LatestImage
+		}
+
+		m.Logger.Info("Set DoNotDeleteLabel to the image",
+			"ReplicationDestinationName", rd.Name, "LatestImage", rd.Status.LatestImage)
+
+		rgdName := m.ReplicationGroupDestination.Name
+		vrgName := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNameLabel]
+		vrgNamespace := m.ReplicationGroupDestination.GetLabels()[util.VRGOwnerNamespaceLabel]
+
+		if err := util.DeferDeleteImage(
+			ctx, m.Client, rd.Status.LatestImage.Name, rd.Namespace, rgdName, vrgName, vrgNamespace,
+		); err != nil {
+			return mover.InProgress(), err
+		}
+	}
+
+	return mover.Complete(), nil
+}
+
 func (m *rgdMachine) Cleanup(ctx context.Context) (mover.Result, error) {
 	m.Logger.Info("Clean expired RD images")
 
@@ -185,6 +206,7 @@ func (m *rgdMachine) ObserveSyncDuration(dur time.Duration) {}
 
 //nolint:cyclop
 func (m *rgdMachine) ReconcileRD(
+	ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, manual string,
 ) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
@@ -211,7 +233,7 @@ func (m *rgdMachine) ReconcileRD(
 
 	var rd *volsyncv1alpha1.ReplicationDestination
 
-	rd, err = m.CreateReplicationDestinations(rdSpec, pskSecretName, dstPVC, manual)
+	rd, err = m.CreateReplicationDestinations(ctx, rdSpec, pskSecretName, dstPVC, manual)
 	if err != nil {
 		return nil, err
 	}
@@ -256,8 +278,27 @@ func (m *rgdMachine) ensurePSKSecretReady(pskSecretName string, log logr.Logger)
 	return nil
 }
 
-//nolint:funlen
+// getDestinationPVCName returns the destination PVC name from the RD spec.
+// For RsyncTLS, it uses the DestinationPVC field. For External (diff sync), it uses the protected PVC name.
+func (m *rgdMachine) getDestinationPVCName(rd *volsyncv1alpha1.ReplicationDestination, rdSpecIdx int) string {
+	if rd.Spec.RsyncTLS != nil && rd.Spec.RsyncTLS.DestinationPVC != nil {
+		return *rd.Spec.RsyncTLS.DestinationPVC
+	}
+
+	if rd.Spec.External != nil && rdSpecIdx < len(m.ReplicationGroupDestination.Spec.RDSpecs) {
+		return m.ReplicationGroupDestination.Spec.RDSpecs[rdSpecIdx].ProtectedPVC.Name
+	}
+
+	return ""
+}
+
+func (m *rgdMachine) isDiffSyncEnabled() bool {
+	return util.IsDiffSyncEnabled(m.ReplicationGroupDestination.GetAnnotations())
+}
+
+//nolint:funlen,cyclop
 func (m *rgdMachine) CreateReplicationDestinations(
+	ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	pskSecretName string, dstPVC *string, manual string,
 ) (*volsyncv1alpha1.ReplicationDestination, error) {
@@ -281,8 +322,17 @@ func (m *rgdMachine) CreateReplicationDestinations(
 		},
 	}
 
+	diffEnabled := m.isDiffSyncEnabled()
+
+	storageClass, err := GetStorageClass(ctx, m.Client, rdSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		m.Logger.Error(err, "Failed to get StorageClass for provider lookup", "PVCName", rdSpec.ProtectedPVC.Name)
+
+		return nil, err
+	}
+
 	if _, err := ctrlutil.CreateOrUpdate(
-		context.Background(), m.Client, rd,
+		ctx, m.Client, rd,
 		func() error {
 			if err := ctrl.SetControllerReference(m.ReplicationGroupDestination, rd, m.Client.Scheme()); err != nil {
 				return err
@@ -297,18 +347,40 @@ func (m *rgdMachine) CreateReplicationDestinations(
 			util.AddAnnotation(rd, volsync.OwnerNamespaceAnnotation, m.ReplicationGroupDestination.Namespace)
 
 			rd.Spec.Trigger = &volsyncv1alpha1.ReplicationDestinationTriggerSpec{Manual: manual}
-			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-				ServiceType: m.VSHandler.GetRsyncServiceType(),
-				KeySecret:   &pskSecretName,
-				ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
-					Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
-					StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
-					AccessModes:             pvcAccessModes,
-					VolumeSnapshotClassName: &volumeSnapshotClassName,
-					DestinationPVC:          dstPVC,
-				},
-				MoverConfig: getMoverConfig(rdSpec),
+
+			if diffEnabled {
+				params := map[string]string{
+					"copyMethod":              string(volsyncv1alpha1.CopyMethodSnapshot),
+					"capacity":                rdSpec.ProtectedPVC.Resources.Requests.Storage().String(),
+					"storageClassName":        *rdSpec.ProtectedPVC.StorageClassName,
+					"accessModes":             string(pvcAccessModes[0]),
+					"volumeSnapshotClassName": volumeSnapshotClassName,
+					"keySecret":               pskSecretName,
+				}
+				if dstPVC != nil {
+					params["destinationPVC"] = *dstPVC
+				}
+
+				rd.Spec.RsyncTLS = nil
+				rd.Spec.External = &volsyncv1alpha1.ReplicationDestinationExternalSpec{
+					Provider:   storageClass.Provisioner,
+					Parameters: params,
+				}
+			} else {
+				rd.Spec.External = nil
+				rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
+					ServiceType: m.VSHandler.GetRsyncServiceType(),
+					KeySecret:   &pskSecretName,
+					ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
+						CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+						Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
+						StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
+						AccessModes:             pvcAccessModes,
+						VolumeSnapshotClassName: &volumeSnapshotClassName,
+						DestinationPVC:          dstPVC,
+					},
+					MoverConfig: getMoverConfig(rdSpec),
+				}
 			}
 
 			return nil
