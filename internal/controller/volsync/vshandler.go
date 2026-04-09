@@ -3084,9 +3084,17 @@ func (v *VSHandler) checkLastSnapshotSyncStatus(lrs *volsyncv1alpha1.Replication
 }
 
 func (v *VSHandler) DisownVolSyncManagedPVC(pvc *corev1.PersistentVolumeClaim) error {
-	// TODO: Remove just the VRG ownerReference instead of blindly removing all ownerreferences.
-	// For now, this is fine, given that the VRG is the sole owner of the PVC after DR is enabled.
-	pvc.ObjectMeta.OwnerReferences = nil
+	// Remove only the VRG ownerReference, keeping VolSync resource (RS/RD) ownership
+	// This allows Kubernetes garbage collection to properly clean up PVCs when VolSync resources are deleted
+	newRefs := []metav1.OwnerReference{}
+
+	for _, ref := range pvc.OwnerReferences {
+		if ref.Kind != "VolumeReplicationGroup" {
+			newRefs = append(newRefs, ref)
+		}
+	}
+
+	pvc.ObjectMeta.OwnerReferences = newRefs
 	delete(pvc.Annotations, ACMAppSubDoNotDeleteAnnotation)
 
 	return v.client.Update(v.ctx, pvc)
