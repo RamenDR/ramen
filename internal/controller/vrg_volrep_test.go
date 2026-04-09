@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -2614,6 +2615,39 @@ func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus,
 	return
 }
 
+// vrgNormalizeDecodedFromS3 matches the historic vrgDownloadAndValidate post-decode steps (TODO fix in
+// controller and remove). Applied to list Status.Items too so both sides compare equal after S3 JSON.
+func vrgNormalizeDecodedFromS3(v *ramendrv1alpha1.VolumeReplicationGroup) {
+	for i := range v.Status.Conditions {
+		t := &v.Status.Conditions[i].LastTransitionTime
+		*t = t.Rfc3339Copy()
+	}
+
+	if len(v.Status.ProtectedPVCs) == 0 {
+		v.Status.ProtectedPVCs = nil
+	} else {
+		for i := range v.Status.ProtectedPVCs {
+			pvc := &v.Status.ProtectedPVCs[i]
+			for j := range pvc.Conditions {
+				t := &pvc.Conditions[j].LastTransitionTime
+				*t = t.Rfc3339Copy()
+			}
+		}
+
+		slices.SortFunc(v.Status.ProtectedPVCs, func(a, b ramendrv1alpha1.ProtectedPVC) int {
+			if c := strings.Compare(a.Namespace, b.Namespace); c != 0 {
+				return c
+			}
+
+			return strings.Compare(a.Name, b.Name)
+		})
+	}
+
+	if !v.Status.LastUpdateTime.IsZero() {
+		v.Status.LastUpdateTime = v.Status.LastUpdateTime.Rfc3339Copy()
+	}
+}
+
 func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicationGroup,
 ) *ramendrv1alpha1.VolumeReplicationGroup {
 	var vrgs []ramendrv1alpha1.VolumeReplicationGroup
@@ -2634,16 +2668,7 @@ func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicati
 		"VRG %s/%s should be downloadable from S3, last error: %v", v.namespace, v.vrgName, lastErr)
 
 	vrgS3 := &vrgs[0]
-	// TODO fix in controller and remove
-	for i := range vrgS3.Status.Conditions {
-		t := &vrgS3.Status.Conditions[i].LastTransitionTime
-		*t = t.Rfc3339Copy()
-	}
-	// vrgS3.Status.LastUpdateTime = vrgS3.Status.LastUpdateTime.Rfc3339Copy()
-	// TODO fix in controller and remove
-	if len(vrgS3.Status.ProtectedPVCs) == 0 {
-		vrgS3.Status.ProtectedPVCs = nil
-	}
+	vrgNormalizeDecodedFromS3(vrgS3)
 
 	vrgStatusStateUpdate(vrgS3, vrgK8s)
 	// Expect(vrgS3).To(Equal(vrgK8s)) TODO re-enable: fails on github despite matching VRGs output

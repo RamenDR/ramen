@@ -5,10 +5,14 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -17,6 +21,39 @@ import (
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
 )
+
+func protectedVrgListVrgKeysString(vrgs []ramen.VolumeReplicationGroup) string {
+	if len(vrgs) == 0 {
+		return "(none)"
+	}
+
+	b := strings.Builder{}
+
+	for i := range vrgs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+
+		fmt.Fprintf(&b, "%s/%s", vrgs[i].Namespace, vrgs[i].Name)
+	}
+
+	return b.String()
+}
+
+// vrgListItemsContainAllExpectedByName reports whether items contains every expected VRG by ObjectMeta namespace+name.
+func vrgListItemsContainAllExpectedByName(items, expected []ramen.VolumeReplicationGroup) bool {
+	for i := range expected {
+		exp := &expected[i]
+
+		if !slices.ContainsFunc(items, func(item ramen.VolumeReplicationGroup) bool {
+			return item.Namespace == exp.Namespace && item.Name == exp.Name
+		}) {
+			return false
+		}
+	}
+
+	return true
+}
 
 func protectedVrgListCreate(name string, s3ProfileNumber int) *ramen.ProtectedVolumeReplicationGroupList {
 	protectedVrgList := &ramen.ProtectedVolumeReplicationGroupList{
@@ -92,29 +129,82 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 	Expect(protectedVrgList.Status.Items).To(ConsistOf(vrgsExpected))
 }
 
+//nolint:gocognit,cyclop,funlen
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
+	nExp := len(vrgsExpected)
+
 	vrgsExpectedElems := make([]interface{}, len(vrgsExpected))
 	for i := range vrgsExpected {
+		vrgNormalizeDecodedFromS3(&vrgsExpected[i])
 		vrgsExpectedElems[i] = vrgsExpected[i]
 	}
 
-	Eventually(func() bool {
+	Eventually(func() error {
 		if err := protectedVrgListGet(protectedVrgList); err != nil {
-			return false
+			return fmt.Errorf("protectedVrgListGet: %w", err)
 		}
 
 		if protectedVrgList.Status == nil || len(protectedVrgList.Status.Items) == 0 {
-			return false
+			return fmt.Errorf(
+				"waiting for list Status.Items (nil or empty); expected ns/name [%s]",
+				protectedVrgListVrgKeysString(vrgsExpected),
+			)
 		}
 
+		if !vrgListItemsContainAllExpectedByName(protectedVrgList.Status.Items, vrgsExpected) {
+			protectedVrgListRefresh(protectedVrgList)
+
+			if !vrgListItemsContainAllExpectedByName(protectedVrgList.Status.Items, vrgsExpected) {
+				return fmt.Errorf(
+					"expected VRG(s) not in list by namespace/name after refresh (want [%s], have [%s])",
+					protectedVrgListVrgKeysString(vrgsExpected),
+					protectedVrgListVrgKeysString(protectedVrgList.Status.Items),
+				)
+			}
+		}
+
+		for i := range protectedVrgList.Status.Items {
+			vrgNormalizeDecodedFromS3(&protectedVrgList.Status.Items[i])
+		}
+
+		nGot := len(protectedVrgList.Status.Items)
 		vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
 
-		ok, err := ContainElements(vrgsExpectedElems...).Match(protectedVrgList.Status.Items)
+		matcher := ContainElements(vrgsExpectedElems...)
 
-		return err == nil && ok
-	}, timeout, interval).Should(BeTrue())
+		ok, mErr := matcher.Match(protectedVrgList.Status.Items)
+		if mErr != nil {
+			return fmt.Errorf("ContainElements Match error: %w (expected %d VRG(s), Status.Items length %d)", mErr, nExp, nGot)
+		}
+
+		if !ok {
+			failure := matcher.FailureMessage(protectedVrgList.Status.Items)
+			if failure == "" {
+				failure = "(matcher returned empty FailureMessage)"
+			}
+
+			expectedDump := format.Object(vrgsExpected, 1)
+			actualDump := format.Object(protectedVrgList.Status.Items, 1)
+			actualKeys := protectedVrgListVrgKeysString(protectedVrgList.Status.Items)
+
+			// List reconciler skips S3 when Status is set; Items can lag behind S3 while expected
+			// comes from a fresh download in vrgDownloadAndValidate. Re-list before retrying.
+			protectedVrgListRefresh(protectedVrgList)
+
+			return fmt.Errorf(
+				"ContainElements mismatch (expected %d VRG(s), Status.Items %d), refreshed list from S3: %s\n"+
+					"expected ns/name: [%s]\nactual ns/name:   [%s]\n"+
+					"expected:\n%s\nactual after vrgsStatusStateUpdate:\n%s",
+				nExp, nGot, failure,
+				protectedVrgListVrgKeysString(vrgsExpected), actualKeys,
+				expectedDump, actualDump,
+			)
+		}
+
+		return nil
+	}, 30*timeout, interval).Should(Succeed())
 }
 
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
