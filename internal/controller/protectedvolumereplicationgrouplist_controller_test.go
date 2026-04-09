@@ -96,12 +96,6 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
-	vrgsExpectedElems := make([]interface{}, len(vrgsExpected))
-	for i := range vrgsExpected {
-		vrgNormalizeDecodedFromS3(&vrgsExpected[i])
-		vrgsExpectedElems[i] = vrgsExpected[i]
-	}
-
 	Eventually(func() error {
 		if err := protectedVrgListGet(protectedVrgList); err != nil {
 			return err
@@ -117,7 +111,7 @@ func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplic
 
 		vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
 
-		matcher := ContainElements(vrgsExpectedElems...)
+		matcher := ContainElements(vrgsExpected)
 
 		ok, err := matcher.Match(protectedVrgList.Status.Items)
 		if err != nil {
