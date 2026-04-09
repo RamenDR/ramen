@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: The RamenDR authors
-// SPDX-License-Identifier: Apache-2.0
-
 package hooks
 
 import (
@@ -9,7 +6,6 @@ import (
 	"regexp"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -89,10 +85,6 @@ func getFilteredObjectsBasedOnTypeAndNameSelector(objList client.ObjectList, nam
 		objs = filterStatefulSets(v.Items, nameSelector)
 	case *appsv1.DaemonSetList:
 		objs = filterDaemonSets(v.Items, nameSelector)
-	case *batchv1.JobList:
-		objs = filterJobs(v.Items, nameSelector)
-	case *batchv1.CronJobList:
-		objs = filterCronJobs(v.Items, nameSelector)
 	}
 
 	return objs
@@ -115,14 +107,6 @@ func filterPods(objs []corev1.Pod, nameSelector string) []client.Object {
 }
 
 func filterUnstructuredObjects(objs []unstructured.Unstructured, nameSelector string) []client.Object {
-	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
-}
-
-func filterJobs(objs []batchv1.Job, nameSelector string) []client.Object {
-	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
-}
-
-func filterCronJobs(objs []batchv1.CronJob, nameSelector string) []client.Object {
 	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
 }
 
@@ -165,14 +149,6 @@ func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 		for _, ds := range v.Items {
 			objs = append(objs, &ds)
 		}
-	case *batchv1.JobList:
-		for _, j := range v.Items {
-			objs = append(objs, &j)
-		}
-	case *batchv1.CronJobList:
-		for _, cj := range v.Items {
-			objs = append(objs, &cj)
-		}
 	}
 
 	return objs
@@ -198,10 +174,6 @@ func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, nameSelector strin
 		objs = getMatchingStatefulSets(v, re)
 	case *appsv1.DaemonSetList:
 		objs = getMatchingDaemonSets(v, re)
-	case *batchv1.JobList:
-		objs = getMatchingJobs(v, re)
-	case *batchv1.CronJobList:
-		objs = getMatchingCronJobs(v, re)
 	}
 
 	return objs
@@ -297,14 +269,6 @@ func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) 
 
 func getMatchingDaemonSets(dsList *appsv1.DaemonSetList, re *regexp.Regexp) []client.Object {
 	return getRegexMatchingObjects(toPointerSlice(dsList.Items), re)
-}
-
-func getMatchingJobs(jList *batchv1.JobList, re *regexp.Regexp) []client.Object {
-	return getRegexMatchingObjects(toPointerSlice(jList.Items), re)
-}
-
-func getMatchingCronJobs(cjList *batchv1.CronJobList, re *regexp.Regexp) []client.Object {
-	return getRegexMatchingObjects(toPointerSlice(cjList.Items), re)
 }
 
 func getRegexMatchingObjects[T client.Object](items []T, re *regexp.Regexp) []client.Object {

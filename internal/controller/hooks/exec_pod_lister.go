@@ -8,7 +8,7 @@ import (
 )
 
 // PodLister interface abstracts pod discovery based on SelectResource type.
-// Each implementation handles a specific resource type (pod, deployment, statefulset, daemonset, job, cronjob).
+// Each implementation handles a specific resource type (pod, deployment, statefulset, daemonset).
 type PodLister interface {
 	GetPods(log logr.Logger) ([]ExecPodSpec, error)
 }
@@ -22,10 +22,6 @@ func NewPodLister(e ExecHook) PodLister {
 		return &StatefulSetPodLister{ExecHook: e}
 	case "daemonset":
 		return &DaemonSetPodLister{ExecHook: e}
-	case "job":
-		return &JobPodLister{ExecHook: e}
-	case "cronjob":
-		return &CronJobPodLister{ExecHook: e}
 	default: // "pod" or ""
 		return &DirectPodLister{ExecHook: e}
 	}
