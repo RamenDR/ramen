@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -872,9 +873,17 @@ var _ = Describe("VolSync_Handler", func() {
 						)
 						Expect(k8sClient.Status().Update(ctx, mountJob)).To(Succeed())
 
-						// Second reconcile: mount job is complete, ReplicationSource is created
-						finalSyncCompl, rs, err = vsHandler.ReconcileRS(rsSpec, false, nil)
-						Expect(err).ToNot(HaveOccurred())
+						// Second reconcile: mount job is complete, ReplicationSource is created.
+						// Use Eventually so the handler's client cache sees the Job status update
+						// (cache may lag behind Status().Update when test and handler share the same client).
+						Eventually(func() bool {
+							var e error
+
+							finalSyncCompl, rs, e = vsHandler.ReconcileRS(rsSpec, false, nil)
+
+							return e == nil && rs != nil
+						}, maxWait, interval).Should(BeTrue(),
+							"ReplicationSource should be created after mount Job completes")
 						Expect(finalSyncCompl).To(BeFalse())
 						Expect(rs).ToNot(BeNil())
 					})
@@ -1032,6 +1041,10 @@ var _ = Describe("VolSync_Handler", func() {
 									return false
 								}
 
+								if createdRS.Spec.SourcePVC != rsSpec.ProtectedPVC.Name {
+									return false
+								}
+
 								return ownerMatches(createdRS, owner.GetName(), "ConfigMap",
 									true /* Should be controller */)
 							}, maxWait, interval).Should(BeFalse())
@@ -1045,6 +1058,17 @@ var _ = Describe("VolSync_Handler", func() {
 
 								// The psk secret should be updated to be owned by the VRG
 								return ownerMatches(dummyPSKSecret, owner.GetName(), "ConfigMap", false)
+							}, maxWait, interval).Should(BeTrue())
+
+							Eventually(func() bool {
+								err := k8sClient.Get(ctx,
+									types.NamespacedName{
+										Name:      rsSpec.ProtectedPVC.Name,
+										Namespace: testNamespace.GetName(),
+									},
+									createdRS)
+
+								return err == nil && createdRS.Spec.SourcePVC == rsSpec.ProtectedPVC.Name
 							}, maxWait, interval).Should(BeTrue())
 
 							// Check common fields
@@ -1402,7 +1426,11 @@ var _ = Describe("VolSync_Handler", func() {
 					It("ensure PVC should not fail", func() {
 						// Previous ensurePVC will already have created the PVC (see parent context)
 						// Now run ensurePVC again - additional runs should just ensure the PVC is ok
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).To(Succeed())
+						retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+							return vsHandler.EnsurePVCfromRD(rdSpec, false)
+						})
+
+						Expect(retryErr).NotTo(HaveOccurred())
 					})
 				})
 
@@ -1463,8 +1491,11 @@ var _ = Describe("VolSync_Handler", func() {
 
 						//
 						// Now should be able to re-try ensurePVC and get a new one with proper datasource
+						// Retry with Eventually to tolerate client cache lag after the PVC was just created.
 						//
-						Expect(vsHandler.EnsurePVCfromRD(rdSpec, false)).NotTo(HaveOccurred())
+						Eventually(func() error {
+							return vsHandler.EnsurePVCfromRD(rdSpec, false)
+						}, maxWait, interval).Should(Succeed())
 
 						pvcNew := &corev1.PersistentVolumeClaim{}
 
