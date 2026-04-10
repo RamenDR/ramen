@@ -385,6 +385,31 @@ func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementC
 	cgEnabledMetrics.CGEnabled.Set(float64(enabled))
 }
 
+// setGlobalActionMetric sets the global action consensus metric for a DRPC.
+// 1 indicates consensus reached, 0 indicates blocked. Only emitted for global VGR DRPCs.
+func (r *DRPlacementControlReconciler) setGlobalActionMetric(
+	drpc *rmn.DRPlacementControl, metric *GlobalActionMetrics, log logr.Logger,
+) {
+	if metric == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("Setting metric: (%s)", GlobalActionStatus))
+
+	consensus := 0
+
+	for idx := range drpc.Status.Conditions {
+		if drpc.Status.Conditions[idx].Type == rmn.ConditionGlobalAction &&
+			drpc.Status.Conditions[idx].Status == metav1.ConditionTrue {
+			consensus = 1
+
+			break
+		}
+	}
+
+	metric.GlobalActionStatus.Set(float64(consensus))
+}
+
 func (r *DRPlacementControlReconciler) setDRProgressionStateMetric(drpc *rmn.DRPlacementControl,
 	drProgressionStateMetrics *DRProgressionStateMetrics, log logr.Logger,
 ) {
@@ -542,6 +567,35 @@ func (r *DRPlacementControlReconciler) createDRProgressionStateMetricsInstance(
 	}
 }
 
+func (r *DRPlacementControlReconciler) createGlobalActionMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *GlobalActionMetrics {
+	if drpc.GetLabels()[GlobalVGRLabel] == "" {
+		return nil
+	}
+
+	hasCondition := false
+
+	for idx := range drpc.Status.Conditions {
+		if drpc.Status.Conditions[idx].Type == rmn.ConditionGlobalAction {
+			hasCondition = true
+
+			break
+		}
+	}
+
+	if !hasCondition {
+		return nil
+	}
+
+	labels := GlobalActionLabels(drpc)
+	metric := NewGlobalActionMetric(labels)
+
+	return &GlobalActionMetrics{
+		GlobalActionStatus: metric.GlobalActionStatus,
+	}
+}
+
 // isBeingDeleted returns true if either DRPC, user placement, or both are being deleted
 func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
 	return rmnutil.ResourceIsDeleted(drpc) ||
@@ -559,6 +613,10 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 	if !ensureVRGsManagedByDRPC(d.log, d.mwu, d.vrgs, d.instance, d.vrgNamespace) {
 		log.Info("Requeing... VRG adoption in progress")
 
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	if !d.ensureGlobalVGRLabel() {
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -796,6 +854,9 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	DRProgressionStateMetricsLabels := DRProgressionStateMetricLabels(drpc)
 	DeleteDRPCProgressionStateMetric(DRProgressionStateMetricsLabels)
+
+	globalActionLabels := GlobalActionLabels(drpc)
+	DeleteGlobalActionMetric(globalActionLabels)
 
 	return nil
 }
@@ -1675,6 +1736,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	cgEnabledMetrics := r.createCGEnabledMetricsInstance(drpc)
 	r.setCGEnabledMetric(drpc, cgEnabledMetrics, log)
 
+	globalActionMetrics := r.createGlobalActionMetricsInstance(drpc)
+	r.setGlobalActionMetric(drpc, globalActionMetrics, log)
+
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
 		return fmt.Errorf("failed to get DRPolicy %w", err)
@@ -1687,6 +1751,11 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	}
 
 	if isMetro {
+		return nil
+	}
+
+	// Async with 0m SchedulingInterval, skip setting sync metrics
+	if drPolicy.Spec.SchedulingInterval == "0m" {
 		return nil
 	}
 

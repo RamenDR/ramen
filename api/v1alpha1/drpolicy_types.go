@@ -120,6 +120,15 @@ type PeerClass struct {
 	// need protection.
 	//+optional
 	Offloaded bool `json:"offloaded,omitempty"`
+
+	// Global reflects if replication for PVCs that use the StorageClassName across both clusters in the
+	// ClusterIDs list is managed via a globally scoped VolumeGroupReplication resource shared across multiple
+	// VRGs. It is set to true if the peer is offloaded and the VolumeGroupReplicationClass on both clusters
+	// is labeled with "ramendr.openshift.io/groupreplicationid". A typical global case would be storage
+	// backends where replication is managed at the filesystem level, requiring all VRGs on the same
+	// replication group to coordinate state transitions.
+	//+optional
+	Global bool `json:"global,omitempty"`
 }
 
 const (
