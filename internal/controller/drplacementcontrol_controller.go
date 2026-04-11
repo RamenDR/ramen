@@ -89,8 +89,8 @@ type DRPlacementControlReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 //
 //nolint:funlen
-func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return r.setupWithManagerAndAddWatchers(mgr)
+func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager, ramenConfig *rmn.RamenConfig) error {
+	return r.setupWithManagerAndAddWatchers(mgr, ramenConfig)
 }
 
 //nolint:lll

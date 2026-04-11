@@ -95,9 +95,7 @@ func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
 	return &ctrlOptions, ramenConfig
 }
 
-func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
-	controllers.ControllerType = ramenConfig.RamenControllerType
-
+func configureController() error {
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
 		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
@@ -143,7 +141,7 @@ func newManager(options *ctrl.Options) (ctrl.Manager, error) {
 
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
-		setupReconcilersHub(mgr)
+		setupReconcilersHub(mgr, ramenConfig)
 	}
 
 	if controllers.ControllerType == ramendrv1alpha1.DRClusterType {
@@ -196,7 +194,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
 			Log:    ctrl.Log.WithName("rgd"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, ramenConfig); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
 			os.Exit(1)
 		}
@@ -206,14 +204,14 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
 			Log:       ctrl.Log.WithName("rgs"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, ramenConfig); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
 			os.Exit(1)
 		}
 	}
 }
 
-func setupReconcilersHub(mgr ctrl.Manager) {
+func setupReconcilersHub(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if err := (&controllers.DRPolicyReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
@@ -255,7 +253,7 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 		Scheme:         mgr.GetScheme(),
 		Callback:       func(string, string) {},
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, ramenConfig); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)
 	}
@@ -275,7 +273,7 @@ func main() {
 
 	ctrlOptions, ramenConfig := buildOptions()
 
-	if err := configureController(ramenConfig); err != nil {
+	if err := configureController(); err != nil {
 		setupLog.Error(err, "unable to configure controller")
 		os.Exit(1)
 	}
@@ -283,6 +281,13 @@ func main() {
 	mgr, err := newManager(ctrlOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to Get new manager")
+		os.Exit(1)
+	}
+
+	ramenConfig, err = controllers.CreateOrUpdateConfigMap(context.Background(), mgr.GetClient(),
+		mgr.GetAPIReader(), ramenConfig, setupLog)
+	if err != nil {
+		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
 		os.Exit(1)
 	}
 

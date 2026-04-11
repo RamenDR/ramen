@@ -105,6 +105,8 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 		ensureManagedCluster(k8sClient, "drcluster2")
 
+		ramencontrollers.ControllerType = rmn.DRHubType
+
 		By("Defining a ramen configuration")
 
 		ramenConfig = &rmn.RamenConfig{
@@ -119,7 +121,6 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 			Metrics: rmn.ControllerMetrics{
 				BindAddress: "0", // Disable metrics
 			},
-			RamenControllerType: rmn.DRHubType,
 			S3StoreProfiles: []rmn.S3StoreProfile{
 				{
 					S3ProfileName:        "fake",
