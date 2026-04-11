@@ -1,15 +1,25 @@
 resources:
 - ../../manager/manager.yaml
 
+patches:
+- patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value:
+        name: RAMEN_CONTROLLER_TYPE
+        value: dr-hub
+  target:
+    group: apps
+    kind: Deployment
+    name: operator
+    namespace: system
+    version: v1
+
 generatorOptions:
   disableNameSuffixHash: true
   labels:
     cluster.open-cluster-management.io/backup: resource
 
-configMapGenerator:
-- files:
-  - ramen_manager_config.yaml
-  name: operator-config
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:

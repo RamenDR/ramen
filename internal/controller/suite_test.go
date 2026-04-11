@@ -257,7 +257,6 @@ var _ = BeforeSuite(func() {
 			LeaderElect:  new(bool),
 			ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 		},
-		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
@@ -407,7 +406,7 @@ var _ = BeforeSuite(func() {
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		RateLimiter:    &rateLimiter,
 	})
-	err = drpcReconciler.SetupWithManager(k8sManager)
+	err = drpcReconciler.SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())

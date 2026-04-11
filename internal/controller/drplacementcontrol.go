@@ -2053,7 +2053,10 @@ func (d *DRPCInstance) createOrUpdateNSForDiscoveredApps(homeCluster string) err
 	}
 
 	for _, protectedNamespaceObj := range protectedNamespaces {
-		annotations := removeSCCAnnotations(protectedNamespaceObj.Annotations)
+		annotations, err := d.filterSCCAnnotations(protectedNamespaceObj.Annotations)
+		if err != nil {
+			return err
+		}
 
 		for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 			if homeCluster == dstCluster {
@@ -2904,7 +2907,28 @@ func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
 	}
 }
 
-func removeSCCAnnotations(annotations map[string]string) map[string]string {
+// filterSCCAnnotations conditionally removes SCC annotations based on RamenConfig and DRPC settings.
+// SCC annotations are retained only when BOTH RamenConfig.RetainNamespaceSCCAcrossPeers AND
+// DRPC.Spec.RetainNamespaceSCCAcrossPeers are true.
+// If DRPC flag is true but RamenConfig flag is false, a warning is logged.
+func (d *DRPCInstance) filterSCCAnnotations(annotations map[string]string) (map[string]string, error) {
+	ramenConfigRetain := d.ramenConfig != nil && d.ramenConfig.RetainNamespaceSCCAcrossPeers
+	drpcRetain := d.instance.Spec.RetainNamespaceSCCAcrossPeers
+
+	// Both flags must be true to retain SCC annotations
+	if ramenConfigRetain && drpcRetain {
+		d.log.Info("Retaining SCC annotations across peer clusters as both RamenConfig and DRPC flags are enabled")
+
+		return annotations, nil
+	}
+
+	// Log warning if DRPC flag is true but RamenConfig flag is false
+	if drpcRetain && !ramenConfigRetain {
+		return nil, fmt.Errorf("retainNamespaceSCCAcrossPeers is enabled in the DRPC," +
+			"but the flag is disabled in the RamenConfig")
+	}
+
+	// Default behavior: remove SCC annotations
 	filteredAnnotations := make(map[string]string)
 
 	for key, val := range annotations {
@@ -2913,5 +2937,5 @@ func removeSCCAnnotations(annotations map[string]string) map[string]string {
 		}
 	}
 
-	return filteredAnnotations
+	return filteredAnnotations, nil
 }

@@ -458,6 +458,7 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 			vrgClusterRole,
 			mModeClusterRole,
 			drClusterConfigRole,
+			networkFenceClusterRole,
 		},
 		objectsToAppend...,
 	)
@@ -536,6 +537,23 @@ var (
 				APIGroups: []string{"ramendr.openshift.io"},
 				Resources: []string{"drclusterconfigs"},
 				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	networkFenceClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:networkfence-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{csiaddonsv1alpha1.GroupVersion.Group},
+				Resources: []string{"networkfences"},
+				Verbs:     []string{"create", "get", "list", "update", "delete", "watch"},
 			},
 		},
 	}

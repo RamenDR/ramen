@@ -95,6 +95,41 @@ jobs:
           version: v2.9.0
           working-directory: ${{ matrix.directory }}
 
+  # Ensure that the code is compatible with go version from go.mod. Go enforces
+  # syntax but does not prevent calling functions from the standard library that
+  # are not available in the toolchain. This job ensures that main and e2e
+  # modules are really compatible with the specified go version.
+  go-compatibility:
+    name: Go compatibility
+    runs-on: ubuntu-24.04
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Extract go version
+        id: go-version
+        run: |
+          version=$(awk '/^go [0-9]/ {print $2}' go.mod)
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Setup go
+        uses: actions/setup-go@v6
+        with:
+          # We cannot use go-version-file since in v6 it picks the toolchain
+          # version instead of go version, ignoring GOTOOLCHAIN=local.
+          go-version: ${{ steps.go-version.outputs.version }}
+
+      - name: Build ramen
+        run: |
+          make
+
+      - name: Build e2e
+        working-directory: ./e2e
+        run: |
+          go build ./...
+
   unit-test:
     name: Unit tests
     runs-on: ubuntu-24.04
