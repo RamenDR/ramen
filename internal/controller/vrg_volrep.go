@@ -2285,6 +2285,36 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 	return nil
 }
 
+func handleExistingObject[
+	ObjectType any,
+	ClientObject interface {
+		*ObjectType
+		client.Object
+	},
+](
+	v *VRGInstance,
+	object *ObjectType, obj ClientObject,
+	validateExistingObject func(*ObjectType) error,
+) bool {
+	if err := validateExistingObject(object); err != nil {
+		v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
+
+		return false
+	}
+
+	// Valid object exists and it is managed by Ramen
+	// If it's a PVC, update it; otherwise just count it as restored
+	if pvc, ok := any(obj).(*corev1.PersistentVolumeClaim); ok {
+		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+			v.log.Info("Failed to update existing PVC", "name", pvc.GetName(), "error", err.Error())
+
+			return false
+		}
+	}
+
+	return true
+}
+
 func restoreClusterDataObjects[
 	ObjectType any,
 	ClientObject interface {
@@ -2315,15 +2345,9 @@ func restoreClusterDataObjects[
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				err := validateExistingObject(object)
-				if err != nil {
-					v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
-					// ignoring any errors
-					continue
+				if handleExistingObject(v, object, obj, validateExistingObject) {
+					numRestored++
 				}
-
-				// Valid PVC exists and it is managed by Ramen
-				numRestored++
 
 				continue
 			}
@@ -2462,17 +2486,14 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 		v.log.Info("PVs Name mismatch", "x", x.GetName(), "y", y.GetName())
 
 		return false
-	case x.Spec.PersistentVolumeSource.CSI == nil || y.Spec.PersistentVolumeSource.CSI == nil:
-		v.log.Info("PV(s) not managed by a CSI driver", "x", x.Spec.PersistentVolumeSource.CSI,
-			"y", y.Spec.PersistentVolumeSource.CSI)
-
-		return false
-	case x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
+	case x.Spec.PersistentVolumeSource.CSI != nil && y.Spec.PersistentVolumeSource.CSI != nil &&
+		x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
 		v.log.Info("PVs CSI drivers mismatch", "x", x.Spec.PersistentVolumeSource.CSI.Driver,
 			"y", y.Spec.PersistentVolumeSource.CSI.Driver)
 
 		return false
-	case x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
+	case x.Spec.PersistentVolumeSource.CSI != nil && y.Spec.PersistentVolumeSource.CSI != nil &&
+		x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
 		v.log.Info("PVs CSI FSType mismatch", "x", x.Spec.PersistentVolumeSource.CSI.FSType,
 			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
 
