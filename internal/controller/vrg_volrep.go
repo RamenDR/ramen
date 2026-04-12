@@ -2302,16 +2302,6 @@ func handleExistingObject[
 		return false
 	}
 
-	// Valid object exists and it is managed by Ramen
-	// If it's a PVC, update it; otherwise just count it as restored
-	if pvc, ok := any(obj).(*corev1.PersistentVolumeClaim); ok {
-		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
-			v.log.Info("Failed to update existing PVC", "name", pvc.GetName(), "error", err.Error())
-
-			return false
-		}
-	}
-
 	return true
 }
 
