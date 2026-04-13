@@ -2287,13 +2287,9 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 
 func handleExistingObject[
 	ObjectType any,
-	ClientObject interface {
-		*ObjectType
-		client.Object
-	},
 ](
 	v *VRGInstance,
-	object *ObjectType, obj ClientObject,
+	object *ObjectType,
 	validateExistingObject func(*ObjectType) error,
 ) bool {
 	if err := validateExistingObject(object); err != nil {
@@ -2335,7 +2331,7 @@ func restoreClusterDataObjects[
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				if handleExistingObject(v, object, obj, validateExistingObject) {
+				if handleExistingObject(v, object, validateExistingObject) {
 					numRestored++
 				}
 
