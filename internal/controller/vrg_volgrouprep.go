@@ -29,6 +29,14 @@ const (
 //nolint:gocognit,cyclop,funlen
 func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
+	isGlobal := v.hasGlobalVGRLabel()
+
+	if isGlobal && !v.isGlobalStateInConsensus() {
+		v.requeue()
+
+		return
+	}
+
 	for vgrNamespacedName, pvcs := range groupPVCs {
 		log := v.log.WithValues("vgr", vgrNamespacedName.String())
 
@@ -56,12 +64,15 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 			}
 		}
 
-		if err := v.uploadVGRandVGRCtoS3Stores(vgrNamespacedName, log); err != nil {
-			log.Error(err, "Requeuing due to failure to upload VGR object to S3 store(s)")
+		// Global VGRs are not backed up to S3 they are created fresh on the target cluster.
+		if !isGlobal {
+			if err := v.uploadVGRandVGRCtoS3Stores(vgrNamespacedName, log); err != nil {
+				log.Error(err, "Requeuing due to failure to upload VGR object to S3 store(s)")
 
-			v.requeue()
+				v.requeue()
 
-			continue
+				continue
+			}
 		}
 	}
 }
@@ -70,6 +81,12 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 func (v *VRGInstance) reconcileVolGroupRepsAsSecondary(requeue *bool,
 	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
+	if v.hasGlobalVGRLabel() && !v.isGlobalStateInConsensus() {
+		*requeue = true
+
+		return
+	}
+
 	for vgrNamespacedName, pvcs := range groupPVCs {
 		log := v.log.WithValues("vgr", vgrNamespacedName.String())
 
@@ -546,6 +563,20 @@ func (v *VRGInstance) undoPVCFinalizersAndPVRetentionForVGR(vrNamespacedName typ
 ) bool {
 	const requeue = true
 
+	// For global VGR, only clean PVC finalizers; skip VGR deletion.
+	if v.hasGlobalVGRLabel() {
+		for idx := range pvcs {
+			if err := v.preparePVCForVRDeletion(pvcs[idx], log); err != nil {
+				log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for cleanup",
+					"error", err)
+
+				return requeue
+			}
+		}
+
+		return !requeue
+	}
+
 	if err := v.deleteVGR(vrNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in finalizing VolumeGroupReplication resource",
 			"errorValue", err)
@@ -620,6 +651,20 @@ func (v *VRGInstance) isCGEnabled(pvc *corev1.PersistentVolumeClaim) (string, bo
 	return cg, ok && rmnutil.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader)
 }
 
+// vgrNamespacedName returns the VGR namespaced name for a PVC's consistency group.
+// For global VGRs, all PVCs share a single VGR in the operator namespace.
+// For non-global, each VRG gets its own VGR in the PVC's namespace.
+func (v *VRGInstance) vgrNamespacedName(cg, pvcNamespace string) types.NamespacedName {
+	if v.hasGlobalVGRLabel() {
+		return v.globalVGRNamespacedName()
+	}
+
+	return types.NamespacedName{
+		Name:      rmnutil.CreateVGRName(cg, v.instance.Name),
+		Namespace: pvcNamespace,
+	}
+}
+
 func (v *VRGInstance) processVGRAsPrimary(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, log logr.Logger,
 ) (bool, bool, error) {
@@ -632,6 +677,7 @@ func (v *VRGInstance) processVGRAsSecondary(vrNamespacedName types.NamespacedNam
 	return v.createOrUpdateVGR(vrNamespacedName, pvcs, volrep.Secondary, log)
 }
 
+//nolint:gocognit,funlen
 func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState, log logr.Logger,
 ) (bool, bool, error) {
@@ -663,6 +709,12 @@ func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 
 		// Create VGR
 		if err = v.createVGR(vrNamespacedName, pvcs, state); err != nil {
+			if v.hasGlobalVGRLabel() && k8serrors.IsAlreadyExists(err) {
+				log.Info("Global VGR already exists, will use existing resource", "resource", vrNamespacedName)
+
+				return requeue, false, nil
+			}
+
 			log.Error(err, "Failed to create VolumeGroupReplication resource", "resource", vrNamespacedName)
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonVRCreateFailed, err.Error())
@@ -748,7 +800,7 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 
 // createVGR creates a VolumeGroupReplication CR
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState,
 ) error {
@@ -783,13 +835,36 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
 	}
 
-	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, rmnutil.ConsistencyGroupLabel, cg)
+	isGlobal := v.hasGlobalVGRLabel()
+
+	var selector *metav1.LabelSelector
+	if isGlobal {
+		// Global VGRs are shared across VRGs, so select by consistency group only
+		// to include PVCs from all VRGs.
+		selector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				rmnutil.ConsistencyGroupLabel: cg,
+			},
+		}
+	} else {
+		selector = metav1.AddLabelToSelector(
+			&v.recipeElements.PvcSelector.LabelSelector,
+			rmnutil.ConsistencyGroupLabel,
+			cg,
+		)
+	}
+
+	// Owner labels are skipped for global VGRs since no single VRG owns them.
+	labels := map[string]string{}
+	if !isGlobal {
+		labels = rmnutil.OwnerLabels(v.instance)
+	}
 
 	volRep := &volrep.VolumeGroupReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
-			Labels:    rmnutil.OwnerLabels(v.instance),
+			Labels:    labels,
 		},
 		Spec: volrep.VolumeGroupReplicationSpec{
 			ReplicationState:                state,
@@ -804,10 +879,11 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	rmnutil.AddLabel(volRep, rmnutil.CreatedByRamenLabel, "true")
 
-	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
-		// This is to keep existing behavior of ramen.
-		// Set the owner reference only for the VRs which are in the same namespace as the VRG and
-		// when VRG is not in the admin namespace.
+	// This is to keep existing behavior of ramen. Set the owner reference only
+	// for the VGRs which are in the same namespace as the VRG and when VRG is
+	// not in the admin namespace. Additionally skip for global VGRs which reside
+	// in the operator namespace.
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) && !isGlobal {
 		if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				volRep.GetName(), volRep.GetNamespace(), err)

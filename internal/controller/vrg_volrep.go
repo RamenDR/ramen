@@ -93,10 +93,8 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 
 			continue
 		}
@@ -175,10 +173,8 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 
 			continue
 		}
@@ -921,10 +917,8 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 				cg = grID
 			}
 
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 
 			continue
 		}
@@ -1573,6 +1567,13 @@ func (v *VRGInstance) getStorageClass(pvc *corev1.PersistentVolumeClaim) (*stora
 func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep client.Object,
 	status *volrep.VolumeReplicationStatus,
 ) bool {
+	// For global VGRs with schedulingInterval "0m", the storage provider manages
+	// replication externally and does not update observedGeneration. Skip the
+	// generation check and validate based on VGR state alone.
+	if v.hasGlobalVGRLabel() && v.validateGlobalVGRStatus(volRep, pvcs, status, v.instance.Spec.ReplicationState) {
+		return true
+	}
+
 	// When the generation in the status is updated, VRG would get a reconcile
 	// as it owns VolumeReplication resource.
 	if volRep.GetGeneration() != status.ObservedGeneration {
@@ -1619,6 +1620,8 @@ func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep
 //     deleted safely.
 //   - Primary VRG: Validated condition is checked, and if successful the Completed conditions is also checked.
 //   - Secondary VRG: Completed, Degraded and Resyncing conditions are checked and ensured healthy.
+//
+//nolint:gocognit,cyclop
 func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep client.Object,
 	state ramendrv1alpha1.ReplicationState, status *volrep.VolumeReplicationStatus,
 ) bool {
@@ -2282,6 +2285,26 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 	return nil
 }
 
+func handleExistingObject[
+	ObjectType any,
+	ClientObject interface {
+		*ObjectType
+		client.Object
+	},
+](
+	v *VRGInstance,
+	object *ObjectType, obj ClientObject,
+	validateExistingObject func(*ObjectType) error,
+) bool {
+	if err := validateExistingObject(object); err != nil {
+		v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
+
+		return false
+	}
+
+	return true
+}
+
 func restoreClusterDataObjects[
 	ObjectType any,
 	ClientObject interface {
@@ -2312,15 +2335,9 @@ func restoreClusterDataObjects[
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				err := validateExistingObject(object)
-				if err != nil {
-					v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
-					// ignoring any errors
-					continue
+				if handleExistingObject(v, object, obj, validateExistingObject) {
+					numRestored++
 				}
-
-				// Valid PVC exists and it is managed by Ramen
-				numRestored++
 
 				continue
 			}
@@ -2459,17 +2476,14 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 		v.log.Info("PVs Name mismatch", "x", x.GetName(), "y", y.GetName())
 
 		return false
-	case x.Spec.PersistentVolumeSource.CSI == nil || y.Spec.PersistentVolumeSource.CSI == nil:
-		v.log.Info("PV(s) not managed by a CSI driver", "x", x.Spec.PersistentVolumeSource.CSI,
-			"y", y.Spec.PersistentVolumeSource.CSI)
-
-		return false
-	case x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
+	case x.Spec.PersistentVolumeSource.CSI != nil && y.Spec.PersistentVolumeSource.CSI != nil &&
+		x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
 		v.log.Info("PVs CSI drivers mismatch", "x", x.Spec.PersistentVolumeSource.CSI.Driver,
 			"y", y.Spec.PersistentVolumeSource.CSI.Driver)
 
 		return false
-	case x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
+	case x.Spec.PersistentVolumeSource.CSI != nil && y.Spec.PersistentVolumeSource.CSI != nil &&
+		x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
 		v.log.Info("PVs CSI FSType mismatch", "x", x.Spec.PersistentVolumeSource.CSI.FSType,
 			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
 
