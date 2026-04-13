@@ -55,6 +55,10 @@ const (
 	// Indicates no conflict in PVC and Kubernetes resource data
 	// between primary and secondary clusters.
 	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
+
+	// Indicates whether all VRGs sharing the same global VGR label have
+	// reached the desired replication state.
+	VRGConditionTypeGlobalState = "GlobalState"
 )
 
 // VRG condition reasons
@@ -95,6 +99,9 @@ const (
 	VRGConditionReasonAutoCleanupProgressing = "Progressing"
 	VRGConditionReasonAutoCleanupNotFeasible = "NotFeasible"
 	VRGConditionReasonAutoCleanupCompleted   = "Completed"
+
+	ConditionReasonConsensusReached    = "ConsensusReached"
+	ConditionReasonConsensusNotReached = "ConsensusNotReached"
 )
 
 const (
