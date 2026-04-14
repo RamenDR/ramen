@@ -592,6 +592,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			})
 			When("all selected are deselected", func() {
 				BeforeAll(func() {
+					t.promoteVolRepsWithoutVrgStatusCheck()
+
 					DeferCleanup(func() {
 						pvcNamesDeselected = append(pvcNamesDeselected, pvcNamesSelected...)
 						pvcNamesSelected = nil
