@@ -2352,15 +2352,29 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 
 func handleExistingObject[
 	ObjectType any,
+	ClientObject interface {
+		*ObjectType
+		client.Object
+	},
 ](
 	v *VRGInstance,
-	object *ObjectType,
+	object *ObjectType, obj ClientObject,
 	validateExistingObject func(*ObjectType) error,
 ) bool {
 	if err := validateExistingObject(object); err != nil {
 		v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
 
 		return false
+	}
+
+	// Valid object exists and it is managed by Ramen
+	// If it's a PVC, update it; otherwise just count it as restored
+	if pvc, ok := any(obj).(*corev1.PersistentVolumeClaim); ok {
+		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+			v.log.Info("Failed to update existing PVC", "name", pvc.GetName(), "error", err.Error())
+
+			return false
+		}
 	}
 
 	return true
@@ -2396,7 +2410,7 @@ func restoreClusterDataObjects[
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				if handleExistingObject(v, object, validateExistingObject) {
+				if handleExistingObject(v, object, obj, validateExistingObject) {
 					numRestored++
 				}
 
@@ -2660,6 +2674,7 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 	pvc.ObjectMeta.Finalizers = []string{}
 	pvc.ObjectMeta.ResourceVersion = ""
 	pvc.ObjectMeta.OwnerReferences = nil
+	pvc.ObjectMeta.UID = ""
 
 	return nil
 }
