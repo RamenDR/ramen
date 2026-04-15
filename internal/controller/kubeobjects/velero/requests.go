@@ -435,14 +435,13 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 	return velero.BackupSpec{
 		IncludedNamespaces: objectsSpec.IncludedNamespaces,
 		IncludedResources:  objectsSpec.IncludedResources,
-		// exclude VRs from Backup so VRG can create them: see https://github.com/RamenDR/ramen/issues/884
-		// exclude EndpointSlices/Endpoints to prevent Submariner conflicts: see https://github.com/RamenDR/ramen/issues/1889
-		// exclude VolumeSnapshots and VolumeGroupSnapshots from backup
-		ExcludedResources: append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io",
-			"volumegroupreplications.replication.storage.openshift.io", "replicationsources.volsync.backube",
-			"replicationdestinations.volsync.backube", "PersistentVolumeClaims", "PersistentVolumes",
-			"endpointslices.discovery.k8s.io", "endpoints", "volumesnapshots.snapshot.storage.k8s.io",
-			"volumegroupsnapshots.groupsnapshot.storage.k8s.io"),
+		// ExcludedResources are now managed via the default-excluded-resources ConfigMap
+		// and merged with recipe-level exclusions in vrg_kubeobjects.go
+		// The objectsSpec.ExcludedResources already contains the merged list:
+		// - Default exclusions from ConfigMap (bootstrapped with hardcoded defaults if not present)
+		// - Recipe group-level exclusions
+		// See: internal/controller/exclude_resources.go and vrg_kubeobjects.go:mergeExcludedResources()
+		ExcludedResources:       objectsSpec.ExcludedResources,
 		LabelSelector:           newLabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here

@@ -377,11 +377,14 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 
 		request, ok := requests[requestName]
 		if !ok {
+			// Merge ConfigMap default exclusions with recipe-level exclusions
+			captureSpec := v.mergeExcludedResources(captureGroup.Spec)
+
 			if _, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
 				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
 				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
-				captureGroup.Spec, veleroNamespaceName, requestName,
+				captureSpec, veleroNamespaceName, requestName,
 				labels, annotations,
 			); err != nil {
 				log1.Error(err, "Kube objects group capture request submit error")
@@ -940,6 +943,43 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 		v.veleroNamespaceName(),
 		util.OwnerLabels(vrg),
 	)
+}
+
+// mergeExcludedResources merges ConfigMap default exclusions with recipe-level exclusions.
+// Returns a new Spec with the merged exclusions.
+func (v *VRGInstance) mergeExcludedResources(spec kubeobjects.Spec) kubeobjects.Spec {
+	// Get default exclusions from ConfigMap
+	v.reconciler.excludedResourcesMutex.RLock()
+	defaultExclusions := v.reconciler.cachedExcludedResources
+	v.reconciler.excludedResourcesMutex.RUnlock()
+
+	if len(defaultExclusions) == 0 {
+		// No default exclusions, return original spec
+		return spec
+	}
+
+	// Create a new spec with merged exclusions
+	// ConfigMap defaults + Recipe group exclusions
+	mergedExclusions := make([]string, 0, len(defaultExclusions)+len(spec.ExcludedResources))
+	mergedExclusions = append(mergedExclusions, defaultExclusions...)
+	mergedExclusions = append(mergedExclusions, spec.ExcludedResources...)
+
+	// Remove duplicates
+	seen := make(map[string]bool, len(mergedExclusions))
+	uniqueExclusions := make([]string, 0, len(mergedExclusions))
+
+	for _, resource := range mergedExclusions {
+		if !seen[resource] {
+			seen[resource] = true
+			uniqueExclusions = append(uniqueExclusions, resource)
+		}
+	}
+
+	// Create a copy of the spec with merged exclusions
+	mergedSpec := spec
+	mergedSpec.ExcludedResources = uniqueExclusions
+
+	return mergedSpec
 }
 
 func kubeObjectsRequestsWatch(

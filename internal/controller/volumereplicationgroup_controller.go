@@ -51,15 +51,18 @@ import (
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
-	APIReader           client.Reader
-	Log                 logr.Logger
-	ObjStoreGetter      ObjectStoreGetter
-	Scheme              *runtime.Scheme
-	eventRecorder       *util.EventReporter
-	kubeObjects         kubeobjects.RequestsManager
-	RateLimiter         *workqueue.TypedRateLimiter[reconcile.Request]
-	veleroCRsAreWatched bool
-	recipeRetries       sync.Map
+	APIReader               client.Reader
+	Log                     logr.Logger
+	ObjStoreGetter          ObjectStoreGetter
+	Scheme                  *runtime.Scheme
+	eventRecorder           *util.EventReporter
+	kubeObjects             kubeobjects.RequestsManager
+	RateLimiter             *workqueue.TypedRateLimiter[reconcile.Request]
+	veleroCRsAreWatched     bool
+	recipeRetries           sync.Map
+	excludedResourcesMgr    *velero.ExcludedResourcesManager
+	excludedResourcesMutex  sync.RWMutex
+	cachedExcludedResources []string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -123,6 +126,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	if !ramenConfig.KubeObjectProtection.Disabled {
 		ctrlBuilder = r.addKubeObjectsOwnsAndWatches(ctrlBuilder)
+
+		// Initialize the excluded resources manager for kube object protection
+		r.excludedResourcesMgr = velero.NewExcludedResourcesManager(
+			r.Client,
+			RamenOperatorNamespace(),
+			r.Log.WithName("excluded-resources"),
+		)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
@@ -154,6 +164,30 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(
 ) []reconcile.Request {
 	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
 
+	// Handle default-excluded-resources ConfigMap
+	if configmap.GetName() == velero.DefaultExcludedResourcesConfigMapName &&
+		configmap.GetNamespace() == RamenOperatorNamespace() {
+		log.Info("Update in default-excluded-resources ConfigMap, reloading")
+
+		// Reload the excluded resources
+		if r.excludedResourcesMgr != nil {
+			if excludedResources, err := r.excludedResourcesMgr.ReloadExcludedResources(ctx); err != nil {
+				log.Error(err, "Failed to reload excluded resources")
+			} else {
+				// Update the cached excluded resources in the reconciler
+				r.excludedResourcesMutex.Lock()
+				r.cachedExcludedResources = excludedResources
+				r.excludedResourcesMutex.Unlock()
+				log.Info("Updated cached excluded resources", "count", len(excludedResources))
+			}
+		}
+
+		// No need to reconcile all VRGs for this change
+		// The new exclusions will be used in the next backup
+		return []reconcile.Request{}
+	}
+
+	// Handle ramen operator config ConfigMap
 	if configmap.GetName() != DrClusterOperatorConfigMapName || configmap.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
@@ -400,7 +434,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch;get;create;patch;update
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;patch;update;delete
@@ -467,6 +501,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 				"Please install velero/oadp and restart the operator", v.instance.Namespace, v.instance.Name)
 	}
 
+	r.ensureExcludedResourcesCM(ctx, ramenConfig, log)
+
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
 		volSyncDestinationCopyMethodOrDefault(v.ramenConfig), adminNamespaceVRG)
@@ -486,6 +522,28 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		"VolRep count", len(v.volRepPVCs), "VolSync count", len(v.volSyncPVCs))
 
 	return res, nil
+}
+
+func (r *VolumeReplicationGroupReconciler) ensureExcludedResourcesCM(ctx context.Context,
+	ramenConfig *ramendrv1alpha1.RamenConfig, log logr.Logger,
+) {
+	// Ensure default-excluded-resources ConfigMap exists on first reconciliation
+	if !ramenConfig.KubeObjectProtection.Disabled && r.excludedResourcesMgr != nil {
+		r.excludedResourcesMutex.RLock()
+		needsInit := len(r.cachedExcludedResources) == 0
+		r.excludedResourcesMutex.RUnlock()
+
+		if needsInit {
+			if excludedResources, err := r.excludedResourcesMgr.EnsureConfigMap(ctx); err != nil {
+				log.Error(err, "Failed to ensure excluded resources ConfigMap")
+			} else {
+				r.excludedResourcesMutex.Lock()
+				r.cachedExcludedResources = excludedResources
+				r.excludedResourcesMutex.Unlock()
+				log.Info("Initialized excluded resources from ConfigMap", "count", len(excludedResources))
+			}
+		}
+	}
 }
 
 type cachedObjectStorer struct {
