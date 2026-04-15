@@ -46,6 +46,22 @@ For each S3 bucket to replicate Ramen protected k8s resources, prepare:
 - **Replication type**: async (Regional DR) or sync (Metro DR)
 - **Scheduling interval** (for async): e.g., `5m`, `30m`, `1h`
 
+## RamenConfig and the operator ConfigMap
+
+Ramen hub and DR cluster operators load configuration from a ConfigMap in the
+operator namespace. The hub uses `ramen-hub-operator-config`; the DR cluster
+operator uses `ramen-dr-cluster-operator-config`. Each exposes a single YAML
+document under the data key `ramen_manager_config.yaml`, which must be a
+`RamenConfig` object (`apiVersion: ramendr.openshift.io/v1alpha1`,
+`kind: RamenConfig`). Sections such as `s3StoreProfiles`, metrics, and leader
+election are fields on that object.
+
+This guide focuses on **operational** steps (S3 secrets, DRCluster, DRPolicy).
+For **how** the operator creates or updates that ConfigMap, merges in-process
+defaults with your YAML at startup, and how `RAMEN_CONTROLLER_TYPE` selects hub
+versus cluster behavior, see
+[Operator RamenConfig: bootstrap and merge](ramen-config.md).
+
 ## Update Ramen Config with S3 Profiles
 
 Ramen uses S3-compatible object storage to store cluster metadata (PV specs, VRG
