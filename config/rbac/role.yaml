@@ -8,8 +8,13 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumes
   verbs:
+  - create
+  - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -38,17 +43,6 @@ rules:
   verbs:
   - create
   - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumes
-  verbs:
-  - create
   - get
   - list
   - patch
