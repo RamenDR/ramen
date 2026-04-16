@@ -191,8 +191,7 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
-	err = v.ReconcileServiceExportForRD(rd)
-	if err != nil {
+	if err = v.ReconcileServiceExportForRD(rd); err != nil {
 		return nil, nil, err
 	}
 
@@ -224,8 +223,7 @@ func (v *VSHandler) generateRDInfo(
 	isSubmarinerEnabled := v.IsSubmarinerEnabled()
 
 	if isSubmarinerEnabled {
-		err := v.ReconcileServiceExportForRD(rd)
-		if err != nil {
+		if err := v.ReconcileServiceExportForRD(rd); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -370,7 +368,12 @@ func (v *VSHandler) createOrUpdateRD(
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	volumeSnapshotClassName, err := v.GetVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageclass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		return nil, err
+	}
+
+	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(storageclass)
 	if err != nil {
 		return nil, err
 	}
@@ -404,19 +407,40 @@ func (v *VSHandler) createOrUpdateRD(
 			}
 		}
 
-		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.GetRsyncServiceType(),
-			KeySecret:   &pskSecretName,
+		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+			params := map[string]string{
+				"storageClassName":        *rdSpec.ProtectedPVC.StorageClassName,
+				"volumeSnapshotClassName": volumeSnapshotClassName,
+				"copyMethod":              string(volsyncv1alpha1.CopyMethodSnapshot),
+				"keySecret":               pskSecretName,
+				"capacity":                rdSpec.ProtectedPVC.Resources.Requests.Storage().String(),
+				"accessModes":             string(pvcAccessModes[0]),
+			}
+			if dstPVC != nil {
+				params["destinationPVC"] = *dstPVC
+			}
 
-			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
-				Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
-				StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
-				AccessModes:             pvcAccessModes,
-				VolumeSnapshotClassName: &volumeSnapshotClassName,
-				DestinationPVC:          dstPVC,
-			},
-			MoverConfig: moverConfig,
+			rd.Spec.External = &volsyncv1alpha1.ReplicationDestinationExternalSpec{
+				Provider:   storageclass.Provisioner,
+				Parameters: params,
+			}
+			rd.Spec.RsyncTLS = nil
+		} else {
+			rd.Spec.External = nil
+			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
+				ServiceType: v.GetRsyncServiceType(),
+				KeySecret:   &pskSecretName,
+
+				ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
+					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+					Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
+					StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
+					AccessModes:             pvcAccessModes,
+					VolumeSnapshotClassName: &volumeSnapshotClassName,
+					DestinationPVC:          dstPVC,
+				},
+				MoverConfig: moverConfig,
+			}
 		}
 
 		return nil
@@ -658,19 +682,34 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			}
 		}
 
-		rs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
-			KeySecret: &pskSecretName,
-			Address:   &remoteAddress,
+		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+			rs.Spec.External = &volsyncv1alpha1.ReplicationSourceExternalSpec{
+				Provider: storageClass.Provisioner,
+				Parameters: map[string]string{
+					"copyMethod":              string(volsyncv1alpha1.CopyMethodSnapshot),
+					"storageClassName":        *rsSpec.ProtectedPVC.StorageClassName,
+					"volumeSnapshotClassName": volumeSnapshotClassName,
+					"keySecret":               pskSecretName,
+					"address":                 remoteAddress,
+				},
+			}
+			rs.Spec.RsyncTLS = nil
+		} else {
+			rs.Spec.External = nil
+			rs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
+				KeySecret: &pskSecretName,
+				Address:   &remoteAddress,
 
-			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
-				// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
-				// storage classes that support it in the future
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
-				VolumeSnapshotClassName: &volumeSnapshotClassName,
-				StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
-				AccessModes:             rsSpec.ProtectedPVC.AccessModes,
-			},
-			MoverConfig: *moverConfig,
+				ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
+					// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
+					// storage classes that support it in the future
+					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+					VolumeSnapshotClassName: &volumeSnapshotClassName,
+					StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
+					AccessModes:             rsSpec.ProtectedPVC.AccessModes,
+				},
+				MoverConfig: *moverConfig,
+			}
 		}
 
 		return nil
@@ -688,7 +727,14 @@ func (v *VSHandler) resolveRemoteAddress(rsSpec ramendrv1alpha1.VolSyncReplicati
 	if util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
 		// Remote service address created for the ReplicationDestination on the secondary
 		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
-		remoteAddress := util.GetRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		var remoteAddress string
+		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+			remoteAddress = util.GetRemoteServiceNameForDiffRDFromPVCName(
+				rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		} else {
+			remoteAddress = util.GetRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		}
+
 		v.log.Info("Using Submariner remote address", "remoteAddress", remoteAddress)
 
 		return remoteAddress, nil
@@ -1742,15 +1788,21 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 }
 
 // Make sure a ServiceExport exists to export the service for this RD to remote clusters
+// When diff sync is enabled, uses the ceph-volsync-plugin service name instead of rsync-tls.
 // See: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/
 // 2.4/html/services/services-overview#enable-service-discovery-submariner
 func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
+	// Get name of the local service (this needs to be exported)
+	serviceName := util.GetLocalServiceNameForRD(rd.GetName())
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		serviceName = util.GetLocalServiceNameForDiffRD(rd.GetName())
+	}
+
 	// Using unstructured to avoid needing to require serviceexport in client scheme
 	svcExport := &unstructured.Unstructured{}
 	svcExport.Object = map[string]interface{}{
 		"metadata": map[string]interface{}{
-			// Get name of the local service (this needs to be exported)
-			"name":      util.GetLocalServiceNameForRD(rd.GetName()),
+			"name":      serviceName,
 			"namespace": rd.GetNamespace(),
 		},
 	}
@@ -1769,7 +1821,7 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		// This way on relocate scenarios or failover/failback, when the RD is cleaned up the associated
 		// ServiceExport will get cleaned up with it.
 		if err := ctrlutil.SetOwnerReference(rd, svcExport, v.client.Scheme()); err != nil {
-			v.log.Error(err, "unable to set controller reference", "resource", svcExport)
+			v.log.Error(err, "unable to set owner reference", "resource", svcExport)
 
 			return fmt.Errorf("%w", err)
 		}
@@ -1777,7 +1829,7 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		return nil
 	})
 
-	v.log.V(1).Info("ServiceExport createOrUpdate Complete", "op", op)
+	v.log.V(1).Info("ServiceExport createOrUpdate Complete", "op", op, "serviceName", serviceName)
 
 	if err != nil {
 		v.log.Error(err, "error creating or updating ServiceExport", "replication destination name", rd.GetName(),
@@ -1785,8 +1837,6 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 
 		return fmt.Errorf("error creating or updating ServiceExport (%w)", err)
 	}
-
-	v.log.V(1).Info("ServiceExport Reconcile Complete")
 
 	return nil
 }
@@ -2038,8 +2088,17 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
 	moverConfig := v.GetMoverConfigForPVC(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
-	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback
-	lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, moverConfig, v.log)
+
+	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback.
+	// When diff sync is enabled, use External spec for efficient block-level rollback.
+	var lrs *volsyncv1alpha1.ReplicationSource
+
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		lrd, lrs, err = v.reconcileDiffLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, v.log)
+	} else {
+		lrd, lrs, err = v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, moverConfig, v.log)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -2622,6 +2681,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			}
 		}
 
+		lrd.Spec.External = nil
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: &DefaultRsyncServiceType,
 			KeySecret:   &pskSecretName,
@@ -2699,6 +2759,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			}
 		}
 
+		lrs.Spec.External = nil
 		lrs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 			KeySecret: &pskSecretName,
 			Address:   &address,
@@ -2732,6 +2793,16 @@ func (v *VSHandler) CleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource
 	err = util.DeletePVC(v.ctx, v.client, lrs.Spec.SourcePVC, lrs.GetNamespace(), v.log)
 	if err != nil {
 		return err
+	}
+
+	// If diff sync was used, clean up the current-state snapshot created for rollback
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		pvcName := strings.TrimPrefix(lrs.GetName(), "local-")
+		currentStateSnapName := fmt.Sprintf("current-state-%s", pvcName)
+
+		if snapErr := v.deleteSnapshot(v.ctx, v.client, currentStateSnapName, lrs.GetNamespace(), v.log); snapErr != nil {
+			v.log.Error(snapErr, "Failed to delete current-state snapshot", "snapshotName", currentStateSnapName)
+		}
 	}
 
 	// delete localRS
@@ -2820,6 +2891,48 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	return v.createPVCFromSnapshot(rd, rdSpec, snapshotRef, restoreSize)
 }
 
+// resolveCapacity determines the PVC capacity by resolving between RD spec, rdSpec, and snapshot restore size.
+func (v *VSHandler) resolveCapacity(
+	rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapRestoreSize *resource.Quantity,
+) *resource.Quantity {
+	var pvcRequestedCapacity *resource.Quantity
+	if rd.Spec.RsyncTLS != nil {
+		pvcRequestedCapacity = rd.Spec.RsyncTLS.Capacity
+	} else {
+		pvcRequestedCapacity = rdSpec.ProtectedPVC.Resources.Requests.Storage()
+	}
+
+	if snapRestoreSize != nil {
+		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
+			pvcRequestedCapacity = snapRestoreSize
+		}
+	}
+
+	return pvcRequestedCapacity
+}
+
+// setImmutablePVCFields sets the immutable fields on a PVC being created from a snapshot.
+func (v *VSHandler) setImmutablePVCFields(
+	pvc *corev1.PersistentVolumeClaim,
+	rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapshotRef *corev1.TypedLocalObjectReference,
+	accessModes []corev1.PersistentVolumeAccessMode,
+) {
+	pvc.Spec.AccessModes = accessModes
+
+	if rd.Spec.RsyncTLS != nil {
+		pvc.Spec.StorageClassName = rd.Spec.RsyncTLS.StorageClassName
+	} else {
+		pvc.Spec.StorageClassName = rdSpec.ProtectedPVC.StorageClassName
+	}
+
+	pvc.Spec.DataSource = snapshotRef
+	pvc.Spec.VolumeMode = v.volumeModeForProtectedPVC(&rdSpec.ProtectedPVC)
+}
+
 //nolint:funlen
 func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
@@ -2842,12 +2955,7 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 
 	util.AddLabel(pvc, util.CreatedByRamenLabel, "true")
 
-	pvcRequestedCapacity := rd.Spec.RsyncTLS.Capacity
-	if snapRestoreSize != nil {
-		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
-			pvcRequestedCapacity = snapRestoreSize
-		}
-	}
+	pvcRequestedCapacity := v.resolveCapacity(rd, rdSpec, snapRestoreSize)
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
 		if pvc.Status.Phase == corev1.ClaimBound {
@@ -2864,11 +2972,7 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 		}
 
 		if pvc.CreationTimestamp.IsZero() { // set immutable fields
-			pvc.Spec.AccessModes = accessModes
-			pvc.Spec.StorageClassName = rd.Spec.RsyncTLS.StorageClassName
-
-			pvc.Spec.DataSource = snapshotRef
-			pvc.Spec.VolumeMode = v.volumeModeForProtectedPVC(&rdSpec.ProtectedPVC)
+			v.setImmutablePVCFields(pvc, rd, rdSpec, snapshotRef, accessModes)
 		}
 
 		pvc.Spec.Resources.Requests = corev1.ResourceList{

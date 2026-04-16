@@ -272,12 +272,9 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		return nil, fmt.Errorf("failed to get volume group snapshot: %w", err)
 	}
 
-	if vgs.Status == nil || vgs.Status.ReadyToUse == nil ||
-		(vgs.Status.ReadyToUse != nil && !*vgs.Status.ReadyToUse) {
+	if !IsVGSReady(vgs) {
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
-
-	restoredPVCs := []RestoredPVC{}
 
 	volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
 	if err != nil {
@@ -285,6 +282,19 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 	}
 
 	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+
+	return h.restorePVCsFromSnapshots(ctx, vgs, volumeSnapshots, owner, logger)
+}
+
+// restorePVCsFromSnapshots iterates over VolumeSnapshots owned by a VGS, restoring each to a read-only PVC.
+func (h *volumeGroupSourceHandler) restorePVCsFromSnapshots(
+	ctx context.Context,
+	vgs *vgsv1beta1.VolumeGroupSnapshot,
+	volumeSnapshots []vsv1.VolumeSnapshot,
+	owner metav1.Object,
+	logger logr.Logger,
+) ([]RestoredPVC, error) {
+	restoredPVCs := []RestoredPVC{}
 
 	for _, vs := range volumeSnapshots {
 		logger.Info("Get PVCName from volume snapshot",
@@ -506,6 +516,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			replicationSource.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
 				Manual: manual,
 			}
+			replicationSource.Spec.External = nil
 			replicationSource.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 				ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 					CopyMethod: volsyncv1alpha1.CopyMethodDirect,
