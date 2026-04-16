@@ -78,14 +78,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# Set sed command appropriately
-GOHOSTOS ?= $(shell go env GOHOSTOS)
-SED_CMD:=sed
-ifeq ($(GOHOSTOS),darwin)
-	SED_CMD:=gsed
-endif
-
-
 DOCKERCMD ?= podman
 
 all: build
@@ -404,19 +396,11 @@ catalog-push: ## Push a catalog image.
 .PHONY: docker-buildx
 docker-buildx: # Build and push docker image for the manager for cross-platform support
 ifeq ($(DOCKERCMD),docker)
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and
-	# replace GOARCH value to ${TARGETARCH} into Dockerfile.cross, and preserve the original Dockerfile
 	$(eval PLATFORMS="linux/arm64,linux/amd64,linux/s390x,linux/ppc64le")
-	$(SED_CMD) \
-		-e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' \
-		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
-		Dockerfile > Dockerfile.cross
-	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
 	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder
 	$(DOCKERCMD) buildx use $(IMAGE_NAME)-builder
-	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
+	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} .
 	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
-	rm Dockerfile.cross
 else
 	@echo "docker-buildx is supported only with docker"
 endif
