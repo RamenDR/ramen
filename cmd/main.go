@@ -14,6 +14,7 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
@@ -105,6 +106,7 @@ func configureController() error {
 	setupLog.Info("controller type", "type", controllers.ControllerType)
 
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
+		utilruntime.Must(operatorsv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(plrv1.AddToScheme(scheme))
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
 		utilruntime.Must(viewv1beta1.AddToScheme(scheme))

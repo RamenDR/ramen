@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,6 +49,8 @@ const (
 	VeleroNamespaceNameDefault                        = "velero"
 	DefaultVolSyncCopyMethod                          = "Snapshot"
 	defaultMaxConcurrentReconciles                    = 50
+	openshiftOperatorsNamespace                       = "openshift-operators"
+	openshiftDRSystemNamespace                        = "openshift-dr-system"
 )
 
 // FIXME
@@ -88,11 +92,14 @@ func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv
 		VolumeUnprotectionEnabled: true,
 	}
 
+	cfg.DrClusterOperator.DeploymentAutomationEnabled = true
+	cfg.DrClusterOperator.S3SecretDistributionEnabled = true
 	cfg.DrClusterOperator.ChannelName = drClusterOperatorChannelNameDefault
 	cfg.DrClusterOperator.PackageName = drClusterOperatorPackageNameDefault
 	cfg.DrClusterOperator.CatalogSourceName = drClusterOperatorCatalogSourceNameDefault
-	cfg.DrClusterOperator.DeploymentAutomationEnabled = true
-	cfg.DrClusterOperator.S3SecretDistributionEnabled = true
+	cfg.DrClusterOperator.CatalogSourceNamespaceName = RamenOperatorNamespace()
+	cfg.DrClusterOperator.ClusterServiceVersionName = drClusterOperatorClusterServiceVersionNameDefault
+	cfg.DrClusterOperator.NamespaceName = RamenOperatorNamespace()
 
 	cfg.KubeObjectProtection.VeleroNamespaceName = VeleroNamespaceNameDefault
 	cfg.VolSync.DestinationCopyMethod = "Direct"
@@ -243,6 +250,26 @@ func ramenOperatorConfigMapName() string {
 	}
 }
 
+func copyDrClusterOperatorSubscriptionFields(dst, src *ramendrv1alpha1.RamenConfig) {
+	// In-memory src carries the hub subscription overlay (or compiled defaults).
+	// Re-apply onto dst after user YAML merge. DR-cluster controllers skip this:
+	// ConfigMap content comes from the hub via ManifestWork and must not be
+	// replaced with local defaults.
+	if ControllerType != ramendrv1alpha1.DRHubType || dst == nil || src == nil {
+		return
+	}
+
+	s := src.DrClusterOperator
+	d := &dst.DrClusterOperator
+
+	d.ChannelName = s.ChannelName
+	d.PackageName = s.PackageName
+	d.NamespaceName = s.NamespaceName
+	d.CatalogSourceName = s.CatalogSourceName
+	d.CatalogSourceNamespaceName = s.CatalogSourceNamespaceName
+	d.ClusterServiceVersionName = s.ClusterServiceVersionName
+}
+
 func CreateOrUpdateConfigMap(
 	ctx context.Context,
 	c client.Client,
@@ -261,6 +288,8 @@ func CreateOrUpdateConfigMap(
 		Namespace: RamenOperatorNamespace(),
 		Name:      configMapName,
 	}
+
+	updateDrClusterOperatorFromSubscription(ctx, r, defaultRamenConfig, log)
 
 	if err := r.Get(ctx, key, configMap); err != nil {
 		if !k8serrors.IsNotFound(err) {
@@ -281,6 +310,8 @@ func CreateOrUpdateConfigMap(
 	if err != nil {
 		return nil, err
 	}
+
+	copyDrClusterOperatorSubscriptionFields(&merged, defaultRamenConfig)
 
 	return configMapUpdate(ctx, c, configMap, &merged, log)
 }
@@ -386,6 +417,70 @@ func ConfigMapGet(
 
 func RamenOperatorNamespace() string {
 	return os.Getenv("POD_NAMESPACE")
+}
+
+func findHubOperatorSubscription(ctx context.Context, apiReader client.Reader,
+	log logr.Logger,
+) *operatorsv1alpha1.Subscription {
+	const hubOperatorSuffix = "-hub-operator"
+
+	ns := RamenOperatorNamespace()
+
+	subList := &operatorsv1alpha1.SubscriptionList{}
+	if err := apiReader.List(ctx, subList, client.InNamespace(ns)); err != nil {
+		log.Info("list operators.coreos.com subscriptions; continuing without hub subscription",
+			"namespace", ns, "error", err)
+
+		return nil
+	}
+
+	for i := range subList.Items {
+		sub := &subList.Items[i]
+		if sub.Spec != nil && strings.HasSuffix(sub.Spec.Package, hubOperatorSuffix) {
+			return sub
+		}
+	}
+
+	return nil
+}
+
+func applyDrClusterOperatorFromSubscriptionSpec(
+	spec *operatorsv1alpha1.SubscriptionSpec,
+	cfg *ramendrv1alpha1.RamenConfig,
+) {
+	const (
+		hubSubstring     = "-hub-"
+		clusterSubstring = "-cluster-"
+	)
+
+	dco := &cfg.DrClusterOperator
+
+	dco.ChannelName = spec.Channel
+	dco.PackageName = strings.Replace(spec.Package, hubSubstring, clusterSubstring, 1)
+	dco.CatalogSourceName = spec.CatalogSource
+	dco.CatalogSourceNamespaceName = spec.CatalogSourceNamespace
+	dco.ClusterServiceVersionName = strings.Replace(spec.StartingCSV, hubSubstring, clusterSubstring, 1)
+}
+
+func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader client.Reader,
+	cfg *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) {
+	if ControllerType != ramendrv1alpha1.DRHubType || cfg == nil {
+		return
+	}
+
+	sub := findHubOperatorSubscription(ctx, apiReader, log)
+
+	if sub == nil || sub.Spec == nil {
+		return
+	}
+
+	applyDrClusterOperatorFromSubscriptionSpec(sub.Spec, cfg)
+
+	if sub.Namespace == openshiftOperatorsNamespace {
+		cfg.DrClusterOperator.NamespaceName = openshiftDRSystemNamespace
+	}
 }
 
 func RamenOperandsNamespace(config ramendrv1alpha1.RamenConfig) string {
