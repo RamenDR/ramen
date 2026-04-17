@@ -38,10 +38,6 @@ IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
 DISTRO ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
-OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
-RAMEN_OPS_NAMESPACE ?= ramen-ops
-AUTO_CONFIGURE_DR_CLUSTER ?= true
-VELERO_NAMESPACE ?= velero
 
 # PLATFORM sets the target platform for the container image. Defaults to the
 # host architecture. To build for a different architecture (e.g. building an
@@ -81,14 +77,6 @@ GOBIN=$(shell go env GOPATH)/bin
 else
 GOBIN=$(shell go env GOBIN)
 endif
-
-# Set sed command appropriately
-GOHOSTOS ?= $(shell go env GOHOSTOS)
-SED_CMD:=sed
-ifeq ($(GOHOSTOS),darwin)
-	SED_CMD:=gsed
-endif
-
 
 DOCKERCMD ?= podman
 
@@ -342,15 +330,6 @@ bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests an
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(SED_CMD) -e "s,ramenOpsNamespace: ramen-ops,ramenOpsNamespace: $(RAMEN_OPS_NAMESPACE)," -i config/hub/manager/ramen_manager_config.yaml
-	$(SED_CMD) -e "s,veleroNamespaceName: velero,veleroNamespaceName: $(VELERO_NAMESPACE)," -i config/hub/manager/ramen_manager_config.yaml
-	$(SED_CMD) -e "s,channelName: alpha,channelName: $(DEFAULT_CHANNEL)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,packageName: ramen-dr-cluster-operator,packageName: $(DRCLUSTER_NAME)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,namespaceName: ramen-system,namespaceName: $(OPERATOR_SUGGESTED_NAMESPACE)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1,clusterServiceVersionName: $(DRCLUSTER_NAME).v$(VERSION)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,deploymentAutomationEnabled: true,deploymentAutomationEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,s3SecretDistributionEnabled: true,s3SecretDistributionEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	cat config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml >> config/hub/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
 
@@ -368,8 +347,6 @@ bundle-dr-cluster: manifests kustomize dr-cluster-config operator-sdk ## Generat
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(SED_CMD) -e "s,ramenOpsNamespace: ramen-ops,ramenOpsNamespace: $(RAMEN_OPS_NAMESPACE)," -i config/dr-cluster/manager/ramen_manager_config.yaml
-	$(SED_CMD) -e "s,veleroNamespaceName: velero,veleroNamespaceName: $(VELERO_NAMESPACE)," -i config/dr-cluster/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr-cluster/bundle
 
@@ -419,19 +396,11 @@ catalog-push: ## Push a catalog image.
 .PHONY: docker-buildx
 docker-buildx: # Build and push docker image for the manager for cross-platform support
 ifeq ($(DOCKERCMD),docker)
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and
-	# replace GOARCH value to ${TARGETARCH} into Dockerfile.cross, and preserve the original Dockerfile
 	$(eval PLATFORMS="linux/arm64,linux/amd64,linux/s390x,linux/ppc64le")
-	$(SED_CMD) \
-		-e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' \
-		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
-		Dockerfile > Dockerfile.cross
-	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
 	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder
 	$(DOCKERCMD) buildx use $(IMAGE_NAME)-builder
-	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
+	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} .
 	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
-	rm Dockerfile.cross
 else
 	@echo "docker-buildx is supported only with docker"
 endif
