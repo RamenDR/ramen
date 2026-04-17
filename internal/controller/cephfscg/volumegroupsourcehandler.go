@@ -701,6 +701,13 @@ func (h *volumeGroupSourceHandler) EnsureApplicationPVCsMounted(
 
 	for i := range pvcList.Items {
 		pvc := &pvcList.Items[i]
+
+		if strings.HasSuffix(pvc.Name, util.SuffixForFinalsyncPVC) {
+			h.Logger.Info("Skipping finalsync tmpPVC for mount check", "pvc", pvc.Name)
+
+			continue
+		}
+
 		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
 			ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 				Name:               pvc.Name,
