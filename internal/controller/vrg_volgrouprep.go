@@ -434,10 +434,7 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 		return nil, fmt.Errorf("error determining replicationID")
 	}
 
-	vgrNamespacedName := types.NamespacedName{
-		Name:      rmnutil.CreateVGRName(grID, v.instance.Name),
-		Namespace: pvc.Namespace,
-	}
+	vgrNamespacedName := v.vgrNamespacedName(grID, pvc.Namespace)
 
 	vgr := &volrep.VolumeGroupReplication{}
 	err = v.reconciler.Get(v.ctx, vgrNamespacedName, vgr)
