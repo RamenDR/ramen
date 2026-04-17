@@ -220,14 +220,15 @@ func (u *drclusterInstance) pruneMModesActivations(
 		// Check if maintenance mode is still required, if not expire it
 		mModeKey := mModeRequest.Spec.StorageProvisioner + mModeRequest.Spec.TargetID
 		if _, ok := activationsRequired[mModeKey]; !ok {
-			// Before pruning, be conservative and verify there is no failover DRPC
-			// that still depends on MaintenanceMode on this cluster. This ensures
-			// that all VRGs in the failover group have fully transitioned to
+			// Before pruning verify there is no failover DRPC that still depends on this specific MaintenanceMode
+			// on this cluster. This ensures that all VRGs using this storage backend have fully transitioned to
 			// Primary before MMode is removed.
-			if u.mmodeStillNeededByAnyFailoverDRPC() {
+			if u.mmodeStillNeededByFailoverDRPC(mModeRequest.Spec.StorageProvisioner, mModeRequest.Spec.TargetID) {
 				u.log.Info(
-					"Keeping maintenance mode activation because at least one failover DRPC still needs MaintenanceMode",
+					"Keeping maintenance mode activation because at least one failover DRPC still needs this MaintenanceMode",
 					"name", mModeMWs.Items[idx].GetName(),
+					"provisioner", mModeRequest.Spec.StorageProvisioner,
+					"targetID", mModeRequest.Spec.TargetID,
 				)
 
 				// Treat as survivor for now so that status remains visible.
@@ -419,44 +420,81 @@ func drClusterMModeCleanup(
 	return nil
 }
 
-// mmodeStillNeededByAnyFailoverDRPC returns true if there exists at least one
-// DRPlacementControl that is failing over to this DRCluster and whose storage
-// protection has not fully completed yet.
-//
-// NOTE: This implementation is conservative: as long as ANY failover DRPC to
-// this cluster is not fully available (ConditionAvailable != True for the
-// current generation), we keep all MMode activations. This avoids prematurely
-// resuming mirroring while promotion is still in progress or has errors.
-func (u *drclusterInstance) mmodeStillNeededByAnyFailoverDRPC() bool {
-	drpcList := &ramen.DRPlacementControlList{}
-
-	if err := u.client.List(u.ctx, drpcList); err != nil {
-		// Be conservative on errors to avoid unsafe MMode pruning.
+// mmodeStillNeededByFailoverDRPC returns true if there exists at least one
+// DRPlacementControl that is failing over to this DRCluster, uses the specified
+// storage backend and whose storage protection has not fully completed yet.
+// We only keep a specific MaintenanceMode active if there's a failover DRPC using
+// that exact storage backend that is not fully available.
+// This prevents blocking unrelated storage backends.
+func (u *drclusterInstance) mmodeStillNeededByFailoverDRPC(storageProvisioner, targetID string) bool {
+	drpcCollections, err := DRPCsFailingOverToCluster(u.client, u.log, u.object.GetName())
+	if err != nil {
 		u.log.Error(err, "Failed to list DRPlacementControls when deciding MMode pruning")
 		u.requeue = true
 
 		return true
 	}
 
-	for i := range drpcList.Items {
-		drpc := &drpcList.Items[i]
+	for _, drpcCollection := range drpcCollections {
+		drpc := drpcCollection.drpc
 
-		// Only consider DRPCs that are actually failing over to this DRCluster.
-		if drpc.Spec.Action != ramen.ActionFailover ||
-			drpc.Spec.FailoverCluster != u.object.GetName() {
-			continue
-		}
-
-		// If Available is not True for this generation, promotion / protection
-		// is not fully complete yet; keep MaintenanceMode.
 		availableCond := meta.FindStatusCondition(drpc.Status.Conditions, ramen.ConditionAvailable)
 		if availableCond == nil ||
 			availableCond.Status != metav1.ConditionTrue ||
 			availableCond.ObservedGeneration != drpc.Generation {
-			return true
+			if u.drpcUsesStorageBackend(drpc, storageProvisioner, targetID) {
+				u.log.Info("DRPC still needs this MaintenanceMode",
+					"drpc", drpc.GetName(),
+					"namespace", drpc.GetNamespace(),
+					"provisioner", storageProvisioner,
+					"targetID", targetID)
+
+				return true
+			}
 		}
 	}
 
-	// No failover DRPCs still in-progress or unprotected.
+	return false
+}
+
+// drpcUsesStorageBackend checks if a DRPC's VRG uses the specified storage backend
+// by examining the VRG's protected PVCs and their storage identifiers.
+func (u *drclusterInstance) drpcUsesStorageBackend(
+	drpc *ramen.DRPlacementControl,
+	storageProvisioner,
+	targetID string,
+) bool {
+	drPolicy, err := GetDRPolicy(u.ctx, u.client, drpc, u.log)
+	if err != nil {
+		u.log.Error(err, "Failed to get DRPolicy for DRPC", "drpc", drpc.GetName())
+
+		return true
+	}
+
+	drpcCollection := DRPCAndPolicy{
+		drpc:     drpc,
+		drPolicy: drPolicy,
+	}
+
+	vrgs, err := u.getVRGs(drpcCollection)
+	if err != nil {
+		u.log.Error(err, "Failed to get VRGs for DRPC", "drpc", drpc.GetName())
+
+		return true
+	}
+
+	for _, vrg := range vrgs {
+		if vrg == nil {
+			continue
+		}
+
+		for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+			if protectedPVC.StorageIdentifiers.StorageProvisioner == storageProvisioner &&
+				protectedPVC.StorageIdentifiers.ReplicationID.ID == targetID {
+				return true
+			}
+		}
+	}
+
 	return false
 }

@@ -339,6 +339,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
+//
+//nolint:cyclop
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -395,30 +397,13 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
-	// Use the DRPC Protected condition to check if it is true and then allow failover
-	if !d.isProtected() {
+	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() && !d.isGlobalActionInConsensus() {
 		return !done, nil
 	}
 
-	d.setStatusInitiating()
-
 	return d.switchToFailoverCluster()
-}
-
-func (d *DRPCInstance) isProtected() bool {
-	for _, cond := range d.instance.Status.Conditions {
-		if cond.Type == rmn.ConditionProtected && cond.Status == metav1.ConditionTrue {
-			return true
-		}
-	}
-
-	const msg = "cannot start failover because workload is not protected"
-	d.log.Info("Failover blocked", "reason", msg)
-
-	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
-		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
-
-	return false
 }
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
@@ -898,6 +883,10 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() && !d.isGlobalActionInConsensus() {
+		return !done, nil
+	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
 	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
@@ -1621,7 +1610,7 @@ func equalClusterIDSlices(a, b []string) bool {
 
 // updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
 // a replicationID then the from should also claim a replicationID, else both should not.  Similarly existing peerClass
-// offloaded property should be the same as from. This ensures that a peerClass is updated with latest
+// offloaded and global properties should be the same as from. This ensures that a peerClass is updated with latest
 // storage/replication IDs but only if the underlying replication scheme remains unchanged.
 // If DRPC is annotated with CG values, then grouping is also updated to true.
 
@@ -1634,6 +1623,10 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 		}
 
 		if to[toIdx].Offloaded != from.Offloaded {
+			break
+		}
+
+		if to[toIdx].Global != from.Global {
 			break
 		}
 
@@ -1839,6 +1832,11 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+	}
+
+	// Propagate global VGR label to VRG for consensus checks.
+	if d.hasGlobalVGRLabel() {
+		rmnutil.AddLabel(vrg, GlobalVGRLabel, d.globalVGRLabel())
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
@@ -2074,7 +2072,10 @@ func (d *DRPCInstance) createOrUpdateNSForDiscoveredApps(homeCluster string) err
 	}
 
 	for _, protectedNamespaceObj := range protectedNamespaces {
-		annotations := removeSCCAnnotations(protectedNamespaceObj.Annotations)
+		annotations, err := d.filterSCCAnnotations(protectedNamespaceObj.Annotations)
+		if err != nil {
+			return err
+		}
 
 		for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
 			if homeCluster == dstCluster {
@@ -2925,7 +2926,28 @@ func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
 	}
 }
 
-func removeSCCAnnotations(annotations map[string]string) map[string]string {
+// filterSCCAnnotations conditionally removes SCC annotations based on RamenConfig and DRPC settings.
+// SCC annotations are retained only when BOTH RamenConfig.RetainNamespaceSCCAcrossPeers AND
+// DRPC.Spec.RetainNamespaceSCCAcrossPeers are true.
+// If DRPC flag is true but RamenConfig flag is false, a warning is logged.
+func (d *DRPCInstance) filterSCCAnnotations(annotations map[string]string) (map[string]string, error) {
+	ramenConfigRetain := d.ramenConfig != nil && d.ramenConfig.RetainNamespaceSCCAcrossPeers
+	drpcRetain := d.instance.Spec.RetainNamespaceSCCAcrossPeers
+
+	// Both flags must be true to retain SCC annotations
+	if ramenConfigRetain && drpcRetain {
+		d.log.Info("Retaining SCC annotations across peer clusters as both RamenConfig and DRPC flags are enabled")
+
+		return annotations, nil
+	}
+
+	// Log warning if DRPC flag is true but RamenConfig flag is false
+	if drpcRetain && !ramenConfigRetain {
+		return nil, fmt.Errorf("retainNamespaceSCCAcrossPeers is enabled in the DRPC," +
+			"but the flag is disabled in the RamenConfig")
+	}
+
+	// Default behavior: remove SCC annotations
 	filteredAnnotations := make(map[string]string)
 
 	for key, val := range annotations {
@@ -2934,5 +2956,5 @@ func removeSCCAnnotations(annotations map[string]string) map[string]string {
 		}
 	}
 
-	return filteredAnnotations
+	return filteredAnnotations, nil
 }

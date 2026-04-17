@@ -11,13 +11,18 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/yaml"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	rameninternalconfig "github.com/ramendr/ramen/internal/config"
 )
 
 const (
@@ -41,6 +46,7 @@ const (
 	DefaultCephFSCSIDriverName                        = "openshift-storage.cephfs.csi.ceph.com"
 	VeleroNamespaceNameDefault                        = "velero"
 	DefaultVolSyncCopyMethod                          = "Snapshot"
+	defaultMaxConcurrentReconciles                    = 50
 )
 
 // FIXME
@@ -48,31 +54,75 @@ const NoS3StoreAvailable = "NoS3"
 
 var ControllerType ramendrv1alpha1.ControllerType
 
-var cachedRamenConfigFileName string
+func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv1alpha1.RamenConfig {
+	var leaderElectionResourceName string
+
+	switch controllerType {
+	case ramendrv1alpha1.DRHubType:
+		leaderElectionResourceName = HubLeaderElectionResourceName
+	case ramendrv1alpha1.DRClusterType:
+		leaderElectionResourceName = drClusterLeaderElectionResourceName
+	default:
+		panic(fmt.Sprintf("unknown controller type %q", controllerType))
+	}
+
+	leaderElect := true
+
+	cfg := &ramendrv1alpha1.RamenConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: ramendrv1alpha1.GroupVersion.String(),
+			Kind:       "RamenConfig",
+		},
+		MaxConcurrentReconciles: defaultMaxConcurrentReconciles,
+		Health: ramendrv1alpha1.ControllerHealth{
+			HealthProbeBindAddress: ":8081",
+		},
+		Metrics: ramendrv1alpha1.ControllerMetrics{
+			BindAddress: "127.0.0.1:9289",
+		},
+		LeaderElection: &configv1alpha1.LeaderElectionConfiguration{
+			LeaderElect:  &leaderElect,
+			ResourceName: leaderElectionResourceName,
+		},
+		RamenOpsNamespace:         "ramen-ops",
+		VolumeUnprotectionEnabled: true,
+	}
+
+	cfg.DrClusterOperator.ChannelName = drClusterOperatorChannelNameDefault
+	cfg.DrClusterOperator.PackageName = drClusterOperatorPackageNameDefault
+	cfg.DrClusterOperator.CatalogSourceName = drClusterOperatorCatalogSourceNameDefault
+	cfg.DrClusterOperator.DeploymentAutomationEnabled = true
+	cfg.DrClusterOperator.S3SecretDistributionEnabled = true
+
+	cfg.KubeObjectProtection.VeleroNamespaceName = VeleroNamespaceNameDefault
+	cfg.VolSync.DestinationCopyMethod = "Direct"
+	cfg.VolSync.Disabled = false
+
+	cfg.MultiNamespace.FeatureEnabled = true
+	cfg.MultiNamespace.VolsyncSupported = true
+
+	return cfg
+}
 
 func LoadControllerConfig(configFile string,
 	log logr.Logger,
 ) (ramenConfig *ramendrv1alpha1.RamenConfig) {
-	if configFile == "" {
-		log.Info("Ramen config file not specified")
-
-		return
+	controllerType := os.Getenv("RAMEN_CONTROLLER_TYPE")
+	if controllerType == "" {
+		panic(fmt.Errorf("RAMEN_CONTROLLER_TYPE environment variable must be set"))
 	}
 
-	log.Info("loading Ramen configuration from ", "file", configFile)
-
-	cachedRamenConfigFileName = configFile
-
-	ramenConfig, err := ReadRamenConfigFile(log)
-	if err != nil {
-		panic(fmt.Sprintf("could not parse config file: %v", err))
+	ct := ramendrv1alpha1.ControllerType(controllerType)
+	if ct != ramendrv1alpha1.DRHubType && ct != ramendrv1alpha1.DRClusterType {
+		panic(fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+			ct, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType))
 	}
 
-	for profileName, s3Profile := range ramenConfig.S3StoreProfiles {
-		log.Info("s3 profile", "key", profileName, "value", s3Profile)
-	}
+	ControllerType = ct
 
-	return
+	log.Info("loading Ramen configuration from defaults", "controllerType", ct)
+
+	return DefaultRamenConfig(ct)
 }
 
 func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig) {
@@ -81,7 +131,17 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 	}
 
 	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
-	options.Metrics.BindAddress = ramenConfig.Metrics.BindAddress
+
+	// Use controller-runtime built-in auth for metrics
+	if ramenConfig.Metrics.BindAddress == "0" {
+		options.Metrics = metricsserver.Options{BindAddress: "0"}
+	} else {
+		options.Metrics = metricsserver.Options{
+			BindAddress:    ramenConfig.Metrics.BindAddress,
+			SecureServing:  true,
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+		}
+	}
 
 	if ramenConfig.LeaderElection != nil {
 		if ramenConfig.LeaderElection.LeaderElect != nil {
@@ -92,37 +152,6 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 			options.LeaderElectionID = ramenConfig.LeaderElection.ResourceName
 		}
 	}
-}
-
-// Read the RamenConfig file mounted in the local file system.  This file is
-// expected to be cached in the local file system.  If reading of the
-// RamenConfig file for every S3 store profile access turns out to be more
-// expensive, we may need to enhance this logic to load it only when
-// RamenConfig has changed.
-func ReadRamenConfigFile(log logr.Logger) (ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
-	if cachedRamenConfigFileName == "" {
-		err = fmt.Errorf("config file not specified")
-
-		return
-	}
-
-	fileContents, err := os.ReadFile(cachedRamenConfigFileName)
-	if err != nil {
-		err = fmt.Errorf("unable to load the config file %s: %w",
-			cachedRamenConfigFileName, err)
-
-		return
-	}
-
-	err = yaml.Unmarshal(fileContents, &ramenConfig)
-	if err != nil {
-		err = fmt.Errorf("unable to marshal the config file %s: %w",
-			cachedRamenConfigFileName, err)
-
-		return
-	}
-
-	return
 }
 
 func GetRamenConfigS3StoreProfile(ctx context.Context, apiReader client.Reader, profileName string) (
@@ -188,11 +217,10 @@ func s3StoreProfileFormatCheck(s3StoreProfile *ramendrv1alpha1.S3StoreProfile) (
 	return nil
 }
 
-func getMaxConcurrentReconciles(log logr.Logger) int {
+func getMaxConcurrentReconciles(ramenConfig *ramendrv1alpha1.RamenConfig) int {
 	const defaultMaxConcurrentReconciles = 1
 
-	ramenConfig, err := ReadRamenConfigFile(log)
-	if err != nil {
+	if ramenConfig == nil {
 		return defaultMaxConcurrentReconciles
 	}
 
@@ -201,6 +229,113 @@ func getMaxConcurrentReconciles(log logr.Logger) int {
 	}
 
 	return ramenConfig.MaxConcurrentReconciles
+}
+
+func ramenOperatorConfigMapName() string {
+	switch ControllerType {
+	case ramendrv1alpha1.DRHubType:
+		return HubOperatorConfigMapName
+	case ramendrv1alpha1.DRClusterType:
+		return DrClusterOperatorConfigMapName
+	default:
+		panic(fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
+			ControllerType, ramendrv1alpha1.DRHubType, ramendrv1alpha1.DRClusterType))
+	}
+}
+
+func CreateOrUpdateConfigMap(
+	ctx context.Context,
+	c client.Client,
+	r client.Reader,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	if defaultRamenConfig == nil {
+		return nil, fmt.Errorf("defaultRamenConfig must not be nil")
+	}
+
+	configMapName := ramenOperatorConfigMapName()
+
+	configMap := &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      configMapName,
+	}
+
+	if err := r.Get(ctx, key, configMap); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return nil, err
+		}
+
+		return configMapCreate(ctx, c, key.Name, defaultRamenConfig, log)
+	}
+
+	defaultYAML, err := yaml.Marshal(defaultRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	userYAML := []byte(configMap.Data[ConfigMapRamenConfigKeyName])
+
+	merged, err := rameninternalconfig.Merge(defaultYAML, userYAML)
+	if err != nil {
+		return nil, err
+	}
+
+	return configMapUpdate(ctx, c, configMap, &merged, log)
+}
+
+func configMapCreate(
+	ctx context.Context,
+	c client.Client,
+	configMapName string,
+	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	userKey := types.NamespacedName{
+		Namespace: RamenOperatorNamespace(),
+		Name:      configMapName,
+	}
+
+	newConfigMap, err := ConfigMapNew(userKey.Namespace, userKey.Name, desiredRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = c.Create(ctx, newConfigMap); err != nil {
+		return nil, err
+	}
+
+	log.Info("created configmap", "namespace", newConfigMap.Namespace, "name", newConfigMap.Name)
+
+	return desiredRamenConfig, nil
+}
+
+func configMapUpdate(
+	ctx context.Context,
+	c client.Client,
+	userConfigMap *corev1.ConfigMap,
+	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	desiredBytes, err := yaml.Marshal(desiredRamenConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if userConfigMap.Data == nil {
+		userConfigMap.Data = map[string]string{}
+	}
+
+	userConfigMap.Data[ConfigMapRamenConfigKeyName] = string(desiredBytes)
+	if err := c.Update(ctx, userConfigMap); err != nil {
+		return nil, err
+	}
+
+	log.Info("updated configmap (merged onto defaults)",
+		"namespace", userConfigMap.Namespace, "name", userConfigMap.Name)
+
+	return desiredRamenConfig, nil
 }
 
 func ConfigMapNew(
@@ -229,10 +364,7 @@ func ConfigMapGet(
 	ctx context.Context,
 	apiReader client.Reader,
 ) (configMap *corev1.ConfigMap, ramenConfig *ramendrv1alpha1.RamenConfig, err error) {
-	configMapName := HubOperatorConfigMapName
-	if ControllerType != ramendrv1alpha1.DRHubType {
-		configMapName = DrClusterOperatorConfigMapName
-	}
+	configMapName := ramenOperatorConfigMapName()
 
 	configMap = &corev1.ConfigMap{}
 	if err = apiReader.Get(

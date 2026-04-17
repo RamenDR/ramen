@@ -8,7 +8,6 @@ import platform
 import sys
 import time
 
-import drenv
 from drenv import commands
 from drenv import kubectl
 from drenv import subctl
@@ -141,14 +140,28 @@ def wait_for_service_export(cluster, namespace):
 
 
 def wait_for_service_import(cluster, namespace):
-    print(f"Waiting for service in namespace '{namespace}' in cluster '{cluster}'")
-    drenv.wait_for(
-        f"serviceimports/{SERVICE}",
-        output="jsonpath={.status.clusters}",
-        namespace=namespace,
-        timeout=120,
-        profile=cluster,
+    print(
+        f"Waiting until serviceimport '{namespace}/{SERVICE}' exists in cluster '{cluster}'"
     )
+    kubectl.wait(
+        f"serviceimports/{SERVICE}",
+        "--for=create",
+        f"--namespace={namespace}",
+        timeout=120,
+        context=cluster,
+    )
+
+    print(
+        f"Waiting until serviceimport '{namespace}/{SERVICE}' has clusters in cluster '{cluster}'"
+    )
+    kubectl.wait(
+        f"serviceimports/{SERVICE}",
+        "--for=jsonpath={.status.clusters}",
+        f"--namespace={namespace}",
+        timeout=120,
+        context=cluster,
+    )
+
     imports = kubectl.describe(
         f"serviceimports/{SERVICE}",
         f"--namespace={namespace}",

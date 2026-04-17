@@ -48,6 +48,14 @@ spec:
           annotations:
             description: "Unsupported consistency grouping is enabled for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})."
             alert_type: "DisasterRecovery"
+        - alert: GlobalActionConsensusBlocked
+          expr: ramen_global_action_consensus_status == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            description: "Global action consensus not reached for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions[GlobalAction] for details."
+            alert_type: "DisasterRecovery"
         - alert: InvalidCIDRsDetected
           expr: ramen_invalid_cidrs_detected == 1
           for: 5s
@@ -56,3 +64,11 @@ spec:
           annotations:
             description: "Invalid or undetected CIDRs Specified (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
             alert_type: "DisasterRecovery"
+        - alert: ApplicationCleanupPending
+          expr: ramen_progression_state{state="WaitOnUserToCleanUp"} == 1
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            description: "DRPC '{{ $labels.obj_name }}' in namespace '{{ $labels.obj_namespace }}' requires manual cleanup. Check DRPC status for details."
+          alert_type: "DisasterRecovery"

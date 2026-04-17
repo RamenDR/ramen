@@ -12,18 +12,23 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	controllers "github.com/ramendr/ramen/internal/controller"
 )
 
 var _ = Describe("DRPCPredicateDRCluster", func() {
-	var drClusterOld, drClusterNew *rmn.DRCluster
-	var baseTime time.Time
+	var (
+		drClusterOld, drClusterNew *rmn.DRCluster
+		baseTime                   time.Time
+	)
 
 	BeforeEach(func() {
 		// Initialize the DRClusters to their defaults
@@ -174,6 +179,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 						},
 					}, drClusterNew.Status.MaintenanceModes[idx].Conditions...)
 				}
+
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeFalse())
 			})
 		})
@@ -189,6 +195,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 						drClusterOld.Status.MaintenanceModes[mModeidx].Conditions[condIdx].Status = metav1.ConditionFalse
 					}
 				}
+
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeTrue())
 			})
 		})
@@ -198,6 +205,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 				for mModeidx := range drClusterOld.Status.MaintenanceModes {
 					drClusterOld.Status.MaintenanceModes[mModeidx].Conditions = nil
 				}
+
 				Expect(controllers.DRClusterUpdateOfInterest(drClusterOld, drClusterNew)).To(BeTrue())
 			})
 		})
@@ -231,6 +239,7 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 
 		BeforeAll(func() {
 			By("bootstrapping test environment")
+
 			testEnv = &envtest.Environment{
 				CRDDirectoryPaths: []string{
 					filepath.Join("..", "..", "config", "crd", "bases"),
@@ -243,12 +252,17 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 			}
 
 			var err error
+
 			done := make(chan interface{})
+
 			go func() {
 				defer GinkgoRecover()
+
 				cfg, err = testEnv.Start()
+
 				close(done)
 			}()
+
 			Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg).NotTo(BeNil())
@@ -475,8 +489,204 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 
 		AfterAll(func() {
 			By("tearing down the test environment")
+
 			err := testEnv.Stop()
 			Expect(err).NotTo(HaveOccurred())
 		})
+	})
+})
+
+const globalVGRLabel = "ramendr.openshift.io/global-vgr"
+
+func makeDRPCWithLabel(name, namespace, vgrLabel string, action rmn.DRAction,
+	failover, preferred string,
+) *rmn.DRPlacementControl {
+	labels := map[string]string{}
+	if vgrLabel != "" {
+		labels[globalVGRLabel] = vgrLabel
+	}
+
+	return &rmn.DRPlacementControl{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    labels,
+		},
+		Spec: rmn.DRPlacementControlSpec{
+			PlacementRef:     corev1.ObjectReference{Name: "placement"},
+			DRPolicyRef:      corev1.ObjectReference{Name: "drpolicy"},
+			PVCSelector:      metav1.LabelSelector{},
+			Action:           action,
+			FailoverCluster:  failover,
+			PreferredCluster: preferred,
+		},
+	}
+}
+
+var _ = Describe("GlobalVGR DRPC Predicate", func() {
+	pred := controllers.GlobalVGRDRPCPredicateFunc()
+
+	Describe("CreateFunc", func() {
+		It("returns false regardless of label", func() {
+			drpc := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "")
+			Expect(pred.Create(event.CreateEvent{Object: drpc})).To(BeFalse())
+		})
+
+		It("returns false without label", func() {
+			drpc := makeDRPCWithLabel("drpc1", "ns1", "", rmn.ActionFailover, "c1", "")
+			Expect(pred.Create(event.CreateEvent{Object: drpc})).To(BeFalse())
+		})
+	})
+
+	Describe("GenericFunc", func() {
+		It("returns false regardless of label", func() {
+			drpc := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "")
+			Expect(pred.Generic(event.GenericEvent{Object: drpc})).To(BeFalse())
+		})
+	})
+
+	Describe("DeleteFunc", func() {
+		It("returns true when global VGR label is present", func() {
+			drpc := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "")
+			Expect(pred.Delete(event.DeleteEvent{Object: drpc})).To(BeTrue())
+		})
+
+		It("returns false when global VGR label is absent", func() {
+			drpc := makeDRPCWithLabel("drpc1", "ns1", "", rmn.ActionFailover, "c1", "")
+			Expect(pred.Delete(event.DeleteEvent{Object: drpc})).To(BeFalse())
+		})
+	})
+
+	Describe("UpdateFunc", func() {
+		It("returns true when action changes and label is present", func() {
+			oldDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "c2")
+			newDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionRelocate, "c1", "c2")
+			Expect(pred.Update(event.UpdateEvent{ObjectOld: oldDRPC, ObjectNew: newDRPC})).To(BeTrue())
+		})
+
+		It("returns true when failover cluster changes and label is present", func() {
+			oldDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "")
+			newDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c2", "")
+			Expect(pred.Update(event.UpdateEvent{ObjectOld: oldDRPC, ObjectNew: newDRPC})).To(BeTrue())
+		})
+
+		It("returns true when preferred cluster changes and label is present", func() {
+			oldDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionRelocate, "", "c1")
+			newDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionRelocate, "", "c2")
+			Expect(pred.Update(event.UpdateEvent{ObjectOld: oldDRPC, ObjectNew: newDRPC})).To(BeTrue())
+		})
+
+		It("returns false when no relevant fields change and label is present", func() {
+			oldDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "c2")
+			newDRPC := makeDRPCWithLabel("drpc1", "ns1", "shared-vgr", rmn.ActionFailover, "c1", "c2")
+			Expect(pred.Update(event.UpdateEvent{ObjectOld: oldDRPC, ObjectNew: newDRPC})).To(BeFalse())
+		})
+
+		It("returns false when label is absent even if action changes", func() {
+			oldDRPC := makeDRPCWithLabel("drpc1", "ns1", "", rmn.ActionFailover, "c1", "")
+			newDRPC := makeDRPCWithLabel("drpc1", "ns1", "", rmn.ActionRelocate, "c1", "")
+			Expect(pred.Update(event.UpdateEvent{ObjectOld: oldDRPC, ObjectNew: newDRPC})).To(BeFalse())
+		})
+	})
+})
+
+var _ = Describe("GlobalVGR DRPC Filter", Ordered, func() {
+	var (
+		cfg       *rest.Config
+		testEnv   *envtest.Environment
+		k8sClient client.Client
+		r         *controllers.DRPlacementControlReconciler
+	)
+
+	BeforeAll(func() {
+		By("bootstrapping test environment for global VGR filter")
+
+		testEnv = &envtest.Environment{
+			CRDDirectoryPaths: []string{
+				filepath.Join("..", "..", "config", "crd", "bases"),
+				filepath.Join("..", "..", "hack", "test"),
+			},
+		}
+
+		var err error
+
+		done := make(chan interface{})
+
+		go func() {
+			defer GinkgoRecover()
+
+			cfg, err = testEnv.Start()
+
+			close(done)
+		}()
+
+		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg).NotTo(BeNil())
+
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+		Expect(err).NotTo(HaveOccurred())
+
+		r = &controllers.DRPlacementControlReconciler{
+			Client: k8sClient,
+		}
+
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "global-vgr-test"}}
+		Expect(k8sClient.Create(context.TODO(), ns)).To(Succeed())
+
+		drpc1 := makeDRPCWithLabel("drpc-app1", "global-vgr-test", "shared-vgr",
+			rmn.ActionFailover, "cluster-east", "")
+		drpc2 := makeDRPCWithLabel("drpc-app2", "global-vgr-test", "shared-vgr",
+			rmn.ActionFailover, "cluster-east", "")
+		drpc3 := makeDRPCWithLabel("drpc-app3", "global-vgr-test", "other-vgr",
+			rmn.ActionFailover, "cluster-west", "")
+		drpc4 := makeDRPCWithLabel("drpc-no-label", "global-vgr-test", "",
+			rmn.ActionFailover, "cluster-east", "")
+
+		Expect(k8sClient.Create(context.TODO(), drpc1)).To(Succeed())
+		Expect(k8sClient.Create(context.TODO(), drpc2)).To(Succeed())
+		Expect(k8sClient.Create(context.TODO(), drpc3)).To(Succeed())
+		Expect(k8sClient.Create(context.TODO(), drpc4)).To(Succeed())
+	})
+
+	When("DRPC has a global VGR label matching other DRPCs", func() {
+		It("returns requests for peer DRPCs but not self", func() {
+			triggerDRPC := makeDRPCWithLabel("drpc-app1", "global-vgr-test", "shared-vgr",
+				rmn.ActionFailover, "cluster-east", "")
+
+			requests := r.FilterGlobalPeerDRPCs(triggerDRPC)
+			Expect(requests).To(ConsistOf(
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: "drpc-app2", Namespace: "global-vgr-test"},
+				},
+			))
+		})
+	})
+
+	When("DRPC has a global VGR label not shared by any other DRPC", func() {
+		It("returns an empty list", func() {
+			triggerDRPC := makeDRPCWithLabel("drpc-app3", "global-vgr-test", "other-vgr",
+				rmn.ActionFailover, "cluster-west", "")
+
+			requests := r.FilterGlobalPeerDRPCs(triggerDRPC)
+			Expect(requests).To(BeEmpty())
+		})
+	})
+
+	When("DRPC has a label that does not match any existing DRPCs", func() {
+		It("returns an empty list", func() {
+			triggerDRPC := makeDRPCWithLabel("drpc-ghost", "global-vgr-test", "nonexistent-vgr",
+				rmn.ActionFailover, "cluster-east", "")
+
+			requests := r.FilterGlobalPeerDRPCs(triggerDRPC)
+			Expect(requests).To(BeEmpty())
+		})
+	})
+
+	AfterAll(func() {
+		By("tearing down the test environment")
+
+		err := testEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
 	})
 })

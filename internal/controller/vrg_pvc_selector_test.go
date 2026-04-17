@@ -30,19 +30,24 @@ const (
 )
 
 var _ = Describe("VolumeReplicationGroupPVCSelector", func() {
-	var testCtx context.Context
-	var cancel context.CancelFunc
-	var vrgTestNamespace string
+	var (
+		testCtx          context.Context
+		cancel           context.CancelFunc
+		vrgTestNamespace string
+	)
 
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
+
 		Expect(k8sClient).NotTo(BeNil())
+
 		vrgTestNamespace = createUniqueNamespace(testCtx)
 		ramenConfig.RamenOpsNamespace = vrgTestNamespace
 	})
 
 	AfterEach(func() {
 		Expect(k8sClient.Delete(testCtx, testNamespace)).To(Succeed())
+
 		ramenConfig.RamenOpsNamespace = ""
 
 		cancel()

@@ -1,8 +1,12 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-# Build the manager binary
-FROM docker.io/library/golang:1.24 as builder
+# Build the manager binary.
+
+# To build with a different Go version, use --build-arg GO_VERSION=1.25.
+ARG GO_VERSION=1.26
+
+FROM docker.io/library/golang:${GO_VERSION} as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -18,7 +22,7 @@ COPY cmd/main.go cmd/main.go
 COPY internal/ internal/
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -o manager cmd/main.go
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal
 WORKDIR /

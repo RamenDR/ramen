@@ -7,7 +7,6 @@ import os
 import sys
 import time
 
-import drenv
 from drenv import commands
 from drenv import kubectl
 
@@ -63,11 +62,11 @@ while True:
         print(f"Ingress configured in {time.monotonic() - start:.3f} seconds")
         break
 
-print("Waiting until ingress is ready")
+print("Waiting until ingress 'demo-ingress' has a load balancer address")
 # It can take 40 seconds until the ingress gets an ingress ip address.
-drenv.wait_for(
+kubectl.wait(
     "ingress/demo-ingress",
-    output="jsonpath={.status.loadBalancer.ingress}",
+    "--for=jsonpath={.status.loadBalancer.ingress}",
     timeout=120,
-    profile=cluster,
+    context=cluster,
 )

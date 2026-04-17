@@ -118,12 +118,14 @@ func createOperatorNamespace(ramenNamespace string) {
 
 var _ = BeforeSuite(func() {
 	testutils.ConfigureGinkgo()
+
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 	logf.SetLogger(testLogger)
+
 	testLog := ctrl.Log.WithName("tester")
 	testLog.Info("Starting the controller test suite", "time", time.Now())
 
@@ -150,6 +152,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	By("bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
@@ -162,10 +165,14 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
+
 	done := make(chan interface{})
+
 	go func() {
 		defer GinkgoRecover()
+
 		cfg, err = testEnv.Start()
+
 		DeferCleanup(func() error {
 			By("tearing down the test environment")
 
@@ -173,6 +180,7 @@ var _ = BeforeSuite(func() {
 		})
 		close(done)
 	}()
+
 	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
@@ -239,6 +247,7 @@ var _ = BeforeSuite(func() {
 
 	namespaceCreate(ramencontrollers.VeleroNamespaceNameDefault)
 	createOperatorNamespace(ramenNamespace)
+
 	ramenConfig = &ramendrv1alpha1.RamenConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RamenConfig",
@@ -248,7 +257,6 @@ var _ = BeforeSuite(func() {
 			LeaderElect:  new(bool),
 			ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 		},
-		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
@@ -318,6 +326,7 @@ var _ = BeforeSuite(func() {
 			objectStorers[i] = fakeObjectStorerGet(i)
 		}
 	}
+
 	s3SecretsPolicyNamesSet()
 	s3SecretsCreate()
 	s3ProfilesSecretNamespaceNameSet()
@@ -397,11 +406,12 @@ var _ = BeforeSuite(func() {
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		RateLimiter:    &rateLimiter,
 	})
-	err = drpcReconciler.SetupWithManager(k8sManager)
+	err = drpcReconciler.SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())
 	DeferCleanup(cancel)
+
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -409,6 +419,7 @@ var _ = BeforeSuite(func() {
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
+
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
 	objectStorersSet()

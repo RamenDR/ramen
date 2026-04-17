@@ -425,6 +425,13 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		},
 	)
 
+	// Set includeClusterResources to false if nil
+	includeClusterResources := objectsSpec.IncludeClusterResources
+	if includeClusterResources == nil {
+		falseValue := false
+		includeClusterResources = &falseValue
+	}
+
 	return velero.BackupSpec{
 		IncludedNamespaces: objectsSpec.IncludedNamespaces,
 		IncludedResources:  objectsSpec.IncludedResources,
@@ -439,7 +446,7 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		LabelSelector:           newLabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
-		IncludeClusterResources: objectsSpec.IncludeClusterResources,
+		IncludeClusterResources: includeClusterResources,
 		// TODO: Hooks should be handled by ramen code.
 		// Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks)
 		VolumeSnapshotLocations: []string{},
@@ -737,6 +744,13 @@ func restore(
 	backupName string,
 	labels map[string]string,
 ) *velero.Restore {
+	// Set includeClusterResources to false if nil
+	includeClusterResources := recoverSpec.IncludeClusterResources
+	if includeClusterResources == nil {
+		falseValue := false
+		includeClusterResources = &falseValue
+	}
+
 	return &velero.Restore{
 		TypeMeta: restoreTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
@@ -752,7 +766,7 @@ func restore(
 			LabelSelector:           recoverSpec.LabelSelector,
 			OrLabelSelectors:        recoverSpec.OrLabelSelectors,
 			RestoreStatus:           recoverSpec.RestoreStatus,
-			IncludeClusterResources: recoverSpec.IncludeClusterResources,
+			IncludeClusterResources: includeClusterResources,
 			ExistingResourcePolicy:  recoverSpec.ExistingResourcePolicy,
 			// TODO: hooks?
 			// TODO: restorePVs?

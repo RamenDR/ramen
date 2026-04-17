@@ -3,7 +3,7 @@ kind: RamenConfig
 health:
   healthProbeBindAddress: :8081
 metrics:
-  bindAddress: 127.0.0.1:9289
+  bindAddress: :8443
 webhook:
   port: 9443
 leaderElection:
@@ -32,3 +32,4 @@ drClusterOperator:
   catalogSourceNamespaceName: ramen-system
   clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1
 veleroNamespaceName: "openshift-adp"
+retainNamespaceSCCAcrossPeers: false

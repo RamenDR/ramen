@@ -36,13 +36,19 @@ IMAGE_REGISTRY ?= quay.io
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
-PLATFORM ?= k8s
+DISTRO ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
-RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"
 OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
 RAMEN_OPS_NAMESPACE ?= ramen-ops
 AUTO_CONFIGURE_DR_CLUSTER ?= true
 VELERO_NAMESPACE ?= velero
+
+# PLATFORM sets the target platform for the container image. Defaults to the
+# host architecture. To build for a different architecture (e.g. building an
+# amd64 image on an arm64 Mac), use:
+#   make docker-build PLATFORM=amd64
+# Non-native builds may use emulation and be much slower.
+PLATFORM ?= $(shell go env GOARCH)
 
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
@@ -242,7 +248,7 @@ run-dr-cluster: generate manifests ## Run DR manager controller from your host.
 	go run ./cmd/main.go --config=examples/dr_cluster_config.yaml
 
 docker-build: ## Build docker image with the manager.
-	$(DOCKERCMD) build -t ${IMG} .
+	$(DOCKERCMD) build --platform linux/$(PLATFORM) -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
 	$(DOCKERCMD) push ${IMG}
@@ -266,14 +272,13 @@ uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster sp
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/crd | kubectl delete -f -
 
 hub-config: kustomize
-	cd config/hub/default/$(PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-hub: manifests kustomize hub-config ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl apply -f -
 
 undeploy-hub: kustomize ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl delete -f - --ignore-not-found
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl delete -f - --ignore-not-found
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl apply -f -
@@ -282,7 +287,6 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl delete -f -
 
 dr-cluster-config: kustomize
-	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
@@ -334,7 +338,6 @@ bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
 
 .PHONY: bundle-hub
 bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests and metadata, then validate generated files.
-	cd config/hub/default/$(BUNDLE_PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/hub/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \

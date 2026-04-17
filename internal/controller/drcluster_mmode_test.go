@@ -68,12 +68,17 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		}
 
 		var err error
+
 		done := make(chan interface{})
+
 		go func() {
 			defer GinkgoRecover()
+
 			cfg, err = testEnv.Start()
+
 			close(done)
 		}()
+
 		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg).NotTo(BeNil())
@@ -100,6 +105,8 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 		ensureManagedCluster(k8sClient, "drcluster2")
 
+		ramencontrollers.ControllerType = rmn.DRHubType
+
 		By("Defining a ramen configuration")
 
 		ramenConfig = &rmn.RamenConfig{
@@ -114,7 +121,6 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 			Metrics: rmn.ControllerMetrics{
 				BindAddress: "0", // Disable metrics
 			},
-			RamenControllerType: rmn.DRHubType,
 			S3StoreProfiles: []rmn.S3StoreProfile{
 				{
 					S3ProfileName:        "fake",
@@ -173,6 +179,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())
+
 		go func() {
 			err = k8sManager.Start(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -291,6 +298,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 	AfterAll(func() {
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
+
 		err := testEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})

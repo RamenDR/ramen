@@ -84,7 +84,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 			RateLimiter:             rateLimiter,
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{},
@@ -203,6 +203,7 @@ func pvcPredicateFunc() predicate.Funcs {
 
 				return false
 			}
+
 			newPVC, ok := e.ObjectNew.DeepCopyObject().(*corev1.PersistentVolumeClaim)
 			if !ok {
 				log.Info("Failed to deep copy newer PersistentVolumeClaim")
@@ -545,6 +546,9 @@ const (
 	// VolumeGroupReplicationClass label
 	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
+	// VolumeGroupReplicationClass global label
+	GlobalReplicationLabel = "ramendr.openshift.io/global"
+
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 
@@ -752,7 +756,7 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
-		return nil
+		return v.processGloballyOffloadedPVCs(pvcList)
 	}
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
@@ -1265,6 +1269,8 @@ func (v *VRGInstance) findPeerClassMatchingSC(
 }
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
+//
+//nolint:cyclop,funlen
 func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
@@ -1296,6 +1302,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
 		return v.result
+	}
+
+	if v.hasGlobalVGRLabel() {
+		if v.deleteGlobalVGR() {
+			return ctrl.Result{Requeue: true}
+		}
 	}
 
 	result := ctrl.Result{}
@@ -2296,8 +2308,57 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 		return []reconcile.Request{}
 	}
 
-	return filterVRGDependentObjects(r.Client, obj,
-		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
+	vgrLog := log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace})
+
+	// Filter VRGs by global VGR label, if VGR exists in operator namespace.
+	if vgr.Namespace == RamenOperatorNamespace() {
+		return r.filterGlobalVGRVRGs(vgr.Name, vgrLog)
+	}
+
+	return filterVRGDependentObjects(r.Client, obj, vgrLog)
+}
+
+// filterGlobalVGRVRGs enqueues all VRGs that reference the given VGR name via
+// the global VGR label, so they reconcile when the shared VGR changes.
+func (r *VolumeReplicationGroupReconciler) filterGlobalVGRVRGs(
+	vgrName string, log logr.Logger,
+) []reconcile.Request {
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := r.Client.List(context.TODO(), &vrgs,
+		client.MatchingLabels{GlobalVGRLabel: vgrName},
+	)
+	if err != nil {
+		log.Error(err, "Failed to list VRGs matching global VGR label")
+
+		return []reconcile.Request{}
+	}
+
+	if len(vrgs.Items) == 0 {
+		log.V(1).Info("No VRGs matched label, skipping enqueue")
+
+		return []reconcile.Request{}
+	}
+
+	req := make([]reconcile.Request, 0, len(vrgs.Items))
+	names := make([]string, 0, len(vrgs.Items))
+
+	for idx := range vrgs.Items {
+		vrg := &vrgs.Items[idx]
+
+		req = append(req, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			},
+		})
+
+		names = append(names, vrg.Namespace+"/"+vrg.Name)
+	}
+
+	log.Info("Enqueuing VRGs for shared VGR change", "vrgs", names)
+
+	return req
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {

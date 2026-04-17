@@ -1,10 +1,10 @@
 module github.com/ramendr/ramen/e2e
 
 // Required minimum version, must be available in downstream builders.
-go 1.24.0
+go 1.25.0
 
-// Recommended version: latest go 1.24 release.
-toolchain go1.24.5
+// Recommended version: latest go toolchain.
+toolchain go1.26.1
 
 require (
 	github.com/aymanbagabas/go-udiff v0.3.1

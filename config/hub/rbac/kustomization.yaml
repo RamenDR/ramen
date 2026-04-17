@@ -9,9 +9,8 @@ resources:
 - role_binding.yaml
 - ../../rbac/leader_election_role.yaml
 - ../../rbac/leader_election_role_binding.yaml
-# Comment the following 4 lines if you want to disable
-# the auth proxy (https://github.com/brancz/kube-rbac-proxy)
-# which protects your /metrics endpoint.
+# The following resources support controller-runtime built-in metrics auth
+# (WithAuthenticationAndAuthorization).
 - ../../rbac/auth_proxy_service.yaml
 - ../../rbac/auth_proxy_role.yaml
 - ../../rbac/auth_proxy_role_binding.yaml

@@ -73,8 +73,8 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
-	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 
+	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		// read content of the file ../../../testbin/testassets.txt
 		// and set the content as the value of KUBEBUILDER_ASSETS
 		// this is to avoid the need to set KUBEBUILDER_ASSETS
@@ -85,6 +85,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	By("bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "..", "config", "crd", "bases"),
@@ -125,6 +126,7 @@ var _ = BeforeSuite(func() {
 
 	go func() {
 		defer GinkgoRecover()
+
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	}()
@@ -152,6 +154,7 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, testDefaultVolumeSnapshotClass)).To(Succeed())
+
 	totalVolumeSnapshotClassCount++
 
 	// Create dummy storageClass resource to use in tests
@@ -175,6 +178,7 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, volumeSnapshotClassA)).To(Succeed())
+
 	totalVolumeSnapshotClassCount++
 
 	volumeSnapshotClassB = &snapv1.VolumeSnapshotClass{
@@ -189,6 +193,7 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, volumeSnapshotClassB)).To(Succeed())
+
 	totalVolumeSnapshotClassCount++
 
 	// Create fake cephfs storageclass and volumesnapshotclass
@@ -212,12 +217,14 @@ var _ = BeforeSuite(func() {
 		DeletionPolicy: snapv1.VolumeSnapshotContentDelete,
 	}
 	Expect(k8sClient.Create(ctx, testCephFSVolumeSnapshotClass)).To(Succeed())
+
 	totalVolumeSnapshotClassCount++
 })
 
 var _ = AfterSuite(func() {
 	cancel()
 	By("tearing down the test environment")
+
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
