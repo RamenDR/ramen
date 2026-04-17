@@ -83,11 +83,10 @@ GOBIN=$(shell go env GOBIN)
 endif
 
 # Set sed command appropriately
+GOHOSTOS ?= $(shell go env GOHOSTOS)
 SED_CMD:=sed
 ifeq ($(GOHOSTOS),darwin)
-	ifeq ($(GOHOSTARCH),amd64)
-		SED_CMD:=gsed
-	endif
+	SED_CMD:=gsed
 endif
 
 
