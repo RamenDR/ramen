@@ -437,6 +437,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		namespacedName:    req.NamespacedName.String(),
 		objectStorers:     make(map[string]cachedObjectStorer),
 		storageClassCache: make(map[string]*storagev1.StorageClass),
+		metadataRepos:     make(map[string]*S3MetadataRepository),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -513,6 +514,7 @@ type VRGInstance struct {
 	volSyncHandler       *volsync.VSHandler
 	objectStorers        map[string]cachedObjectStorer
 	s3StoreAccessors     []s3StoreAccessor
+	metadataRepos        map[string]*S3MetadataRepository
 	result               ctrl.Result
 }
 
@@ -596,6 +598,8 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 
 	v.log = v.log.WithValues("State", v.instance.Spec.ReplicationState)
 	v.s3StoreAccessorsGet()
+
+	v.initializeMetadataRepositories()
 
 	if util.ResourceIsDeleted(v.instance) {
 		v.log = v.log.WithValues("Finalize", true)
@@ -2848,4 +2852,29 @@ func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 
 func (v *VRGInstance) isDiscoveredApp() bool {
 	return v.instance.Spec.ProtectedNamespaces != nil && len(*v.instance.Spec.ProtectedNamespaces) > 0
+}
+
+func (v *VRGInstance) initializeMetadataRepositories() {
+	if len(v.s3StoreAccessors) == 0 {
+		v.log.Info("No S3 stores configured, skipping metadata repository initialization")
+
+		return
+	}
+
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
+		repo := NewS3MetadataRepository(
+			s3StoreAccessor.ObjectStorer,
+			v.instance.Namespace,
+			v.instance.Name,
+		)
+
+		v.metadataRepos[s3StoreAccessor.S3ProfileName] = repo
+
+		v.log.V(1).Info("Created metadata repository",
+			"s3Profile", s3StoreAccessor.S3ProfileName,
+			"namespace", v.instance.Namespace,
+			"vrgName", v.instance.Name)
+	}
+
+	v.log.Info("Initialized metadata repositories", "count", len(v.metadataRepos))
 }
