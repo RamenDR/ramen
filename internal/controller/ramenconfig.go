@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,6 +49,11 @@ const (
 	VeleroNamespaceNameDefault                        = "velero"
 	DefaultVolSyncCopyMethod                          = "Snapshot"
 	defaultMaxConcurrentReconciles                    = 50
+	OdrHubOperatorPackageName                         = "-hub-operator"
+	OdrHubOperatorPackageSegment                      = "-hub-"
+	OdrClusterOperatorPackageSegment                  = "-cluster-"
+	openshiftGlobalOperatorsNamespace                 = "openshift-operators"
+	openshiftDRSystemNamespace                        = "openshift-dr-system"
 )
 
 // FIXME
@@ -88,9 +95,6 @@ func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv
 		VolumeUnprotectionEnabled: true,
 	}
 
-	cfg.DrClusterOperator.ChannelName = drClusterOperatorChannelNameDefault
-	cfg.DrClusterOperator.PackageName = drClusterOperatorPackageNameDefault
-	cfg.DrClusterOperator.CatalogSourceName = drClusterOperatorCatalogSourceNameDefault
 	cfg.DrClusterOperator.DeploymentAutomationEnabled = true
 	cfg.DrClusterOperator.S3SecretDistributionEnabled = true
 
@@ -267,7 +271,7 @@ func CreateOrUpdateConfigMap(
 			return nil, err
 		}
 
-		return configMapCreate(ctx, c, key.Name, defaultRamenConfig, log)
+		return configMapCreate(ctx, c, r, key.Name, defaultRamenConfig, log)
 	}
 
 	defaultYAML, err := yaml.Marshal(defaultRamenConfig)
@@ -282,12 +286,22 @@ func CreateOrUpdateConfigMap(
 		return nil, err
 	}
 
-	return configMapUpdate(ctx, c, configMap, &merged, log)
+	effective := merged
+	if err := ApplyDrClusterOperatorFromHubSubscription(ctx, r, &effective); err != nil {
+		return nil, err
+	}
+
+	if _, err := configMapUpdate(ctx, c, configMap, &merged, log); err != nil {
+		return nil, err
+	}
+
+	return &effective, nil
 }
 
 func configMapCreate(
 	ctx context.Context,
 	c client.Client,
+	apiReader client.Reader,
 	configMapName string,
 	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
 	log logr.Logger,
@@ -308,7 +322,12 @@ func configMapCreate(
 
 	log.Info("created configmap", "namespace", newConfigMap.Namespace, "name", newConfigMap.Name)
 
-	return desiredRamenConfig, nil
+	effective := *desiredRamenConfig
+	if err := ApplyDrClusterOperatorFromHubSubscription(ctx, apiReader, &effective); err != nil {
+		return nil, err
+	}
+
+	return &effective, nil
 }
 
 func configMapUpdate(
@@ -386,6 +405,82 @@ func ConfigMapGet(
 
 func RamenOperatorNamespace() string {
 	return os.Getenv("POD_NAMESPACE")
+}
+
+func findHubOperatorSubscription(ctx context.Context, apiReader client.Reader) (
+	*operatorsv1alpha1.Subscription, error,
+) {
+	ns := RamenOperatorNamespace()
+
+	subList := &operatorsv1alpha1.SubscriptionList{}
+	if err := apiReader.List(ctx, subList, client.InNamespace(ns)); err != nil {
+		return nil, fmt.Errorf("list operators.coreos.com subscriptions in namespace %q: %w", ns, err)
+	}
+
+	for i := range subList.Items {
+		sub := &subList.Items[i]
+		if sub.Spec != nil && strings.Contains(sub.Spec.Package, OdrHubOperatorPackageName) {
+			return sub, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func drClusterOperatorCopyStringIfEmpty(dst *string, src string) {
+	if src != "" && *dst == "" {
+		*dst = src
+	}
+}
+
+func fillEmptyDrClusterOperatorFromOLMSubscriptionSpec(
+	spec *operatorsv1alpha1.SubscriptionSpec,
+	cfg *ramendrv1alpha1.RamenConfig,
+) {
+	if spec == nil || cfg == nil {
+		return
+	}
+
+	dco := &cfg.DrClusterOperator
+
+	drClusterOperatorCopyStringIfEmpty(&dco.ChannelName, spec.Channel)
+
+	if spec.Package != "" && dco.PackageName == "" {
+		dco.PackageName = strings.Replace(spec.Package, OdrHubOperatorPackageSegment, OdrClusterOperatorPackageSegment, 1)
+	}
+
+	drClusterOperatorCopyStringIfEmpty(&dco.CatalogSourceName, spec.CatalogSource)
+	drClusterOperatorCopyStringIfEmpty(&dco.CatalogSourceNamespaceName, spec.CatalogSourceNamespace)
+
+	if spec.StartingCSV != "" && dco.ClusterServiceVersionName == "" {
+		dco.ClusterServiceVersionName = strings.Replace(spec.StartingCSV,
+			OdrHubOperatorPackageSegment, OdrClusterOperatorPackageSegment, 1)
+	}
+}
+
+func ApplyDrClusterOperatorFromHubSubscription(ctx context.Context, apiReader client.Reader,
+	cfg *ramendrv1alpha1.RamenConfig,
+) error {
+	if ControllerType != ramendrv1alpha1.DRHubType || cfg == nil {
+		return nil
+	}
+
+	sub, err := findHubOperatorSubscription(ctx, apiReader)
+	if err != nil {
+		return err
+	}
+
+	if sub == nil || sub.Spec == nil {
+		return nil
+	}
+
+	fillEmptyDrClusterOperatorFromOLMSubscriptionSpec(sub.Spec, cfg)
+
+	if sub.Namespace == openshiftGlobalOperatorsNamespace {
+		cfg.DrClusterOperator.NamespaceName = openshiftDRSystemNamespace
+	}
+
+	return nil
 }
 
 func RamenOperandsNamespace(config ramendrv1alpha1.RamenConfig) string {

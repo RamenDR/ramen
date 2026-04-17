@@ -404,7 +404,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // potentially unreachable. Fencing is to request fencing this cluster using another, hence this cluster may fail
 // other live validation checks, but we still need to process the fence request.
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
 	var requeue bool
 
@@ -413,6 +413,11 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	_, ramenConfig, err := ConfigMapGet(u.ctx, r.APIReader)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("config map get: %w", u.validatedSetFalseAndUpdate("ConfigMapGetFailed", err))
+	}
+
+	if err := ApplyDrClusterOperatorFromHubSubscription(u.ctx, r.APIReader, ramenConfig); err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply hub OLM subscription to ramen config: %w",
+			u.validatedSetFalseAndUpdate("RamenConfigApplyFailed", err))
 	}
 
 	if err := u.addLabelsAndFinalizers(); err != nil {
