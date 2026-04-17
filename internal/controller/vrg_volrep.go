@@ -253,9 +253,8 @@ func (v *VRGInstance) addPVCToGroupPVCs(
 	cg string,
 	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
-	vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-	vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-	groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+	vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+	groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
 }
 
 func (v *VRGInstance) reconcilePVCVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
