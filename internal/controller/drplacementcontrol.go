@@ -72,6 +72,7 @@ type DRPCInstance struct {
 	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
 	drType               DRType
+	requeueAfter         time.Duration
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -105,9 +106,146 @@ func (d *DRPCInstance) startProcessing() bool {
 	return requeue
 }
 
+//nolint:gocognit,nestif
 func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
+	// Handle test failover cleanup when switching away from test failover to another action
+	if !d.instance.Spec.DryRun {
+		// Check if we need to clean up after exiting test failover
+		if needsCleanup, err := d.cleanupTestFailoverIfNeeded(); err != nil {
+			return false, err
+		} else if needsCleanup {
+			// Requeue to process the new action with a clean slate
+			// Don't update last-action during cleanup to preserve the state before dryRun
+			return false, nil
+		}
+
+		// Only update last-action when not in cleanup progression
+		// This preserves the pre-dryRun state during cleanup process
+		if d.instance.Status.Progression != rmn.ProgressionCleaningUp {
+			rmnutil.AddAnnotation(d.instance, "ramendr.openshift.io/last-action", string(d.instance.Spec.Action))
+		}
+	}
+
+	return d.executeAction()
+}
+
+// cleanupTestFailoverIfNeeded cleans up placement decisions when exiting test failover mode.
+// Returns true if cleanup was performed and requeue is needed, false otherwise.
+func (d *DRPCInstance) cleanupTestFailoverIfNeeded() (bool, error) {
+	// Only clean up if we're exiting a test failover (were in TestingFailover progression)
+	// or if we're in the middle of cleaning up after test failover
+	if d.instance.Status.Progression != rmn.ProgressionTestingFailover &&
+		d.instance.Status.Progression != rmn.ProgressionCleaningUp {
+		return false, nil
+	}
+
+	// If in CleaningUp progression, check if this is from a promotion to real failover
+	// In that case, skip test failover cleanup and let normal failover cleanup handle it
+	if d.instance.Status.Progression == rmn.ProgressionCleaningUp {
+		// If failoverCluster is set and action is Failover, this is normal failover cleanup
+		// after promoting from test failover, not test failover revert cleanup
+		if d.instance.Spec.Action == rmn.ActionFailover && d.instance.Spec.FailoverCluster != "" {
+			return false, nil
+		}
+
+		return d.monitorTestFailoverCleanup()
+	}
+
+	if d.instance.Status.Progression == rmn.ProgressionTestingFailover {
+		return d.initiateTestFailoverCleanup()
+	}
+
+	return false, nil
+}
+
+func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
+	d.log.Info("Initiating cleanup after exiting test failover")
+
+	// If failoverCluster is still set, this is a promotion (test -> real failover), not a revert
+	// In this case, skip test failover cleanup and let normal failover flow handle everything
+	// including cleanup of the old primary cluster
+	if d.instance.Spec.FailoverCluster != "" {
+		d.log.Info("Promoting test failover to real failover, letting normal failover flow continue",
+			"failoverCluster", d.instance.Spec.FailoverCluster)
+
+		return false, nil
+	}
+
+	// This is a revert case (failoverCluster is empty) - find the test failover cluster to clean up
+	var clusterName string
+
+	for cn, vrg := range d.vrgs {
+		if vrg.Spec.DryRun || isVRGSecondary(vrg) {
+			clusterName = cn
+
+			break
+		}
+	}
+
+	if clusterName == "" {
+		return false, fmt.Errorf("no test failover cluster found during cleanup")
+	}
+
+	vrg, found := d.vrgs[clusterName]
+	if !found {
+		return false, fmt.Errorf("no VRG found on cluster %s", clusterName)
+	}
+
+	d.setProgression(rmn.ProgressionCleaningUp)
+
+	// Update VRG to Secondary state to trigger cleanup (including volume snapshots)
+	if isVRGPrimary(vrg) {
+		d.log.Info("Updating VRG to Secondary for cleanup", "cluster", clusterName)
+
+		_, err := d.updateVRGState(clusterName, rmn.Secondary)
+		if err != nil {
+			return false, fmt.Errorf("failed to update VRG to Secondary during cleanup: %w", err)
+		}
+
+		d.log.Info("VRG updated to Secondary, will monitor cleanup progress", "cluster", clusterName)
+
+		// Return to allow VRG to process the state change
+		return true, nil
+	}
+
+	// VRG is already Secondary, now remove placement decision
+	if err := d.reconciler.removeClusterDecisionAfterTestFailover(d.ctx, d.userPlacement, clusterName); err != nil {
+		return false, err
+	}
+
+	d.log.Info("Removed test failover cluster from placement", "cluster", clusterName)
+
+	return true, nil
+}
+
+func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
+	d.log.Info("Monitoring cleanup progress")
+
+	// Find the cluster being cleaned up - look for Secondary VRG
+	for clusterName, vrg := range d.vrgs {
+		if !isVRGSecondary(vrg) {
+			continue
+		}
+
+		if vrg.Status.State != rmn.SecondaryState || vrg.Status.ObservedGeneration != vrg.Generation {
+			d.log.Info("Waiting for VRG to reach Secondary state during cleanup",
+				"cluster", clusterName, "currentState", vrg.Status.State)
+
+			return false, nil
+		}
+
+		d.log.Info("VRG cleanup completed successfully", "cluster", clusterName)
+		d.setProgression(rmn.ProgressionCompleted)
+
+		return false, nil
+	}
+
+	return false, fmt.Errorf("no secondary VRG found while monitoring cleanup progress")
+}
+
+func (d *DRPCInstance) executeAction() (bool, error) {
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.RunFailover()
@@ -144,13 +282,7 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
-		err := d.ensureVRGManifestWork(clusterName)
-		if err != nil {
-			return !done, err
-		}
-
-		// IF deployed on cluster that is not the preferred HomeCluster, then we are done
-		return done, nil
+		return d.ensureInitialDeployActionCompleted(homeCluster)
 	}
 
 	// Ensure that initial deployment is complete
@@ -340,7 +472,7 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
 //
-//nolint:cyclop
+//nolint:cyclop,funlen,nestif,gocognit
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -365,7 +497,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
-	// IFF VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
+	// If VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
 	// clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
@@ -390,11 +522,28 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
+		if d.instance.Spec.DryRun && d.instance.Spec.Action == rmn.ActionFailover {
+			d.setProgression(rmn.ProgressionTestingFailover)
+
+			if err := d.ensurePlacement(failoverCluster); err != nil {
+				return !done, err
+			}
+
+			// Requeue after 1 minute to continue monitoring test failover
+			d.requeueAfter = time.Minute
+
+			return !done, nil
+		}
+
 		return d.ensureFailoverActionCompleted(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
 		// We have to wait for the VRG to appear on the failoverCluster or
 		// in case of an error, try again later
 		return !done, err
+	}
+	// Use the DRPC Protected condition to check if it is true and then allow failover
+	if !d.isProtected() {
+		return !done, nil
 	}
 
 	d.setStatusInitiating()
@@ -404,6 +553,33 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 	}
 
 	return d.switchToFailoverCluster()
+}
+
+func (d *DRPCInstance) RunTestFailover() (bool, error) {
+	d.log.Info("Entering RunTestFailover", "state", d.getLastDRState())
+
+	// The logic for test failover is same as actual failover,
+	// allowing users to understand that we are in a testing failover mode,
+	// without impacting the real failover, with an option to revert to process whenever needed
+	// or even to continue with the actual failover if they are satisfied with the test failover results.
+
+	return d.RunFailover()
+}
+
+func (d *DRPCInstance) isProtected() bool {
+	for _, cond := range d.instance.Status.Conditions {
+		if cond.Type == rmn.ConditionProtected && cond.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+
+	const msg = "cannot start failover because workload is not protected"
+	d.log.Info("Failover blocked", "reason", msg)
+
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
+
+	return false
 }
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
@@ -928,6 +1104,14 @@ func (d *DRPCInstance) ensureFailoverActionCompleted(srcCluster string) (bool, e
 	return d.ensureActionCompleted(srcCluster)
 }
 
+func (d *DRPCInstance) ensureInitialDeployActionCompleted(srcCluster string) (bool, error) {
+	// This function was added to handle cleanup in case test failover was initiated while VRG was still
+	// in the initial deployment state. It ensures proper finalization anc cleanup if necessary.
+	d.setProgression(rmn.ProgressionCleaningUp)
+
+	return d.ensureActionCompleted(srcCluster)
+}
+
 func isDiscoveredApp(drpc *rmn.DRPlacementControl) bool {
 	return drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0
 }
@@ -1111,10 +1295,12 @@ func (d *DRPCInstance) runFinalSync(homeCluster string) (bool, error) {
 }
 
 func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
+	// Count actual primaries, excluding test failover primaries which are temporary and can coexist
+	// with the original primary during testing without being considered a conflicting state.
 	numOfPrimaries := 0
 
 	for _, vrg := range d.vrgs {
-		if isVRGPrimary(vrg) {
+		if isVRGPrimary(vrg) && !vrg.Spec.DryRun {
 			numOfPrimaries++
 		}
 	}
@@ -1463,7 +1649,11 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
 		d.userPlacement.GetName(), homeCluster))
 
-	added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	added := false
+	if !d.instance.Spec.DryRun {
+		added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	}
+
 	if added {
 		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
 			return err
@@ -1905,6 +2095,9 @@ func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	}
 
 	vrg.Spec.Action = action
+	if action == rmn.VRGActionFailover {
+		vrg.Spec.DryRun = d.instance.Spec.DryRun
+	}
 }
 
 func (d *DRPCInstance) newVRG(
@@ -2475,10 +2668,16 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 		d.log.Info(fmt.Sprintf("Phase: Current '%s'. Next '%s'",
 			d.instance.Status.Phase, nextState))
 
-		d.instance.Status.Phase = nextState
+		d.instance.Status.Phase = d.adjustPhaseIfTestFailover(nextState)
 		d.instance.Status.ObservedGeneration = d.instance.Generation
 		d.reportEvent(nextState)
 	}
+}
+
+func (d *DRPCInstance) adjustPhaseIfTestFailover(nextState rmn.DRState) rmn.DRState {
+	// With the DryRun approach, we don't need to adjust phases for test failover
+	// The progression status (ProgressionTestingFailover) indicates test mode
+	return nextState
 }
 
 func updateDRPCProgression(

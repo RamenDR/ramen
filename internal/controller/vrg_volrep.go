@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +33,11 @@ import (
 const (
 	// defaultVRCAnnotationKey is the default annotation key for VolumeReplicationClass
 	defaultVRCAnnotationKey = "replication.storage.openshift.io/is-default-class"
+	// dryRunSnapshotLabel is used to label snapshots created for dry-run
+	// so they can be easily identified and cleaned up when dry-run is reverted or promoted to a real failover.
+	dryRunSnapshotLabel = "ramendr.openshift.io/dry-run-snapshot"
+	// dryRunVRGLabel is used to identify which VRG the dry-run snapshot belongs to
+	dryRunVRGLabel = "ramendr.openshift.io/dry-run-vrg"
 )
 
 //nolint:gosec
@@ -62,6 +69,41 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 //
 //nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
+	// Check and cleanup dry-run snapshots when promoting test failover to real failover
+	// This handles Scenario 2: VRG stays Primary but DryRun changes from true to false
+	if v.shouldCleanupDryRunSnapshots() {
+		v.log.Info("Promoting test failover to real, cleaning up dry-run snapshots while staying Primary")
+
+		if err := cleanupDryRunSnapshots(v.ctx, v.reconciler.Client, v.log, v.instance, v.volRepPVCs); err != nil {
+			v.log.Error(err, "Failed to cleanup dry-run snapshots")
+			v.requeue()
+
+			return
+		}
+
+		v.log.Info("Dry-run snapshots cleaned up successfully, proceeding with real failover")
+	}
+
+	// Take snapshots only when all conditions are met:
+	// 1. ReplicationState is Primary
+	// 2. DryRun is true
+	// 3. Action is Failover
+	if v.shouldTakeDryRunSnapshots() {
+		v.log.Info("Dry-run conditions met, ensuring snapshots",
+			"replicationState", v.instance.Spec.ReplicationState,
+			"dryRun", v.instance.Spec.DryRun,
+			"action", v.instance.Spec.Action)
+
+		if err := v.ensureSnapshotsForDryRun(); err != nil {
+			v.log.Error(err, "Failed to take snapshots during dry-run")
+			v.requeue()
+
+			return
+		}
+
+		v.log.Info("Dry-run snapshots taken successfully")
+	}
+
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
 	v.log.Info(fmt.Sprintf("Reconciling VolRep as Primary. %d VolRepPVCs", len(v.volRepPVCs)))
@@ -138,6 +180,26 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	requeue := false
 
+	// When transitioning to Secondary after a dry-run abort, cleanup snapshots first
+	// OR when staying Primary but promoting from test to real failover
+	// This happens when user sets spec.dryRun=false or removes dryRun field from DRPC spec
+	// The VRG must delete all dry-run snapshots BEFORE proceeding
+	if v.shouldCleanupDryRunSnapshots() {
+		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+			v.log.Info("Dry-run aborted, cleaning up snapshots before transitioning to Secondary")
+		} else {
+			v.log.Info("Promoting test failover to real, cleaning up dry-run snapshots while staying Primary")
+		}
+
+		if err := cleanupDryRunSnapshots(v.ctx, v.reconciler.Client, v.log, v.instance, v.volRepPVCs); err != nil {
+			v.log.Error(err, "Failed to cleanup dry-run snapshots")
+
+			return true // Requeue to retry cleanup
+		}
+
+		v.log.Info("Dry-run snapshots cleaned up successfully, proceeding with operation")
+	}
+
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
 	v.log.Info(fmt.Sprintf("Reconciling VolRep as Secondary. %d VolRepPVCs", len(v.volRepPVCs)))
@@ -146,62 +208,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		pvc := &v.volRepPVCs[idx]
 		log := logWithPvcName(v.log, pvc)
 
-		// Potentially for PVCs that are not deleted, e.g Failover of STS without required auto delete options
-		if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
-			log.Info("pvc does not contain VR protection finalizer. Skipping it")
-
-			v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
-
-			continue
-		}
-
-		if err := v.updateProtectedPVCs(pvc); err != nil {
-			requeue = true
-
-			continue
-		}
-
-		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
-		if requeueResult {
-			requeue = true
-
-			continue
-		}
-
-		if skip {
-			continue
-		}
-
-		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
-			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
-
-			continue
-		}
-
-		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
-		if vrMissing || requeueResult {
-			// TODO: set requeue only if required, remove PVC from status?
-			// - Will it hamper determination of secondary completion?
-			requeue = true
-
-			continue
-		}
-
-		// If VR is not ready as Secondary, we can ignore it here, either a future VR change or the requeue would
-		// reconcile it to the desired state.
-		requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
-		if requeueResult {
-			requeue = true
-
-			continue
-		}
-
-		if skip || !ready {
-			continue
-		}
-
-		if v.undoPVCFinalizersAndPVRetention(pvc, log) {
+		if v.processPVCAsSecondary(pvc, log, groupPVCs) {
 			requeue = true
 		}
 	}
@@ -209,6 +216,60 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	v.reconcileVolGroupRepsAsSecondary(&requeue, groupPVCs)
 
 	return requeue
+}
+
+func (v *VRGInstance) processPVCAsSecondary(
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
+) bool {
+	if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
+		log.Info("pvc does not contain VR protection finalizer. Skipping it")
+		v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
+
+		return false
+	}
+
+	if err := v.updateProtectedPVCs(pvc); err != nil {
+		return true
+	}
+
+	requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
+	if requeueResult || skip {
+		return requeueResult
+	}
+
+	if cg, ok := v.isCGEnabled(pvc); ok {
+		v.addPVCToGroupPVCs(pvc, cg, groupPVCs)
+
+		return false
+	}
+
+	return v.reconcilePVCVRAsSecondary(pvc, log)
+}
+
+func (v *VRGInstance) addPVCToGroupPVCs(
+	pvc *corev1.PersistentVolumeClaim,
+	cg string,
+	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
+) {
+	vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
+	vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
+	groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+}
+
+func (v *VRGInstance) reconcilePVCVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
+	if vrMissing || requeueResult {
+		return true
+	}
+
+	requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
+	if requeueResult || skip || !ready {
+		return requeueResult
+	}
+
+	return v.undoPVCFinalizersAndPVRetention(pvc, log)
 }
 
 // reconcileVRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VR
@@ -639,6 +700,12 @@ func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bo
 
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
+	if v.instance.Spec.DryRun {
+		log.Info("Skipping upload of PV object to S3 store(s) as VRG is in dry-run mode")
+
+		return nil
+	}
+
 	if v.isArchivedAlready(pvc, log) {
 		msg := fmt.Sprintf("PV cluster data already protected for PVC %s", pvc.Name)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
@@ -647,23 +714,13 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		return nil
 	}
 
-	// If the result of above check is false, it symbolizes change in hash. To ensure PVC resize is complete,
-	// IOW underlying PV is also resized, pvc spec is compared with pvc status and wait till it is achieved
-	// and then upload to S3.
 	if !v.isPVCResizeCompleted(pvc) {
 		return fmt.Errorf("resize is in progress for pvc %s", pvc.Name)
 	}
 
-	// Error out if VRG has no S3 profiles
 	numProfilesToUpload := len(v.instance.Spec.S3Profiles)
 	if numProfilesToUpload == 0 {
-		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
-		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
-			VRGConditionReasonUploadError, msg)
-		v.log.Info(msg)
-
-		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
-			pvc.Name)
+		return v.handleNoS3ProfilesError(pvc)
 	}
 
 	s3Profiles, err := v.UploadPVandPVCtoS3Stores(pvc, log)
@@ -674,7 +731,6 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	numProfilesUploaded := len(s3Profiles)
 
 	if numProfilesUploaded != numProfilesToUpload {
-		// Merely defensive as we don't expect to reach here
 		msg := fmt.Sprintf("uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
@@ -699,6 +755,15 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		VRGConditionReasonUploaded, msg)
 
 	return nil
+}
+
+func (v *VRGInstance) handleNoS3ProfilesError(pvc *corev1.PersistentVolumeClaim) error {
+	msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
+	v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
+		VRGConditionReasonUploadError, msg)
+	v.log.Info(msg)
+
+	return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles", pvc.Name)
 }
 
 func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
@@ -3143,4 +3208,306 @@ func (v *VRGInstance) skipVMCleanupVerificationCheck() ([]virtv1.VirtualMachine,
 	}
 
 	return foundVMs, false
+}
+
+// shouldTakeDryRunSnapshots checks if all conditions are met for taking dry-run snapshots
+// Conditions: ReplicationState is Primary, DryRun is true, and Action is Failover
+func (v *VRGInstance) shouldTakeDryRunSnapshots() bool {
+	return v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
+		v.instance.Spec.DryRun &&
+		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
+}
+
+// shouldCleanupDryRunSnapshots checks if dry-run snapshots should be cleaned up
+// This happens in two scenarios:
+// 1. When aborting test failover: VRG transitions to Secondary and DryRun is false/removed
+// 2. When promoting test to real: VRG stays Primary but DryRun changes from true to false/removed
+func (v *VRGInstance) shouldCleanupDryRunSnapshots() bool {
+	// !v.instance.Spec.DryRun evaluates to true when:
+	// - DryRun = false (explicitly set to false)
+	// - DryRun is omitted/removed from DRPC spec (defaults to false)
+
+	// Scenario 1: Aborting test failover - transitioning to Secondary
+	// Always return true to attempt cleanup - the cleanup function will handle the case
+	// where no snapshots exist (it will be a no-op)
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && !v.instance.Spec.DryRun {
+		return true
+	}
+
+	// Scenario 2: Promoting test to real failover - staying Primary
+	// When user sets DryRun=false or removes DryRun field while keeping Action=Failover
+	// We need to cleanup test snapshots before continuing with real failover
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
+		!v.instance.Spec.DryRun &&
+		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover {
+		return true
+	}
+
+	return false
+}
+
+func (v *VRGInstance) ensureSnapshotsForDryRun() error {
+	// Filter CephFS PVCs once at the start to avoid redundant storage class lookups
+	nonCephFSPVCs, err := v.filterNonCephFSPVCs()
+	if err != nil {
+		return fmt.Errorf("filtering non-CephFS PVCs: %w", err)
+	}
+
+	// If no PVCs need snapshots, we're done
+	if len(nonCephFSPVCs) == 0 {
+		v.log.Info("No snapshots needed - all PVCs are CephFS")
+
+		return nil
+	}
+
+	// Collect unique namespaces from non-CephFS PVCs only
+	namespaces := make(map[string]bool)
+	for _, pvc := range nonCephFSPVCs {
+		namespaces[pvc.Namespace] = true
+	}
+
+	// Build snapshot map directly while listing to avoid intermediate aggregation
+	snapshotMap := make(map[string]*snapv1.VolumeSnapshot)
+
+	// List snapshots once per unique namespace and build map
+	for namespace := range namespaces {
+		snapshots := &snapv1.VolumeSnapshotList{}
+		if err := v.reconciler.Client.List(v.ctx, snapshots,
+			client.InNamespace(namespace),
+			client.MatchingLabels{
+				dryRunSnapshotLabel: "true",
+				dryRunVRGLabel:      v.instance.Name,
+			},
+		); err != nil {
+			return fmt.Errorf("listing dry-run snapshots in namespace %s: %w", namespace, err)
+		}
+
+		// Add snapshots to map by PVC name
+		for i := range snapshots.Items {
+			snapshot := &snapshots.Items[i]
+			if snapshot.Spec.Source.PersistentVolumeClaimName != nil {
+				pvcName := *snapshot.Spec.Source.PersistentVolumeClaimName
+				snapshotMap[pvcName] = snapshot
+			}
+		}
+	}
+
+	// Check if snapshots already exist and are up-to-date
+	if v.snapshotsUpToDateFromMap(snapshotMap, nonCephFSPVCs) {
+		v.log.Info("Snapshots already exist and are up-to-date for this dry-run")
+
+		return nil
+	}
+
+	v.log.Info("Creating dry-run snapshots for PVCs", "pvcCount", len(nonCephFSPVCs))
+
+	// Create snapshots for non-CephFS PVCs only
+	return v.createSnapshotsForPVCs(nonCephFSPVCs)
+}
+
+// filterNonCephFSPVCs filters out CephFS PVCs and returns only non-CephFS PVCs
+// This avoids redundant storage class lookups during snapshot creation
+func (v *VRGInstance) filterNonCephFSPVCs() ([]*corev1.PersistentVolumeClaim, error) {
+	nonCephFSPVCs := make([]*corev1.PersistentVolumeClaim, 0, len(v.volRepPVCs))
+
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
+
+		storageClass, err := v.getStorageClass(pvc)
+		if err != nil {
+			v.log.Error(err, "failed to get storage class for PVC", "pvc", pvc.Name)
+
+			return nil, err
+		}
+
+		// Skip CephFS PVCs - they use VolumeGroupReplication
+		if v.isCephFSProvisioner(storageClass.Provisioner) {
+			v.log.Info("Skipping CephFS PVC for dry-run snapshots",
+				"pvc", pvc.Name,
+				"provisioner", storageClass.Provisioner)
+
+			continue
+		}
+
+		nonCephFSPVCs = append(nonCephFSPVCs, pvc)
+	}
+
+	return nonCephFSPVCs, nil
+}
+
+func (v *VRGInstance) snapshotsUpToDateFromMap(
+	snapshotMap map[string]*snapv1.VolumeSnapshot,
+	nonCephFSPVCs []*corev1.PersistentVolumeClaim,
+) bool {
+	expectedSnapshotCount := len(nonCephFSPVCs)
+	totalSnapshots := len(snapshotMap)
+
+	// Check if snapshot count matches expected non-CephFS PVC count
+	if totalSnapshots != expectedSnapshotCount {
+		v.log.Info("Snapshot count mismatch",
+			"snapshotCount", totalSnapshots,
+			"expectedCount", expectedSnapshotCount)
+
+		return false
+	}
+
+	// If no snapshots are expected, they're up-to-date
+	if expectedSnapshotCount == 0 {
+		v.log.Info("No snapshots expected (all PVCs are CephFS)")
+
+		return true
+	}
+
+	// Verify each non-CephFS PVC has a corresponding snapshot
+	for _, pvc := range nonCephFSPVCs {
+		snapshot, exists := snapshotMap[pvc.Name]
+
+		if !exists {
+			v.log.Info("PVC missing snapshot", "pvc", pvc.Name)
+
+			return false
+		}
+
+		// Check if snapshot is ready
+		if snapshot.Status == nil || snapshot.Status.ReadyToUse == nil || !*snapshot.Status.ReadyToUse {
+			v.log.Info("Snapshot not ready", "snapshot", snapshot.Name, "pvc", pvc.Name)
+
+			return false
+		}
+	}
+
+	v.log.Info("All dry-run snapshots are up-to-date and ready", "count", totalSnapshots)
+
+	return true
+}
+
+// isCephFSProvisioner checks if the given provisioner is a CephFS CSI driver
+// CephFS provisioners typically contain "cephfs" in their name
+func (v *VRGInstance) isCephFSProvisioner(provisioner string) bool {
+	// Check if provisioner contains "cephfs" (case-insensitive)
+	return strings.Contains(strings.ToLower(provisioner), "cephfs")
+}
+
+func (v *VRGInstance) createSnapshotsForPVCs(pvcs []*corev1.PersistentVolumeClaim) error {
+	for _, pvc := range pvcs {
+		if err := v.createSnapshotForPVC(pvc); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) createSnapshotForPVC(pvc *corev1.PersistentVolumeClaim) error {
+	// No need to check CephFS here - already filtered in filterNonCephFSPVCs()
+	// Get VolumeSnapshotClass for this PVC using VSHandler
+	snapshotClassName, err := v.volSyncHandler.GetVolumeSnapshotClassFromPVCStorageClass(pvc.Spec.StorageClassName)
+	if err != nil {
+		v.log.Error(err, "failed to get VolumeSnapshotClass for PVC", "pvc", pvc.Name)
+
+		return err
+	}
+
+	return v.createSnapshot(pvc, snapshotClassName)
+}
+
+func (v *VRGInstance) createSnapshot(pvc *corev1.PersistentVolumeClaim, snapshotClassName string) error {
+	snapName := fmt.Sprintf("%s-snapshot", pvc.Name)
+	pvcName := pvc.Name
+	snap := &snapv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapName,
+			Namespace: pvc.Namespace,
+			Labels: map[string]string{
+				dryRunSnapshotLabel: "true",
+				dryRunVRGLabel:      v.instance.Name,
+			},
+		},
+		Spec: snapv1.VolumeSnapshotSpec{
+			Source: snapv1.VolumeSnapshotSource{
+				PersistentVolumeClaimName: &pvcName,
+			},
+			VolumeSnapshotClassName: &snapshotClassName,
+		},
+	}
+
+	if err := v.reconciler.Client.Create(v.ctx, snap); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			v.log.Info("VolumeSnapshot already exists for PVC, skipping",
+				"snapshot", snapName, "pvc", pvc.Name)
+
+			return nil
+		}
+
+		v.log.Error(err, "failed to create VolumeSnapshot for PVC",
+			"snapshot", snapName, "pvc", pvc.Name)
+
+		return err
+	}
+
+	v.log.Info("Created VolumeSnapshot for PVC",
+		"snapshot", snapName, "pvc", pvc.Name, "snapshotClass", snapshotClassName)
+
+	return nil
+}
+
+// cleanupDryRunSnapshots deletes all snapshots with dry-run label for this specific VRG
+// This is called when a dry-run is aborted or promoted to real failover
+func cleanupDryRunSnapshots(
+	ctx context.Context,
+	c client.Client,
+	log logr.Logger,
+	instance *ramendrv1alpha1.VolumeReplicationGroup,
+	_ []corev1.PersistentVolumeClaim,
+) error {
+	log.Info("Cleaning up dry-run snapshots for VRG", "vrg", instance.Name)
+
+	deletedCount := 0
+	errorCount := 0
+
+	// List all snapshots with dry-run label for this specific VRG across all namespaces
+	snapshots := &snapv1.VolumeSnapshotList{}
+	if err := c.List(ctx, snapshots,
+		client.MatchingLabels{
+			dryRunSnapshotLabel: "true",
+			dryRunVRGLabel:      instance.Name,
+		},
+	); err != nil {
+		log.Error(err, "failed to list dry-run snapshots for cleanup", "vrg", instance.Name)
+
+		return fmt.Errorf("failed to list dry-run snapshots: %w", err)
+	}
+
+	// Early return if no snapshots to clean up
+	if len(snapshots.Items) == 0 {
+		log.Info("No dry-run snapshots found for cleanup")
+
+		return nil
+	}
+
+	// Delete each snapshot
+	for i := range snapshots.Items {
+		snapshot := &snapshots.Items[i]
+		if err := c.Delete(ctx, snapshot); err != nil {
+			if !k8serrors.IsNotFound(err) {
+				log.Error(err, "failed to delete snapshot", "snapshot", snapshot.Name, "namespace", snapshot.Namespace)
+
+				errorCount++
+
+				continue
+			}
+		}
+
+		log.Info("Deleted dry-run snapshot", "snapshot", snapshot.Name, "namespace", snapshot.Namespace)
+
+		deletedCount++
+	}
+
+	log.Info("Dry-run snapshot cleanup completed", "deleted", deletedCount, "errors", errorCount)
+
+	if errorCount > 0 {
+		return fmt.Errorf("failed to delete %d snapshots during cleanup", errorCount)
+	}
+
+	return nil
 }
