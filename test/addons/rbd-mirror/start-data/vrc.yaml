@@ -9,6 +9,7 @@ metadata:
   labels:
     ramendr.openshift.io/storageid: $scname-$cluster-1
     ramendr.openshift.io/replicationid: rook-ceph-replication-1
+    ramendr.openshift.io/maintenancemodes: Failover
 spec:
   provisioner: rook-ceph.rbd.csi.ceph.com
   parameters:
