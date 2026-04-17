@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+apiVersion: csiaddons.openshift.io/v1alpha1
+kind: NetworkFenceClass
+metadata:
+  annotations:
+    ramendr.openshift.io/storageid: $name-$cluster-1
+  name: networkfenceclass-$name
+spec:
+  provisioner: rook-ceph.rbd.csi.ceph.com
+  parameters:
+    clusterID: rook-ceph
+    csiaddons.openshift.io/networkfence-secret-name: rook-csi-rbd-provisioner
+    csiaddons.openshift.io/networkfence-secret-namespace: rook-ceph
