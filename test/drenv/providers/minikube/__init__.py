@@ -7,6 +7,7 @@ import logging
 import os
 import platform
 import sys
+import tempfile
 import time
 
 from packaging.version import Version
@@ -370,12 +371,17 @@ def _configure_containerd(profile):
 
 def _copy_registry_mirrors(name):
     """
-    Copy containerd registry mirror configuration to the cluster.
+    Generate and copy registry mirror configuration to the cluster.
     """
-    src = _package_path("containerd", "certs.d")
-    dst = "/etc/containerd/certs.d"
-    logging.debug("[%s] Copying registry mirror configuration", name)
-    _copy_dir(name, src, dst)
+    registry_host = "host.minikube.internal"
+    logging.debug(
+        "[%s] Copying registry mirror configuration (host=%s)",
+        name,
+        registry_host,
+    )
+    with tempfile.TemporaryDirectory(prefix="drenv-certs-") as tmpdir:
+        containerd.create_registry_mirrors(tmpdir, registry_host)
+        _copy_dir(name, tmpdir, "/etc/containerd/certs.d")
 
 
 def _copy_dir(name, src, dst):
@@ -413,13 +419,6 @@ def _copy_dir(name, src, dst):
             f"sudo tar --directory {dst} --extract --file=-",
         ],
     )
-
-
-def _package_path(*names):
-    """
-    Return a path to a file or directory in this package.
-    """
-    return os.path.join(os.path.dirname(__file__), *names)
 
 
 def _write_file(path, data):
