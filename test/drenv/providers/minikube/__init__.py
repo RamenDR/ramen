@@ -403,28 +403,28 @@ def _copy_dir(name, src, dst):
     ip = _run("ip", profile=name).strip()
     key = _run("ssh-key", profile=name).strip()
 
-    commands.pipeline(
-        [
-            "tar",
-            "--directory",
-            src,
-            "--create",
-            "--file=-",
-            ".",
-        ],
-        [
-            "ssh",
-            f"-oIdentityFile={key}",
-            "-oUser=docker",
-            "-oStrictHostKeyChecking=no",
-            "-oUserKnownHostsFile=/dev/null",
-            "-oLogLevel=ERROR",
-            ip,
-            # ssh joins arguments with spaces and runs through remote shell.
-            # Using a single string to make the remote command explicit.
-            f"sudo tar --directory {dst} --extract --file=-",
-        ],
-    )
+    tar_create = [
+        "tar",
+        "--directory",
+        src,
+        "--create",
+        "--file=-",
+        ".",
+    ]
+    tar_extract = [
+        "ssh",
+        f"-oIdentityFile={key}",
+        "-oUser=docker",
+        "-oStrictHostKeyChecking=no",
+        "-oUserKnownHostsFile=/dev/null",
+        "-oLogLevel=ERROR",
+        ip,
+        # ssh joins arguments with spaces and runs through remote shell.
+        # Using a single string to make the remote command explicit.
+        f"sudo tar --directory {dst} --extract --file=-",
+    ]
+    logging.debug("[%s] Running %s | %s", name, tar_create, tar_extract)
+    commands.pipeline(tar_create, tar_extract)
 
 
 def _write_file(path, data):
