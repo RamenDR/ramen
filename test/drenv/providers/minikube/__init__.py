@@ -13,6 +13,7 @@ import time
 from packaging.version import Version
 
 from drenv import commands
+from drenv import config
 from drenv import containerd
 from drenv import patch
 from drenv import registry
@@ -372,8 +373,13 @@ def _configure_containerd(profile):
 def _copy_registry_mirrors(name):
     """
     Generate and copy registry mirror configuration to the cluster.
+
+    The registry host defaults to "host.minikube.internal" which works for
+    minikube clusters with default podman machine. Override with registry_host
+    in ~/.config/drenv/config.yaml if you use another podman VM.
     """
-    registry_host = "host.minikube.internal"
+    cfg = config.read()
+    registry_host = cfg.get(config.REGISTRY_HOST, "host.minikube.internal")
     logging.debug(
         "[%s] Copying registry mirror configuration (host=%s)",
         name,
