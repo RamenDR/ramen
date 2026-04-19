@@ -354,6 +354,26 @@ drenv cleanup
 
 This should not be needed.
 
+## Configuring drenv
+
+drenv can be configured using an optional configuration file at
+`~/.config/drenv/config.yaml`. If the file does not exist, default
+values are used.
+
+### Available options
+
+- `registry_host`: The hostname or IP address of the registry cache,
+  as reachable from inside minikube VMs. The default value
+  `host.minikube.internal` works for minikube VMs using podman machine.
+  Override this if you use a different VM setup (e.g. external VMs on
+  vmnet-shared).
+
+### Example configuration
+
+```yaml
+registry_host: "192.168.105.2"
+```
+
 ## Caching resources
 
 If you run the drenv tool with a flaky network you can improve

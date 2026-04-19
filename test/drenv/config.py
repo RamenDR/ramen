@@ -8,6 +8,9 @@ from . import yaml
 _PATH = os.path.expanduser(os.path.join("~", ".config", "drenv", "config.yaml"))
 
 
+REGISTRY_HOST = "registry_host"
+
+
 def read():
     """
     Read the global drenv configuration from ~/.config/drenv/config.yaml.
