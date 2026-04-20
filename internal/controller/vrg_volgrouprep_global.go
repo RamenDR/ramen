@@ -223,21 +223,20 @@ func (v *VRGInstance) isGlobalVGRStateMatched(
 	}
 }
 
-// validateGlobalVGRStatus short-circuits VGR status validation for global VGRs
-// with schedulingInterval "0m". Since the storage provider manages replication
-// externally and does not report Completed/Degraded/Resyncing conditions,
-// DataReady is derived from the VGR state match and DataProtected is set based
-// on the storage provider managing protection externally.
-// For non-zero intervals, returns false to let the normal validation path handle it.
+// validateGlobalVGRStatus short-circuits VGR status validation for global VGRs.
+// Since the storage provider manages replication externally and does not report
+// Completed/Degraded/Resyncing conditions, DataReady is derived from the VGR
+// state match and DataProtected is set based on the storage provider managing
+// protection externally. This applies to any scheduling interval as long as
+// the VRG has the global VGR label.
 //
-// TODO: When storage providers with schedulingInterval "0m" start reporting
-// status conditions, update this function to fall through to the normal
-// validation path instead of short-circuiting.
+// TODO: When storage providers start reporting status conditions, update this function
+// to fall through to the normal validation path instead of short-circuiting.
 func (v *VRGInstance) validateGlobalVGRStatus(
 	volRep client.Object, pvcs []*corev1.PersistentVolumeClaim,
 	status *volrep.VolumeReplicationStatus, state ramendrv1alpha1.ReplicationState,
 ) bool {
-	if v.instance.Spec.Async == nil || v.instance.Spec.Async.SchedulingInterval != "0m" {
+	if !v.hasGlobalVGRLabel() {
 		return false
 	}
 
