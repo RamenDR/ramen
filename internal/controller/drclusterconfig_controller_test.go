@@ -443,7 +443,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 				Expect(k8sClient.Delete(context.TODO(), vsc1)).To(Succeed())
 
-				classes.VolumeGroupSnapshotClasses = []string{}
+				classes.VolumeSnapshotClasses = []string{}
 
 				ensureClassStatus(apiReader, drCConfig, classes)
 				objectConditionExpectEventually(

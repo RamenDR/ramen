@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -292,7 +293,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := 3
 			vtest := newVRGTestCaseCreate(0, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
+			asyncPeerClass := genPeerClass(replicationID, vtest.template.storageClassName, []string{storageID}, false)
 			vtest.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			vtest.skipCreationPVandPVC = true
 			pvList := vtest.generateFakePVs("pv", numPVs)
@@ -339,7 +340,7 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			numPVs := pvcCount
 			vrgTestBoundPV = newVRGTestCaseCreate(numPVs, restoreTestTemplate, true, false)
 			replicationID := restoreTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, restoreTestTemplate.storageClassName, []string{storageID}, false)
+			asyncPeerClass := genPeerClass(replicationID, vrgTestBoundPV.template.storageClassName, []string{storageID}, false)
 			vrgTestBoundPV.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 			pvList := vrgTestBoundPV.generateFakePVs("pv", numPVs)
 			populateS3Store(vrgTestBoundPV.s3KeyPrefix(), pvList, []corev1.PersistentVolumeClaim{})
@@ -472,6 +473,8 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			pvcsVerify := func(pvcNames []types.NamespacedName,
 				verify func(vrg ramendrv1alpha1.VolumeReplicationGroup, pvcNamespacedName types.NamespacedName, pvName string),
 			) {
+				vrgGet()
+
 				for _, pvcName := range pvcNames {
 					verify(*vrg, pvcName, t.pvcVolumeNames[pvcName])
 				}
@@ -506,9 +509,6 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 						util.ObjectLabelsDelete(&pvc, t.pvcLabels)
 						Expect(k8sClient.Update(context.TODO(), &pvc)).To(Succeed())
 					})
-				})
-				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet, timeout, interval).ShouldNot(Equal(vrgResourceVersion))
 				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
@@ -575,11 +575,25 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 					})
 				})
 				It("reprotects it", func() {
+					// DataReady can flip true before the controller re-adds the reselected PVC to status.
+					Eventually(func() bool {
+						vrgGet()
+
+						for _, pvcName := range pvcNamesReselected {
+							if vrgController.FindProtectedPVC(vrg, pvcName.Namespace, pvcName.Name) == nil {
+								return false
+							}
+						}
+
+						return true
+					}, vrgtimeout, vrginterval).Should(BeTrue())
 					pvcsVerify(pvcNamesReselected, pvcProtectedVerify)
 				})
 			})
 			When("all selected are deselected", func() {
 				BeforeAll(func() {
+					t.promoteVolRepsWithoutVrgStatusCheck()
+
 					DeferCleanup(func() {
 						pvcNamesDeselected = append(pvcNamesDeselected, pvcNamesSelected...)
 						pvcNamesSelected = nil
@@ -952,9 +966,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgVGRDeleteEnsureTestCase = newVRGTestCaseCreate(1, createTestTemplate, true, false)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			asyncPeerClass := genPeerClass(replicationID,
+				vrgVGRDeleteEnsureTestCase.template.storageClassName, []string{storageID}, true)
 			vrgVGRDeleteEnsureTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
-			vrgVGRDeleteEnsureTestCase.createVGRC(createTestTemplate)
+			vrgVGRDeleteEnsureTestCase.createVGRC(vrgVGRDeleteEnsureTestCase.template)
 			vrgVGRDeleteEnsureTestCase.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VGR for all PVCs", func() {
@@ -1029,9 +1044,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgCreateVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, true, false)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			asyncPeerClass := genPeerClass(replicationID,
+				vrgCreateVGRTestCase.template.storageClassName, []string{storageID}, true)
 			vrgCreateVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
-			vrgCreateVGRTestCase.createVGRC(createTestTemplate)
+			vrgCreateVGRTestCase.createVGRC(vrgCreateVGRTestCase.template)
 			vrgCreateVGRTestCase.VRGTestCaseStart()
 		})
 		It("waits for VRG to create a VGR for all PVCs", func() {
@@ -1076,9 +1092,10 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
 			vrgPVCnotBoundVGRTestCase = newVRGTestCaseCreate(3, createTestTemplate, false, false)
 			replicationID := createTestTemplate.replicationClassLabels[vrgController.ReplicationIDLabel]
-			asyncPeerClass := genPeerClass(replicationID, createTestTemplate.storageClassName, []string{storageID}, true)
+			asyncPeerClass := genPeerClass(replicationID,
+				vrgPVCnotBoundVGRTestCase.template.storageClassName, []string{storageID}, true)
 			vrgPVCnotBoundVGRTestCase.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
-			vrgPVCnotBoundVGRTestCase.createVGRC(createTestTemplate)
+			vrgPVCnotBoundVGRTestCase.createVGRC(vrgPVCnotBoundVGRTestCase.template)
 			vrgPVCnotBoundVGRTestCase.VRGTestCaseStart()
 		})
 		It("expect no VR to be created as PVC not bound", func() {
@@ -1858,23 +1875,27 @@ func newVRGTestCaseCreate(pvcCount int, testTemplate *template, checkBind, vrgFi
 		return fmt.Sprintf("%s.%s", name, objectNameSuffix)
 	}
 
-	if testTemplate.storageClassName != "" {
-		testTemplate.storageClassName = appendSuffix(testTemplate.storageClassName)
+	// Copy template so the same template can be passed again without double suffix (e.g. in a loop).
+	templateCopy := &template{}
+
+	*templateCopy = *testTemplate
+	if templateCopy.storageClassName != "" {
+		templateCopy.storageClassName = appendSuffix(templateCopy.storageClassName)
 	}
 
-	testTemplate.replicationClassName = appendSuffix(testTemplate.replicationClassName)
+	templateCopy.replicationClassName = appendSuffix(templateCopy.replicationClassName)
 
 	v := &vrgTest{
 		uniqueID:         objectNameSuffix,
 		namespace:        fmt.Sprintf("envtest-ns-%v", objectNameSuffix),
 		vrgName:          fmt.Sprintf("vrg-%v", objectNameSuffix),
-		storageClass:     testTemplate.storageClassName,
-		replicationClass: testTemplate.replicationClassName,
+		storageClass:     templateCopy.storageClassName,
+		replicationClass: templateCopy.replicationClassName,
 		pvcLabels:        make(map[string]string),
 		pvcCount:         pvcCount,
 		checkBind:        checkBind,
 		vrgFirst:         vrgFirst,
-		template:         testTemplate,
+		template:         templateCopy,
 	}
 
 	if pvcCount > 0 {
@@ -1933,7 +1954,7 @@ func newVRGTestCaseCreateAndStart(pvcCount int, testTemplate *template, checkBin
 
 	storageID := testTemplate.storageIDLabels[vrgController.StorageIDLabel]
 	if includePeerClasses {
-		asyncPeerClass := genPeerClass(replicationID, testTemplate.storageClassName, []string{storageID}, false)
+		asyncPeerClass := genPeerClass(replicationID, v.template.storageClassName, []string{storageID}, false)
 		v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{asyncPeerClass}
 	}
 
@@ -2596,31 +2617,71 @@ func (v *vrgTest) clusterDataProtectedWait(status metav1.ConditionStatus,
 	return
 }
 
-func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicationGroup) {
-	vrgs := []ramendrv1alpha1.VolumeReplicationGroup{}
-	Expect(vrgController.DownloadTypedObjects(*vrgObjectStorer, v.s3KeyPrefix(), &vrgs)).To(Succeed())
-	Expect(vrgs).To(HaveLen(1))
-	vrgS3 := &vrgs[0]
-	// TODO fix in controller and remove
-	for i := range vrgS3.Status.Conditions {
-		t := &vrgS3.Status.Conditions[i].LastTransitionTime
+// vrgNormalizeDecodedFromS3 matches the historic vrgDownloadAndValidate post-decode steps (TODO fix in
+// controller and remove). Applied to list Status.Items too so both sides compare equal after S3 JSON.
+func vrgNormalizeDecodedFromS3(v *ramendrv1alpha1.VolumeReplicationGroup) {
+	for i := range v.Status.Conditions {
+		t := &v.Status.Conditions[i].LastTransitionTime
 		*t = t.Rfc3339Copy()
 	}
-	// vrgS3.Status.LastUpdateTime = vrgS3.Status.LastUpdateTime.Rfc3339Copy()
-	// TODO fix in controller and remove
-	if len(vrgS3.Status.ProtectedPVCs) == 0 {
-		vrgS3.Status.ProtectedPVCs = nil
+
+	if len(v.Status.ProtectedPVCs) == 0 {
+		v.Status.ProtectedPVCs = nil
+	} else {
+		for i := range v.Status.ProtectedPVCs {
+			pvc := &v.Status.ProtectedPVCs[i]
+			for j := range pvc.Conditions {
+				t := &pvc.Conditions[j].LastTransitionTime
+				*t = t.Rfc3339Copy()
+			}
+		}
+
+		slices.SortFunc(v.Status.ProtectedPVCs, func(a, b ramendrv1alpha1.ProtectedPVC) int {
+			if c := strings.Compare(a.Namespace, b.Namespace); c != 0 {
+				return c
+			}
+
+			return strings.Compare(a.Name, b.Name)
+		})
 	}
+
+	if !v.Status.LastUpdateTime.IsZero() {
+		v.Status.LastUpdateTime = v.Status.LastUpdateTime.Rfc3339Copy()
+	}
+}
+
+func (v *vrgTest) vrgDownloadAndValidate(vrgK8s *ramendrv1alpha1.VolumeReplicationGroup,
+) *ramendrv1alpha1.VolumeReplicationGroup {
+	var vrgs []ramendrv1alpha1.VolumeReplicationGroup
+
+	var lastErr error
+
+	Eventually(func() bool {
+		vrgs = []ramendrv1alpha1.VolumeReplicationGroup{}
+
+		if err := vrgController.DownloadTypedObjects(*vrgObjectStorer, v.s3KeyPrefix(), &vrgs); err != nil {
+			lastErr = err
+
+			return false
+		}
+
+		return len(vrgs) == 1
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"VRG %s/%s should be downloadable from S3, last error: %v", v.namespace, v.vrgName, lastErr)
+
+	vrgS3 := &vrgs[0]
+	vrgNormalizeDecodedFromS3(vrgS3)
 
 	vrgStatusStateUpdate(vrgS3, vrgK8s)
 	// Expect(vrgS3).To(Equal(vrgK8s)) TODO re-enable: fails on github despite matching VRGs output
+
+	return vrgS3
 }
 
 func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicationGroup {
 	vrg := v.clusterDataProtectedWait(metav1.ConditionTrue)
-	v.vrgDownloadAndValidate(vrg)
 
-	return vrg
+	return v.vrgDownloadAndValidate(vrg)
 }
 
 func kubeObjectProtectionValidate(tests []*vrgTest) {

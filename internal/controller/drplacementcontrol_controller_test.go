@@ -1281,8 +1281,10 @@ func getLatestUserPlacementRule(name, namespace string) *plrv1.PlacementRule {
 
 	usrPlRule := &plrv1.PlacementRule{}
 
-	err := k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
-	Expect(err).NotTo(HaveOccurred())
+	Eventually(func() error {
+		return k8sClient.Get(context.TODO(), usrPlRuleLookupKey, usrPlRule)
+	}, timeout, interval).Should(Succeed(),
+		fmt.Sprintf("PlacementRule %s/%s not found", namespace, name))
 
 	return usrPlRule
 }
