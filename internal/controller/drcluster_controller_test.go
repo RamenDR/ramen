@@ -120,9 +120,10 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, networkFenceClass, 
 	nf := baseNF.DeepCopy()
 
 	callerName := getFunctionNameAtIndex(2)
-	if callerName == "fenceClusterOnCluster" {
+	switch callerName {
+	case "checkFenceStatus":
 		nf.Spec.FenceState = csiaddonsv1alpha1.Fenced
-	} else if callerName == "unfenceClusterOnCluster" {
+	case "checkUnfenceStatus":
 		nf.Spec.FenceState = csiaddonsv1alpha1.Unfenced
 	}
 
@@ -414,6 +415,7 @@ var _ = Describe("DRClusterController", func() {
 		When("fenced", func() {
 			It("reports validated with reason Succeeded and ignores S3Profile errors", func() {
 				By("fencing an existing DRCluster with an invalid S3Profile")
+
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
