@@ -993,12 +993,39 @@ func (u *drclusterInstance) clusterFence() (bool, error) {
 		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
 	}
 
+	// If not fencing yet, create ALL ManifestWorks for all NetworkFenceClasses
+	if !u.isFencingOrFenced() {
+		u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
+
+		for _, nfClass := range nfClasses {
+			if err := u.createNFManifestWork(u.object, &peerCluster, u.log, nfClass); err != nil {
+				setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
+					fmt.Sprintf("NetworkFence ManifestWork creation failed: %v", err))
+
+				return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s: %w",
+					peerCluster.Name, u.object.Name, err)
+			}
+		}
+
+		setDRClusterFencingCondition(&u.object.Status.Conditions, u.object.Generation,
+			"ManifestWork for NetworkFence fence operation created")
+		u.setDRClusterPhase(ramen.Fencing)
+		// just created fencing resources. Requeue and then check.
+		return true, nil
+	}
+
+	// Already fencing, check ALL NetworkFence statuses
 	for _, nfClass := range nfClasses {
-		reque, err := u.fenceClusterOnCluster(&peerCluster, nfClass)
+		err := u.checkFenceStatus(&peerCluster, nfClass)
 		if err != nil {
-			return reque, err
+			return true, err
 		}
 	}
+
+	// All NetworkFences succeeded
+	setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation,
+		"Cluster successfully fenced")
+	u.advanceToNextPhase()
 
 	return false, nil
 }
@@ -1058,44 +1085,9 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 	return u.cleanClusters([]ramen.DRCluster{*u.object, peerCluster})
 }
 
-// if the fencing CR (via MCV) exists; then
-//
-//	if the status of fencing CR shows fenced
-//	   return dontRequeue, nil
-//	else
-//	   return requeue, error
-//	endif
-//
-// else
-//
-//	Create the fencing CR MW with Fenced state
-//	return requeue, nil
-//
-// endif
-func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
+func (u *drclusterInstance) checkFenceStatus(peerCluster *ramen.DRCluster,
 	networkFenceClassName string,
-) (bool, error) {
-	if !u.isFencingOrFenced() {
-		u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
-
-		if err := u.createNFManifestWork(u.object, peerCluster, u.log, networkFenceClassName); err != nil {
-			setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-				fmt.Sprintf("NetworkFence ManifestWork creation failed: %v", err))
-
-			u.log.Info(fmt.Sprintf("Failed to generate NetworkFence MW on cluster %s to unfence %s",
-				peerCluster.Name, u.object.Name))
-
-			return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s: %w",
-				peerCluster.Name, u.object.Name, err)
-		}
-
-		setDRClusterFencingCondition(&u.object.Status.Conditions, u.object.Generation,
-			"ManifestWork for NetworkFence fence operation created")
-		u.setDRClusterPhase(ramen.Fencing)
-		// just created fencing resource. Requeue and then check.
-		return true, nil
-	}
-
+) error {
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
@@ -1107,11 +1099,11 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
 		// created in the manged cluster or MCV for it might not have been
 		// created yet. This assumption is because, drCluster does not delete
 		// the NetworkFence resource as part of fencing.
-		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w)", err)
+		return fmt.Errorf("failed to get NetworkFence using MCV (error: %w)", err)
 	}
 
 	if nf.Spec.FenceState != csiaddonsv1alpha1.FenceState(u.object.Spec.ClusterFence) {
-		return true, fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
+		return fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
 			u.object.Spec.ClusterFence)
 	}
 
@@ -1121,14 +1113,10 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
 
 		u.log.Info("Fencing operation not successful", "cluster", u.object.Name)
 
-		return true, fmt.Errorf("fencing operation result not successful")
+		return fmt.Errorf("fencing operation result not successful")
 	}
 
-	setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation,
-		"Cluster successfully fenced")
-	u.advanceToNextPhase()
-
-	return false, nil
+	return nil
 }
 
 // if the fencing CR (via MCV) exist; then
