@@ -188,6 +188,12 @@ func (v *VRGInstance) isVGRandVGRCArchivedAlready(vgr *volrep.VolumeGroupReplica
 
 // Upload VGRCs and VGRs to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	if v.instance.Spec.DryRun {
+		log.Info("Skipping upload of VGR and VGRC object to S3 store(s) as VRG is in dry-run mode")
+
+		return nil
+	}
+
 	vgr := &volrep.VolumeGroupReplication{}
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr)
