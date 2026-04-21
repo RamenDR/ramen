@@ -95,8 +95,37 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
 	vrgsExpected []ramen.VolumeReplicationGroup,
 ) {
-	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
-	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
+	Eventually(func() bool {
+		if err := protectedVrgListGet(protectedVrgList); err != nil {
+			return false
+		}
+
+		if protectedVrgList.Status == nil || len(protectedVrgList.Status.Items) == 0 {
+			return false
+		}
+
+		for i := range protectedVrgList.Status.Items {
+			vrgNormalizeDecodedFromS3(&protectedVrgList.Status.Items[i])
+		}
+
+		vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
+
+		matcher := ContainElements(vrgsExpected)
+
+		ok, err := matcher.Match(protectedVrgList.Status.Items)
+		Expect(err).NotTo(HaveOccurred())
+
+		if !ok {
+			protectedVrgList.Status = nil
+			if err := k8sClient.Status().Update(context.TODO(), protectedVrgList); err != nil {
+				return false
+			}
+
+			return false
+		}
+
+		return true
+	}, timeout, interval).Should(BeTrue())
 }
 
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {

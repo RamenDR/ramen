@@ -6,6 +6,7 @@ package controllers_test
 import (
 	"context"
 	"strings"
+	"time"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -201,6 +202,9 @@ func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *
 }
 
 var _ = Describe("DRClusterController", func() {
+	// DRPolicy finalization can exceed default suite timeout under CI; DRCluster reconcile errors (e.g. S3) add delay.
+	drPolicyDeleteEventuallyTimeout := 30 * time.Second
+
 	drclusterDelete := func(drcluster *ramen.DRCluster) {
 		clusterName := drcluster.Name
 		Expect(k8sClient.Delete(context.TODO(), drcluster)).To(Succeed())
@@ -339,7 +343,7 @@ var _ = Describe("DRClusterController", func() {
 		Expect(k8sClient.Delete(context.TODO(), policy)).To(Succeed())
 		Eventually(func() bool {
 			return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: policy.Name}, policy))
-		}, timeout, interval).Should(BeTrue())
+		}, drPolicyDeleteEventuallyTimeout, interval).Should(BeTrue())
 	}
 
 	drpolicyDelete := func(drpolicy *ramen.DRPolicy) {
