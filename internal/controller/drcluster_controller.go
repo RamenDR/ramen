@@ -1218,10 +1218,27 @@ func (u *drclusterInstance) cleanClusters(clusters []ramen.DRCluster) (bool, err
 func (u *drclusterInstance) removeFencingCR(cluster ramen.DRCluster) (bool, error) {
 	u.log.Info(fmt.Sprintf("cleaning the cluster fence resource from the cluster %s", cluster.Name))
 
-	err := u.mwUtil.DeleteManifestWork(fmt.Sprintf(util.ManifestWorkNameFormat,
-		u.object.Name, cluster.Name, util.MWTypeNF), cluster.Name)
+	// Get NFCs to determine which ManifestWorks to delete
+	nfClasses, err := u.getNFClassesFromDRClusterConfig(&cluster)
 	if err != nil {
-		return true, fmt.Errorf("failed to delete NetworkFence resource from cluster %s", cluster.Name)
+		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
+	}
+
+	// Delete ManifestWork for each NetworkFenceClass
+	for _, nfClass := range nfClasses {
+		name := u.object.Name
+		// Append NFC name to match the naming pattern used during creation
+		if nfClass != "" {
+			name += "-" + nfClass
+		}
+
+		mwName := fmt.Sprintf(util.ManifestWorkNameFormat, name, cluster.Name, util.MWTypeNF)
+
+		err := u.mwUtil.DeleteManifestWork(mwName, cluster.Name)
+		if err != nil {
+			return true, fmt.Errorf("failed to delete NetworkFence MW %s from cluster %s: %w",
+				mwName, cluster.Name, err)
+		}
 	}
 
 	return false, nil
