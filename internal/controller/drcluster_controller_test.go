@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
-var NFClassAvailable bool
+var NFClassCount int // Number of NFCs to simulate (0=disabled, 1=single, 2+=multiple)
 
 var cidrs = [][]string{
 	{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
@@ -77,7 +78,16 @@ var baseDRCConfig = &ramen.DRClusterConfig{
 func generateDRCC() *ramen.DRClusterConfig {
 	drcc := baseDRCConfig.DeepCopy()
 	drcc.Status.StorageClasses = []string{"sc1"}
-	drcc.Status.NetworkFenceClasses = []string{"nfc1"}
+
+	// Support multiple NFCs for testing
+	nfClasses := make([]string, NFClassCount)
+
+	for i := 0; i < NFClassCount; i++ {
+		nfClasses[i] = fmt.Sprintf("nfc%d", i+1)
+	}
+
+	drcc.Status.NetworkFenceClasses = nfClasses
+
 	drcc.Status.StorageAccessDetails = []ramen.StorageAccessDetail{
 		{
 			StorageProvisioner: "fake.ramen.com",
@@ -99,9 +109,9 @@ func generateSC() *storagev1.StorageClass {
 	return sc
 }
 
-func generateNFC() *csiaddonsv1alpha1.NetworkFenceClass {
+func generateNFCByName(name string) *csiaddonsv1alpha1.NetworkFenceClass {
 	nfc := baseNFClass.DeepCopy()
-	nfc.Name = "nfc1"
+	nfc.Name = name
 	nfc.Annotations = map[string]string{
 		controllers.StorageIDLabel: "sc1-sid",
 	}
@@ -131,7 +141,7 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, networkFenceClass, 
 
 	nf.Generation = 1
 
-	if NFClassAvailable {
+	if NFClassCount > 0 {
 		nf.Name = strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0", "nfc1"}, "-")
 		nf.Spec.NetworkFenceClassName = "nfc1"
 	}
@@ -143,8 +153,9 @@ func (f FakeMCVGetter) GetNFClassFromManagedCluster(resourceName, managedCluster
 ) (*csiaddonsv1alpha1.NetworkFenceClass, error) {
 	// Guard against test interference: Only return populated NetworkFenceClass when
 	// NFClass is being tested to maintain test isolation for other test suites.
-	if NFClassAvailable {
-		return generateNFC(), nil
+	if NFClassCount > 0 {
+		// Return the NFC matching the requested resourceName
+		return generateNFCByName(resourceName), nil
 	}
 
 	return nil, nil
@@ -156,7 +167,7 @@ func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
 ) (*ramen.DRClusterConfig, error) {
 	// Guard against test interference: Only return populated DRClusterConfig when
 	// NFClass is being tested to maintain test isolation for other test suites.
-	if NFClassAvailable {
+	if NFClassCount > 0 {
 		return generateDRCC(), nil
 	}
 
@@ -167,7 +178,7 @@ func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster 
 ) (*storagev1.StorageClass, error) {
 	// Guard against test interference: Only return populated StorageClass when
 	// NFClass is being tested to maintain test isolation for other test suites.
-	if NFClassAvailable {
+	if NFClassCount > 0 {
 		return generateSC(), nil
 	}
 
@@ -997,9 +1008,9 @@ var _ = Describe("DRClusterController", func() {
 
 		When("provided Fencing value is Fenced where NFClass is available", func() {
 			It("should update NetworkFence correctly with NetworkFenceClass Name", func() {
-				NFClassAvailable = true
+				NFClassCount = 1
 
-				defer func() { NFClassAvailable = false }()
+				defer func() { NFClassCount = 0 }()
 
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -1020,9 +1031,9 @@ var _ = Describe("DRClusterController", func() {
 
 		When("provided Fencing value is Unfenced where NFClass is available", func() {
 			It("reports validated with status fencing as Unfenced", func() {
-				NFClassAvailable = true
+				NFClassCount = 1
 
-				defer func() { NFClassAvailable = false }()
+				defer func() { NFClassCount = 0 }()
 
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
 				drcluster = updateDRClusterParameters(drcluster)
@@ -1041,6 +1052,50 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
+
+		When("provided Fencing value with Multiple NFClasses", func() {
+			It("creates, checks, and cleans up all NetworkFence ManifestWorks", func() {
+				NFClassCount = 2
+
+				defer func() {
+					NFClassCount = 0
+				}()
+
+				// Fence the cluster
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				// Verify fencing succeeds
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+
+				// Unfence the cluster
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
+				drcluster = updateDRClusterParameters(drcluster)
+
+				// Verify unfencing and cleanup succeeds (Clean state means all MWs deleted)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
+						controllers.DRClusterConditionReasonClean),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+			})
+		})
+
 		When("provided Fencing value is empty", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
@@ -1083,9 +1138,9 @@ var _ = Describe("DRClusterController", func() {
 
 		When("provided CIDRs match detected StorageAccessDetails", func() {
 			It("reports validated with reason Succeeded", func() {
-				NFClassAvailable = true
+				NFClassCount = 1
 
-				defer func() { NFClassAvailable = false }()
+				defer func() { NFClassCount = 0 }()
 
 				drcluster.Spec.CIDRs = cidrs[0]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -1106,9 +1161,9 @@ var _ = Describe("DRClusterController", func() {
 
 		When("provided CIDRs do not match detected StorageAccessDetails", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
-				NFClassAvailable = true
+				NFClassCount = 1
 
-				defer func() { NFClassAvailable = false }()
+				defer func() { NFClassCount = 0 }()
 
 				drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // CIDR not in StorageAccessDetails
 				drcluster = updateDRClusterParameters(drcluster)
