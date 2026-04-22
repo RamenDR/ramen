@@ -542,7 +542,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 	// Use the DRPC Protected condition to check if it is true and then allow failover
-	if !d.isProtected() {
+	if d.instance.Spec.DryRun && !d.isProtected() {
 		return !done, nil
 	}
 
