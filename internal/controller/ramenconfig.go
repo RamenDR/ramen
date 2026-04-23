@@ -49,9 +49,6 @@ const (
 	defaultMaxConcurrentReconciles                    = 50
 )
 
-// FIXME
-const NoS3StoreAvailable = "NoS3"
-
 var ControllerType ramendrv1alpha1.ControllerType
 
 func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv1alpha1.RamenConfig {
