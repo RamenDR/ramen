@@ -47,10 +47,12 @@ const (
 	drClusterOperatorClusterServiceVersionNameDefault = drClusterOperatorPackageNameDefault + ".v0.0.1"
 	DefaultCephFSCSIDriverName                        = "openshift-storage.cephfs.csi.ceph.com"
 	VeleroNamespaceNameDefault                        = "velero"
+	veleroNamespaceNameDefaultOCP                     = "openshift-adp"
 	DefaultVolSyncCopyMethod                          = "Snapshot"
 	defaultMaxConcurrentReconciles                    = 50
 	openshiftOperatorsNamespace                       = "openshift-operators"
 	openshiftDRSystemNamespace                        = "openshift-dr-system"
+	openshiftDROpsNamespace                           = "openshift-dr-ops"
 )
 
 // FIXME
@@ -506,6 +508,8 @@ func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader clie
 
 	if sub.Namespace == openshiftOperatorsNamespace {
 		cfg.DrClusterOperator.NamespaceName = openshiftDRSystemNamespace
+		cfg.KubeObjectProtection.VeleroNamespaceName = veleroNamespaceNameDefaultOCP
+		cfg.RamenOpsNamespace = openshiftDROpsNamespace
 	}
 }
 
