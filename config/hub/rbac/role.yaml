@@ -148,6 +148,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - operators.coreos.com
+  resources:
+  - subscriptions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - ramendr.openshift.io
   resources:
   - drclusters
