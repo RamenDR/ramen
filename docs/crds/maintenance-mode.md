@@ -555,8 +555,8 @@ for _, mode := range mmode.Spec.Modes {
 
 ## Related Resources
 
-- [VolumeReplicationGroup](vrg-crd.md) - Creates MaintenanceMode during DR
-  operations
-- [DRCluster](drcluster-crd.md) - Reports maintenance mode status to hub
-- [DRClusterConfig](drclusterconfig-crd.md) - Advertises available storage
+- [VolumeReplicationGroup](volume-replication-group.md) - Creates
+  MaintenanceMode during DR operations
+- [DRCluster](dr-cluster.md) - Reports maintenance mode status to hub
+- [DRClusterConfig](dr-cluster-config.md) - Advertises available storage
   capabilities
