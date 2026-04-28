@@ -12,6 +12,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -200,5 +201,11 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, log
 }
 
 func (f FakeMCVGetter) GetNSFromManagedCluster(managedCluster, resourceName string) (*corev1.Namespace, error) {
+	return nil, nil
+}
+
+func (f FakeMCVGetter) GetRecipeFromManagedCluster(managedCluster, resourceName,
+	resourceNamespace string,
+) (*recipev1.Recipe, error) {
 	return nil, nil
 }
