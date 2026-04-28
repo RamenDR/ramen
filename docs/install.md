@@ -152,10 +152,10 @@ The Recipe CRD is also available at:
 The `ramen-hub-operator` manages disaster recovery orchestration on the OCM hub
 cluster. It controls:
 
-- [DRPlacementControl (DRPC)](drpc-crd.md) - DR operations for individual
+- [DRPlacementControl (DRPC)](crds/dr-placement-control.md) - DR operations for individual
   applications
-- [DRPolicy](drpolicy-crd.md) - DR topology and replication configuration
-- [DRCluster](drcluster-crd.md) - Managed cluster registration and S3 configuration
+- [DRPolicy](crds/dr-policy.md) - DR topology and replication configuration
+- [DRCluster](crds/dr-cluster.md) - Managed cluster registration and S3 configuration
 
 #### Install on Hub Cluster
 
