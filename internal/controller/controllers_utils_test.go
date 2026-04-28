@@ -341,9 +341,9 @@ func drclusterConditionExpect(
 }
 
 func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster, disabled bool) {
-	expectedCount := 9
+	expectedCount := 10
 	if disabled {
-		expectedCount = 4
+		expectedCount = 5
 	}
 
 	clusterName := drcluster.Name
