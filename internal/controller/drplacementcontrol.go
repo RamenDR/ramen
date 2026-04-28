@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -3157,4 +3159,100 @@ func (d *DRPCInstance) filterSCCAnnotations(annotations map[string]string) (map[
 	}
 
 	return filteredAnnotations, nil
+}
+
+func (d *DRPCInstance) ensureRecipeManifestWork(srcCluster, dstCluster string) error {
+	if d.instance.Spec.KubeObjectProtection == nil || d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+		return nil
+	}
+
+	recipeName := d.instance.Spec.KubeObjectProtection.RecipeRef.Name
+	recipeNamespace := d.instance.Spec.KubeObjectProtection.RecipeRef.Namespace
+
+	// Always fetch the latest recipe from source cluster
+	recipe, err := d.reconciler.MCVGetter.GetRecipeFromManagedCluster(srcCluster, recipeName, recipeNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get recipe %s/%s in cluster %s: %w", recipeNamespace, recipeName, srcCluster, err)
+	}
+
+	// Check if recipe MW exists on destination
+	existingMW, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeRecipe, dstCluster)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get recipe MW in cluster %s: %w", dstCluster, err)
+		}
+		// MW doesn't exist, create it
+		return d.mwu.CreateOrUpdateRecipeManifestWork(recipe, dstCluster)
+	}
+
+	// MW exists, check if recipe needs update by comparing Generation or ResourceVersion
+	// Extract existing recipe from ManifestWork and compare
+	if needsUpdate, err := d.recipeNeedsUpdate(existingMW, recipe); err != nil {
+		return fmt.Errorf("failed to check if recipe needs update: %w", err)
+	} else if needsUpdate {
+		d.log.Info("Recipe has been updated, updating ManifestWork",
+			"recipe", recipeName,
+			"namespace", recipeNamespace,
+			"srcCluster", srcCluster,
+			"dstCluster", dstCluster,
+			"generation", recipe.Generation,
+			"resourceVersion", recipe.ResourceVersion)
+
+		return d.mwu.CreateOrUpdateRecipeManifestWork(recipe, dstCluster)
+	}
+
+	return nil
+}
+
+// recipeNeedsUpdate compares the recipe in the ManifestWork with the source recipe
+// Returns true if the recipe needs to be updated
+func (d *DRPCInstance) recipeNeedsUpdate(mw *ocmworkv1.ManifestWork, sourceRecipe *recipev1.Recipe) (bool, error) {
+	if mw == nil || len(mw.Spec.Workload.Manifests) == 0 {
+		return true, nil
+	}
+
+	// Extract recipe from ManifestWork
+	existingRecipe := &recipev1.Recipe{}
+	if err := rmnutil.ExtractResourceFromManifestWork(mw, existingRecipe,
+		schema.GroupVersionKind{
+			Group:   recipev1.GroupVersion.Group,
+			Version: recipev1.GroupVersion.Version,
+			Kind:    "Recipe",
+		}); err != nil {
+		return false, fmt.Errorf("failed to extract recipe from ManifestWork: %w", err)
+	}
+
+	// Compare Spec - this is the most important part
+	if !reflect.DeepEqual(existingRecipe.Spec, sourceRecipe.Spec) {
+		d.log.V(1).Info("Recipe Spec has changed", "recipe", sourceRecipe.Name)
+
+		return true, nil
+	}
+
+	// Compare Labels - only if both have labels
+	// Handle nil vs empty map equivalence
+	if !mapsEqual(existingRecipe.Labels, sourceRecipe.Labels) {
+		d.log.V(1).Info("Recipe Labels have changed", "recipe", sourceRecipe.Name)
+
+		return true, nil
+	}
+
+	// Compare Annotations - only if both have annotations
+	// Handle nil vs empty map equivalence
+	if !mapsEqual(existingRecipe.Annotations, sourceRecipe.Annotations) {
+		d.log.V(1).Info("Recipe Annotations have changed", "recipe", sourceRecipe.Name)
+
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// mapsEqual compares two string maps, treating nil and empty maps as equivalent
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+
+	return reflect.DeepEqual(a, b)
 }
