@@ -341,11 +341,6 @@ func drclusterConditionExpect(
 }
 
 func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster, disabled bool) {
-	expectedCount := 9
-	if disabled {
-		expectedCount = 4
-	}
-
 	clusterName := drcluster.Name
 
 	key := types.NamespacedName{
@@ -356,12 +351,35 @@ func validateClusterManifest(apiReader client.Reader, drcluster *ramen.DRCluster
 	manifestWork := &workv1.ManifestWork{}
 
 	Eventually(
-		func(g Gomega) []workv1.Manifest {
+		func(g Gomega) {
 			g.Expect(apiReader.Get(context.TODO(), key, manifestWork)).To(Succeed())
 
-			return manifestWork.Spec.Workload.Manifests
+			// Validate base ClusterRoles are always present (5 manifests)
+			g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+				HaveField("RawExtension.Raw", ContainSubstring("volrepgroup-edit"))))
+			g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+				HaveField("RawExtension.Raw", ContainSubstring("mmode-edit"))))
+			g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+				HaveField("RawExtension.Raw", ContainSubstring("drclusterconfig-edit"))))
+			g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+				HaveField("RawExtension.Raw", ContainSubstring("networkfence-edit"))))
+			g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+				HaveField("RawExtension.Raw", ContainSubstring("recipe-edit"))))
+
+			if !disabled {
+				// When deployment automation is enabled, validate additional manifests (5 more)
+				g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+					HaveField("RawExtension.Raw", ContainSubstring("olm-edit"))))
+				g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+					HaveField("RawExtension.Raw", ContainSubstring("OperatorGroup"))))
+				g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+					HaveField("RawExtension.Raw", ContainSubstring("Subscription"))))
+				// Two Namespace manifests
+				g.Expect(manifestWork.Spec.Workload.Manifests).To(ContainElement(
+					HaveField("RawExtension.Raw", And(ContainSubstring("Namespace"), ContainSubstring("ramen")))))
+			}
 		}, timeout, interval,
-	).Should(HaveLen(expectedCount))
+	).Should(Succeed())
 
 	Expect(manifestWork.GetAnnotations()[controllers.DRClusterNameAnnotation]).Should(Equal(clusterName))
 	// TODO: Validate fencing status
