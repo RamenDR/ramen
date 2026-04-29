@@ -1317,14 +1317,43 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	return v.updateVR(pvc, volRep, state, log)
 }
 
+// autoResync determines if automatic resynchronization should be enabled for VolumeReplication.
+// It returns true when:
+//   - The replication state is Secondary, AND
+//   - Either: test failover annotation is present (includes cleanup phase)
+//   - Or: VRG action is Failover
 func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 	if state != volrep.Secondary {
+		v.log.Info("AutoResync disabled: replication state is not Secondary",
+			"state", state)
+
 		return false
 	}
 
+	// Check test failover annotation FIRST (before action check)
+	// This ensures AutoResync is enabled during test failover and cleanup,
+	// even when action is restored to Relocate during cleanup
+	isTestFailover := v.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation] ==
+		DRPCTestFailoverDryRunAnnotationValueTrue
+
+	if isTestFailover {
+		v.log.Info("AutoResync enabled for test failover/cleanup",
+			"action", v.instance.Spec.Action,
+			"reason", "test failover annotation present")
+
+		return true
+	}
+
+	// Normal behavior: only Failover action enables AutoResync
 	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover {
+		v.log.Info("AutoResync disabled: action is not Failover",
+			"action", v.instance.Spec.Action)
+
 		return false
 	}
+
+	v.log.Info("AutoResync enabled for failover",
+		"action", v.instance.Spec.Action)
 
 	return true
 }
