@@ -311,6 +311,36 @@ func configMapCreate(
 	return desiredRamenConfig, nil
 }
 
+func disownOLMManagedConfigMap(cm *corev1.ConfigMap, log logr.Logger) {
+	// Older OLM installs created this ConfigMap from the CSV bundle.
+	// When upgrading to a non-OLM-owned ConfigMap, remove ownership metadata so
+	// the ConfigMap is not garbage collected when the old CSV is deleted.
+	if len(cm.OwnerReferences) > 0 {
+		log.Info("Removing ramen configmap owner references",
+			"name", cm.Name,
+			"namespace", cm.Namespace,
+			"ownerReferences", cm.OwnerReferences)
+		cm.OwnerReferences = nil
+	}
+
+	// OLM adds these labels so it can track and reconcile bundle-owned objects.
+	// Remove them when taking ownership of the ConfigMap so OLM no longer treats
+	// it as part of the Subscription/CSV lifecycle.
+	for _, key := range []string{
+		"olm.managed",
+		"operators.coreos.com/odr-hub-operator.openshift-operators",
+	} {
+		if v, ok := cm.Labels[key]; ok {
+			log.Info("Remove ramen config map label",
+				"key", key,
+				"value", v,
+				"name", cm.Name,
+				"namespace", cm.Namespace)
+			delete(cm.Labels, key)
+		}
+	}
+}
+
 func configMapUpdate(
 	ctx context.Context,
 	c client.Client,
@@ -318,6 +348,8 @@ func configMapUpdate(
 	desiredRamenConfig *ramendrv1alpha1.RamenConfig,
 	log logr.Logger,
 ) (*ramendrv1alpha1.RamenConfig, error) {
+	disownOLMManagedConfigMap(userConfigMap, log)
+
 	desiredBytes, err := yaml.Marshal(desiredRamenConfig)
 	if err != nil {
 		return nil, err
