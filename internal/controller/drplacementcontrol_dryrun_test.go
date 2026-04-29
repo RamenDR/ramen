@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -26,6 +27,9 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 	)
 
 	BeforeEach(func() {
+		// Initialize DRClusters with proper S3 profiles
+		populateDRClusters()
+
 		namespace = "test-drpc-dryrun-" + newRandomNamespaceSuffix()
 
 		// Create namespace
@@ -35,6 +39,10 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 			},
 		}
 		Expect(k8sClient.Create(context.TODO(), ns)).To(Succeed())
+
+		// Create managed clusters and DRClusters using existing helpers
+		createManagedClusters(asyncClusters)
+		createDRClustersAsync()
 
 		// Create DRPolicy
 		drPolicy = &rmn.DRPolicy{
@@ -89,6 +97,9 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 			Expect(k8sClient.Delete(context.TODO(), drPolicy)).To(Or(Succeed(), MatchError(ContainSubstring("not found"))))
 		}
 
+		// Cleanup DRClusters
+		deleteDRClustersAsync()
+
 		if namespace != "" {
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 			Expect(k8sClient.Delete(context.TODO(), ns)).To(Or(Succeed(), MatchError(ContainSubstring("not found"))))
@@ -99,6 +110,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		Context("When DryRun is not set (defaults to false)", func() {
 			It("should have DryRun defaulting to false", func() {
 				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.FailoverCluster = East1ManagedCluster
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
 
@@ -115,6 +127,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		Context("When DryRun is explicitly set to true", func() {
 			It("should preserve DryRun=true", func() {
 				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.FailoverCluster = East1ManagedCluster
 				drpc.Spec.DryRun = true
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
@@ -128,12 +141,30 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 					return drpc.Spec.DryRun
 				}, timeout, interval).Should(BeTrue())
 			})
+
+			It("should persist the dry-run annotation on the DRPC", func() {
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
+				drpc.Spec.FailoverCluster = East1ManagedCluster
+				drpc.Spec.DryRun = true
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				Eventually(func() string {
+					latest := &rmn.DRPlacementControl{}
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, latest); err != nil {
+						return ""
+					}
+
+					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
+				}, timeout, interval).Should(Equal("true"))
+			})
 		})
 
 		Context("When DryRun transitions from true to false", func() {
 			It("should update DryRun field successfully", func() {
 				// Create with DryRun=true
 				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.FailoverCluster = East1ManagedCluster
 				drpc.Spec.DryRun = true
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
@@ -174,6 +205,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		Context("When DryRun=true with Failover action", func() {
 			It("should accept the configuration", func() {
 				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.FailoverCluster = East1ManagedCluster
 				drpc.Spec.DryRun = true
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
@@ -190,7 +222,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		Context("When DryRun=true with Relocate action", func() {
 			It("should accept the configuration (though dry-run only applies to Failover)", func() {
 				drpc.Spec.Action = rmn.ActionRelocate
-				drpc.Spec.FailoverCluster = East1ManagedCluster
+				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.DryRun = true
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
 
@@ -206,6 +238,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		Context("When DryRun=false with Failover action", func() {
 			It("should accept normal failover configuration", func() {
 				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.FailoverCluster = East1ManagedCluster
 				drpc.Spec.DryRun = false
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
@@ -222,16 +255,48 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 })
 
 func createUserPlacement(namespace string) client.Object {
-	placement := &corev1.ConfigMap{
+	var numberOfClusters int32 = 1
+
+	placement := &clrapiv1beta1.Placement{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "user-placement-" + newRandomNamespaceSuffix(),
 			Namespace: namespace,
+			Annotations: map[string]string{
+				clrapiv1beta1.PlacementDisableAnnotation: "true",
+			},
 		},
-		Data: map[string]string{
-			"placement": "test",
+		Spec: clrapiv1beta1.PlacementSpec{
+			NumberOfClusters: &numberOfClusters,
+			ClusterSets:      []string{East1ManagedCluster, West1ManagedCluster},
 		},
 	}
 	Expect(k8sClient.Create(context.TODO(), placement)).To(Succeed())
 
+	// Create PlacementDecision for the Placement
+	createPlacementDecisionForPlacement(placement)
+
 	return placement
+}
+
+func createPlacementDecisionForPlacement(placement *clrapiv1beta1.Placement) {
+	placementDecision := &clrapiv1beta1.PlacementDecision{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      placement.Name + "-decision-1",
+			Namespace: placement.Namespace,
+			Labels: map[string]string{
+				"cluster.open-cluster-management.io/decision-group-index": "0",
+				"cluster.open-cluster-management.io/decision-group-name":  "",
+				"cluster.open-cluster-management.io/placement":            placement.Name,
+			},
+		},
+		Status: clrapiv1beta1.PlacementDecisionStatus{
+			Decisions: []clrapiv1beta1.ClusterDecision{
+				{
+					ClusterName: East1ManagedCluster,
+					Reason:      "selected",
+				},
+			},
+		},
+	}
+	Expect(k8sClient.Create(context.TODO(), placementDecision)).To(Succeed())
 }
