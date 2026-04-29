@@ -97,6 +97,11 @@ const (
 	ReasonProtected            = "Protected"
 )
 
+const (
+	// DRPCTestFailoverDryRunAnnotationValueTrue is the value set in the test failover annotation
+	DRPCTestFailoverDryRunAnnotationValueTrue = "true"
+)
+
 type ProgressionStatus string
 
 const (

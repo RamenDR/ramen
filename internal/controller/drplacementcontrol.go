@@ -39,6 +39,9 @@ const (
 
 	// Annotation for application namespace on the managed cluster
 	DRPCAppNamespace = "drplacementcontrol.ramendr.openshift.io/app-namespace"
+
+	// Annotation to mark test failover (dry-run) mode
+	DRPCTestFailoverDryRunAnnotation = "drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"
 )
 
 var (
