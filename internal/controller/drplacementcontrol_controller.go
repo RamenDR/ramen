@@ -237,6 +237,61 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, r.updateDRPCStatus(ctx, drpc, placementObj, logger, nil)
 	}
 
+	// Check for test failover abort (DryRun changed from true to false while annotation still exists)
+	if drpc.Spec.Action == rmn.ActionFailover &&
+		!drpc.Spec.DryRun &&
+		drpc.Annotations["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"] == "true" {
+		logger.Info("DryRun aborted, cleaning up VRG from failover cluster", "drpc", drpc.Name)
+
+		// Create MWUtil for VRG deletion
+		mwu := rmnutil.MWUtil{
+			Client:          r.Client,
+			APIReader:       r.APIReader,
+			Ctx:             ctx,
+			Log:             logger,
+			InstName:        drpc.Name,
+			TargetNamespace: drpc.Namespace,
+		}
+
+		// Delete VRG ManifestWork from failover cluster
+		mwName := mwu.BuildManifestWorkName(rmnutil.MWTypeVRG)
+
+		err := mwu.DeleteManifestWork(mwName, drpc.Spec.FailoverCluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete VRG manifestwork from failover cluster %s: %w",
+				drpc.Spec.FailoverCluster, err)
+		}
+
+		// Check if VRG ManifestWork still exists
+		_, err = mwu.FindManifestWork(mwName, drpc.Spec.FailoverCluster)
+		if err == nil {
+			// VRG ManifestWork still present, requeue until deletion completes
+			logger.Info("VRG ManifestWork deletion in progress, requeuing", "cluster", drpc.Spec.FailoverCluster)
+			//nolint:mnd // 10 second requeue interval for VRG cleanup polling
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+
+		// VRG ManifestWork is gone, cleanup finished
+		logger.Info("VRG ManifestWork deleted successfully", "cluster", drpc.Spec.FailoverCluster)
+
+		// Clear annotation
+		delete(drpc.Annotations, "drplacementcontrol.ramendr.openshift.io/test-failover-dryrun")
+
+		if err := r.Client.Update(ctx, drpc); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Reset DRPC status
+		drpc.Status.Phase = rmn.Deployed
+		drpc.Status.Progression = rmn.ProgressionCompleted
+
+		if err := r.Status().Update(ctx, drpc); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	}
+
 	d, err := r.createDRPCInstance(ctx, drPolicy, drpc, placementObj, ramenConfig, logger)
 	if err != nil && !errors.Is(err, ErrInitialWaitTimeForDRPCPlacementRule) {
 		err2 := r.updateDRPCStatus(ctx, drpc, placementObj, logger, nil)
