@@ -113,25 +113,65 @@ func (d *DRPCInstance) startProcessing() bool {
 func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
-	// Handle test failover cleanup when switching away from test failover to another action
-	if !d.instance.Spec.DryRun {
-		// Check if we need to clean up after exiting test failover
-		if needsCleanup, err := d.cleanupTestFailoverIfNeeded(); err != nil {
-			return false, err
-		} else if needsCleanup {
-			// Requeue to process the new action with a clean slate
-			// Don't update last-action during cleanup to preserve the state before dryRun
-			return false, nil
-		}
+	// Handle test failover transition (annotation management and cleanup)
+	shouldContinue, err := d.handleTestFailoverTransition()
+	if err != nil {
+		return false, err
+	}
 
-		// Only update last-action when not in cleanup progression
-		// This preserves the pre-dryRun state during cleanup process
-		if d.instance.Status.Progression != rmn.ProgressionCleaningUp {
-			rmnutil.AddAnnotation(d.instance, "ramendr.openshift.io/last-action", string(d.instance.Spec.Action))
-		}
+	if !shouldContinue {
+		return false, nil
 	}
 
 	return d.executeAction()
+}
+
+// handleTestFailoverTransition manages test failover lifecycle - adds annotation on entry,
+// triggers cleanup on exit, and removes annotation after cleanup completes.
+// Returns true if processing should continue, false if a requeue is needed.
+func (d *DRPCInstance) handleTestFailoverTransition() (bool, error) {
+	// Annotate DRPC when entering test failover
+	if d.instance.Spec.DryRun {
+		d.log.Info("Entering test failover mode",
+			"action", d.instance.Spec.Action)
+
+		rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
+
+		return true, nil
+	}
+
+	// Check if cleanup is needed
+	d.log.Info("Checking for test failover cleanup",
+		"action", d.instance.Spec.Action,
+		"hasAnnotation", rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation))
+
+	needsCleanup, err := d.cleanupTestFailoverIfNeeded()
+	if err != nil {
+		d.log.Error(err, "Failed to cleanup test failover")
+
+		return false, err
+	}
+
+	if needsCleanup {
+		d.log.Info("Test failover cleanup in progress, requeueing",
+			"progression", d.instance.Status.Progression)
+
+		return false, nil
+	}
+
+	// Remove annotation after cleanup
+	if rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+		d.log.Info("Test failover cleanup completed")
+
+		delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
+	}
+
+	// Update last-action when not in cleanup progression
+	if d.instance.Status.Progression != rmn.ProgressionCleaningUp {
+		rmnutil.AddAnnotation(d.instance, "ramendr.openshift.io/last-action", string(d.instance.Spec.Action))
+	}
+
+	return true, nil
 }
 
 // cleanupTestFailoverIfNeeded cleans up placement decisions when exiting test failover mode.
@@ -2025,6 +2065,7 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+		DRPCTestFailoverDryRunAnnotation:      d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation],
 	}
 
 	// Propagate global VGR label to VRG for consensus checks.
