@@ -71,4 +71,4 @@ spec:
             severity: critical
           annotations:
             description: "DRPC '{{ $labels.obj_name }}' in namespace '{{ $labels.obj_namespace }}' requires manual cleanup. Check DRPC status for details."
-          alert_type: "DisasterRecovery"
+            alert_type: "DisasterRecovery"
