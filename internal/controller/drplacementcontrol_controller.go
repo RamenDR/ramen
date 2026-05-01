@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
@@ -2025,7 +2026,8 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 
 	rmnutil.AddLabel(plDecision, rmnutil.CreatedByRamenLabel, "true")
 
-	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
+	sgv := schema.GroupVersion{Group: clrapiv1beta1.GroupVersion.Group, Version: clrapiv1beta1.GroupVersion.Version}
+	owner := metav1.NewControllerRef(placement, sgv.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
 
 	for index <= MaxPlacementDecisionConflictCount {
