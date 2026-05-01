@@ -1005,17 +1005,67 @@ func (c *cgHandler) cleanupFinalSyncIfComplete(namespace string,
 }
 
 func (c *cgHandler) ensureFinalSyncCleanup(rgs *ramendrv1alpha1.ReplicationGroupSource) error {
+	c.logger.Info("Starting final sync cleanup", "rgsName", rgs.Name)
+
+	// Phase 1: Delete all mount Jobs first
 	for _, rs := range rgs.Status.ReplicationSources {
+		c.logger.V(1).Info("Deleting mount job for RS", "rsName", rs.Name, "namespace", rs.Namespace)
+
+		if err := c.VSHandler.DeleteMountJobForFinalSync(rs.Name, rs.Namespace); err != nil {
+			c.logger.Error(err, "Failed to delete mount job", "rsName", rs.Name)
+
+			return fmt.Errorf("failed to delete mount job for %s/%s: %w", rs.Namespace, rs.Name, err)
+		}
+	}
+
+	// Phase 2: Wait for all Jobs to be fully deleted (pods terminated)
+	allJobsDeleted := true
+
+	for _, rs := range rgs.Status.ReplicationSources {
+		deleted, err := c.VSHandler.WaitForMountJobDeletionForFinalSync(rs.Name, rs.Namespace)
+		if err != nil {
+			c.logger.Error(err, "Error checking mount job deletion status", "rsName", rs.Name)
+
+			return fmt.Errorf("error checking mount job deletion for %s/%s: %w", rs.Namespace, rs.Name, err)
+		}
+
+		if !deleted {
+			c.logger.V(1).Info("Mount job still being deleted", "rsName", rs.Name, "namespace", rs.Namespace)
+
+			allJobsDeleted = false
+		}
+	}
+
+	if !allJobsDeleted {
+		c.logger.Info("Waiting for all mount jobs to be fully deleted before proceeding with PVC cleanup")
+
+		return fmt.Errorf("mount jobs still being deleted, requeuing")
+	}
+
+	c.logger.Info("All mount jobs deleted, proceeding with PVC cleanup")
+
+	// Phase 3: Now safe to clean up PVCs (no pods referencing them)
+	for _, rs := range rgs.Status.ReplicationSources {
+		c.logger.V(1).Info("Running UndoAfterFinalSync", "rsName", rs.Name, "namespace", rs.Namespace)
+
 		err := c.VSHandler.UndoAfterFinalSync(rs.Name, rs.Namespace)
 		if err != nil {
-			return err
+			c.logger.Error(err, "Failed to undo after final sync", "rsName", rs.Name)
+
+			return fmt.Errorf("failed to undo after final sync for %s/%s: %w", rs.Namespace, rs.Name, err)
 		}
+
+		c.logger.V(1).Info("Running CleanupAfterRSFinalSync", "rsName", rs.Name, "namespace", rs.Namespace)
 
 		err = c.VSHandler.CleanupAfterRSFinalSync(rs.Name, rs.Namespace)
 		if err != nil {
-			return err
+			c.logger.Error(err, "Failed to cleanup after RS final sync", "rsName", rs.Name)
+
+			return fmt.Errorf("failed to cleanup after RS final sync for %s/%s: %w", rs.Namespace, rs.Name, err)
 		}
 	}
+
+	c.logger.Info("Final sync cleanup completed successfully", "rgsName", rgs.Name)
 
 	return nil
 }

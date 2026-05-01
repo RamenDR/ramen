@@ -3379,6 +3379,85 @@ func (v *VSHandler) EnsureMountJobForUnmountedPVC(rsSpec *ramendrv1alpha1.VolSyn
 	return v.handleMountJobResult(job, pvcNamespacedName, log)
 }
 
+// DeleteMountJob deletes the mount job for a given PVC if it exists
+func (v *VSHandler) DeleteMountJob(pvcName, pvcNamespace string) error {
+	jobName := util.GetJobName(VolSyncMountJobNamePrefix, pvcName)
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: pvcNamespace,
+		},
+	}
+
+	v.log.V(1).Info("Deleting mount job", "jobName", jobName, "namespace", pvcNamespace)
+
+	err := v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground))
+	if err != nil {
+		if errors.IsNotFound(err) {
+			v.log.V(1).Info("Mount job not found, already deleted", "jobName", jobName)
+
+			return nil
+		}
+
+		v.log.Error(err, "Failed to delete mount job", "jobName", jobName)
+
+		return fmt.Errorf("failed to delete mount job %s/%s: %w", pvcNamespace, jobName, err)
+	}
+
+	v.log.Info("Successfully deleted mount job", "jobName", jobName, "namespace", pvcNamespace)
+
+	return nil
+}
+
+// WaitForMountJobDeletion waits for the mount job and its pods to be fully deleted
+func (v *VSHandler) WaitForMountJobDeletion(pvcName, pvcNamespace string) (bool, error) {
+	jobName := util.GetJobName(VolSyncMountJobNamePrefix, pvcName)
+
+	job := &batchv1.Job{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{
+		Name:      jobName,
+		Namespace: pvcNamespace,
+	}, job)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			v.log.V(1).Info("Mount job fully deleted", "jobName", jobName)
+
+			return true, nil // Job is gone, deletion complete
+		}
+
+		return false, fmt.Errorf("failed to check mount job status %s/%s: %w", pvcNamespace, jobName, err)
+	}
+
+	// Job still exists, check if it's being deleted
+	if job.DeletionTimestamp != nil {
+		v.log.V(1).Info("Mount job deletion in progress", "jobName", jobName,
+			"deletionTimestamp", job.DeletionTimestamp)
+
+		return false, nil // Still deleting, need to wait
+	}
+
+	// Job exists but not marked for deletion - this shouldn't happen
+	v.log.Info("Mount job exists but not marked for deletion", "jobName", jobName)
+
+	return false, fmt.Errorf("mount job %s/%s exists but not marked for deletion", pvcNamespace, jobName)
+}
+
+// DeleteMountJobForFinalSync deletes the mount job for a finalsync PVC
+func (v *VSHandler) DeleteMountJobForFinalSync(pvcName, pvcNamespace string) error {
+	tmpPVCName := util.GetTmpPVCNameForFinalSync(pvcName)
+
+	return v.DeleteMountJob(tmpPVCName, pvcNamespace)
+}
+
+// WaitForMountJobDeletionForFinalSync waits for finalsync mount job deletion
+func (v *VSHandler) WaitForMountJobDeletionForFinalSync(pvcName, pvcNamespace string) (bool, error) {
+	tmpPVCName := util.GetTmpPVCNameForFinalSync(pvcName)
+
+	return v.WaitForMountJobDeletion(tmpPVCName, pvcNamespace)
+}
+
 func (v *VSHandler) mountJobRequired(
 	pvcNamespacedName types.NamespacedName,
 	log logr.Logger,
