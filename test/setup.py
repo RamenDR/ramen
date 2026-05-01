@@ -17,14 +17,14 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/RamenDR/ramen",
-    packages=[
-        "drenv",
-        "drenv.providers",
-        "drenv.providers.lima",
-        "drenv.providers.minikube",
-        "drenv.stress",
-    ],
+    # Discover all packages automatically.
+    packages=setuptools.find_packages(),
+    # Include all non-Python files in all packages (yaml templates,
+    # kustomize files, containerd config, test data, etc.).
     include_package_data=True,
+    package_data={
+        "": ["**/*"],
+    },
     install_requires=[
         "PyYAML",
         "toml",
