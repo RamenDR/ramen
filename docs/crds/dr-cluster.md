@@ -381,7 +381,7 @@ kubectl get drpolicy -o yaml | grep drClusters
 
 ## Related Resources
 
-- [DRPolicy](drpolicy-crd.md) - References DRCluster to define DR topology
-- [DRClusterConfig](drclusterconfig-crd.md) - Managed cluster-side configuration
-- [Configuration Guide](configure.md) - How to configure S3 profiles
-- [Install Guide](install.md) - Prerequisites for DR setup
+- [DRPolicy](dr-policy.md) - References DRCluster to define DR topology
+- [DRClusterConfig](dr-cluster-config.md) - Managed cluster-side configuration
+- [Configuration Guide](../configure.md) - How to configure S3 profiles
+- [Install Guide](../install.md) - Prerequisites for DR setup

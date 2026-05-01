@@ -712,8 +712,8 @@ finalizers (use with caution).
 
 ## Related Resources
 
-- [DRPolicy CRD](drpolicy-crd.md) - Defines DR topology referenced by DRPC
-- [VolumeReplicationGroup CRD](vrg-crd.md) - Created by DRPC on managed
+- [DRPolicy](dr-policy.md) - Defines DR topology referenced by DRPC
+- [VolumeReplicationGroup](volume-replication-group.md) - Created by DRPC on managed
   clusters
-- [Usage Guide](usage.md) - How to protect workloads with Ramen
-- [Recipe Documentation](recipe.md) - For Recipe-based protection
+- [Usage Guide](../usage.md) - How to protect workloads with Ramen
+- [Recipe Documentation](../recipe.md) - For Recipe-based protection

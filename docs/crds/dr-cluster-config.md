@@ -301,7 +301,8 @@ the required labels/annotations will not be discovered by DRClusterConfig.
 
 ## Related Resources
 
-- [DRCluster](drcluster-crd.md) - Hub-side cluster configuration
-- [DRPolicy](drpolicy-crd.md) - Uses peer classes discovered via DRClusterConfig
-- [VolumeReplicationGroup](vrg-crd.md) - Consumes VolumeReplicationClass resources
-- [Configuration Guide](configure.md) - S3 and storage configuration
+- [DRCluster](dr-cluster.md) - Hub-side cluster configuration
+- [DRPolicy](dr-policy.md) - Uses peer classes discovered via DRClusterConfig
+- [VolumeReplicationGroup](volume-replication-group.md) - Consumes
+  VolumeReplicationClass resources
+- [Configuration Guide](../configure.md) - S3 and storage configuration
