@@ -11,6 +11,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,6 +54,7 @@ const (
 	MWTypeVRClass   string = "vrc"
 	MWTypeVGRClass  string = "vgrc"
 	MWTypeDRCConfig string = "drcconfig"
+	MWTypeRecipe    string = "recipe"
 )
 
 type MWUtil struct {
@@ -393,6 +395,44 @@ func Namespace(name string) *corev1.Namespace {
 	}
 }
 
+// Recipe MW creation
+func (mwu *MWUtil) CreateOrUpdateRecipeManifestWork(
+	recipe *recipev1.Recipe, managedClusterNamespace string,
+) error {
+	manifest, err := mwu.GenerateManifest(prepareRecipeForMW(recipe))
+	if err != nil {
+		return err
+	}
+
+	manifests := []ocmworkv1.Manifest{*manifest}
+	mwName := fmt.Sprintf(ManifestWorkNameFormat, mwu.InstName, mwu.TargetNamespace, MWTypeRecipe)
+	manifestWork := mwu.newManifestWork(
+		mwName,
+		managedClusterNamespace,
+		map[string]string{
+			"recipe": recipe.Name,
+		},
+		manifests,
+		map[string]string{},
+	)
+	manifestWork.Spec.DeleteOption = &ocmworkv1.DeleteOption{
+		PropagationPolicy: ocmworkv1.DeletePropagationPolicyTypeOrphan,
+	}
+	_, err = mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
+
+	return err
+}
+
+func prepareRecipeForMW(recipe *recipev1.Recipe) *recipev1.Recipe {
+	recipeCopy := &recipev1.Recipe{
+		TypeMeta:   metav1.TypeMeta{Kind: "Recipe", APIVersion: recipev1.GroupVersion.String()},
+		ObjectMeta: metav1.ObjectMeta{Name: recipe.Name, Namespace: recipe.Namespace},
+	}
+	recipeCopy.Spec = recipe.Spec
+
+	return recipeCopy
+}
+
 func ExtractResourceFromManifestWork(
 	mw *ocmworkv1.ManifestWork,
 	object client.Object,
@@ -459,6 +499,7 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 			mModeClusterRole,
 			drClusterConfigRole,
 			networkFenceClusterRole,
+			recipeClusterRole,
 		},
 		objectsToAppend...,
 	)
@@ -554,6 +595,23 @@ var (
 				APIGroups: []string{csiaddonsv1alpha1.GroupVersion.Group},
 				Resources: []string{"networkfences"},
 				Verbs:     []string{"create", "get", "list", "update", "delete", "watch"},
+			},
+		},
+	}
+
+	recipeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:recipe-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{recipev1.GroupVersion.Group},
+				Resources: []string{"recipes"},
+				Verbs:     []string{"create", "get", "list", "update"},
 			},
 		},
 	}

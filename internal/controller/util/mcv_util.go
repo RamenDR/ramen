@@ -14,6 +14,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -90,6 +91,9 @@ type ManagedClusterViewGetter interface {
 
 	GetNSFromManagedCluster(
 		managedCluster, resourceName string) (*corev1.Namespace, error)
+
+	GetRecipeFromManagedCluster(
+		managedCluster, resourceName, resourceNamespace string) (*recipev1.Recipe, error)
 
 	ListVGRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
@@ -416,6 +420,26 @@ func (m ManagedClusterViewGetterImpl) GetNSFromManagedCluster(cluster, resourceN
 		ns)
 
 	return ns, err
+}
+
+func (m ManagedClusterViewGetterImpl) GetRecipeFromManagedCluster(cluster, resourceName,
+	resourceNamespace string,
+) (*recipev1.Recipe, error) {
+	recipe := &recipev1.Recipe{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		resourceNamespace,
+		cluster,
+		map[string]string{},
+		map[string]string{},
+		BuildManagedClusterViewName(resourceName, resourceNamespace, "recipe"),
+		"Recipe",
+		recipev1.GroupVersion.Group,
+		recipev1.GroupVersion.Version,
+		recipe)
+
+	return recipe, err
 }
 
 func (m ManagedClusterViewGetterImpl) ListVRClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {

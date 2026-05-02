@@ -3158,3 +3158,30 @@ func (d *DRPCInstance) filterSCCAnnotations(annotations map[string]string) (map[
 
 	return filteredAnnotations, nil
 }
+
+func (d *DRPCInstance) ensureRecipeManifestWork(srcCluster, dstCluster string) error {
+	if d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+		return nil
+	}
+
+	recipeName := d.instance.Spec.KubeObjectProtection.RecipeRef.Name
+	recipeNamespace := d.instance.Spec.KubeObjectProtection.RecipeRef.Namespace
+
+	// Ensure recipe MW exists
+	_, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeRecipe, dstCluster)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			recipe, err := d.reconciler.MCVGetter.GetRecipeFromManagedCluster(srcCluster, recipeName, recipeNamespace)
+			if err != nil {
+				return fmt.Errorf("failed to get recipe %s/%s in cluster %s: %w", recipeNamespace, recipeName, srcCluster, err)
+			}
+
+			// Create recipe MW
+			return d.mwu.CreateOrUpdateRecipeManifestWork(recipe, dstCluster)
+		}
+
+		return fmt.Errorf("failed to get recipe MW in cluster %s: %w", srcCluster, err)
+	}
+
+	return nil
+}
