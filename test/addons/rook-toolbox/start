@@ -3,39 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-from drenv import ceph
-from drenv import kubectl
-from drenv import cache
-
-
-def deploy(cluster):
-    print("Deploying rook ceph toolbox")
-    path = cache.get(".", "addons/rook-toolbox-1.18.yaml")
-    kubectl.apply("--filename", path, context=cluster)
-
-
-def wait(cluster):
-    print("Waiting until rook-ceph-tools is rolled out")
-    kubectl.rollout(
-        "status",
-        "deploy/rook-ceph-tools",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
-
-    print("ceph status:")
-    print(ceph.tool(cluster, "ceph", "status").rstrip())
-
+from drenv.addons.rook import toolbox
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-deploy(cluster)
-wait(cluster)
+toolbox.start(cluster)
