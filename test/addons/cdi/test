@@ -3,55 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-from drenv import kubectl
-
-
-def test(cluster):
-    print("Deploying disk")
-    kubectl.apply("--kustomize=pvc", context=cluster)
-
-    print("Deploying data volume")
-    kubectl.apply("--kustomize=dv", context=cluster)
-
-    print("Waiting until pvc test-pvc is bound")
-    kubectl.wait(
-        "pvc/test-pvc",
-        "--for=jsonpath={.status.phase}=Bound",
-        timeout=120,
-        context=cluster,
-    )
-
-    print("Waiting until data volume test-dv is bound")
-    kubectl.wait(
-        "dv/test-dv",
-        "--for=condition=Bound",
-        timeout=120,
-        context=cluster,
-    )
-
-    print("Waiting until pvc test-dv is bound")
-    kubectl.wait(
-        "pvc/test-dv",
-        "--for=jsonpath={.status.phase}=Bound",
-        timeout=120,
-        context=cluster,
-    )
-
-    print("Deletting pvc test-pvc")
-    kubectl.delete("--kustomize=pvc", context=cluster)
-
-    print("Deletting data volume test-dv")
-    kubectl.delete("--kustomize=dv", context=cluster)
-
+from drenv.addons import cdi
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-test(cluster)
+cdi.test(cluster)
