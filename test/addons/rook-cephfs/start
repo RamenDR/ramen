@@ -3,64 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-import drenv
-from drenv import kubectl
-
-STORAGE_CLASS_NAME_PREFIX = "rook-cephfs-"
-FILE_SYSTEMS = ["fs1", "fs2"]
-
-
-def deploy(cluster):
-    for file_system in FILE_SYSTEMS:
-        print("Creating CephFS instance")
-        template = drenv.template("filesystem.yaml")
-        yaml = template.substitute(cluster=cluster, name=file_system)
-        kubectl.apply("--filename=-", input=yaml, context=cluster)
-
-        print("Creating StorageClass")
-        template = drenv.template("storage-class.yaml")
-        storage_class_name = STORAGE_CLASS_NAME_PREFIX + file_system
-        yaml = template.substitute(
-            cluster=cluster, fsname=file_system, name=storage_class_name
-        )
-        kubectl.apply("--filename=-", input=yaml, context=cluster)
-
-    print("Creating SnapshotClass")
-    template = drenv.template("snapshot-class.yaml")
-    storage_class_name = STORAGE_CLASS_NAME_PREFIX + FILE_SYSTEMS[0]
-    yaml = template.substitute(cluster=cluster, scname=storage_class_name)
-    kubectl.apply("--filename=-", input=yaml, context=cluster)
-
-
-def wait(cluster):
-    print("Waiting until Ceph File Systems are ready")
-
-    for file_system in FILE_SYSTEMS:
-        print(f"Waiting until cephfilesystem 'rook-ceph/{file_system}' exists")
-        kubectl.wait(
-            f"cephfilesystem/{file_system}",
-            "--for=create",
-            "--namespace=rook-ceph",
-            context=cluster,
-        )
-        print(f"Waiting until cephfilesystem 'rook-ceph/{file_system}' is ready")
-        kubectl.wait(
-            f"cephfilesystem/{file_system}",
-            "--for=jsonpath={.status.phase}=Ready",
-            "--namespace=rook-ceph",
-            context=cluster,
-        )
-
+from drenv.addons.rook import cephfs
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-deploy(cluster)
-wait(cluster)
+cephfs.start(cluster)
