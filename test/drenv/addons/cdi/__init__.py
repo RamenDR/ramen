@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
-
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-from drenv.addons import cdi
-
-cdi.cache()
+from .cache import cache
+from .start import start
+from .test import test
