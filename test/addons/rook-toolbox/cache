@@ -3,8 +3,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-from drenv import cache
+from drenv.addons.rook import toolbox
 
-os.chdir(os.path.dirname(__file__))
-cache.refresh(".", "addons/rook-toolbox-1.18.yaml")
+toolbox.cache()
