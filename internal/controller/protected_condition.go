@@ -166,8 +166,11 @@ func updateVRGDataProtectedAsPrimary(drpc *rmn.DRPlacementControl,
 	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeDataProtected)
 
 	if condition != nil && condition.ObservedGeneration == vrg.Generation {
-		// VRGConditionReasonReplicating reason is unique to VR based volumes
-		if condition.Reason == VRGConditionReasonReplicating && condition.Status == metav1.ConditionFalse {
+		// The following early return is for Sync DR only: aggregate DataProtected often stays
+		// False/Replicating (Ready overridden in setPVCDataProtectedCondition), which would keep DRPC Protected false
+		// and constant alerts; Async DR still uses genericUpdateProtectedForCondition below.
+		if condition.Reason == VRGConditionReasonReplicating && condition.Status == metav1.ConditionFalse &&
+			vrg.Spec.Sync != nil {
 			return !updated
 		}
 
