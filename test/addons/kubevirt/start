@@ -3,49 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-from drenv import kubectl
-from drenv import cache
-
-NAMESPACE = "kubevirt"
-
-
-def deploy(cluster):
-    print("Deploying kubevirt operator")
-    path = cache.get("operator", "addons/kubevirt-operator-1.6.0.yaml")
-    kubectl.apply("--filename", path, context=cluster)
-
-    print("Waiting until virt-operator is rolled out")
-    kubectl.rollout(
-        "status",
-        "deploy/virt-operator",
-        f"--namespace={NAMESPACE}",
-        context=cluster,
-    )
-
-    print("Deploying kubevirt cr")
-    path = cache.get("cr", "addons/kubevirt-cr-1.6.0.yaml")
-    kubectl.apply("--filename", path, context=cluster)
-
-
-def wait(cluster):
-    print("Waiting until kubevirt cr is available")
-    kubectl.wait(
-        "kubevirt.kubevirt.io/kubevirt",
-        "--for=condition=available",
-        f"--namespace={NAMESPACE}",
-        context=cluster,
-    )
-
+from drenv.addons import kubevirt
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-deploy(cluster)
-wait(cluster)
+kubevirt.start(cluster)
