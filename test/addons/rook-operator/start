@@ -3,46 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-from drenv import kubectl
-from drenv import cache
-
-
-def deploy(cluster):
-    print("Deploying rook ceph operator")
-    path = cache.get(".", "addons/rook-operator-1.18-5.yaml")
-    kubectl.apply("--filename", path, context=cluster)
-
-
-def wait(cluster):
-    print("Waiting until rook ceph operator is rolled out")
-    kubectl.rollout(
-        "status",
-        "deploy/rook-ceph-operator",
-        "--namespace=rook-ceph",
-        # We had random timeout with 300s.
-        timeout=600,
-        context=cluster,
-    )
-
-    print("Waiting until rook ceph operator is ready")
-    kubectl.wait(
-        "pod",
-        "--for=jsonpath={.status.phase}=Running",
-        "--namespace=rook-ceph",
-        "--selector=app=rook-ceph-operator",
-        context=cluster,
-    )
-
+from drenv.addons.rook import operator
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-deploy(cluster)
-wait(cluster)
+operator.start(cluster)
