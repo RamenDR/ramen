@@ -3,35 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-from drenv import kubectl
-from drenv import cache
-
-
-def deploy(cluster):
-    print("Deploying ocm controller")
-    path = cache.get(".", "addons/ocm-controller-2.yaml")
-    kubectl.apply("--filename", path, context=cluster)
-
-
-def wait(cluster):
-    print("Waiting for ocm controller rollout")
-    kubectl.rollout(
-        "status",
-        "deploy/ocm-controller",
-        "--namespace=open-cluster-management",
-        context=cluster,
-    )
-
+from drenv.addons.ocm import controller
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-deploy(cluster)
-wait(cluster)
+controller.start(cluster)

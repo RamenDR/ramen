@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-from drenv.addons.ocm import controller
-
-controller.cache()
+from .start import start
