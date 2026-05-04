@@ -114,7 +114,7 @@ def test_network(valid_env):
 
     # no network
     profile = env["profiles"][0]
-    assert profile["network"] == ""
+    assert profile["network"] == platform_defaults[envfile.SHARED_NETWORK][machine]
 
     # concrete network
     profile = env["profiles"][1]
