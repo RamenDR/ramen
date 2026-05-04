@@ -3,18 +3,13 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
 
-from drenv import kubectl
-from drenv import cache
+from drenv.addons import recipe
 
 if len(sys.argv) != 2:
     sys.exit(f"Usage: {sys.argv[0]} cluster")
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-print("Deploying recipe crd")
-path = cache.get(".", "addons/recipe.yaml")
-kubectl.apply("--filename", path, context=cluster)
+recipe.start(cluster)
