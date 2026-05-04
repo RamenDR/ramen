@@ -49,6 +49,14 @@ def join(broker_info, context, clusterid, cable_driver=None, version=None, log=p
     _watch(*args, log=log)
 
 
+def uninstall(context, log=print):
+    """
+    Run subctl uninstall ... logging progress messages.
+    """
+    args = ["uninstall", "--context", context, "--yes"]
+    _watch(*args, log=log)
+
+
 def export(what, name, context, namespace=None, log=print):
     """
     Run subctl export ... logging progress messages.
