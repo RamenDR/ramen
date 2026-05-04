@@ -4,11 +4,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
-import time
+
+from drenv.addons import error
 
 duration = float(sys.argv[1])
 
-print(f"Error addon will fail in {duration} seconds")
-time.sleep(duration)
-
-sys.exit("Error addon failed")
+error.start(duration)
