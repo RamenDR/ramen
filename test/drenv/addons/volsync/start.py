@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+from drenv import commands
+from drenv import kubectl
+
+NAMESPACE = "volsync-system"
+DEPLOYMENT = "volsync"
+
+
+def start(*clusters):
+    add_helm_repo()
+
+    for cluster in clusters:
+        install_volsync(cluster)
+
+    for cluster in clusters:
+        wait_for_deployment(cluster)
+
+
+def add_helm_repo():
+    print("Adding helm backube repo")
+    cmd = [
+        "helm",
+        "repo",
+        "add",
+        # replace (overwrite) the repo if it already exists.
+        "--force-update",
+        "backube",
+        "https://backube.github.io/helm-charts/",
+    ]
+    for line in commands.watch(*cmd):
+        print(line)
+
+
+def install_volsync(cluster):
+    print(f"Installing volsync in cluster '{cluster}'")
+    cmd = [
+        "helm",
+        "upgrade",
+        "--install",
+        "--create-namespace",
+        "--namespace",
+        NAMESPACE,
+        DEPLOYMENT,
+        "backube/volsync",
+        "--kube-context",
+        cluster,
+    ]
+    for line in commands.watch(*cmd):
+        print(line)
+
+
+def wait_for_deployment(cluster):
+    print(f"Waiting until deployment {DEPLOYMENT} is rolled out in cluster '{cluster}'")
+    kubectl.rollout(
+        "status",
+        f"deploy/{DEPLOYMENT}",
+        f"--namespace={NAMESPACE}",
+        context=cluster,
+    )
