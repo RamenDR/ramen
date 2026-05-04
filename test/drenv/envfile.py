@@ -168,7 +168,7 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("cni", "auto")
     profile.setdefault("cpus", 2)
     profile.setdefault("memory", "4g")
-    profile.setdefault("network", "")
+    profile.setdefault("network", SHARED_NETWORK)
     profile.setdefault("addons", [])
     profile.setdefault("ser", [])
     profile.setdefault("service_cluster_ip_range", None)
