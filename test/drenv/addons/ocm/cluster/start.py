@@ -1,0 +1,192 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import json
+import time
+
+from drenv import cluster as drenv_cluster
+from drenv import clusteradm
+from drenv import kubectl
+
+# Use default image version.
+BUNDLE_VERSION = None
+
+# Use default image registry.
+IMAGE_REGISTRY = None
+
+ADDONS = (
+    {
+        "name": "application-manager",
+        "deployment": "application-manager",
+    },
+    {
+        "name": "governance-policy-framework",
+        "deployment": "governance-policy-framework",
+    },
+    {
+        "name": "config-policy-controller",
+        "deployment": "config-policy-controller",
+    },
+)
+
+ADDONS_NAMESPACE = "open-cluster-management-agent-addon"
+
+# These are deployed when running "addons/ocm-hub/start" on the hub.  We wait
+# for them before we try to join the hub.
+HUB_DEPLOYMENTS = {
+    "open-cluster-management": (
+        "cluster-manager",
+        "governance-policy-addon-controller",
+        "governance-policy-propagator",
+        "multicluster-operators-appsub-summary",
+        "multicluster-operators-channel",
+        "multicluster-operators-placementrule",
+        "multicluster-operators-subscription",
+    ),
+    "open-cluster-management-hub": (
+        "cluster-manager-placement-controller",
+        "cluster-manager-registration-controller",
+        "cluster-manager-registration-webhook",
+        "cluster-manager-work-webhook",
+    ),
+}
+
+
+def start(cluster, hub):
+    deploy(cluster, hub)
+    wait(cluster)
+
+
+def deploy(cluster, hub):
+    wait_for_hub(hub)
+    join_cluster(cluster, hub)
+    wait_for_managed_cluster(cluster, hub)
+    label_cluster(cluster, hub)
+    enable_addons(cluster, hub)
+
+
+def wait(cluster):
+    print("Waiting until deployments are rolled out")
+    for addon in ADDONS:
+        deployment = f"deploy/{addon['deployment']}"
+        print(
+            f"Waiting until deployment '{ADDONS_NAMESPACE}/{addon['deployment']}' exists"
+        )
+        kubectl.wait(
+            deployment,
+            "--for=create",
+            f"--namespace={ADDONS_NAMESPACE}",
+            context=cluster,
+        )
+        print(
+            f"Waiting until deployment '{ADDONS_NAMESPACE}/{addon['deployment']}' is rolled out"
+        )
+        kubectl.rollout(
+            "status",
+            deployment,
+            f"--namespace={ADDONS_NAMESPACE}",
+            context=cluster,
+        )
+
+
+def wait_for_hub(hub):
+    print(f"Waiting until cluster '{hub}' is ready")
+
+    drenv_cluster.wait_until_ready(hub)
+
+    for namespace, deployments in HUB_DEPLOYMENTS.items():
+        print(f"Waiting until namespace '{namespace}' is created on cluster '{hub}'")
+        kubectl.wait(f"namespace/{namespace}", "--for=create", context=hub)
+
+        for name in deployments:
+            deployment = f"deploy/{name}"
+            print(
+                f"Waiting until deployment '{namespace}/{name}' exists on cluster '{hub}'"
+            )
+            kubectl.wait(
+                deployment, "--for=create", f"--namespace={namespace}", context=hub
+            )
+            print(
+                f"Waiting until deployment '{namespace}/{name}' is rolled out on cluster '{hub}'"
+            )
+            kubectl.rollout(
+                "status",
+                deployment,
+                f"--namespace={namespace}",
+                context=hub,
+            )
+
+
+def join_cluster(cluster, hub):
+    print(f"Joining cluster '{hub}'")
+
+    out = clusteradm.get("token", output="json", context=hub)
+    hub_info = json.loads(out)
+
+    clusteradm.join(
+        hub_token=hub_info["hub-token"],
+        hub_apiserver=hub_info["hub-apiserver"],
+        cluster_name=cluster,
+        bundle_version=BUNDLE_VERSION,
+        image_registry=IMAGE_REGISTRY,
+        context=cluster,
+    )
+
+
+def label_cluster(cluster, hub):
+    # Managed cluster must have name=cluster label in addition to
+    # metadata.name.
+    # https://github.com/open-cluster-management-io/multicloud-operators-subscription/issues/16
+    print("Labelling cluster")
+    kubectl.label(
+        f"managedclusters/{cluster}",
+        f"name={cluster}",
+        overwrite=True,
+        context=hub,
+    )
+
+
+def wait_for_managed_cluster(cluster, hub):
+    # The managed cluster is created by the klusterlet deployed by
+    # clusteradm join. In stress testing, registration takes 16-53s on
+    # Linux CI (p95=45s) and 7-35s on macOS (p95=30s). Using 180s to
+    # cover slower environments.
+    start = time.monotonic()
+
+    print(f"Waiting until managed cluster '{cluster}' is created on the hub")
+    kubectl.wait(
+        f"managedcluster/{cluster}",
+        "--for=create",
+        timeout=180,
+        context=hub,
+    )
+
+    print(f"Waiting until managed cluster '{cluster}' hubAcceptsClient is true")
+    kubectl.wait(
+        f"managedcluster/{cluster}",
+        "--for=jsonpath={.spec.hubAcceptsClient}=true",
+        timeout=60,
+        context=hub,
+    )
+
+    for condition in (
+        "HubAcceptedManagedCluster",
+        "ManagedClusterJoined",
+        "ManagedClusterConditionAvailable",
+    ):
+        print(f"Waiting for managed cluster '{cluster}' condition {condition}")
+        kubectl.wait(
+            f"managedcluster/{cluster}",
+            f"--for=condition={condition}",
+            timeout=60,
+            context=hub,
+        )
+
+    elapsed = time.monotonic() - start
+    print(f"managed cluster '{cluster}' became available in {elapsed:.2f} seconds")
+
+
+def enable_addons(cluster, hub):
+    print("Enabling addons")
+    names = [addon["name"] for addon in ADDONS]
+    clusteradm.addon("enable", names=names, clusters=[cluster], context=hub)
