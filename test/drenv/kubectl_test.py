@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
-import os
 import json
 import secrets
 import threading
@@ -13,8 +12,7 @@ import pytest
 
 from drenv import commands
 from drenv import kubectl
-
-EXAMPLE_DEPLOYMENT = os.path.join("addons", "example", "deployment.yaml")
+from drenv.addons import example
 
 # Avoid random timeouts in github.
 TIMEOUT = 30
@@ -51,7 +49,7 @@ def test_exec(tmpenv):
 
 
 def test_apply(tmpenv, capsys):
-    kubectl.apply(f"--filename={EXAMPLE_DEPLOYMENT}", context=tmpenv.profile)
+    kubectl.apply(f"--filename={example.DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment unchanged"
 
