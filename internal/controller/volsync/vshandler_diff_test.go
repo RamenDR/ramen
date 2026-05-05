@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -263,8 +264,19 @@ var _ = Describe("VolSync Handler - Diff sync rollback", func() {
 			currentStateSnapName := "current-state-" + pvcName
 			address := "10.0.0.1"
 
-			lrs, err := vsHandler.ReconcileDiffLocalRS(rd, rdSpec, snapshotRef,
-				currentStateSnapName, pskSecretName, address)
+			// Use retry to handle potential conflicts when updating snapshot labels
+			// The conflict can occur in validateAndProtectSnapshot when it tries to update
+			// the snapshot with labels. Each retry will fetch a fresh snapshot object.
+			var lrs *volsyncv1alpha1.ReplicationSource
+
+			err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				var retryErr error
+
+				lrs, retryErr = vsHandler.ReconcileDiffLocalRS(rd, rdSpec, snapshotRef,
+					currentStateSnapName, pskSecretName, address)
+
+				return retryErr
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lrs).NotTo(BeNil())
 
