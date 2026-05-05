@@ -4,9 +4,9 @@
 # yamllint disable rule:line-length
 ---
 resources:
-  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/crds.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/common.yaml
-  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/operator.yaml
+  - https://raw.githubusercontent.com/Nikhil-Ladha/rook/refs/heads/private-snapshot/deploy/examples/crds.yaml
+  - https://raw.githubusercontent.com/Nikhil-Ladha/rook/refs/heads/private-snapshot/deploy/examples/common.yaml
+  - https://raw.githubusercontent.com/Nikhil-Ladha/rook/refs/heads/private-snapshot/deploy/examples/operator.yaml
 
 patches:
   - target:
@@ -49,3 +49,19 @@ patches:
                     value: 'true'
                   - name: ROOK_CSIADDONS_IMAGE
                     value: quay.io/nladha/csiaddons-sidecar:cg
+                  - name: ROOK_CSI_CEPH_IMAGE
+                    value: quay.io/nladha/cephcsi:cg
+  - target:
+      kind: Deployment
+      name: rook-ceph-operator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: not-used
+      spec:
+        template:
+          spec:
+            containers:
+             - name: rook-ceph-operator
+               image: quay.io/nladha/rook:snapshot
