@@ -78,7 +78,7 @@ func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv
 			HealthProbeBindAddress: ":8081",
 		},
 		Metrics: ramendrv1alpha1.ControllerMetrics{
-			BindAddress: "127.0.0.1:9289",
+			BindAddress: "0.0.0.0:9289",
 		},
 		LeaderElection: &configv1alpha1.LeaderElectionConfiguration{
 			LeaderElect:  &leaderElect,
@@ -136,9 +136,13 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 	if ramenConfig.Metrics.BindAddress == "0" {
 		options.Metrics = metricsserver.Options{BindAddress: "0"}
 	} else {
+		// Use /etc/metrics-certs for OpenShift Service CA certificates
+		// Falls back to auto-generated certs if directory doesn't exist
+		certDir := "/etc/metrics-certs"
 		options.Metrics = metricsserver.Options{
 			BindAddress:    ramenConfig.Metrics.BindAddress,
 			SecureServing:  true,
+			CertDir:        certDir,
 			FilterProvider: filters.WithAuthenticationAndAuthorization,
 		}
 	}
