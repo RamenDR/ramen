@@ -5,6 +5,7 @@ package volsync_test
 
 import (
 	"fmt"
+	"strings"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -161,7 +162,24 @@ var _ = Describe("VolSync Handler - Diff sync rollback", func() {
 				},
 			}
 
-			lrd, err := vsHandler.ReconcileDiffLocalRD(rdSpec, pskSecretName)
+			var lrd *volsyncv1alpha1.ReplicationDestination
+
+			var err error
+
+			// Retry PVC optimistic-lock conflicts (409). Stop without retry when reconcile succeeds or
+			// returns the expected "waiting for address" terminal state (return nil so RetryOnConflict exits).
+			retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				lrd, err = vsHandler.ReconcileDiffLocalRD(rdSpec, pskSecretName)
+
+				// Stop retrying on success or on the expected terminal "waiting" state.
+				if err == nil || strings.Contains(err.Error(), "waiting for address") {
+					return nil
+				}
+
+				return err
+			})
+
+			Expect(retryErr).NotTo(HaveOccurred())
 			// RD is created but address may not be populated yet — expect waiting error
 			if err != nil {
 				Expect(err.Error()).To(ContainSubstring("waiting for address"))
