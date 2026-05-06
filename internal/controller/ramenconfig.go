@@ -135,17 +135,16 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 
 	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
 
-	// Use controller-runtime built-in auth for metrics
 	if ramenConfig.Metrics.BindAddress == "0" {
 		options.Metrics = metricsserver.Options{BindAddress: "0"}
 	} else {
-		// Use /etc/metrics-certs for OpenShift Service CA certificates
-		// Falls back to auto-generated certs if directory doesn't exist
-		certDir := "/etc/metrics-certs"
+		// Use /etc/metrics-certs for OpenShift Service CA or
+		// cert-manager certs. Falls back to auto-generated certs if
+		// directory doesn't exist
 		options.Metrics = metricsserver.Options{
 			BindAddress:    ramenConfig.Metrics.BindAddress,
 			SecureServing:  true,
-			CertDir:        certDir,
+			CertDir:        "/etc/metrics-certs",
 			FilterProvider: filters.WithAuthenticationAndAuthorization,
 		}
 	}
