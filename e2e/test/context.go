@@ -6,7 +6,6 @@ package test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -29,11 +28,10 @@ type Context struct {
 
 func NewContext(
 	parent types.Context,
+	name string,
 	w types.Workload,
 	d types.Deployer,
 ) Context {
-	name := strings.ToLower(d.GetName() + "-" + w.GetName())
-
 	return Context{
 		parent:   parent,
 		context:  parent.Context(),

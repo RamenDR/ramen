@@ -25,6 +25,10 @@ import (
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
+// Matches the deployer name, workload type, and first pvcSpec name from
+// testdata/config.yaml.
+const testContextName = "disapp-deploy-rbd"
+
 func TestGenerateWithNoHooks(t *testing.T) {
 	recipeConfig := &config.Recipe{
 		Type: "generate",
@@ -116,7 +120,7 @@ func TestGenerateWithNoChecks(t *testing.T) {
 	deployer := createDeployer(t, recipeConfig)
 
 	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
-	testContext := test.NewContext(parent, workload, deployer)
+	testContext := test.NewContext(parent, testContextName, workload, deployer)
 
 	_, err := recipes.Generate(&testContext, recipeConfig)
 	if err == nil {
@@ -139,7 +143,7 @@ func TestGenerateWithNoOperations(t *testing.T) {
 	deployer := createDeployer(t, recipeConfig)
 
 	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
-	testContext := test.NewContext(parent, workload, deployer)
+	testContext := test.NewContext(parent, testContextName, workload, deployer)
 
 	_, err := recipes.Generate(&testContext, recipeConfig)
 	if err == nil {
@@ -225,7 +229,7 @@ func createTestContext(t *testing.T, rc *config.Recipe) types.TestContext {
 	deployer := createDeployer(t, rc)
 
 	parent := app.NewContext(context.Background(), cfg, &types.Env{}, zap.NewExample().Sugar())
-	tc := test.NewContext(parent, workload, deployer)
+	tc := test.NewContext(parent, testContextName, workload, deployer)
 
 	return &tc
 }

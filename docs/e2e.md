@@ -176,7 +176,7 @@ tests:
   ...
 ```
 
-The tests are generated from the configuration as
+By default, the test name is generated from the configuration as
 "TestDR/{deployer}-{workload}-{pvcspec}".
 See [Running DR tests](#running-dr-tests) section for complete test list.
 
@@ -187,6 +187,40 @@ has a name, type, and description. The type is used to identify the deployer
 implementation. There are 3 types available, appset, subscr, and disapp. For
 disapp, optional fields for recipe are added. The description provides
 additional context about the deployer.
+
+#### Testing multiple applications
+
+By default, each combination of deployer, workload, and pvcSpec must be unique.
+To run multiple applications with the same configuration, add an explicit
+`name` to each test. This is useful for stress testing storage by running
+multiple applications concurrently on the same storage class.
+
+For example, testing 4 CephFS applications concurrently using the discovered
+application deployer:
+
+```yaml
+tests:
+  - name: cephfs-1
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-2
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-3
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-4
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+```
+
+Each test gets its own namespace (`test-cephfs-1`, `test-cephfs-2`, etc.) and
+independent DR resources. The name must be a valid DNS label (lowercase
+alphanumeric and hyphens, max 63 characters including the namespace prefix).
 
 ### Run specific DR tests
 
