@@ -123,9 +123,25 @@ type Cluster struct {
 }
 
 type Test struct {
+	// Name is an optional unique name for the test. If empty, ContextName()
+	// generates a name from the deployer, workload, and pvcSpec fields.
+	// Use an explicit name to create multiple tests with the same
+	// deployer, workload, and pvcSpec.
+	Name     string `json:"name,omitempty"`
 	Workload string `json:"workload"`
 	Deployer string `json:"deployer"`
 	PVCSpec  string `json:"pvcSpec"`
+}
+
+// ContextName returns the test context name. If Name is set, it is returned
+// as-is. Otherwise, a name is generated from the deployer, workload, and
+// pvcSpec.
+func (t Test) ContextName() string {
+	if t.Name != "" {
+		return t.Name
+	}
+
+	return t.Deployer + "-" + t.Workload + "-" + t.PVCSpec
 }
 
 // Config keeps configuration for e2e tests.
@@ -345,6 +361,11 @@ func validateAccessModes(pvcSpecs []PVCSpec) error {
 	return nil
 }
 
+// validateTests ensures:
+// - All tests have unique context names (see Test.ContextName()).
+// - Tests with explicit names can share the same deployer, workload, and pvcSpec.
+// - The test context name is a valid DNS label.
+// - The test namespace (namespacePrefix + context name) is a valid DNS label.
 func validateTests(config *Config, options *Options) error {
 	// We allow an empty test list so one can run the validation tests or unit tests without a fully configured file.
 	if len(config.Tests) == 0 {
@@ -361,12 +382,19 @@ func validateTests(config *Config, options *Options) error {
 		deployerNames = append(deployerNames, deployer.Name)
 	}
 
-	testsSeen := map[Test]struct{}{}
+	seen := map[string]Test{}
 
 	for _, t := range config.Tests {
-		if _, ok := testsSeen[t]; ok {
-			return fmt.Errorf("duplicate test (deployer: %q, workload: %q, pvcSpec: %q)",
-				t.Deployer, t.Workload, t.PVCSpec)
+		name := t.ContextName()
+
+		if existing, ok := seen[name]; ok {
+			return fmt.Errorf("duplicate test %q:\n\t%+v\n\t%+v", name, existing, t)
+		}
+
+		namespace := config.NamespacePrefix + name
+		if errs := validation.NameIsDNSLabel(namespace, false); len(errs) > 0 {
+			return fmt.Errorf("invalid test name %q: namespace %q is not a valid DNS label: %v",
+				name, namespace, errs)
 		}
 
 		if !slices.Contains(deployerNames, t.Deployer) {
@@ -381,7 +409,7 @@ func validateTests(config *Config, options *Options) error {
 			return fmt.Errorf("invalid test pvcSpec: %q (available %q)", t.PVCSpec, pvcSpecNames)
 		}
 
-		testsSeen[t] = struct{}{}
+		seen[name] = t
 	}
 
 	return nil

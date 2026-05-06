@@ -236,6 +236,12 @@ func TestConfigNotEqual(t *testing.T) {
 			},
 		},
 		{
+			Name: "different test name",
+			Modify: func(c *Config) {
+				c.Tests[0].Name = "modified-name"
+			},
+		},
+		{
 			Name: "different test workload",
 			Modify: func(c *Config) {
 				c.Tests[0].Workload = "modified-workload"
@@ -376,6 +382,173 @@ func TestValidateDeployers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateTests(t *testing.T) {
+	options := &Options{
+		Workloads: []string{"deploy"},
+		Deployers: []string{"appset", "disapp"},
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			config *Config
+		}{
+			{
+				name: "implicit name",
+				config: &Config{
+					NamespacePrefix: "test-",
+					PVCSpecs:        []PVCSpec{{Name: "rbd"}},
+					Deployers:       []Deployer{{Name: "appset", Type: "appset"}},
+					Tests: []Test{
+						{Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+			{
+				name: "max length name",
+				config: &Config{
+					NamespacePrefix: "test-",
+					PVCSpecs:        []PVCSpec{{Name: "rbd"}},
+					Deployers:       []Deployer{{Name: "disapp", Type: "disapp"}},
+					Tests: []Test{
+						{
+							// 58 char name + 5 char prefix "test-" = 63 (max DNS label length).
+							Name:     "a012345678901234567890123456789012345678901234567890123456",
+							Deployer: "disapp",
+							Workload: "deploy",
+							PVCSpec:  "rbd",
+						},
+					},
+				},
+			},
+			{
+				name: "explicit names allow same deployer workload pvcSpec",
+				config: &Config{
+					NamespacePrefix: "test-",
+					PVCSpecs:        []PVCSpec{{Name: "rbd"}},
+					Deployers:       []Deployer{{Name: "disapp", Type: "disapp"}},
+					Tests: []Test{
+						{Name: "app-1", Deployer: "disapp", Workload: "deploy", PVCSpec: "rbd"},
+						{Name: "app-2", Deployer: "disapp", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				if err := validateTests(tt.config, options); err != nil {
+					t.Errorf("valid config %+v, failed: %s", tt.config.Tests, err)
+				}
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			config *Config
+		}{
+			{
+				name: "duplicate implicit names",
+				config: &Config{
+					PVCSpecs:  []PVCSpec{{Name: "rbd"}},
+					Deployers: []Deployer{{Name: "appset", Type: "appset"}},
+					Tests: []Test{
+						{Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"},
+						{Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+			{
+				name: "duplicate explicit names",
+				config: &Config{
+					PVCSpecs:  []PVCSpec{{Name: "rbd"}},
+					Deployers: []Deployer{{Name: "disapp", Type: "disapp"}},
+					Tests: []Test{
+						{Name: "same", Deployer: "disapp", Workload: "deploy", PVCSpec: "rbd"},
+						{Name: "same", Deployer: "disapp", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+			{
+				name: "explicit name collides with implicit name",
+				config: &Config{
+					PVCSpecs:  []PVCSpec{{Name: "rbd"}},
+					Deployers: []Deployer{{Name: "appset", Type: "appset"}},
+					Tests: []Test{
+						{Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"},
+						{Name: "appset-deploy-rbd", Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+			{
+				name: "explicit name with uppercase",
+				config: &Config{
+					NamespacePrefix: "test-",
+					PVCSpecs:        []PVCSpec{{Name: "rbd"}},
+					Deployers:       []Deployer{{Name: "disapp", Type: "disapp"}},
+					Tests: []Test{
+						{Name: "MyTest", Deployer: "disapp", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+			{
+				name: "explicit name with underscores",
+				config: &Config{
+					NamespacePrefix: "test-",
+					PVCSpecs:        []PVCSpec{{Name: "rbd"}},
+					Deployers:       []Deployer{{Name: "disapp", Type: "disapp"}},
+					Tests: []Test{
+						{Name: "my_test", Deployer: "disapp", Workload: "deploy", PVCSpec: "rbd"},
+					},
+				},
+			},
+			{
+				name: "explicit name too long",
+				config: &Config{
+					NamespacePrefix: "test-",
+					PVCSpecs:        []PVCSpec{{Name: "rbd"}},
+					Deployers:       []Deployer{{Name: "disapp", Type: "disapp"}},
+					Tests: []Test{
+						{
+							// 59 char name + 5 char prefix "test-" = 64 (exceeds max DNS label length).
+							Name:     "a0123456789012345678901234567890123456789012345678901234567",
+							Deployer: "disapp",
+							Workload: "deploy",
+							PVCSpec:  "rbd",
+						},
+					},
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				if err := validateTests(tt.config, options); err == nil {
+					t.Errorf("invalid config %+v, did not fail", tt.config.Tests)
+				}
+			})
+		}
+	})
+}
+
+func TestContextName(t *testing.T) {
+	t.Run("implicit name", func(t *testing.T) {
+		test := Test{Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"}
+		if test.ContextName() != "appset-deploy-rbd" {
+			t.Errorf("expected %q, got %q", "appset-deploy-rbd", test.ContextName())
+		}
+	})
+
+	t.Run("explicit name", func(t *testing.T) {
+		test := Test{Name: "my-test", Deployer: "appset", Workload: "deploy", PVCSpec: "rbd"}
+		if test.ContextName() != "my-test" {
+			t.Errorf("expected %q, got %q", "my-test", test.ContextName())
+		}
+	})
 }
 
 func marshal(t *testing.T, obj any) []byte {
