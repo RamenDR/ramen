@@ -269,3 +269,28 @@ tests using a specific one. Example usage:
 ```sh
 ./run.sh -config my_config.yaml
 ```
+
+### Stress testing
+
+Stress test configurations run multiple instances of the same application
+concurrently to investigate storage performance under load. This is useful
+for detecting issues like CephFS quiesce serialization during failover.
+
+Available stress test configurations:
+
+- `config-stress-cephfs.yaml.sample` - 8 CephFS applications
+- `config-stress-rbd.yaml.sample` - 8 RBD applications
+
+To run a CephFS stress test:
+
+```sh
+cat config-stress-cephfs.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
+./run.sh -test.run TestDR
+```
+
+To run an RBD stress test:
+
+```sh
+cat config-stress-rbd.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
+./run.sh -test.run TestDR
+```
