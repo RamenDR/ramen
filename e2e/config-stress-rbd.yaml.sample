@@ -1,0 +1,67 @@
+# Stress test configuration for RBD disaster recovery.
+#
+# Runs 8 RBD applications concurrently using the discovered application
+# deployer. Useful for investigating storage performance under load.
+
+---
+repo:
+  url: "https://github.com/RamenDR/ocm-ramen-samples.git"
+  branch: main
+
+drPolicy: dr-policy-1m
+
+clusterSet: default
+
+pvcspecs:
+  - name: rbd
+    storageclassname: rook-ceph-block
+    accessmodes: ReadWriteOnce
+
+deployers:
+  - name: disapp
+    type: disapp
+    description: "Discovered Application without recipe"
+
+tests:
+  - name: rbd-1
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-2
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-3
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-4
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-5
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-6
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-7
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+  - name: rbd-8
+    deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+
+# Uncomment and edit the following lines to set the cluster
+# kubeconfig paths for the hub and managed clusters.
+# clusters:
+#   hub:
+#     kubeconfig: hub/config
+#   c1:
+#     kubeconfig: dr1/config
+#   c2:
+#     kubeconfig: dr2/config
