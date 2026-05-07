@@ -1,0 +1,7 @@
+# This patch adds the OpenShift service-ca annotation to the metrics Service
+# so that the service-ca operator automatically provisions and rotates a TLS
+# certificate for the metrics endpoint.
+- op: add
+  path: /metadata/annotations
+  value:
+    service.beta.openshift.io/serving-cert-secret-name: metrics-server-cert
