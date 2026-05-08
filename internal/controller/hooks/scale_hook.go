@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
 package hooks
 
 import (
@@ -116,12 +119,39 @@ func (s ScaleHook) Execute(log logr.Logger) error {
 
 	resources, err := s.getResourcesToScale()
 	if err != nil {
+		log.Error(err, "error occurred while fetching resources to scale",
+			"hook", s.Hook.Name,
+			"namespace", s.Hook.Namespace,
+			"operation", s.Hook.Scale.Operation,
+			"selectResource", s.Hook.SelectResource,
+			"nameSelector", s.Hook.NameSelector,
+			"labelSelector", s.Hook.LabelSelector,
+		)
+
 		return err
 	}
 
 	scaleOp := s.Hook.Scale.Operation
 
-	return s.processResources(resources, scaleOp, log)
+	if err := s.processResources(resources, scaleOp, log); err != nil {
+		log.Error(err, "error occurred while processing scale operation",
+			"hook", s.Hook.Name,
+			"namespace", s.Hook.Namespace,
+			"operation", scaleOp,
+			"resourcesCount", len(resources),
+		)
+
+		return err
+	}
+
+	log.Info("scale hook executed successfully",
+		"hook", s.Hook.Name,
+		"namespace", s.Hook.Namespace,
+		"operation", scaleOp,
+		"resourcesScaled", len(resources),
+	)
+
+	return nil
 }
 
 func (s ScaleHook) processResources(resources []client.Object, scaleOp string, log logr.Logger) error {
@@ -193,10 +223,10 @@ func (s ScaleHook) scaleResource(resource Resource, operation string, log logr.L
 	case ScaleSync:
 		return s.SyncResource(resource, log)
 	default:
-		return fmt.Errorf("unsupported scale operation: hook=%s, namespace=%s, operation=%s, resource=%s",
+		return fmt.Errorf("unsupported scale operation=%q: hook=%q namespace=%q resource=%q",
+			operation,
 			s.Hook.Name,
 			s.Hook.Namespace,
-			s.Hook.Scale.Operation,
 			resource.GetObjectMeta().GetName(),
 		)
 	}
