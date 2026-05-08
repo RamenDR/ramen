@@ -11,8 +11,8 @@ resources:
 - ../../rbac/leader_election_role_binding.yaml
 # The following resources support controller-runtime built-in metrics auth
 # (WithAuthenticationAndAuthorization).
-- ../../rbac/auth_proxy_service.yaml
-- ../../rbac/auth_proxy_role.yaml
-- ../../rbac/auth_proxy_role_binding.yaml
-- ../../rbac/auth_proxy_client_clusterrole.yaml
+- ../../rbac/metrics_service.yaml
+- ../../rbac/metrics_auth_role.yaml
+- ../../rbac/metrics_auth_role_binding.yaml
+- ../../rbac/metrics_reader_role.yaml
 - ../../rbac/metrics_role.yaml
