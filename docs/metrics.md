@@ -5,22 +5,23 @@ SPDX-License-Identifier: Apache-2.0
 
 # Metrics
 
-Metrics are collected using Prometheus, and registered with its global
-metrics registry in each controller. There are two ways where you can
-look at the metrics in ramen. One way is use prometheus stack(recommended)
-and the other way is to use curl or postman. More details on
-each of these in the below sections.
+Metrics are collected using Prometheus, and registered with its global metrics registry
+in each controller. There are two ways where you can look at the metrics in ramen. One
+way is use prometheus stack(recommended) and the other way is to use curl or postman.
+More details on each of these in the below sections.
 
-More information on metrics is [here](https://book.kubebuilder.io/reference/metrics.html)
+More information on metrics is
+[here](https://book.kubebuilder.io/reference/metrics.html)
 
 ## 1. Using Prometheus Stack
 
-We recommend to use [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus).
-Installing this will give you a containerized stack that
-includes Prometheus, AlertManager and Grafana.
+We recommend to use
+[kube-prometheus](https://github.com/prometheus-operator/kube-prometheus). Installing
+this will give you a containerized stack that includes Prometheus, AlertManager and
+Grafana.
 
-For more detailed information and querying,
-consider using the Prometheus Operator, but in summary:
+For more detailed information and querying, consider using the Prometheus Operator, but
+in summary:
 
 ### Setup
 
@@ -28,13 +29,13 @@ Follow the next steps before configuring ramen.
 
 #### Installing kube-prometheus
 
-Quickstart instructions are [here](https://github.com/prometheus-operator/kube-prometheus#quickstart).
+Quickstart instructions are
+[here](https://github.com/prometheus-operator/kube-prometheus#quickstart).
 
 #### Grant permission for prometheus to scrape metrics
 
-Go to `ramen/config/hub/default/k8s/kustomization.yaml`
-and uncomment `../../../prometheus`
-and `metrics_role_binding.yaml` under `Kustomization` section.
+Go to `ramen/config/hub/default/k8s/kustomization.yaml` and uncomment
+`../../../prometheus` and `metrics_role_binding.yaml` under `Kustomization` section.
 Next is to install and configure ramen.
 
 #### Dashboard Access
@@ -43,10 +44,9 @@ Next is to install and configure ramen.
 
 ## 2. Basic testing (no Prometheus required)
 
-If running from minikube or a container, expose the port using `port-forward`
-on the hub. The endpoint exposed is `localhost:8443/metrics`. The metrics
-endpoint is protected by controller-runtime built-in auth;
-use a service account token when scraping.
+If running from minikube or a container, expose the port using `port-forward` on the
+hub. The endpoint exposed is `localhost:8443/metrics`. The metrics endpoint is protected
+by controller-runtime built-in auth; use a service account token when scraping.
 
 ### Steps
 
@@ -54,8 +54,8 @@ use a service account token when scraping.
 
 #### 1. Create a ServiceAccount for metrics access
 
-Create a ServiceAccount and bind it to the `ramen-hub-metrics-reader`
-ClusterRole to access the metrics endpoint.
+Create a ServiceAccount and bind it to the `ramen-hub-metrics-reader` ClusterRole to
+access the metrics endpoint.
 
 Create a file named `metrics-reader-sa.yaml`:
 
@@ -122,8 +122,8 @@ If curl can connect, search for your metrics in the output.
 
 All metrics are prefixed with `ramen_`. This makes them easier to find.
 
-To get the list of all the Ramen metrics available and their descriptions,
-run the Ramen code, then run this command (requires `$TOKEN` from the steps above):
+To get the list of all the Ramen metrics available and their descriptions, run the Ramen
+code, then run this command (requires `$TOKEN` from the steps above):
 
 ```bash
 curl -k -s -H "Authorization: Bearer $TOKEN" https://localhost:8443/metrics \

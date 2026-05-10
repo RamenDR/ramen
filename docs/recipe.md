@@ -7,13 +7,13 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Introduction
 
-A recipe is a Kubernetes Custom Resource that defines custom workflows for
-capturing and recovering application resources and volumes during disaster
-recovery (DR) operations. Recipes are part of Ramen's Kubernetes-native Disaster
-Recovery ecosystem, providing vendor-supplied or custom disaster recovery
-specifications for complex stateful applications. While Ramen supports
-multiple workload protection methods (GitOps, discovered applications),
-Recipes are specifically designed for applications that require:
+A recipe is a Kubernetes Custom Resource that defines custom workflows for capturing and
+recovering application resources and volumes during disaster recovery (DR) operations.
+Recipes are part of Ramen's Kubernetes-native Disaster Recovery ecosystem, providing
+vendor-supplied or custom disaster recovery specifications for complex stateful
+applications. While Ramen supports multiple workload protection methods (GitOps,
+discovered applications), Recipes are specifically designed for applications that
+require:
 
 - Strict resource ordering during capture or recovery
 - Custom pre/post hooks for DR operations
@@ -21,17 +21,17 @@ Recipes are specifically designed for applications that require:
 
 **Target Audience:**
 
-- **Software Vendors**: Create Recipes to accompany
-    products, ensuring proper DR protection out-of-the-box.
-- **Advanced Users**: Write custom Recipes when vendors
-    haven't provided them for critical applications
+- **Software Vendors**: Create Recipes to accompany products, ensuring proper DR
+  protection out-of-the-box.
+- **Advanced Users**: Write custom Recipes when vendors haven't provided them for
+  critical applications
 
 **When to use Recipes:**
 
-- **Complex stateful applications** (e.g., databases, middleware) requiring
- custom workflows
-- **Strict resource ordering** required during capture/recovery (e.g.,
- ConfigMaps before Deployments)
+- **Complex stateful applications** (e.g., databases, middleware) requiring custom
+  workflows
+- **Strict resource ordering** required during capture/recovery (e.g., ConfigMaps before
+  Deployments)
 - **Custom hooks needed** for pre/post DR operations
 - **Vendor-provided Recipes** are available for your application
 
@@ -39,44 +39,44 @@ Recipes are specifically designed for applications that require:
 
 - Simple stateless applications (use GitOps or discovered applications)
 - Applications without specific capture/recovery requirements.
-- When vendor-provided Recipes are not available and you lack expertise
- to create custom ones.
+- When vendor-provided Recipes are not available and you lack expertise to create custom
+  ones.
 
 ## Overview
 
-A Recipe defines custom workflows for disaster recovery operations through
- four main components:
+A Recipe defines custom workflows for disaster recovery operations through four main
+components:
 
-- **Groups**: Collections of Kubernetes resources with specific selection
- criteria.
-- **Hooks**: Custom operations (exec, scale, check) executed during workflows.
- These are treated as pre/post operations for backup and restore of application
- resources.
-- **Workflows**: Ordered sequences of groups and hooks for capture (backup)
- and recovery (restore).
-- **Volumes**: Persistent volume selectors for data protection. If provided,
- will take highest precedence.
+- **Groups**: Collections of Kubernetes resources with specific selection criteria.
+- **Hooks**: Custom operations (exec, scale, check) executed during workflows. These are
+  treated as pre/post operations for backup and restore of application resources.
+- **Workflows**: Ordered sequences of groups and hooks for capture (backup) and recovery
+  (restore).
+- **Volumes**: Persistent volume selectors for data protection. If provided, will take
+  highest precedence.
 
-When a VolumeReplicationGroup (VRG) or DRPlacementControl (DRPC) references a
-Recipe, Ramen executes the Recipe's workflows according to VRG's schedule.
-The workflows define the exact order in which resources are captured or
-recovered, ensuring application consistency.
+When a VolumeReplicationGroup (VRG) or DRPlacementControl (DRPC) references a Recipe,
+Ramen executes the Recipe's workflows according to VRG's schedule. The workflows define
+the exact order in which resources are captured or recovered, ensuring application
+consistency.
 
-Recipe source code and additional information can be found [here](https://github.com/RamenDR/recipe).
+Recipe source code and additional information can be found
+[here](https://github.com/RamenDR/recipe).
 
-By default, without Recipes, Kubernetes resources are captured and recovered as
-single, namespaced groups without specific ordering. Recipes provide the
-flexibility to define custom sequences tailored to application requirements.
+By default, without Recipes, Kubernetes resources are captured and recovered as single,
+namespaced groups without specific ordering. Recipes provide the flexibility to define
+custom sequences tailored to application requirements.
 
-**Note:** The terms "capture" and "recover" refer to the DR operations, while
-Recipe workflows are named "backup" and "restore" respectively. Ramen
-automatically maps these operations to the corresponding workflows.
+**Note:** The terms "capture" and "recover" refer to the DR operations, while Recipe
+workflows are named "backup" and "restore" respectively. Ramen automatically maps these
+operations to the corresponding workflows.
 
 ## Requirements
 
-1. Recipe CRD must be installed on the cluster. The base Recipe CRD can be
- found [here](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml).
-1. Velero must be installed for Kubernetes object protection (see [install.md](install.md#velero-for-kube-object-protection))
+1. Recipe CRD must be installed on the cluster. The base Recipe CRD can be found
+   [here](https://github.com/RamenDR/recipe/blob/main/config/crd/bases/ramendr.openshift.io_recipes.yaml).
+1. Velero must be installed for Kubernetes object protection (see
+   [install.md](install.md#velero-for-kube-object-protection))
 1. The Recipe must exist in the namespace referenced by DRPC.
 
 ## Example
@@ -97,9 +97,8 @@ Recover:
 1. Deployments must be recovered after these
 1. All other resources can be restored after this
 
-Volumes:
-PVC volumes associated with the app should be protected, and are identified with
-labelSelector `app=my-app`.
+Volumes: PVC volumes associated with the app should be protected, and are identified
+with labelSelector `app=my-app`.
 
 ### Recipe sample
 
@@ -225,41 +224,41 @@ spec:
 There are several parts of this example to be aware of:
 
 1. **Namespace requirement**: The VRG and Recipe must exist in the same namespace,
-   unless the Recipe's namespace is explicitly specified in `recipeRef.namespace`.
-   If `recipeRef.namespace` is omitted, Ramen assumes the Recipe is in the same
-   namespace as the VRG.
+   unless the Recipe's namespace is explicitly specified in `recipeRef.namespace`. If
+   `recipeRef.namespace` is omitted, Ramen assumes the Recipe is in the same namespace
+   as the VRG.
 
 1. **Workflow names**: Recipe workflows must be named "backup" and "restore" (not
    "capture" and "recover"). Ramen automatically discovers these workflows by name.
 
-1. **Recipe updates**: Once the VRG references a Recipe, users only need to update
-   the Recipe itself to change the capture/recover order or resource types. The VRG
-   will automatically use the updated Recipe.
+1. **Recipe updates**: Once the VRG references a Recipe, users only need to update the
+   Recipe itself to change the capture/recover order or resource types. The VRG will
+   automatically use the updated Recipe.
 
-1. **VRG configuration**: Capture and recover actions are performed on the VRG, not
-   by the Recipe. The VRG controls the scheduling interval, S3 profile information,
-   and sync/async configuration.
+1. **VRG configuration**: Capture and recover actions are performed on the VRG, not by
+   the Recipe. The VRG controls the scheduling interval, S3 profile information, and
+   sync/async configuration.
 
-1. **Group reuse**: Groups can be referenced by arbitrary sequences. If they apply
-   to both a backup workflow and a restore workflow, the group may be reused.
+1. **Group reuse**: Groups can be referenced by arbitrary sequences. If they apply to
+   both a backup workflow and a restore workflow, the group may be reused.
 
-1. **Volumes**: The volumes section in the Recipe automatically determines which
-   PVCs are protected. No additional configuration is needed in the VRG.
+1. **Volumes**: The volumes section in the Recipe automatically determines which PVCs
+   are protected. No additional configuration is needed in the VRG.
 
-1. **Hook prerequisites**: In order to run hooks, the relevant Pods and containers
-   must be running before the hook is executed. This is the responsibility of the
-   user and application, and Recipes do not check for valid Pods prior to running
-   a workflow.
+1. **Hook prerequisites**: In order to run hooks, the relevant Pods and containers must
+   be running before the hook is executed. This is the responsibility of the user and
+   application, and Recipes do not check for valid Pods prior to running a workflow.
 
-1. **Hook execution**: Hooks may use arbitrary commands, but they must be able to
-   run on a valid container found within the app. Hooks can target resources using
-   `nameSelector` (regex pattern) or `labelSelector`. By default, hooks will
-   attempt to run on all matching Pods and search for the specified container.
-   Use `labelSelector` to limit where hooks can run if needed.
+1. **Hook execution**: Hooks may use arbitrary commands, but they must be able to run on
+   a valid container found within the app. Hooks can target resources using
+   `nameSelector` (regex pattern) or `labelSelector`. By default, hooks will attempt to
+   run on all matching Pods and search for the specified container. Use `labelSelector`
+   to limit where hooks can run if needed.
 
 ## Additional usage examples
 
 For more comprehensive examples, advanced use cases, and detailed Recipe specifications,
-see the [Recipe repository README](https://github.com/RamenDR/recipe/blob/main/README.md).
-The repository contains additional examples, best practices, and detailed documentation
-on creating and managing Recipes for various application types.
+see the
+[Recipe repository README](https://github.com/RamenDR/recipe/blob/main/README.md). The
+repository contains additional examples, best practices, and detailed documentation on
+creating and managing Recipes for various application types.

@@ -5,9 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # drenv metrics
 
-The `drenv stress-test report` command automatically collects system metrics
-from Netdata if it is running. This is important to correlate test failures to
-system load.
+The `drenv stress-test report` command automatically collects system metrics from
+Netdata if it is running. This is important to correlate test failures to system load.
 
 ## Installing Netdata
 
@@ -26,11 +25,11 @@ bash /tmp/netdata-kickstart.sh --no-updates --stable-channel
 
 ## Configuring netdata
 
-For stress testing, configure Netdata to use minimal resources and store
-data on disk (persists across restarts, uses less memory).
+For stress testing, configure Netdata to use minimal resources and store data on disk
+(persists across restarts, uses less memory).
 
-Edit `/opt/homebrew/etc/netdata/netdata.conf` (macOS) or
-`/etc/netdata/netdata.conf` (Linux):
+Edit `/opt/homebrew/etc/netdata/netdata.conf` (macOS) or `/etc/netdata/netdata.conf`
+(Linux):
 
 ```
 [cloud]
@@ -68,8 +67,8 @@ Linux:
 sudo systemctl start netdata
 ```
 
-Verify Netdata is running by opening
-[http://localhost:19999](http://localhost:19999) in a browser.
+Verify Netdata is running by opening [http://localhost:19999](http://localhost:19999) in
+a browser.
 
 ## Stop netdata service
 
@@ -89,8 +88,8 @@ sudo systemctl stop netdata
 
 ## Remote access (Linux)
 
-By default Netdata listens on localhost only. To access it from another
-machine, configure it to listen on all interfaces.
+By default Netdata listens on localhost only. To access it from another machine,
+configure it to listen on all interfaces.
 
 Edit `/etc/netdata/netdata.conf`:
 

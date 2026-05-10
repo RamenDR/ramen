@@ -7,11 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **MaintenanceMode** custom resource enables coordination between Ramen
-and storage backends during disaster recovery operations. It is a
-cluster-scoped resource created by Ramen on managed clusters to signal
-storage providers that specific maintenance actions are required before
-proceeding with DR operations.
+The **MaintenanceMode** custom resource enables coordination between Ramen and storage
+backends during disaster recovery operations. It is a cluster-scoped resource created by
+Ramen on managed clusters to signal storage providers that specific maintenance actions
+are required before proceeding with DR operations.
 
 Storage backends use MaintenanceMode to:
 
@@ -19,13 +18,12 @@ Storage backends use MaintenanceMode to:
 - Perform necessary cleanup or synchronization
 - Report readiness back to Ramen
 
-This allows storage providers to integrate custom logic into Ramen's DR
-workflows without Ramen needing to know storage-specific implementation
-details.
+This allows storage providers to integrate custom logic into Ramen's DR workflows
+without Ramen needing to know storage-specific implementation details.
 
-**Lifecycle:** Automatically created by Ramen VRG controller when
-maintenance mode is required. Reconciled by storage provider controllers.
-Deleted when maintenance is complete.
+**Lifecycle:** Automatically created by Ramen VRG controller when maintenance mode is
+required. Reconciled by storage provider controllers. Deleted when maintenance is
+complete.
 
 ## API Group and Version
 
@@ -40,8 +38,7 @@ Deleted when maintenance is complete.
 
 #### `storageProvisioner` (string)
 
-The storage provisioner type that should handle this maintenance mode
-request.
+The storage provisioner type that should handle this maintenance mode request.
 
 **Value:** Must match the provisioner string in the StorageClass being used.
 
@@ -51,13 +48,12 @@ request.
 storageProvisioner: rbd.csi.ceph.com
 ```
 
-**Purpose:** Storage provider controllers watch for MaintenanceMode
-resources where `storageProvisioner` matches their provisioner.
+**Purpose:** Storage provider controllers watch for MaintenanceMode resources where
+`storageProvisioner` matches their provisioner.
 
 #### `targetID` (string)
 
-The storage or replication instance identifier for the specific
-storage backend.
+The storage or replication instance identifier for the specific storage backend.
 
 **Source:** Read from the `ramendr.openshift.io/storageid` or
 `ramendr.openshift.io/replicationid` label on StorageClass or VolumeReplicationClass.
@@ -68,8 +64,8 @@ storage backend.
 targetID: ceph-cluster-1
 ```
 
-**Purpose:** Allows storage providers managing multiple
-backends to identify which instance needs the maintenance action.
+**Purpose:** Allows storage providers managing multiple backends to identify which
+instance needs the maintenance action.
 
 #### `modes` ([]MMode)
 
@@ -86,8 +82,7 @@ modes:
   - Failover
 ```
 
-**Future modes:** Additional modes may be added
-(e.g., Relocate, Backup, etc.)
+**Future modes:** Additional modes may be added (e.g., Relocate, Backup, etc.)
 
 ## Status Fields
 
@@ -113,11 +108,11 @@ status:
 
 ### `observedGeneration` (int64)
 
-The generation of the MaintenanceMode spec that was last
-processed by the storage provider.
+The generation of the MaintenanceMode spec that was last processed by the storage
+provider.
 
-**Use:** Ramen compares this with `metadata.generation`
-to verify the storage provider has processed the latest request.
+**Use:** Ramen compares this with `metadata.generation` to verify the storage provider
+has processed the latest request.
 
 ### `conditions` ([]metav1.Condition)
 
@@ -125,8 +120,8 @@ Standard Kubernetes conditions providing detailed status.
 
 **Condition types:**
 
-- `FailoverActivated` - Indicates failover maintenance mode has
-    been successfully activated
+- `FailoverActivated` - Indicates failover maintenance mode has been successfully
+  activated
 
 **Example:**
 
@@ -223,27 +218,28 @@ status:
 
 1. **VRG Detects Maintenance Mode Requirement:**
 
-    - During failover, VRG checks PVC storage identifiers
-    - Finds `ramendr.openshift.io/maintenancemodes: Failover` label on
-        StorageClass or VolumeReplicationClass
-    - Extracts `storageProvisioner` and `targetID` from labels
+   - During failover, VRG checks PVC storage identifiers
+   - Finds `ramendr.openshift.io/maintenancemodes: Failover` label on StorageClass or
+     VolumeReplicationClass
+   - Extracts `storageProvisioner` and `targetID` from labels
 
 1. **Ramen Creates MaintenanceMode:**
 
-    - Creates MaintenanceMode resource with appropriate spec
-    - Waits for `state: Completed` before proceeding
+   - Creates MaintenanceMode resource with appropriate spec
+   - Waits for `state: Completed` before proceeding
 
 1. **Storage Provider Reconciles:**
 
-    - Controller watches MaintenanceMode with matching `storageProvisioner`
-    - Identifies the specific backend via `targetID`
-    - Performs necessary storage operations (e.g., quiesce, flush, fence)
-    - Updates status to `Progressing` → `Completed`
+   - Controller watches MaintenanceMode with matching `storageProvisioner`
+   - Identifies the specific backend via `targetID`
+   - Performs necessary storage operations (e.g., quiesce, flush, fence)
+   - Updates status to `Progressing` → `Completed`
 
 1. **Ramen Proceeds:**
-    - Detects `state: Completed` and `observedGeneration` matches
-    - Continues with failover operation
-    - Eventually deletes MaintenanceMode after DR operation completes
+
+   - Detects `state: Completed` and `observedGeneration` matches
+   - Continues with failover operation
+   - Eventually deletes MaintenanceMode after DR operation completes
 
 ### Storage Provider Integration
 
@@ -397,8 +393,8 @@ kubectl get maintenancemode <name> -o jsonpath='{.status.conditions}' | jq
 kubectl get maintenancemode <name> -o jsonpath='{.status.conditions[?(@.type=="FailoverActivated")].message}'
 ```
 
-**Solution:** Address the specific error reported in the
-condition message. Common issues:
+**Solution:** Address the specific error reported in the condition message. Common
+issues:
 
 - Storage backend connectivity problems
 - Insufficient permissions
@@ -420,8 +416,8 @@ kubectl describe vrg <vrg-name> -n <namespace>
 kubectl get maintenancemode | grep <storage-provisioner>
 ```
 
-**Solution:** If MaintenanceMode doesn't exist, check if
-StorageClass has maintenance mode labels.
+**Solution:** If MaintenanceMode doesn't exist, check if StorageClass has maintenance
+mode labels.
 
 ### MaintenanceMode Not Created
 
@@ -458,23 +454,24 @@ labels:
 
 1. **Update status promptly:**
 
-    - Set `state: Progressing` immediately
-    - Update to `Completed` as soon as maintenance actions finish
-    - Use descriptive error messages in conditions
+   - Set `state: Progressing` immediately
+   - Update to `Completed` as soon as maintenance actions finish
+   - Use descriptive error messages in conditions
 
 1. **Handle multiple maintenance modes:**
 
-    - One MaintenanceMode per storage provisioner + targetID combination
-    - Support concurrent maintenance operations if applicable
+   - One MaintenanceMode per storage provisioner + targetID combination
+   - Support concurrent maintenance operations if applicable
 
 1. **Implement timeouts:**
 
-    - Storage providers should timeout long-running operations
-    - Report errors via conditions with clear messages
+   - Storage providers should timeout long-running operations
+   - Report errors via conditions with clear messages
 
 1. **Clean up resources:**
-    - Ramen deletes MaintenanceMode after DR operation
-    - Storage providers should clean up any backend state
+
+   - Ramen deletes MaintenanceMode after DR operation
+   - Storage providers should clean up any backend state
 
 ## Storage Provider Implementation Guide
 

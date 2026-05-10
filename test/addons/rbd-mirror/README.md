@@ -2,8 +2,8 @@
 
 ## Enabling debug logs
 
-If Ceph developers require debug logs you can enable them by starting
-the environment with RBD_MIRROR_DEBUG=1:
+If Ceph developers require debug logs you can enable them by starting the environment
+with RBD_MIRROR_DEBUG=1:
 
 ```
 RBD_MIRROR_DEBUG=1 drenv start envs/regional-dr.yaml

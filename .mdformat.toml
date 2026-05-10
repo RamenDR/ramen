@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# mdformat configuration
+# https://mdformat.readthedocs.io/en/stable/users/configuration_file.html
+
+# Line length - mdformat wraps at 88 by default (similar to black)
+wrap = 88

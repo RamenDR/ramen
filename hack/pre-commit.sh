@@ -32,8 +32,8 @@ check_tool() {
         echo "ERROR: $1 is not installed"
         echo "You can install it by running:"
         case "$1" in
-            mdl)
-                echo "  gem install mdl"
+            mdformat)
+                echo "  pip install mdformat mdformat-gfm"
                 ;;
             shellcheck)
                 echo "  dnf install ShellCheck"
@@ -49,21 +49,20 @@ check_tool() {
     fi
 }
 
-# markdownlint: https://github.com/markdownlint/markdownlint
-# https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
-run_mdl() {
-    local tool="mdl"
-    local required_version="0.13.0"
+# mdformat: https://github.com/executablebooks/mdformat
+run_mdformat() {
+    local tool="mdformat"
+    local required_version="0.7.0"
     local detected_version
 
     echo "=====  $tool ====="
 
     check_tool "${tool}"
 
-    detected_version=$("${tool}" --version)
+    detected_version=$("${tool}" --version | cut -d' ' -f2)
     check_version "${detected_version}" "${required_version}" "${tool}"
 
-    get_files ".*\.md" | xargs -0 -r "${tool}" --style "${scriptdir}/mdl-style.rb" | tee -a "${OUTPUTS_FILE}"
+    get_files ".*\.md$" | xargs -0 -r "${tool}" --check | tee -a "${OUTPUTS_FILE}"
     echo
     echo
 }
@@ -103,7 +102,7 @@ run_yamllint() {
 }
 
 
-run_mdl
+run_mdformat
 run_shellcheck
 run_yamllint
 

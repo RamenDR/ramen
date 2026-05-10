@@ -5,18 +5,18 @@ SPDX-License-Identifier: Apache-2.0
 
 # Installing Ramen
 
-This guide describes how to install Ramen's disaster recovery operators on your
-cluster environment.
+This guide describes how to install Ramen's disaster recovery operators on your cluster
+environment.
 
 ## Overview
 
 Ramen consists of two operators that work together to provide disaster recovery
 capabilities:
 
-1. **Ramen Hub Operator** - Installed on the OCM hub cluster, orchestrates DR
-   operations across managed clusters
-1. **Ramen DR Cluster Operator** - Installed on each OCM managed cluster,
-   manages local volume replication and workload protection
+1. **Ramen Hub Operator** - Installed on the OCM hub cluster, orchestrates DR operations
+   across managed clusters
+1. **Ramen DR Cluster Operator** - Installed on each OCM managed cluster, manages local
+   volume replication and workload protection
 
 ## Prerequisites
 
@@ -30,22 +30,21 @@ Before installing Ramen, ensure the following requirements are met:
 
 ### 2. Open Cluster Management (OCM) Setup
 
-Ramen requires an
-[OCM](https://open-cluster-management.io/docs/concepts/architecture/) hub cluster
-with at least two managed clusters for disaster recovery operations.
+Ramen requires an [OCM](https://open-cluster-management.io/docs/concepts/architecture/)
+hub cluster with at least two managed clusters for disaster recovery operations.
 
 **Requirements:**
 
 - OCM hub cluster with `multicluster-engine`, `ocm-controller` (from
-  multicloud-operators-foundation), and hub addons
-  (`application-manager`, `governance-policy-framework`)
-- OCM managed cluster addons on each managed cluster:
-  `application-manager`, `governance-policy-framework`, and
-  `config-policy-controller`
+  multicloud-operators-foundation), and hub addons (`application-manager`,
+  `governance-policy-framework`)
+- OCM managed cluster addons on each managed cluster: `application-manager`,
+  `governance-policy-framework`, and `config-policy-controller`
 - At least 2 managed clusters registered with the hub
 - All clusters must be able to communicate with each other
 
-For OCM installation instructions, see the [OCM installation guide](https://open-cluster-management.io/docs/getting-started/installation/).
+For OCM installation instructions, see the
+[OCM installation guide](https://open-cluster-management.io/docs/getting-started/installation/).
 
 ### 3. Storage Replication Support
 
@@ -53,55 +52,51 @@ Ramen supports two disaster recovery modes, each with different storage requirem
 
 #### Sync Mode (Metro DR)
 
-Sync mode uses an external storage cluster that all managed clusters connect
-to, providing all clusters access to the same storage backend.
+Sync mode uses an external storage cluster that all managed clusters connect to,
+providing all clusters access to the same storage backend.
 
 **Supported:**
 
-- Any CSI-compatible storage systems that support shared external storage
-    clusters
-- CSI drivers that support static provisioning for PVCs and can attach the
-    same storage when a PV is transferred between clusters sharing the same
-    storage backend
+- Any CSI-compatible storage systems that support shared external storage clusters
+- CSI drivers that support static provisioning for PVCs and can attach the same storage
+  when a PV is transferred between clusters sharing the same storage backend
 
 **Required:**
 
 - External storage cluster
 - Storage provider installed that supports CSI and synchronous replication
-- StorageClasses on managed clusters with the same
-    `ramendr.openshift.io/storageid` labels (indicating shared storage)
-- Low-latency network connectivity between managed clusters and the external
-    storage cluster
+- StorageClasses on managed clusters with the same `ramendr.openshift.io/storageid`
+  labels (indicating shared storage)
+- Low-latency network connectivity between managed clusters and the external storage
+  cluster
 
 #### Async Mode (Regional DR)
 
-Async mode uses storage in each managed cluster with asynchronous replication
-between clusters based on configurable time intervals.
+Async mode uses storage in each managed cluster with asynchronous replication between
+clusters based on configurable time intervals.
 
 **Supported:**
 
-- Any CSI-compatible storage that supports VolumeReplication or
-    VolumeSnapshot
+- Any CSI-compatible storage that supports VolumeReplication or VolumeSnapshot
 
 **Required:**
 
 - Storage provider installed in each managed cluster that supports CSI and
-    VolumeReplication or VolumeSnapshot
-- StorageClasses on managed clusters with different
-    `ramendr.openshift.io/storageid` labels (indicating separate storage
-    instances)
-- [VolumeReplication](https://github.com/csi-addons/volume-replication-operator)
-    CRD and VolumeReplicationClass OR VolSync operator and VolumeSnapshotClass
+  VolumeReplication or VolumeSnapshot
+- StorageClasses on managed clusters with different `ramendr.openshift.io/storageid`
+  labels (indicating separate storage instances)
+- [VolumeReplication](https://github.com/csi-addons/volume-replication-operator) CRD and
+  VolumeReplicationClass OR VolSync operator and VolumeSnapshotClass
 - Network connectivity between managed clusters for replication
 
-For information about installing storage providers that support CSI, see your
-storage vendor's documentation or the
+For information about installing storage providers that support CSI, see your storage
+vendor's documentation or the
 [Kubernetes CSI documentation](https://kubernetes-csi.github.io/docs/).
 
 ### 4. S3 Object Storage
 
-Ramen stores workload metadata and Ramen resources in S3-compatible object
-storage for cross-cluster recovery.
+Ramen stores workload metadata and Ramen resources in S3-compatible object storage for
+cross-cluster recovery.
 
 **Requirements:**
 
@@ -120,7 +115,8 @@ Ramen operators are distributed via OLM catalogs.
 **Requirements:**
 
 - OLM installed on hub and managed clusters
-- For vanilla Kubernetes, [install OLM](https://olm.operatorframework.io/docs/getting-started/)
+- For vanilla Kubernetes,
+  [install OLM](https://olm.operatorframework.io/docs/getting-started/)
 
 ### 6. Required Tools
 
@@ -149,11 +145,10 @@ The Recipe CRD is also available at:
 
 ### Step 1: Install Ramen Hub Operator
 
-The `ramen-hub-operator` manages disaster recovery orchestration on the OCM hub
-cluster. It controls:
+The `ramen-hub-operator` manages disaster recovery orchestration on the OCM hub cluster.
+It controls:
 
-- [DRPlacementControl (DRPC)](drpc-crd.md) - DR operations for individual
-  applications
+- [DRPlacementControl (DRPC)](drpc-crd.md) - DR operations for individual applications
 - [DRPolicy](drpolicy-crd.md) - DR topology and replication configuration
 - [DRCluster](drcluster-crd.md) - Managed cluster registration and S3 configuration
 
@@ -209,8 +204,8 @@ Install the catalog source:
 kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=main"
 ```
 
-The DR Cluster operator will be installed automatically during configuration.
-Refer to [configure.md](configure.md) for more details.
+The DR Cluster operator will be installed automatically during configuration. Refer to
+[configure.md](configure.md) for more details.
 
 ## Post-Installation
 
@@ -218,8 +213,8 @@ After installing Ramen operators, you need to configure them for your environmen
 
 ### Next Steps
 
-**Configure Ramen** - Set up DRPolicy, DRCluster resources, and S3 storage.
-See [configure.md](configure.md) for detailed configuration instructions.
+**Configure Ramen** - Set up DRPolicy, DRCluster resources, and S3 storage. See
+[configure.md](configure.md) for detailed configuration instructions.
 
 ### Configuration Prerequisites
 
@@ -227,19 +222,19 @@ Before configuring Ramen, prepare the following information:
 
 - **S3 credentials** for each managed cluster
 
-    - Bucket names
-    - Access key and secret key
-    - S3 endpoint URL
+  - Bucket names
+  - Access key and secret key
+  - S3 endpoint URL
 
 - **Cluster information**
 
-    - Managed cluster names (as registered in OCM)
-    - Storage class names for PVCs
-    - VolumeReplicationClass or VolumeSnapshotClass names
+  - Managed cluster names (as registered in OCM)
+  - Storage class names for PVCs
+  - VolumeReplicationClass or VolumeSnapshotClass names
 
 - **Replication schedule** (for async DR)
 
-    - How often to replicate (e.g., "5m", "1h")
+  - How often to replicate (e.g., "5m", "1h")
 
 ## Troubleshooting Installation
 
@@ -288,8 +283,8 @@ kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager --tail=100
 
 ### Rollback Installation
 
-**Note:** If Ramen has been configured, roll back configurations before rolling
-back the installation.
+**Note:** If Ramen has been configured, roll back configurations before rolling back the
+installation.
 
 **Remove hub operator:**
 
@@ -315,7 +310,7 @@ kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=
 
 For development and testing, see:
 
-- [user-quick-start.md](user-quick-start.md) - Complete test environment setup
-  with drenv
-- [devel-quick-start.md](devel-quick-start.md) - Developer setup for
-  contributing to Ramen
+- [user-quick-start.md](user-quick-start.md) - Complete test environment setup with
+  drenv
+- [devel-quick-start.md](devel-quick-start.md) - Developer setup for contributing to
+  Ramen

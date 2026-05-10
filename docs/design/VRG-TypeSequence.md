@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-RamenDR can use Velero to capture Kubernetes object information. By default,
-Velero will back up all object types in arbitrary order. However, many
-applications have internal dependencies that require specific ordering by
-object type. The VRG Type Sequencer attempts to address this deficiency by
-taking multiple partial backups, with the order defined a the user.
+RamenDR can use Velero to capture Kubernetes object information. By default, Velero will
+back up all object types in arbitrary order. However, many applications have internal
+dependencies that require specific ordering by object type. The VRG Type Sequencer
+attempts to address this deficiency by taking multiple partial backups, with the order
+defined a the user.
 
 ## Example Use Case: Backup
 
@@ -19,11 +19,12 @@ taking multiple partial backups, with the order defined a the user.
 
 Take an example Backup that requires the following sequence:
 
-1) ConfigMaps and Secrets first
-2) Custom namespace-scoped resources sample1.cpd.ibm.com, sample2.cpd.ibm.com, sample3.cpd.ibm.com
-3) Deployments after that
-4) Everything else after that, including cluster-scoped resources, but with
-   app-label matching
+1. ConfigMaps and Secrets first
+1. Custom namespace-scoped resources sample1.cpd.ibm.com, sample2.cpd.ibm.com,
+   sample3.cpd.ibm.com
+1. Deployments after that
+1. Everything else after that, including cluster-scoped resources, but with app-label
+   matching
 
 ### YAML example
 
@@ -58,10 +59,10 @@ spec:
 
 Take an example Restore that requires the following sequence:
 
-1) Secrets and ConfigMaps before anything else (but in any order)
-2) Any resource matching the suffix cpd.ibm.com
-3) Any resource that isn't a Deployment
-4) Anything else
+1. Secrets and ConfigMaps before anything else (but in any order)
+1. Any resource matching the suffix cpd.ibm.com
+1. Any resource that isn't a Deployment
+1. Anything else
 
 ### YAML example
 
@@ -93,8 +94,8 @@ spec:
 
 ### Capture/Backup locations
 
-This will take several Velero backups in a sequence. The S3 contents are
-organized as follows for the example above:
+This will take several Velero backups in a sequence. The S3 contents are organized as
+follows for the example above:
 
 ```bash
 /s3bucket
@@ -122,15 +123,15 @@ namespaceName = myApp
 vrgName = vrg1
 ```
 
-The first backup would have path `minio/velero/backups/myApp-vrg1-0`, which
-contains Deployment backups.
+The first backup would have path `minio/velero/backups/myApp-vrg1-0`, which contains
+Deployment backups.
 
 ### Recovery/Restore locations
 
-Users are not restricted to maintaining a consistent Backup/Capture and
-Recovery/Restore order. Additionally, Velero requires specifying a backup name
-from which Kube objects can be recovered. As a result, Ramen needs to match
-an existing sub-backup to a sub-restore.
+Users are not restricted to maintaining a consistent Backup/Capture and Recovery/Restore
+order. Additionally, Velero requires specifying a backup name from which Kube objects
+can be recovered. As a result, Ramen needs to match an existing sub-backup to a
+sub-restore.
 
 In the example above, the restore objects will match the objects as follows:
 
@@ -142,14 +143,13 @@ In the example above, the restore objects will match the objects as follows:
 
 ## Design points
 
-1. Apps that span multiple namespaces: VRG backup type sequencing is limited
-   to the same namespace as the VRG itself. If an application spans multiple
-   namespaces, then a type sequence should be specified on each VRG in each
-   namespace.
+1. Apps that span multiple namespaces: VRG backup type sequencing is limited to the same
+   namespace as the VRG itself. If an application spans multiple namespaces, then a type
+   sequence should be specified on each VRG in each namespace.
 
 ## FAQ
 
-1. Will this require Velero? What if I want to use OADP?
-  By default, Velero resources are assumed to be in the `velero` namespace. To
-  use a different namespace, use the override functionality in the Ramen ConfigMap's
-  `VeleroNamespaceName` field. For example `VeleroNamespaceName=openshift-adp`.
+1. Will this require Velero? What if I want to use OADP? By default, Velero resources
+   are assumed to be in the `velero` namespace. To use a different namespace, use the
+   override functionality in the Ramen ConfigMap's `VeleroNamespaceName` field. For
+   example `VeleroNamespaceName=openshift-adp`.

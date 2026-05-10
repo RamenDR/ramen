@@ -5,11 +5,10 @@ SPDX-License-Identifier: Apache-2.0
 
 # Registry cache for minikube clusters
 
-The registry cache provides pull-through caching for upstream container
-registries. This speeds up image pulls and reduces network traffic.
+The registry cache provides pull-through caching for upstream container registries. This
+speeds up image pulls and reduces network traffic.
 
-> [!TIP]
-> See [Initial setup - Linux](#initial-setup---linux) or
+> [!TIP] See [Initial setup - Linux](#initial-setup---linux) or
 > [Initial setup - macOS](#initial-setup---macos) for first-time configuration.
 
 ## Architecture
@@ -68,27 +67,27 @@ sequenceDiagram
 ## Port assignments
 
 | Port | Upstream Registry |
-|------|-------------------|
-| 5051 | quay.io |
-| 5052 | docker.io |
-| 5053 | registry.k8s.io |
-| 5054 | ghcr.io |
-| 5055 | gcr.io |
+| ---- | ----------------- |
+| 5051 | quay.io           |
+| 5052 | docker.io         |
+| 5053 | registry.k8s.io   |
+| 5054 | ghcr.io           |
+| 5055 | gcr.io            |
 
 ## Lifecycle
 
-Cache containers are created by `drenv setup` and kept running across
-`drenv cleanup` and `drenv setup` cycles. This preserves the in-memory
-metadata cache, which provides near 100% hit rate after the first run.
+Cache containers are created by `drenv setup` and kept running across `drenv cleanup`
+and `drenv setup` cycles. This preserves the in-memory metadata cache, which provides
+near 100% hit rate after the first run.
 
-- `drenv setup`: Creates cache containers if they don't exist, or
-  recreates them if the configuration has changed. Running containers
-  with current configuration are not touched.
-- `drenv cleanup`: Keeps cache containers running. Previously cleanup
-  removed the containers, discarding the in-memory cache and causing
-  hundreds of unnecessary cache misses on the next start.
-- `drenv registry-cache remove`: Removes cache containers manually.
-  Useful for development and testing of the registry cache.
+- `drenv setup`: Creates cache containers if they don't exist, or recreates them if the
+  configuration has changed. Running containers with current configuration are not
+  touched.
+- `drenv cleanup`: Keeps cache containers running. Previously cleanup removed the
+  containers, discarding the in-memory cache and causing hundreds of unnecessary cache
+  misses on the next start.
+- `drenv registry-cache remove`: Removes cache containers manually. Useful for
+  development and testing of the registry cache.
 
 ## Initial setup - Linux
 
@@ -101,8 +100,8 @@ sudo firewall-cmd --zone=libvirt --add-service=registry-cache --permanent
 sudo firewall-cmd --reload
 ```
 
-This allows minikube VMs to access the pull-through cache containers
-running on the host.
+This allows minikube VMs to access the pull-through cache containers running on the
+host.
 
 ## Initial setup - macOS
 
@@ -115,8 +114,8 @@ sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add "$gvproxy"
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblock "$gvproxy"
 ```
 
-This allows minikube VMs to access all podman published ports, including
-the registry cache.
+This allows minikube VMs to access all podman published ports, including the registry
+cache.
 
 ## Managing the cache
 
@@ -180,8 +179,7 @@ Example output:
 The metrics are:
 
 - **hits**: cache lookups that returned a cached result
-- **misses**: cache lookups where the item was not cached (fetched
-  from upstream)
+- **misses**: cache lookups where the item was not cached (fetched from upstream)
 - **errors**: unexpected cache failures (not normal misses)
 - **hit_rate**: percentage of requests served from cache
 
@@ -193,9 +191,9 @@ To remove all cache containers:
 drenv registry-cache remove
 ```
 
-Cache containers are kept running across `drenv cleanup` cycles to
-preserve the in-memory metadata cache. This command is useful for
-development and testing of the registry cache.
+Cache containers are kept running across `drenv cleanup` cycles to preserve the
+in-memory metadata cache. This command is useful for development and testing of the
+registry cache.
 
 ### Checking containers
 

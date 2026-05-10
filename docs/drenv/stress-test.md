@@ -5,50 +5,43 @@ SPDX-License-Identifier: Apache-2.0
 
 # drenv stress test
 
-The drenv stress test evaluates `drenv start` robustness and helps
-debug failed runs.
+The drenv stress test evaluates `drenv start` robustness and helps debug failed runs.
 
 ## Setup
 
-Before running stress tests install *Netdata* on the host to allow correlating
-test failures with system load. See [metrics](/docs/drenv/metrics.md) for more
-info.
+Before running stress tests install *Netdata* on the host to allow correlating test
+failures with system load. See [metrics](/docs/drenv/metrics.md) for more info.
 
 ## Running stress test
 
-In this example we run 100 runs starting the regional-dr environment. If
-a run fails, we delete the clusters and continue. This is useful for
-understanding what are the most common failures.
+In this example we run 100 runs starting the regional-dr environment. If a run fails, we
+delete the clusters and continue. This is useful for understanding what are the most
+common failures.
 
 ```
 drenv stress-test run -r 100 -o out/before envs/regional-dr.yaml
 ```
 
-This creates the output directory, logging each run in a separate log
-file, and saving test results in `test.json` file.
+This creates the output directory, logging each run in a separate log file, and saving
+test results in `test.json` file.
 
 ## Debugging a failed run
 
-To stop after the first failure, leaving the clusters running for inspection,
-use:
+To stop after the first failure, leaving the clusters running for inspection, use:
 
 ```
 drenv stress-test run -r 100 -x envs/regional-dr.yaml
 ```
 
-Because the failures are random, a run may fail very quickly or only
-after many hours. As drenv becomes more reliable debugging random
-failures will become harder.
+Because the failures are random, a run may fail very quickly or only after many hours.
+As drenv becomes more reliable debugging random failures will become harder.
 
-> [!IMPORTANT]
-> After debugging the failure, you need to delete the environment
-> manually.
+> [!IMPORTANT] After debugging the failure, you need to delete the environment manually.
 
 ## Generating a report
 
-After a test run, generate a report with failure analysis and system
-metrics. The command collects metrics from Netdata (if installed) and
-generates the report:
+After a test run, generate a report with failure analysis and system metrics. The
+command collects metrics from Netdata (if installed) and generates the report:
 
 ```
 drenv stress-test report out
@@ -72,13 +65,13 @@ Compare timing statistics from two stress test runs:
 drenv stress-test compare out/before out/after
 ```
 
-This prints a markdown table showing mean, median, min, max, and
-standard deviation for both runs with the relative change.
+This prints a markdown table showing mean, median, min, max, and standard deviation for
+both runs with the relative change.
 
 ## AI-assisted analysis
 
-The generated reports are designed for AI consumption. Use an AI
-assistant to analyze failures and metrics together:
+The generated reports are designed for AI consumption. Use an AI assistant to analyze
+failures and metrics together:
 
 **Suggested prompt:**
 
