@@ -1727,6 +1727,8 @@ func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, vol
 		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, status)
 	}
 
+	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
 		volRep.GetNamespace()))
 
@@ -1860,6 +1862,8 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvcs []*corev1.Pers
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 	}
 
+	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+
 	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
 	return true
@@ -1930,6 +1934,8 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(pvcs []*corev1.Persistent
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonDataProtected, msg)
 	}
+
+	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
@@ -2087,6 +2093,57 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		// if appropriate reason is not provided, then treat it as an unknown condition.
 		message = "Unknown reason: " + reason
 		setVRGDataErrorUnknownCondition(&protectedPVC.Conditions, observedGeneration, message)
+	}
+}
+
+func (v *VRGInstance) updatePVCDestinationInfoAvailableCondition(pvcNamespace, pvcName, reason, message string) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
+	}
+
+	setPVCDestinationInfoAvailableCondition(protectedPVC, reason, message, v.instance.Generation)
+}
+
+func setPVCDestinationInfoAvailableCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
+	observedGeneration int64,
+) {
+	status := metav1.ConditionFalse
+	if reason == VRGConditionReasonReady {
+		status = metav1.ConditionTrue
+	}
+
+	rmnutil.SetStatusCondition(&protectedPVC.Conditions, metav1.Condition{
+		Type:               VRGConditionTypeDestinationInfoAvailable,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	})
+}
+
+// checkAndUpdateDestinationInfoAvailable checks the VR's DestinationInfoAvailable condition
+// and sets the per-PVC condition accordingly. If the VR does not report this condition, no
+// per-PVC condition is set (absent = not applicable).
+func (v *VRGInstance) checkAndUpdateDestinationInfoAvailable(
+	pvcs []*corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus,
+) {
+	destInfoCond := rmnutil.FindCondition(status.Conditions, VRGConditionTypeDestinationInfoAvailable)
+	if destInfoCond == nil {
+		return
+	}
+
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		if destInfoCond.Status == metav1.ConditionTrue {
+			v.updatePVCDestinationInfoAvailableCondition(pvc.Namespace, pvc.Name,
+				VRGConditionReasonReady, "VolumeReplication destination info is available")
+		} else {
+			v.updatePVCDestinationInfoAvailableCondition(pvc.Namespace, pvc.Name,
+				VRGConditionReasonProgressing, "VolumeReplication destination info not yet available")
+		}
 	}
 }
 
@@ -2942,6 +2999,54 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 	v.log.Info(msg)
 
 	return newVRGClusterDataProtectedCondition(v.instance.Generation, msg)
+}
+
+// aggregateVolRepDestinationInfoAvailableCondition aggregates per-PVC DestinationInfoAvailable conditions
+// into a VRG-level condition. Returns nil if no ProtectedPVC has this condition (meaning VRs don't report it).
+func (v *VRGInstance) aggregateVolRepDestinationInfoAvailableCondition() *metav1.Condition {
+	found := false
+	allReady := true
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if protectedPVC.ProtectedByVolSync {
+			continue
+		}
+
+		condition := rmnutil.FindCondition(protectedPVC.Conditions, VRGConditionTypeDestinationInfoAvailable)
+		if condition == nil {
+			continue
+		}
+
+		found = true
+
+		if condition.Status != metav1.ConditionTrue {
+			allReady = false
+
+			break
+		}
+	}
+
+	if !found {
+		return nil
+	}
+
+	if allReady {
+		return &metav1.Condition{
+			Type:               VRGConditionTypeDestinationInfoAvailable,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: v.instance.Generation,
+			Reason:             VRGConditionReasonReady,
+			Message:            "Destination info is available for all VolumeReplication resources",
+		}
+	}
+
+	return &metav1.Condition{
+		Type:               VRGConditionTypeDestinationInfoAvailable,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: v.instance.Generation,
+		Reason:             VRGConditionReasonProgressing,
+		Message:            "Destination info is not yet available for one or more VolumeReplication resources",
+	}
 }
 
 // Checks and requeues reconciler of VM resource cleanup.
