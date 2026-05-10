@@ -183,6 +183,7 @@ environment.
        kustomize \
        minikube \
        minio-mc \
+       python3 \
        qemu \
        velero \
        vfkit \
