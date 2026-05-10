@@ -63,6 +63,9 @@ const (
 	// Indicates the status of hook execution in recipes.
 	// This condition helps identify hook failures separately from other kube object protection issues.
 	VRGConditionTypeHooksReady = "HooksReady"
+	// Indicates destination volume info is available from the VolumeReplication resource.
+	// Only set when VRs report this condition; absent means not applicable.
+	VRGConditionTypeDestinationInfoAvailable = "DestinationInfoAvailable"
 )
 
 // VRG condition reasons
