@@ -38,6 +38,11 @@ const (
 	dryRunSnapshotLabel = "ramendr.openshift.io/dry-run-snapshot"
 	// dryRunVRGLabel is used to identify which VRG the dry-run snapshot belongs to
 	dryRunVRGLabel = "ramendr.openshift.io/dry-run-vrg"
+
+	// destinationVolumeHandleAnnotation is used to annotate a PV with the destination
+	// volume handle before uploading to S3. During restore, this annotation is read
+	// and the PV's volumeHandle is replaced with it.
+	destinationVolumeHandleAnnotation = "ramendr.openshift.io/destination-volume-handle"
 )
 
 //nolint:gosec
@@ -150,6 +155,18 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		if err != nil {
 			log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 				"errorValue", err)
+
+			continue
+		}
+
+		// Annotate the PV with the destination volume handle if available from VR status.
+		// This allows the secondary cluster to restore the PV with the correct volume handle
+		// when source and destination volume IDs differ.
+		if err := v.annotateWithDestinationVolumeHandleForVolRep(pvc); err != nil {
+			log.Error(err, fmt.Sprintf("failed to annotate PV of PVC %s with destination volume handle",
+				pvc.Name))
+
+			v.requeue()
 
 			continue
 		}
@@ -763,6 +780,89 @@ func (v *VRGInstance) handleNoS3ProfilesError(pvc *corev1.PersistentVolumeClaim)
 	v.log.Info(msg)
 
 	return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles", pvc.Name)
+}
+
+// destinationInfoAvailableOrSkip inspects VRGConditionTypeDestinationInfoAvailable. If the condition is
+// missing, it logs and returns (false, nil) so the caller can skip without error. If the condition
+// is not True, it returns an error. If True, it returns (true, nil).
+func (v *VRGInstance) destinationInfoAvailableOrSkip(
+	conditions []metav1.Condition,
+	replicationResourceDescription string,
+	pvName string,
+) (available bool, err error) {
+	destInfoAvailCondition := rmnutil.FindCondition(conditions, VRGConditionTypeDestinationInfoAvailable)
+	if destInfoAvailCondition == nil {
+		v.log.Info(fmt.Sprintf("no VRGConditionTypeDestinationInfoAvailable condition found on %s for PV %s",
+			replicationResourceDescription, pvName))
+
+		return false, nil
+	}
+
+	if destInfoAvailCondition.Status != metav1.ConditionTrue {
+		v.log.Info(fmt.Sprintf("VRGConditionTypeDestinationInfoAvailable != True on %s for PV %s",
+			replicationResourceDescription, pvName))
+
+		return false, fmt.Errorf("destination info is not available for %s", replicationResourceDescription)
+	}
+
+	return true, nil
+}
+
+// applyDestinationVolumeHandleToPV sets destinationVolumeHandleAnnotation on pv when it differs
+// and persists the change. destinationVolumeHandle must be non-empty.
+func (v *VRGInstance) applyDestinationVolumeHandleToPV(
+	pv *corev1.PersistentVolume, destinationVolumeHandle string,
+) error {
+	if pv.Annotations == nil {
+		pv.Annotations = make(map[string]string)
+	}
+
+	if pv.Annotations[destinationVolumeHandleAnnotation] == destinationVolumeHandle {
+		return nil
+	}
+
+	pv.Annotations[destinationVolumeHandleAnnotation] = destinationVolumeHandle
+	v.log.Info(fmt.Sprintf("annotated PV %s with DestinationVolumeID %s", pv.Name, destinationVolumeHandle))
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		return fmt.Errorf("failed to update PersistentVolume %s with destination volume handle annotation: %w", pv.Name, err)
+	}
+
+	return nil
+}
+
+// annotateWithDestinationVolumeHandleForVolRep looks up the VolumeReplication for the PVC
+// and annotates the PV with the destination volume handle if available.
+func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.PersistentVolumeClaim) error {
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		return fmt.Errorf("failed to get PV for PVC %s: %w", pvc.Name, err)
+	}
+
+	volRep := &volrep.VolumeReplication{}
+	vrNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	if err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep); err != nil {
+		v.log.Info(fmt.Sprintf("failed to get VR %s for PV %s err %s", pvc.Name, pv.Name, err))
+
+		return err
+	}
+
+	available, err := v.destinationInfoAvailableOrSkip(volRep.Status.Conditions,
+		fmt.Sprintf("VR %s", volRep.Name), pv.Name)
+	if err != nil {
+		return err
+	}
+
+	if !available {
+		return nil
+	}
+
+	if volRep.Status.DestinationVolumeID == "" {
+		return fmt.Errorf("destination volume ID is empty for VR %s", volRep.Name)
+	}
+
+	return v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID)
 }
 
 func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
