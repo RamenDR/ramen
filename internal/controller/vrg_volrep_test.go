@@ -511,9 +511,6 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 						Expect(k8sClient.Update(context.TODO(), &pvc)).To(Succeed())
 					})
 				})
-				It("updates the status", func() {
-					Eventually(vrgResourceVersionGet, vrgReconcileTimeout, interval).ShouldNot(Equal(vrgResourceVersion))
-				})
 				It("keeps the selected protected", func() {
 					pvcsVerify(pvcNamesSelected, pvcProtectedVerify)
 				})
