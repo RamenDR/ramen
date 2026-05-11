@@ -2887,8 +2887,10 @@ func getVRGFromManifestWork(clusterNamespace string) (*rmn.VolumeReplicationGrou
 	mwName := rmnutil.ManifestWorkName(DRPCCommonName, DefaultDRPCNamespace, rmnutil.MWTypeVRG)
 	mw := &ocmworkv1.ManifestWork{}
 
-	err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: mwName, Namespace: clusterNamespace}, mw)
-	Expect(err).NotTo(HaveOccurred())
+	Eventually(func() error {
+		return k8sClient.Get(context.TODO(), types.NamespacedName{Name: mwName, Namespace: clusterNamespace}, mw)
+	}, timeout, interval).Should(Succeed(),
+		"timed out waiting for VRG ManifestWork %s in namespace %s", mwName, clusterNamespace)
 
 	return rmnutil.ExtractVRGFromManifestWork(mw)
 }
