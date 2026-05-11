@@ -841,9 +841,10 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	isGlobal := v.hasGlobalVGRLabel()
 
 	var selector *metav1.LabelSelector
-	if isGlobal {
+	if isGlobal || offloaded {
 		// Global VGRs are shared across VRGs, so select by consistency group only
 		// to include PVCs from all VRGs.
+		// Offloaded follow the same logic as global since they are also shared and not owned by VRG.
 		selector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				rmnutil.ConsistencyGroupLabel: cg,
