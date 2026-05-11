@@ -478,7 +478,7 @@ func (sutil *SecretsUtil) deletePolicyResources(
 ) error {
 	policyName, plBindingName, plRuleName, _ := GeneratePolicyResourceNames(secret.Name, format)
 
-	sutil.Log.Info("Deleting secret policy", "secret", secret.Name)
+	sutil.Log.Info("Deleting secret policy", "secret", secret.Name, "namespace", namespace)
 
 	plRuleBindingObject := &gppv1.PlacementBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -510,6 +510,7 @@ func (sutil *SecretsUtil) deletePolicyResources(
 			Namespace: namespace,
 		},
 	}
+
 	if err := sutil.Client.Delete(sutil.Ctx, plRuleObject); err != nil && !k8serrors.IsNotFound(err) {
 		sutil.Log.Error(err, "unable to delete placement rule", "secret", secret.Name)
 
