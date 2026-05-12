@@ -107,7 +107,7 @@ func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv
 	return cfg
 }
 
-func LoadControllerConfig(configFile string,
+func InitControllerDefaults(configFile string,
 	log logr.Logger,
 ) (ramenConfig *ramendrv1alpha1.RamenConfig) {
 	controllerType := os.Getenv("RAMEN_CONTROLLER_TYPE")

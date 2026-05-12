@@ -278,7 +278,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	ramenConfig := controllers.LoadControllerConfig(configFile, setupLog)
+	ramenConfig := controllers.InitControllerDefaults(configFile, setupLog)
 
 	restCfg := ctrl.GetConfigOrDie()
 	ctrlOptions, ramenConfig := buildOptions(restCfg, ramenConfig)
