@@ -127,7 +127,7 @@ func (l *DeploymentPodLister) getPodFromReplicaSet(rsName, rsNS string) (*ExecPo
 	for i := range podList.Items {
 		pod := &podList.Items[i]
 		if IsPodOwnedByRS(pod, rsName) {
-			cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+			cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 			if err != nil {
 				return nil, fmt.Errorf("error converting command to string array: %w", err)
 			}
@@ -178,7 +178,7 @@ func (l *DeploymentPodLister) getReplicaSetsOwnedByDeployments(deps []appsv1.Dep
 }
 
 func (l *DeploymentPodLister) getExecPodsFromReplicaSets(replicasets []appsv1.ReplicaSet) ([]ExecPodSpec, error) {
-	cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+	cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 	if err != nil {
 		return []ExecPodSpec{}, fmt.Errorf("error converting command to string array: %w", err)
 	}
