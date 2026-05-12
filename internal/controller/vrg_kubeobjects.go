@@ -274,7 +274,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	)
 }
 
-//nolint:gocognit,funlen,cyclop
+//nolint:gocognit,funlen,cyclop,gocyclo
 func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
 	veleroNamespaceName string,
 	annotations map[string]string, requests map[string]kubeobjects.Request, log logr.Logger,
@@ -285,6 +285,8 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	essentialStepsCount := 0
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
+	captureHooksSucceeded := false
+	captureAnyHookFailed := false
 	labels := util.OwnerLabels(v.instance)
 	labels[util.VeleroKubevirtMetadataOnlyBackupLabel] = "true"
 
@@ -318,6 +320,11 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			}
 
 			err = executor.Execute(log1)
+
+			// Set hook success status if execution succeeded
+			if err == nil {
+				captureHooksSucceeded = true
+			}
 		}
 
 		if !cg.IsHook {
@@ -330,6 +337,26 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		}
 
 		if err != nil {
+			// Set hook failed condition for any hook failure (essential or non-essential)
+			if cg.IsHook {
+				hookName := cg.Hook.Name
+
+				log1.Error(err, "Hook execution failed", "hookName", hookName)
+
+				captureAnyHookFailed = true
+
+				setVRGHookFailedCondition(&v.instance.Status.Conditions, v.instance.Generation,
+					fmt.Sprintf("Hook '%s' failed: %v", hookName, err))
+
+				if shouldStopExecution(failOn, isEssentialStep) {
+					v.kubeObjectsCaptureStatusFalse(VRGConditionReasonHookFailed,
+						fmt.Sprintf("Hook %q failed: %v", hookName, err),
+					)
+
+					return false, err
+				}
+			}
+
 			if shouldStopExecution(failOn, isEssentialStep) {
 				v.kubeObjectsCaptureStatusFalse("KubeObjectsWorkflowError", err.Error())
 
@@ -355,6 +382,11 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 				return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
 			}
 		}
+	}
+
+	if captureHooksSucceeded && !captureAnyHookFailed {
+		setVRGHookExecutedCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			"Capture hooks executed successfully")
 	}
 
 	if essentialStepsCount == 0 {
@@ -750,7 +782,7 @@ func (v *VRGInstance) kubeObjectsRecoveryStartOrResume(
 	return v.kubeObjectsRecoverRequestsDelete(result, v.veleroNamespaceName(), labels)
 }
 
-// nolint: gocognit,cyclop,funlen
+// nolint: gocognit,cyclop,funlen,gocyclo
 func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s3StoreAccessor,
 	captureToRecoverFromIdentifier *ramen.KubeObjectsCaptureIdentifier, captureRequests,
 	recoverRequests map[string]kubeobjects.Request, requests []kubeobjects.Request, log logr.Logger,
@@ -758,6 +790,8 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 	failOn := v.recipeElements.RestoreFailOn
 	allEssentialStepsFailed := true
 	essentialStepsCount := 0
+	recoverHooksSucceeded := false
+	recoverAnyHookFailed := false
 	labels := util.OwnerLabels(v.instance)
 
 	recoverSteps := v.recipeElements.RecoverWorkflow
@@ -789,6 +823,11 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 			}
 
 			err = executor.Execute(log1)
+
+			// Set hook success status if execution succeeded
+			if err == nil {
+				recoverHooksSucceeded = true
+			}
 		}
 
 		if !rg.IsHook {
@@ -800,6 +839,18 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		}
 
 		if err != nil {
+			// Set hook failed condition for any hook failure (essential or non-essential)
+			if rg.IsHook {
+				hookName := rg.Hook.Name
+
+				log1.Error(err, "Hook execution failed", "hookName", hookName)
+
+				recoverAnyHookFailed = true
+
+				setVRGHookFailedCondition(&v.instance.Status.Conditions, v.instance.Generation,
+					fmt.Sprintf("Hook '%s' failed: %v", hookName, err))
+			}
+
 			if shouldStopExecution(failOn, isEssentialStep) {
 				return false, err
 			}
@@ -814,6 +865,11 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 			allEssentialStepsFailed = false
 			essentialStepsCount++
 		}
+	}
+
+	if recoverHooksSucceeded && !recoverAnyHookFailed {
+		setVRGHookExecutedCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			"Recovery hooks executed successfully")
 	}
 
 	if essentialStepsCount == 0 {
