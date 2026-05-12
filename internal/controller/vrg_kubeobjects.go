@@ -274,6 +274,63 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	)
 }
 
+// kubeObjectsHookExecute resolves and runs a recipe hook.
+// skip is true when the hook type is unsupported; the caller should continue the workflow loop.
+// On success, hooksSucceeded is set. On Execute failure, records anyHookFailed and the last
+// failure message; when shouldStopExecution applies, HooksReady is set failed. The caller stops
+// or continues per failOn. kubeObjectsHookWorkflowResult sets final HooksReady state.
+func (v *VRGInstance) kubeObjectsHookExecute(
+	hook kubeobjects.HookSpec,
+	log1 logr.Logger,
+	failOn string,
+	isEssentialStep bool,
+	hooksSucceeded *bool,
+	anyHookFailed *bool,
+	lastFailureMessage *string,
+) (skip bool, err error) {
+	hookCtx := hooks.HookContext{
+		Hook:           hook,
+		Client:         v.reconciler.Client,
+		Reader:         v.reconciler.APIReader,
+		Scheme:         v.reconciler.Scheme,
+		RecipeElements: v.recipeElements,
+	}
+
+	executor, err1 := hooks.GetHookExecutor(hookCtx)
+	if err1 != nil {
+		// continue if hook type is not supported. Supported types are "check" and "exec"
+		log1.Info("Hook type not supported", "hook", hook)
+
+		return true, err1
+	}
+
+	err = executor.Execute(log1)
+	if err != nil {
+		*anyHookFailed = true
+		*lastFailureMessage = fmt.Sprintf("Hook '%s' failed: %v", hook.Name, err)
+
+		if shouldStopExecution(failOn, isEssentialStep) {
+			setVRGHookFailedCondition(&v.instance.Status.Conditions, v.instance.Generation, *lastFailureMessage)
+		}
+	} else {
+		*hooksSucceeded = true
+	}
+
+	return false, err
+}
+
+// kubeObjectsHookWorkflowResult sets HooksReady from hook workflow flags.
+func (v *VRGInstance) kubeObjectsHookWorkflowResult(
+	hooksSucceeded, anyHookFailed bool,
+	hooksSucceededMessage, lastHookFailureMessage string,
+) {
+	if hooksSucceeded && !anyHookFailed {
+		setVRGHookExecutedCondition(&v.instance.Status.Conditions, v.instance.Generation, hooksSucceededMessage)
+	} else if anyHookFailed {
+		setVRGHookFailedCondition(&v.instance.Status.Conditions, v.instance.Generation, lastHookFailureMessage)
+	}
+}
+
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
 	veleroNamespaceName string,
@@ -285,11 +342,16 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	essentialStepsCount := 0
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
+	hooksSucceeded := false
+	anyHookFailed := false
+	lastCaptureHookFailureMessage := ""
 	labels := util.OwnerLabels(v.instance)
 	labels[util.VeleroKubevirtMetadataOnlyBackupLabel] = "true"
 
 	for groupNumber, captureGroup := range captureSteps {
 		var err error
+
+		var skip bool
 
 		var isEssentialStep bool
 
@@ -301,23 +363,10 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		if cg.IsHook {
 			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
 
-			hookCtx := hooks.HookContext{
-				Hook:           cg.Hook,
-				Client:         v.reconciler.Client,
-				Reader:         v.reconciler.APIReader,
-				Scheme:         v.reconciler.Scheme,
-				RecipeElements: v.recipeElements,
-			}
-
-			executor, err1 := hooks.GetHookExecutor(hookCtx)
-			if err1 != nil {
-				// continue if hook type is not supported. Supported types are "check" and "exec"
-				log1.Info("Hook type not supported", "hook", cg.Hook)
-
+			if skip, err = v.kubeObjectsHookExecute(cg.Hook, log1, failOn, isEssentialStep, &hooksSucceeded,
+				&anyHookFailed, &lastCaptureHookFailureMessage); skip {
 				continue
 			}
-
-			err = executor.Execute(log1)
 		}
 
 		if !cg.IsHook {
@@ -356,6 +405,11 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			}
 		}
 	}
+
+	v.kubeObjectsHookWorkflowResult(hooksSucceeded, anyHookFailed,
+		"Capture hooks executed successfully",
+		lastCaptureHookFailureMessage,
+	)
 
 	if essentialStepsCount == 0 {
 		allEssentialStepsFailed = false
@@ -758,11 +812,16 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 	failOn := v.recipeElements.RestoreFailOn
 	allEssentialStepsFailed := true
 	essentialStepsCount := 0
+	hooksSucceeded := false
+	anyHookFailed := false
+	lastRecoverHookFailureMessage := ""
 	labels := util.OwnerLabels(v.instance)
 
 	recoverSteps := v.recipeElements.RecoverWorkflow
 	for groupNumber, recoverGroup := range recoverSteps {
 		var err error
+
+		var skip bool
 
 		var isEssentialStep bool
 
@@ -772,23 +831,10 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		if rg.IsHook {
 			isEssentialStep = rg.Hook.Essential != nil && *rg.Hook.Essential
 
-			hookCtx := hooks.HookContext{
-				Hook:           rg.Hook,
-				Client:         v.reconciler.Client,
-				Reader:         v.reconciler.APIReader,
-				Scheme:         v.reconciler.Scheme,
-				RecipeElements: v.recipeElements,
-			}
-
-			executor, err1 := hooks.GetHookExecutor(hookCtx)
-			if err1 != nil {
-				// continue if hook type is not supported. Supported types are "check" and "exec"
-				log1.Info("Hook type not supported", "hook", rg.Hook)
-
+			if skip, err = v.kubeObjectsHookExecute(rg.Hook, log1, failOn, isEssentialStep, &hooksSucceeded,
+				&anyHookFailed, &lastRecoverHookFailureMessage); skip {
 				continue
 			}
-
-			err = executor.Execute(log1)
 		}
 
 		if !rg.IsHook {
@@ -815,6 +861,11 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 			essentialStepsCount++
 		}
 	}
+
+	v.kubeObjectsHookWorkflowResult(hooksSucceeded, anyHookFailed,
+		"Recovery hooks executed successfully",
+		lastRecoverHookFailureMessage,
+	)
 
 	if essentialStepsCount == 0 {
 		allEssentialStepsFailed = false
