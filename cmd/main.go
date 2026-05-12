@@ -89,9 +89,7 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 	}
 }
 
-func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig) (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
-	ctrlOptions := ctrl.Options{Scheme: scheme}
-
+func syncConfig(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig) *ramendrv1alpha1.RamenConfig {
 	c, err := client.New(restCfg, client.Options{Scheme: scheme})
 	if err != nil {
 		setupLog.Error(err, "unable to create client for reading config")
@@ -105,9 +103,14 @@ func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig
 		os.Exit(1)
 	}
 
-	controllers.LoadControllerOptions(&ctrlOptions, ramenConfig)
+	return ramenConfig
+}
 
-	return &ctrlOptions, ramenConfig
+func buildManagerOptions(ramenConfig *ramendrv1alpha1.RamenConfig) *ctrl.Options {
+	options := ctrl.Options{Scheme: scheme}
+	controllers.LoadControllerOptions(&options, ramenConfig)
+
+	return &options
 }
 
 func configureController() error {
@@ -281,7 +284,9 @@ func main() {
 	ramenConfig := controllers.InitControllerDefaults(configFile, setupLog)
 
 	restCfg := ctrl.GetConfigOrDie()
-	ctrlOptions, ramenConfig := buildOptions(restCfg, ramenConfig)
+	ramenConfig = syncConfig(restCfg, ramenConfig)
+
+	ctrlOptions := buildManagerOptions(ramenConfig)
 
 	if err := configureController(); err != nil {
 		setupLog.Error(err, "unable to configure controller")
