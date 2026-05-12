@@ -113,7 +113,7 @@ func buildManagerOptions(ramenConfig *ramendrv1alpha1.RamenConfig) *ctrl.Options
 	return &options
 }
 
-func configureController() error {
+func registerSchemes() error {
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
 		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
@@ -285,11 +285,6 @@ func main() {
 
 	restCfg := ctrl.GetConfigOrDie()
 
-	if err := configureController(); err != nil {
-		setupLog.Error(err, "unable to configure controller")
-		os.Exit(1)
-	}
-
 	ramenConfig = syncConfig(restCfg, ramenConfig)
 
 	ctrlOptions := buildManagerOptions(ramenConfig)
@@ -297,6 +292,11 @@ func main() {
 	mgr, err := ctrl.NewManager(restCfg, *ctrlOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err := registerSchemes(); err != nil {
+		setupLog.Error(err, "unable to register schemes")
 		os.Exit(1)
 	}
 
