@@ -51,9 +51,8 @@ import (
 )
 
 var (
-	scheme     = runtime.NewScheme()
-	setupLog   = ctrl.Log.WithName("setup")
-	configFile string
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func init() {
@@ -79,11 +78,6 @@ func configureLogOptions() *zap.Options {
 // bindFlags takes a list of functions that bind flags to variables.
 // In addition, any ramen specific flags are bound here.
 func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
-
 	for _, f := range bindfuncs {
 		f(flag.CommandLine)
 	}
@@ -281,7 +275,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	ramenConfig := controllers.InitControllerDefaults(configFile, setupLog)
+	ramenConfig := controllers.InitControllerDefaults(setupLog)
 
 	restCfg := ctrl.GetConfigOrDie()
 	ramenConfig = syncConfig(restCfg, ramenConfig)
