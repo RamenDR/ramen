@@ -132,15 +132,6 @@ func configureController() error {
 	return nil
 }
 
-func newManager(options *ctrl.Options) (ctrl.Manager, error) {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), *options)
-	if err != nil {
-		return mgr, fmt.Errorf("starting new manager failed %w", err)
-	}
-
-	return mgr, nil
-}
-
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
 		setupReconcilersHub(mgr, ramenConfig)
@@ -280,9 +271,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := newManager(ctrlOptions)
+	restCfg := ctrl.GetConfigOrDie()
+
+	mgr, err := ctrl.NewManager(restCfg, *ctrlOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to Get new manager")
+		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
