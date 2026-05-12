@@ -90,7 +90,7 @@ func (l *StatefulSetPodLister) getPodsFromStatefulSets(statefulSets []appsv1.Sta
 				return execPods, fmt.Errorf("error occurred while getting pod for statefulset: %w", err)
 			}
 
-			cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+			cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 			if err != nil {
 				return execPods, fmt.Errorf("error converting command to string array: %w", err)
 			}
@@ -107,7 +107,7 @@ func (l *StatefulSetPodLister) getAllPodsFromStatefulSets(
 ) ([]ExecPodSpec, error) {
 	execPods := make([]ExecPodSpec, 0)
 
-	cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+	cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 	if err != nil {
 		return execPods, fmt.Errorf("error converting command to string array: %w", err)
 	}
