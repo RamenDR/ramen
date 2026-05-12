@@ -28,6 +28,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 	virtv1 "kubevirt.io/api/core/v1"
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -37,6 +38,7 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -87,10 +89,22 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 	}
 }
 
-func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
+func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig) (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
 	ctrlOptions := ctrl.Options{Scheme: scheme}
 
-	ramenConfig := controllers.LoadControllerConfig(configFile, setupLog)
+	c, err := client.New(restCfg, client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create client for reading config")
+		os.Exit(1)
+	}
+
+	ramenConfig, err = controllers.CreateOrUpdateConfigMap(
+		context.Background(), c, c, ramenConfig, setupLog)
+	if err != nil {
+		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
+		os.Exit(1)
+	}
+
 	controllers.LoadControllerOptions(&ctrlOptions, ramenConfig)
 
 	return &ctrlOptions, ramenConfig
@@ -264,25 +278,20 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	ctrlOptions, ramenConfig := buildOptions()
+	ramenConfig := controllers.LoadControllerConfig(configFile, setupLog)
+
+	restCfg := ctrl.GetConfigOrDie()
 
 	if err := configureController(); err != nil {
 		setupLog.Error(err, "unable to configure controller")
 		os.Exit(1)
 	}
 
-	restCfg := ctrl.GetConfigOrDie()
+	ctrlOptions, ramenConfig := buildOptions(restCfg, ramenConfig)
 
 	mgr, err := ctrl.NewManager(restCfg, *ctrlOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	ramenConfig, err = controllers.CreateOrUpdateConfigMap(context.Background(), mgr.GetClient(),
-		mgr.GetAPIReader(), ramenConfig, setupLog)
-	if err != nil {
-		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
 		os.Exit(1)
 	}
 
