@@ -77,16 +77,32 @@ source venv
 
 ### Create the environment
 
-You can run the make target `create-rdr-env` to create a 3 cluster environment
-for suitable for Regional DR. This will create 3 minikube clusters, and install
-the necessary components for the Ramen operator to run.
+To create a 3 cluster environment suitable for Regional DR, use the `drenv`
+tool. This will create 3 minikube clusters and install the necessary components
+for the Ramen operator to run.
 
-This uses `drenv` tool to setup the environment. Refer to
-[drenv readme](../test/README.md#setup) for more details.
+Ensure the python virtual environment is active (see previous section), then
+change to the test directory:
 
 ```sh
-make create-rdr-env
+cd test
 ```
+
+(Optional) Set up the host for running the environment (run once before starting any environment):
+
+```sh
+drenv setup envs/regional-dr.yaml
+```
+
+Start the environment:
+
+```sh
+drenv start envs/regional-dr.yaml
+```
+
+Starting takes 5-10 minutes, depending on your machine and internet connection.
+
+For more details on using `drenv`, refer to the [drenv readme](../test/README.md#using-the-drenv-tool).
 
 ## Building the ramen operator image
 
