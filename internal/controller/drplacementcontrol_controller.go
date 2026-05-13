@@ -68,6 +68,11 @@ const (
 
 var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
 
+// Extend this metric to other DR progression(rmn.ProgressionState) states by adding them to the `states` slice.
+var trackedDRProgressionStates = []string{
+	string(rmn.ProgressionWaitOnUserToCleanUp),
+}
+
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
 
@@ -419,15 +424,10 @@ func (r *DRPlacementControlReconciler) setDRProgressionStateMetric(drpc *rmn.DRP
 
 	log.Info(fmt.Sprintf("setting metric: (%s)", DRProgressionState))
 
-	// Extend this metric to other DR progression(rmn.ProgressionState) states by adding them to the `states` slice.
-	states := []string{
-		string(rmn.ProgressionWaitOnUserToCleanUp),
-	}
-
 	currentState := string(drpc.Status.Progression)
-	for _, state := range states {
-		labels := DRProgressionStateMetricLabels(drpc)
-		if state == currentState {
+	for _, trackedState := range trackedDRProgressionStates {
+		labels := DRProgressionStateMetricLabels(drpc, trackedState)
+		if trackedState == currentState {
 			drpcProgressionState.With(labels).Set(1)
 		} else {
 			drpcProgressionState.With(labels).Set(0)
@@ -553,17 +553,6 @@ func (r *DRPlacementControlReconciler) createCGEnabledMetricsInstance(
 
 	return &CGEnabledMetrics{
 		CGEnabled: cgEnabledMetrics.CGEnabled,
-	}
-}
-
-func (r *DRPlacementControlReconciler) createDRProgressionStateMetricsInstance(
-	drpc *rmn.DRPlacementControl,
-) *DRProgressionStateMetrics {
-	drProgressionStateLabels := DRProgressionStateMetricLabels(drpc)
-	drProgressionStateMetrics := NewDRPCProgressionStateMetric(drProgressionStateLabels)
-
-	return &DRProgressionStateMetrics{
-		DRProgressionState: drProgressionStateMetrics.DRProgressionState,
 	}
 }
 
@@ -852,8 +841,10 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	cgEnabledMetricLabels := CGEnabledMetricLabels(drpc)
 	DeleteCGEnabledMetric(cgEnabledMetricLabels)
 
-	DRProgressionStateMetricsLabels := DRProgressionStateMetricLabels(drpc)
-	DeleteDRPCProgressionStateMetric(DRProgressionStateMetricsLabels)
+	for _, trackedState := range trackedDRProgressionStates {
+		labels := DRProgressionStateMetricLabels(drpc, trackedState)
+		DeleteDRPCProgressionStateMetric(labels)
+	}
 
 	globalActionLabels := GlobalActionLabels(drpc)
 	DeleteGlobalActionMetric(globalActionLabels)
@@ -1769,8 +1760,7 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
 	}
 
-	appDRCleanupMetrics := r.createDRProgressionStateMetricsInstance(drpc)
-	r.setDRProgressionStateMetric(drpc, appDRCleanupMetrics, log)
+	r.setDRProgressionStateMetric(drpc, &DRProgressionStateMetrics{}, log)
 
 	return nil
 }

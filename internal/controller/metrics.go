@@ -375,12 +375,13 @@ func DeleteInvalidCIDRsDetectedMetric(labels prometheus.Labels) bool {
 }
 
 func DRProgressionStateMetricLabels(drpc *rmn.DRPlacementControl,
+	state string,
 ) prometheus.Labels {
 	return prometheus.Labels{
 		ObjType:               "DRPlacementControl",
 		ObjName:               drpc.Name,
 		ObjNamespace:          drpc.Namespace,
-		ProgressionStateLabel: string(drpc.Status.Progression),
+		ProgressionStateLabel: state,
 	}
 }
 
