@@ -1833,6 +1833,7 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		"metadata": map[string]interface{}{
 			"name":      serviceName,
 			"namespace": rd.GetNamespace(),
+			// TODO: Add ramen and also velero exclude labels to the ServiceExport
 		},
 	}
 	svcExport.SetGroupVersionKind(schema.GroupVersionKind{
