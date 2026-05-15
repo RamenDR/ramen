@@ -146,7 +146,7 @@ func (l *DirectPodLister) filterExecPodsUsingRegex(podList *corev1.PodList, re *
 ) ([]ExecPodSpec, error) {
 	execPods := make([]ExecPodSpec, 0)
 
-	cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+	cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 	if err != nil {
 		log.Error(err, "error occurred during exec hook execution", "command being converted:", l.Hook.Op.Command)
 
@@ -166,7 +166,7 @@ func (l *DirectPodLister) filterExecPodsUsingRegex(podList *corev1.PodList, re *
 func (l *DirectPodLister) getExecPodSpecsFromPodList(podList *corev1.PodList, log logr.Logger) ([]ExecPodSpec, error) {
 	execPods := make([]ExecPodSpec, 0)
 
-	cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+	cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 	if err != nil {
 		log.Error(err, "error occurred during exec hook execution", "command being converted:", l.Hook.Op.Command)
 
