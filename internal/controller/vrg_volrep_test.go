@@ -3051,10 +3051,80 @@ func (v *vrgTest) waitForVGRCountToMatch(vgrCount int) {
 		Expect(err).NotTo(HaveOccurred(),
 			"failed to get a list of VGRs in namespace %s", v.namespace)
 
+		for i := range volGroupRepList.Items {
+			v.ensureVolumeGroupReplicationContentForTesting(types.NamespacedName{
+				Namespace: volGroupRepList.Items[i].Namespace,
+				Name:      volGroupRepList.Items[i].Name,
+			})
+		}
+
 		return len(volGroupRepList.Items)
 	}, timeout, interval).Should(BeNumerically("==", vgrCount),
 		"while waiting for VGR count of %d in VRG %s of namespace %s",
 		vgrCount, v.vrgName, v.namespace)
+}
+
+// ensureVolumeGroupReplicationContentForTesting creates a cluster VolumeGroupReplicationContent and wires
+// VolumeGroupReplication.Spec.VolumeGroupReplicationContentName. Envtest CRDs require spec.volumeGroupReplicationRef
+// and spec.volumeGroupReplicationHandle (see hack/test/replication.storage.openshift.io_volumegroupreplicationcontents.yaml).
+func (v *vrgTest) ensureVolumeGroupReplicationContentForTesting(vgrKey types.NamespacedName) {
+	provisioner := "manual.storage.com"
+	if v.template != nil && v.template.vrcProvisioner != "" {
+		provisioner = v.template.vrcProvisioner
+	}
+
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		vgr := &volrep.VolumeGroupReplication{}
+		if err := k8sClient.Get(context.TODO(), vgrKey, vgr); err != nil {
+			return err
+		}
+
+		contentName := vgr.Spec.VolumeGroupReplicationContentName
+		if contentName == "" {
+			contentName = fmt.Sprintf("%s-%s-vg-content", vgrKey.Namespace, vgrKey.Name)
+		}
+
+		vgrcKey := types.NamespacedName{Name: contentName}
+		existing := &volrep.VolumeGroupReplicationContent{}
+
+		err := k8sClient.Get(context.TODO(), vgrcKey, existing)
+		if k8serrors.IsNotFound(err) {
+			vgrcObj := &volrep.VolumeGroupReplicationContent{
+				ObjectMeta: metav1.ObjectMeta{Name: contentName},
+				Spec: volrep.VolumeGroupReplicationContentSpec{
+					Provisioner:                     provisioner,
+					VolumeGroupReplicationClassName: vgr.Spec.VolumeGroupReplicationClassName,
+					VolumeGroupReplicationHandle:    fmt.Sprintf("ramen-envtest-%s", contentName),
+					VolumeGroupReplicationRef: &corev1.ObjectReference{
+						Kind:       "VolumeGroupReplication",
+						Namespace:  vgr.Namespace,
+						Name:       vgr.Name,
+						UID:        vgr.UID,
+						APIVersion: "replication.storage.openshift.io/v1alpha1",
+					},
+					Source: volrep.VolumeGroupReplicationContentSource{
+						VolumeHandles: []string{"ramen-envtest-vg-handle"},
+					},
+				},
+			}
+
+			createErr := k8sClient.Create(context.TODO(), vgrcObj)
+			if createErr != nil && !k8serrors.IsAlreadyExists(createErr) {
+				return createErr
+			}
+		} else if err != nil {
+			return err
+		}
+
+		if vgr.Spec.VolumeGroupReplicationContentName != contentName {
+			vgr.Spec.VolumeGroupReplicationContentName = contentName
+
+			return k8sClient.Update(context.TODO(), vgr)
+		}
+
+		return nil
+	})
+	Expect(err).NotTo(HaveOccurred(), "ensure VGRC for VGR %s", vgrKey.String())
 }
 
 func (v *vrgTest) promoteVolReps() {
@@ -3223,7 +3293,15 @@ func (v *vrgTest) promoteVolGroupRepsAndDo(options promoteOptions, do func(int, 
 	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
 
 	for index := range volGroupRepList.Items {
-		volGroup := volGroupRepList.Items[index]
+		volGroupKey := types.NamespacedName{
+			Namespace: volGroupRepList.Items[index].Namespace,
+			Name:      volGroupRepList.Items[index].Name,
+		}
+		v.ensureVolumeGroupReplicationContentForTesting(volGroupKey)
+
+		volGroup := volrep.VolumeGroupReplication{}
+		err = k8sClient.Get(context.TODO(), volGroupKey, &volGroup)
+		Expect(err).NotTo(HaveOccurred(), "failed to re-get VolGroupRep %s", volGroupKey.String())
 
 		volGroupRepStatus := volrep.VolumeGroupReplicationStatus{
 			VolumeReplicationStatus: volrep.VolumeReplicationStatus{

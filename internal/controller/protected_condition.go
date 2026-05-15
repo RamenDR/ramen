@@ -38,6 +38,10 @@ func updateDRPCProtectedCondition(
 		return
 	}
 
+	if updateVRGDestinationInfoAvailable(drpc, vrg, clusterName) {
+		return
+	}
+
 	if updateVRGNoClusterDataConflict(drpc, vrg, clusterName) {
 		return
 	}
@@ -112,6 +116,26 @@ func updateVRGClusterDataProtected(drpc *rmn.DRPlacementControl,
 
 	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeClusterDataProtected,
 		"workload resource protection", "protecting workload resources", "protecting workload resources")
+}
+
+// updateVRGDestinationInfoAvailable is a helper function to process VRG DestinationInfoAvailable condition and
+// update DRPC Protected condition. If the condition is absent on the VRG, it does not block Protected=True.
+//   - Returns a bool that is true if status was updated, and false otherwise
+func updateVRGDestinationInfoAvailable(drpc *rmn.DRPlacementControl,
+	vrg *rmn.VolumeReplicationGroup,
+	clusterName string,
+) bool {
+	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeDestinationInfoAvailable)
+	if condition == nil {
+		return false
+	}
+
+	if condition.Status == metav1.ConditionTrue && condition.ObservedGeneration == vrg.Generation {
+		return false
+	}
+
+	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeDestinationInfoAvailable,
+		"destination info availability", "waiting for destination info", "destination info")
 }
 
 // updateVRGDataReadyAsPrimary is a helper function to process VRG DataReady when VRG is Primary and update DRPC
