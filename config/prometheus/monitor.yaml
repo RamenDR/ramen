@@ -12,7 +12,11 @@ spec:
     - path: /metrics
       port: https
       scheme: https
-      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      authorization:
+        type: Bearer
+        credentials:
+          name: prometheus-k8s-token
+          key: token
       tlsConfig:
         insecureSkipVerify: true
   selector:
