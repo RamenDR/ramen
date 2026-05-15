@@ -5,6 +5,7 @@ package volsync_test
 
 import (
 	"fmt"
+	"strings"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -160,7 +162,24 @@ var _ = Describe("VolSync Handler - Diff sync rollback", func() {
 				},
 			}
 
-			lrd, err := vsHandler.ReconcileDiffLocalRD(rdSpec, pskSecretName)
+			var lrd *volsyncv1alpha1.ReplicationDestination
+
+			var err error
+
+			// Retry PVC optimistic-lock conflicts (409). Stop without retry when reconcile succeeds or
+			// returns the expected "waiting for address" terminal state (return nil so RetryOnConflict exits).
+			retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				lrd, err = vsHandler.ReconcileDiffLocalRD(rdSpec, pskSecretName)
+
+				// Stop retrying on success or on the expected terminal "waiting" state.
+				if err == nil || strings.Contains(err.Error(), "waiting for address") {
+					return nil
+				}
+
+				return err
+			})
+
+			Expect(retryErr).NotTo(HaveOccurred())
 			// RD is created but address may not be populated yet — expect waiting error
 			if err != nil {
 				Expect(err.Error()).To(ContainSubstring("waiting for address"))
@@ -263,8 +282,19 @@ var _ = Describe("VolSync Handler - Diff sync rollback", func() {
 			currentStateSnapName := "current-state-" + pvcName
 			address := "10.0.0.1"
 
-			lrs, err := vsHandler.ReconcileDiffLocalRS(rd, rdSpec, snapshotRef,
-				currentStateSnapName, pskSecretName, address)
+			// Use retry to handle potential conflicts when updating snapshot labels
+			// The conflict can occur in validateAndProtectSnapshot when it tries to update
+			// the snapshot with labels. Each retry will fetch a fresh snapshot object.
+			var lrs *volsyncv1alpha1.ReplicationSource
+
+			err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				var retryErr error
+
+				lrs, retryErr = vsHandler.ReconcileDiffLocalRS(rd, rdSpec, snapshotRef,
+					currentStateSnapName, pskSecretName, address)
+
+				return retryErr
+			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lrs).NotTo(BeNil())
 
