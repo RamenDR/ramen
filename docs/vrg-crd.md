@@ -7,24 +7,20 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **VolumeReplicationGroup** (VRG) custom resource manages volume
-replication and Kubernetes object protection for an application on a managed
-cluster. VRGs are **not directly created by users** - they are automatically
-created and managed by the DRPlacementControl (DRPC) on the hub cluster via
-ManifestWork.
+The **VolumeReplicationGroup** (VRG) custom resource manages volume replication and
+Kubernetes object protection for an application on a managed cluster. VRGs are **not
+directly created by users** - they are automatically created and managed by the
+DRPlacementControl (DRPC) on the hub cluster via ManifestWork.
 
 A VRG controls:
 
-- Volume replication state (Primary/Secondary) for all PVCs matching the
-  selector
-- VolumeReplication or VolSync resource creation and management for data
-  replication
+- Volume replication state (Primary/Secondary) for all PVCs matching the selector
+- VolumeReplication or VolSync resource creation and management for data replication
 - PV metadata storage in S3 for cross-cluster recovery
 - Kubernetes object capture and recovery (via Velero and Recipe)
 
-**Lifecycle:** Created by DRPC when enabling DR protection. Exists on the
-active cluster as Primary and on the peer cluster as Secondary. Deleted when
-DRPC is removed.
+**Lifecycle:** Created by DRPC when enabling DR protection. Exists on the active cluster
+as Primary and on the peer cluster as Secondary. Deleted when DRPC is removed.
 
 ## API Group and Version
 
@@ -40,8 +36,7 @@ DRPC is removed.
 
 #### `pvcSelector` (metav1.LabelSelector)
 
-Label selector to identify PVCs that should be replicated as part of this
-group.
+Label selector to identify PVCs that should be replicated as part of this group.
 
 **Example:**
 
@@ -67,8 +62,8 @@ replicationState: primary
 ```
 
 **Important:** This is managed by DRPC. When DRPC orchestrates `Failover` or `Relocate`
-actions, it changes this from primary->secondary on the source and secondary->primary
-on the target as required.
+actions, it changes this from primary->secondary on the source and secondary->primary on
+the target as required.
 
 #### `s3Profiles` ([]string)
 
@@ -81,8 +76,8 @@ s3Profiles:
   - s3-profile-east
 ```
 
-**Purpose:** PV and PVC specs are stored in S3 so the peer cluster can recreate
-them during failover or relocation.
+**Purpose:** PV and PVC specs are stored in S3 so the peer cluster can recreate them
+during failover or relocation.
 
 ### Optional Fields
 
@@ -92,12 +87,10 @@ Configuration for Regional DR (asynchronous replication across regions).
 
 **Fields:**
 
-- `replicationClassSelector` (metav1.LabelSelector) - Selects
-  VolumeReplicationClass
-- `volumeSnapshotClassSelector` (metav1.LabelSelector) - Selects
-  VolumeSnapshotClass (for VolSync async)
-- `volumeGroupSnapshotClassSelector` (metav1.LabelSelector) - For volume
-  group snapshots
+- `replicationClassSelector` (metav1.LabelSelector) - Selects VolumeReplicationClass
+- `volumeSnapshotClassSelector` (metav1.LabelSelector) - Selects VolumeSnapshotClass
+  (for VolSync async)
+- `volumeGroupSnapshotClassSelector` (metav1.LabelSelector) - For volume group snapshots
 - `schedulingInterval` (string) - Replication frequency (e.g., "1h", "30m")
 - `peerClasses` ([]PeerClass) - Storage class peer relationships
 
@@ -135,8 +128,8 @@ Configuration for VolSync-based replication.
 **Fields:**
 
 - `disabled` (bool) - Set to true to bypass VolSync
-- `rdSpec` ([]VolSyncReplicationDestinationSpec) - ReplicationDestination
-  specs for Secondary VRG
+- `rdSpec` ([]VolSyncReplicationDestinationSpec) - ReplicationDestination specs for
+  Secondary VRG
 - `moverConfig` ([]MoverConfig) - Advanced VolSync mover configuration
 
 **Example:**
@@ -163,12 +156,10 @@ Configuration for protecting Kubernetes objects (not just PVCs).
 
 **Fields:**
 
-- `captureInterval` (metav1.Duration) - How often to capture objects
-  (default: 5m)
+- `captureInterval` (metav1.Duration) - How often to capture objects (default: 5m)
 - `recipeRef` (RecipeRef) - Reference to Recipe for custom workflows
 - `recipeParameters` (map[string][]string) - Parameters for Recipe
-- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to
-  protect
+- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to protect
 
 **Example:**
 
@@ -200,8 +191,7 @@ protectedNamespaces:
 
 #### `prepareForFinalSync` (bool)
 
-Indicates VRG should prepare for the final sync during relocate (VolSync
-only).
+Indicates VRG should prepare for the final sync during relocate (VolSync only).
 
 **Managed by:** DRPC sets this during relocate operations.
 
@@ -254,10 +244,8 @@ Standard Kubernetes conditions for the VRG.
 - `DataProtected` - PV data is fully synced with remote peer
 - `ClusterDataReady` - PV cluster data restored and ready
 - `ClusterDataProtected` - PV cluster data uploaded to S3
-- `KubeObjectsReady` - Kubernetes objects are ready (when using
-  kubeObjectProtection)
-- `NoClusterDataConflict` - No conflicts detected between primary and
-  secondary
+- `KubeObjectsReady` - Kubernetes objects are ready (when using kubeObjectProtection)
+- `NoClusterDataConflict` - No conflicts detected between primary and secondary
 
 ### `observedGeneration` (int64)
 
@@ -350,9 +338,9 @@ spec:
     disabled: false
 ```
 
-**Note:** Both `async` and `volSync` can be configured together. VRG decides
-per-PVC which replication method to use based on available storage classes and
-replication capabilities.
+**Note:** Both `async` and `volSync` can be configured together. VRG decides per-PVC
+which replication method to use based on available storage classes and replication
+capabilities.
 
 ### Example 3: Recipe-Based VRG
 
@@ -389,8 +377,8 @@ spec:
 
 When `replicationState: primary`:
 
-1. Creates VolumeReplication CRs (or ReplicationSource for VolSync) for each
-   PVC with `replicationState: primary`
+1. Creates VolumeReplication CRs (or ReplicationSource for VolSync) for each PVC with
+   `replicationState: primary`
 1. Stores PV metadata in S3
 1. Captures Kubernetes objects (if kubeObjectProtection is configured)
 1. Application can read/write to volumes
@@ -399,8 +387,8 @@ When `replicationState: primary`:
 
 When `replicationState: secondary`:
 
-1. Creates VolumeReplication CRs (or ReplicationDestination for VolSync) for
-   each PVC with `replicationState: secondary`
+1. Creates VolumeReplication CRs (or ReplicationDestination for VolSync) for each PVC
+   with `replicationState: secondary`
 1. Volumes are read-only (no application access)
 1. Receives replicated data from primary
 1. No Kubernetes object capture (secondary is standby)
@@ -416,8 +404,8 @@ When `replicationState: secondary`:
 
 - DRPC changes peer VRG from `secondary` → `primary`
 - Application deploys on peer cluster
-- Source VRG remains as `primary` till source is down, and is moved to `secondary`
-  once it is reachable
+- Source VRG remains as `primary` till source is down, and is moved to `secondary` once
+  it is reachable
 
 **Relocate:**
 
@@ -428,9 +416,8 @@ When `replicationState: secondary`:
 
 ## Monitoring VRG
 
-**Note:** VRG resources exist on managed clusters, not the hub. All monitoring
-commands below must be run on the managed cluster where the application is
-deployed.
+**Note:** VRG resources exist on managed clusters, not the hub. All monitoring commands
+below must be run on the managed cluster where the application is deployed.
 
 ### Check VRG State
 
@@ -490,11 +477,11 @@ kubectl get volumereplication -n myapp --context east-cluster
 kubectl get pvc -n myapp -l app=myapp --context east-cluster
 ```
 
-**Common causes:** VolumeReplicationClass not found, PVC selector mismatch,
-or S3 access issues.
+**Common causes:** VolumeReplicationClass not found, PVC selector mismatch, or S3 access
+issues.
 
-**Solution:** Ensure VolumeReplicationClass exists, PVC labels match
-selector, and check VRG operator logs for S3 errors.
+**Solution:** Ensure VolumeReplicationClass exists, PVC labels match selector, and check
+VRG operator logs for S3 errors.
 
 ### Replication Not Working
 
@@ -506,11 +493,11 @@ kubectl get vrg myapp-drpc -n myapp -o jsonpath='{.status.lastGroupSyncTime}' \
 kubectl get volumereplication -n myapp -o yaml --context east-cluster
 ```
 
-**Common causes:** Storage backend replication not configured or VRG not in
-primary state.
+**Common causes:** Storage backend replication not configured or VRG not in primary
+state.
 
-**Solution:** Verify storage replication is healthy and VRG state is Primary
-on source cluster.
+**Solution:** Verify storage replication is healthy and VRG state is Primary on source
+cluster.
 
 ### VRG Stuck in Deletion
 
@@ -522,36 +509,32 @@ kubectl get vrg myapp-drpc -n myapp -o jsonpath='{.metadata.finalizers}' \
 kubectl get volumereplication -n myapp --context east-cluster
 ```
 
-**Common causes:** VolumeReplication CRs not cleaned up or S3 cleanup
-pending.
+**Common causes:** VolumeReplication CRs not cleaned up or S3 cleanup pending.
 
-**Solution:** Check VRG operator logs and manually clean up VolumeReplication
-resources if necessary.
+**Solution:** Check VRG operator logs and manually clean up VolumeReplication resources
+if necessary.
 
 ## Best Practices
 
 1. **Don't create VRGs manually** - Let DRPC manage them via ManifestWork
 
-1. **Monitor VRG status regularly** - Check `lastGroupSyncTime` to ensure
-   replication is working
+1. **Monitor VRG status regularly** - Check `lastGroupSyncTime` to ensure replication is
+   working
 
-1. **Check VRG state after DR operations** - Verify state transitions
-   complete:
-    - After failover: New primary should be `Primary`, old primary should be
-      deleted or `Secondary`
-    - After relocate: Target should be `Primary`, source should be
-      `Secondary`
+1. **Check VRG state after DR operations** - Verify state transitions complete:
+
+   - After failover: New primary should be `Primary`, old primary should be deleted or
+     `Secondary`
+   - After relocate: Target should be `Primary`, source should be `Secondary`
 
 1. **Review protectedPVCs list** - Ensure all expected PVCs are included
 
-1. **Monitor replication lag** - Use `lastGroupSyncTime` and
-   `lastGroupSyncBytes` metrics
+1. **Monitor replication lag** - Use `lastGroupSyncTime` and `lastGroupSyncBytes`
+   metrics
 
-1. **Check conditions** - VRG conditions indicate issues with replication or
-   S3 access
+1. **Check conditions** - VRG conditions indicate issues with replication or S3 access
 
-1. **Understand primary/secondary roles** - Only primary VRGs allow
-   application writes
+1. **Understand primary/secondary roles** - Only primary VRGs allow application writes
 
 ## Advanced Topics
 
@@ -590,15 +573,13 @@ VRG stores these in S3:
 
 When using VolSync for replication:
 
-- VRG creates ReplicationSource (primary) or ReplicationDestination
-  (secondary)
+- VRG creates ReplicationSource (primary) or ReplicationDestination (secondary)
 - Final sync support for relocate operations
 - `prepareForFinalSync` and `runFinalSync` coordinate the process
 
 ## Related Resources
 
 - [DRPlacementControl CRD](drpc-crd.md) - Creates and manages VRGs
-- [DRPolicy CRD](drpolicy-crd.md) - Defines replication configuration used
-  by VRG
+- [DRPolicy CRD](drpolicy-crd.md) - Defines replication configuration used by VRG
 - [Usage Guide](usage.md) - How VRG fits into workload protection
 - [Recipe Documentation](recipe.md) - For custom VRG workflows

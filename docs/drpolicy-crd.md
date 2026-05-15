@@ -7,10 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **DRPolicy** custom resource defines the disaster recovery topology and
-replication configuration between peer clusters. It is a cluster-scoped
-resource created by administrators on the OCM hub cluster that establishes
-the DR relationship between two managed clusters.
+The **DRPolicy** custom resource defines the disaster recovery topology and replication
+configuration between peer clusters. It is a cluster-scoped resource created by
+administrators on the OCM hub cluster that establishes the DR relationship between two
+managed clusters.
 
 A DRPolicy specifies:
 
@@ -19,8 +19,8 @@ A DRPolicy specifies:
 - Storage class selectors for volume replication
 - Whether to use async (Regional DR) or sync (Metro DR)
 
-**Lifecycle:** DRPolicy resources are created once during DR setup and are
-typically long-lived.
+**Lifecycle:** DRPolicy resources are created once during DR setup and are typically
+long-lived.
 
 ## API Group and Version
 
@@ -55,8 +55,8 @@ drClusters:
 
 #### `schedulingInterval` (string)
 
-Defines how frequently to replicate volume data between clusters for
-Async (Regional DR).
+Defines how frequently to replicate volume data between clusters for Async (Regional
+DR).
 
 **Format:** `<number><m|h|d>` where:
 
@@ -87,17 +87,15 @@ schedulingInterval: ""     # Synchronous (no scheduling)
 
 #### `replicationClassSelector` (metav1.LabelSelector)
 
-Label selector to identify VolumeReplicationClass resources for
-Async (Regional DR).
+Label selector to identify VolumeReplicationClass resources for Async (Regional DR).
 
-**When to use:** Set this for Async (Regional DR) when using
-VolumeReplication with schedulingInterval and there are multiple VolumeReplicationClass
-that match the requirements.
+**When to use:** Set this for Async (Regional DR) when using VolumeReplication with
+schedulingInterval and there are multiple VolumeReplicationClass that match the
+requirements.
 
 **How it works:**
 
-- VRG uses this selector to find the appropriate VolumeReplicationClass
-    for each PVC
+- VRG uses this selector to find the appropriate VolumeReplicationClass for each PVC
 - VolumeReplicationClass must exist on managed clusters with matching labels
 
 **Example:**
@@ -112,17 +110,15 @@ replicationClassSelector:
 
 #### `volumeSnapshotClassSelector` (metav1.LabelSelector)
 
-Label selector to identify VolumeSnapshotClass resources for
-Async (Regional DR).
+Label selector to identify VolumeSnapshotClass resources for Async (Regional DR).
 
-**When to use:** Set this for Async (Regional DR) when using VolSync
-with schedulingInterval and there are multiple VolumeSnapshotClass
-that match the requirements.
+**When to use:** Set this for Async (Regional DR) when using VolSync with
+schedulingInterval and there are multiple VolumeSnapshotClass that match the
+requirements.
 
 **How it works:**
 
-- VRG uses this selector to find the appropriate VolumeSnapshotClass
-    for snapshots
+- VRG uses this selector to find the appropriate VolumeSnapshotClass for snapshots
 - VolumeSnapshotClass must exist on managed clusters with matching labels
 
 **Example:**
@@ -137,12 +133,12 @@ volumeSnapshotClassSelector:
 
 #### `volumeGroupSnapshotClassSelector` (metav1.LabelSelector)
 
-Label selector to identify VolumeGroupSnapshotClass resources for grouped
-snapshot operations with VolSync in Async (Regional DR).
+Label selector to identify VolumeGroupSnapshotClass resources for grouped snapshot
+operations with VolSync in Async (Regional DR).
 
 **When to use:** For Async (Regional DR) workloads with multiple PVCs that need
-consistent point-in-time snapshots and there are multiple VolumeGroupSnapshotClass
-that match the requirements.
+consistent point-in-time snapshots and there are multiple VolumeGroupSnapshotClass that
+match the requirements.
 
 **Example:**
 
@@ -196,8 +192,7 @@ Discovered peer relationship information between peer clusters:
 
 ### Example 1: Async (Regional DR)
 
-This policy configures Async (Regional DR) between geographically distributed
-clusters:
+This policy configures Async (Regional DR) between geographically distributed clusters:
 
 ```yaml
 apiVersion: ramendr.openshift.io/v1alpha1
@@ -238,9 +233,8 @@ spec:
     - metro-cluster-2
 ```
 
-**Note:** Sync (Metro DR) uses synchronous replication at the storage level.
-VolSync is used for Async (Regional DR) and should not be used with
-Sync (Metro DR).
+**Note:** Sync (Metro DR) uses synchronous replication at the storage level. VolSync is
+used for Async (Regional DR) and should not be used with Sync (Metro DR).
 
 ## Troubleshooting
 
@@ -281,10 +275,11 @@ kubectl get drpolicy <name> -o yaml
 
 ### No PeerClasses in Status
 
-**Cause:** Classes available on managed clusters may not have required labels
-or annotations, or replication isn't configured.
+**Cause:** Classes available on managed clusters may not have required labels or
+annotations, or replication isn't configured.
 
-**For details on required labels and annotations, see [DRClusterConfig](drclusterconfig-crd.md).**
+**For details on required labels and annotations, see
+[DRClusterConfig](drclusterconfig-crd.md).**
 
 ## Related Resources
 

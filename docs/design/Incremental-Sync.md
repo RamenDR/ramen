@@ -9,10 +9,10 @@ Extends [Cephfs-RDR-ConsistencyGroup.md](Cephfs-RDR-ConsistencyGroup.md).
 
 ## Summary
 
-When `drplacementcontrol.ramendr.openshift.io/enable-diff: "true"` is set
-on a DRPC, Ramen preserves VolumeGroupSnapshots across sync cycles and uses
-the [ceph-volsync-plugin](https://github.com/RamenDR/ceph-volsync-plugin)
-External mover to transfer only changed blocks between consecutive snapshots.
+When `drplacementcontrol.ramendr.openshift.io/enable-diff: "true"` is set on a DRPC,
+Ramen preserves VolumeGroupSnapshots across sync cycles and uses the
+[ceph-volsync-plugin](https://github.com/RamenDR/ceph-volsync-plugin) External mover to
+transfer only changed blocks between consecutive snapshots.
 
 ## Annotation Propagation
 
@@ -21,11 +21,10 @@ DRPC → VRG → RGS (ReplicationGroupSource)
            → RGD (ReplicationGroupDestination)
 ```
 
-Follows the same flow as `UseVolSyncAnnotation`: the user sets the
-annotation on the DRPC instance, which propagates it to the VRG via
-ManifestWork. The annotation is whitelisted in `constructVRGFromView`
-so it survives hub round-trips. DRPC annotation changes trigger
-reconcile automatically via the default `For(&DRPlacementControl{})`
+Follows the same flow as `UseVolSyncAnnotation`: the user sets the annotation on the
+DRPC instance, which propagates it to the VRG via ManifestWork. The annotation is
+whitelisted in `constructVRGFromView` so it survives hub round-trips. DRPC annotation
+changes trigger reconcile automatically via the default `For(&DRPlacementControl{})`
 predicate.
 
 Checked via `util.IsDiffSyncEnabled()`. Value must be exactly `"true"`.
@@ -36,9 +35,9 @@ Standard handler: single VGS with fixed name, deleted each cycle.
 
 Diff handler: maintains two VGS via label `ramen.openshift.io/vgs-status`:
 
-| Phase | Action |
-|---|---|
-| Create | New VGS `{rgs-name}-{timestamp}`, `status=current` |
+| Phase   | Action                                                     |
+| ------- | ---------------------------------------------------------- |
+| Create  | New VGS `{rgs-name}-{timestamp}`, `status=current`         |
 | Cleanup | Prune old previous, delete restored PVCs, current→previous |
 
 At rest: exactly one VGS with `status=previous` serves as base for next cycle.
@@ -50,8 +49,7 @@ Cycle N+1: [VGS-N+1: current] → diff(VGS-N, VGS-N+1) → [VGS-N deleted, VGS-N
 
 ## External Spec vs RsyncTLS
 
-Diff sync replaces the standard RsyncTLS ReplicationSource
-spec with an External spec:
+Diff sync replaces the standard RsyncTLS ReplicationSource spec with an External spec:
 
 ```go
 rs.Spec.External = &ReplicationSourceExternalSpec{
@@ -69,22 +67,21 @@ rs.Spec.External = &ReplicationSourceExternalSpec{
 
 ReplicationDestination similarly uses External with `copyMethod=Snapshot`.
 
-The ceph-volsync-plugin mover compares `baseSnapshotName` and
-`targetSnapshotName` at block level using CephFS snapshot diff APIs,
-transferring only changed blocks. When `baseSnapshotName` is empty
-(first cycle), it falls back to full sync.
+The ceph-volsync-plugin mover compares `baseSnapshotName` and `targetSnapshotName` at
+block level using CephFS snapshot diff APIs, transferring only changed blocks. When
+`baseSnapshotName` is empty (first cycle), it falls back to full sync.
 
 ## Handler Method Overrides
 
-`diffVolumeGroupSourceHandler` embeds `volumeGroupSourceHandler` and
-overrides four methods:
+`diffVolumeGroupSourceHandler` embeds `volumeGroupSourceHandler` and overrides four
+methods:
 
-| Method | Standard | Diff |
-|---|---|---|
-| CreateOrUpdateVGS | Fixed name, single | Timestamp suffix, labels |
-| CleanVGS | Delete VGS + PVCs | Preserve previous, rotate |
-| RestoreFromVGS | Lookup by name | Lookup by status label |
-| CreateOrUpdateRS | RsyncTLS spec | External spec + params |
+| Method            | Standard           | Diff                      |
+| ----------------- | ------------------ | ------------------------- |
+| CreateOrUpdateVGS | Fixed name, single | Timestamp suffix, labels  |
+| CleanVGS          | Delete VGS + PVCs  | Preserve previous, rotate |
+| RestoreFromVGS    | Lookup by name     | Lookup by status label    |
+| CreateOrUpdateRS  | RsyncTLS spec      | External spec + params    |
 
 All other methods inherited: `RestoreVolumesFromSnapshot`,
 `CheckReplicationSourceForRestoredPVCsCompleted`, `WaitIfPVCTooNew`,
@@ -92,15 +89,15 @@ All other methods inherited: `RestoreVolumesFromSnapshot`,
 
 ## Failover Rollback (CopyMethodDirect)
 
-When `CopyMethodDirect` is used, the RD syncs directly into the app
-PVC. On failover the PVC may have partial data from an interrupted
-sync and must be rolled back to the last known good snapshot.
+When `CopyMethodDirect` is used, the RD syncs directly into the app PVC. On failover the
+PVC may have partial data from an interrupted sync and must be rolled back to the last
+known good snapshot.
 
-Standard path: local RD + local RS with RsyncTLS copy the entire
-LatestImage snapshot into the app PVC (full copy).
+Standard path: local RD + local RS with RsyncTLS copy the entire LatestImage snapshot
+into the app PVC (full copy).
 
-Diff sync path: replaces the full copy with a block-level diff
-rollback using the ceph-volsync-plugin External spec.
+Diff sync path: replaces the full copy with a block-level diff rollback using the
+ceph-volsync-plugin External spec.
 
 ### Flow
 
@@ -135,15 +132,15 @@ lrs.Spec.External = &ReplicationSourceExternalSpec{
 ```
 
 The plugin diffs `baseSnapshotName` (current corrupted state) against
-`targetSnapshotName` (last known good) and writes only the changed
-blocks to `volumeName`, rolling the PVC back efficiently.
+`targetSnapshotName` (last known good) and writes only the changed blocks to
+`volumeName`, rolling the PVC back efficiently.
 
 ## DR Operations
 
-Transparent to failover/relocate. After failover, first sync on the
-new primary is full (no previous base); subsequent syncs are incremental.
+Transparent to failover/relocate. After failover, first sync on the new primary is full
+(no previous base); subsequent syncs are incremental.
 
 ## Dependencies
 
-* VolumeGroupSnapshot CSI
-* ceph-volsync-plugin with External mover support
+- VolumeGroupSnapshot CSI
+- ceph-volsync-plugin with External mover support

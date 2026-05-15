@@ -5,17 +5,16 @@ SPDX-License-Identifier: Apache-2.0
 
 # Local registry for minikube clusters
 
-This directory contains configuration for running a local container registry.
-The registry can be used to push custom images and consume them in minikube
-clusters.
+This directory contains configuration for running a local container registry. The
+registry can be used to push custom images and consume them in minikube clusters.
 
-The local registry is optional and managed manually by the developer. It is
-not related to the registry cache (see `test/registry-cache/`).
+The local registry is optional and managed manually by the developer. It is not related
+to the registry cache (see `test/registry-cache/`).
 
 ## Port assignment
 
-| Port | Address | Purpose |
-|------|---------|---------|
+| Port | Address                     | Purpose                    |
+| ---- | --------------------------- | -------------------------- |
 | 5050 | host.minikube.internal:5050 | Local registry (push/pull) |
 
 ## Initial setup - Linux
@@ -35,8 +34,7 @@ not related to the registry cache (see `test/registry-cache/`).
    sudo firewall-cmd --reload
    ```
 
-   This allows minikube VMs to access the local registry container running
-   on the host.
+   This allows minikube VMs to access the local registry container running on the host.
 
 1. Configure podman to allow insecure access
 
@@ -55,8 +53,8 @@ not related to the registry cache (see `test/registry-cache/`).
 
 ### Systemd service
 
-To create a registry service running at boot, install the provided
-systemd units and start the service.
+To create a registry service running at boot, install the provided systemd units and
+start the service.
 
 ```
 sudo cp systemd/registry.* /etc/containers/systemd/
@@ -64,8 +62,7 @@ sudo systemctl daemon-reload
 sudo systemctl start registry.service
 ```
 
-> [!NOTE]
-> The service does not need to be enabled.
+> [!NOTE] The service does not need to be enabled.
 
 ## Initial setup - macOS
 

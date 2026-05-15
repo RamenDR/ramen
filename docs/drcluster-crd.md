@@ -7,21 +7,20 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **DRCluster** custom resource represents a managed cluster registered
-for disaster recovery operations. It is a cluster-scoped resource created
-by administrators on the OCM hub cluster that provides:
+The **DRCluster** custom resource represents a managed cluster registered for disaster
+recovery operations. It is a cluster-scoped resource created by administrators on the
+OCM hub cluster that provides:
 
 - S3 configuration for storing PV metadata and cluster state
 - Network fencing configuration for Sync (Metro)
 - Cluster availability and fencing status
 
-DRClusters are referenced by DRPolicy resources to define which clusters
-participate in DR relationships. Each managed cluster that participates in
-DR must have a corresponding DRCluster resource on the hub.
+DRClusters are referenced by DRPolicy resources to define which clusters participate in
+DR relationships. Each managed cluster that participates in DR must have a corresponding
+DRCluster resource on the hub.
 
-**Lifecycle:** Created during initial DR setup for each managed cluster.
-Long-lived resource that remains for the lifetime of the cluster's DR
-participation.
+**Lifecycle:** Created during initial DR setup for each managed cluster. Long-lived
+resource that remains for the lifetime of the cluster's DR participation.
 
 ## API Group and Version
 
@@ -40,15 +39,15 @@ Name of the S3 profile (from RamenConfig) to use for this cluster.
 
 **Purpose:**
 
-- When applications are active on this cluster, their PV metadata is stored
-    to S3 profiles of all peer clusters
-- When applications failover/relocate TO this cluster, PV metadata is
-    restored FROM this S3 profile
+- When applications are active on this cluster, their PV metadata is stored to S3
+  profiles of all peer clusters
+- When applications failover/relocate TO this cluster, PV metadata is restored FROM this
+  S3 profile
 
 **Requirements:**
 
-- The S3 profile name specified in DRCluster must match an S3 profile name
-  defined in RamenConfig
+- The S3 profile name specified in DRCluster must match an S3 profile name defined in
+  RamenConfig
 - Immutable after creation
 
 **Example:**
@@ -63,8 +62,8 @@ s3ProfileName: s3-profile-east
 
 List of CIDR strings for node IP addresses in this cluster.
 
-**Purpose:** Used for network fencing operations in Sync (Metro) to isolate
-a failed cluster.
+**Purpose:** Used for network fencing operations in Sync (Metro) to isolate a failed
+cluster.
 
 **Example:**
 
@@ -73,8 +72,7 @@ cidrs:
   - "10.0.1.0/24"
 ```
 
-**When to set:** Required for Sync (Metro) deployments where network
-fencing is needed.
+**When to set:** Required for Sync (Metro) deployments where network fencing is needed.
 
 #### `clusterFence` (ClusterFenceState)
 
@@ -82,8 +80,8 @@ Desired fencing state of the cluster.
 
 **Valid values:**
 
-- `Unfenced` - Cluster is not fenced or should be unfenced
-  (default/normal state; automated)
+- `Unfenced` - Cluster is not fenced or should be unfenced (default/normal state;
+  automated)
 - `Fenced` - Cluster should be fenced (automated)
 - `ManuallyFenced` - Cluster was manually fenced by admin
 - `ManuallyUnfenced` - Cluster was manually unfenced by admin
@@ -94,8 +92,8 @@ Desired fencing state of the cluster.
 clusterFence: Unfenced
 ```
 
-**How it works:** During failover in Sync (Metro), Ramen may fence the
-source cluster to prevent potential concurrent writes to storage.
+**How it works:** During failover in Sync (Metro), Ramen may fence the source cluster to
+prevent potential concurrent writes to storage.
 
 ## Status Fields
 
@@ -297,21 +295,22 @@ kubectl get drcluster east-cluster -o yaml
 
 1. **S3 profile not found**
 
-    - Verify the S3 profile name specified in DRCluster matches an S3 profile
-      name defined in RamenConfig
-    - Check RamenConfig:
+   - Verify the S3 profile name specified in DRCluster matches an S3 profile name
+     defined in RamenConfig
 
-        ```bash
-        kubectl get cm ramen-hub-operator-config -n ramen-system -o yaml
-        ```
+   - Check RamenConfig:
+
+     ```bash
+     kubectl get cm ramen-hub-operator-config -n ramen-system -o yaml
+     ```
 
 1. **ManagedCluster not found**
 
-    - Verify managed cluster is registered:
+   - Verify managed cluster is registered:
 
-        ```bash
-        kubectl get managedcluster east-cluster
-        ```
+     ```bash
+     kubectl get managedcluster east-cluster
+     ```
 
 ### Fencing Not Working
 
@@ -358,26 +357,27 @@ kubectl get drpolicy -o yaml | grep drClusters
 
 1. **Configure S3 profiles carefully:**
 
-    - Test S3 connectivity before creating DRClusters
-    - Use separate S3 buckets per cluster or namespace objects properly
-    - Ensure credentials have appropriate permissions
+   - Test S3 connectivity before creating DRClusters
+   - Use separate S3 buckets per cluster or namespace objects properly
+   - Ensure credentials have appropriate permissions
 
 1. **Document CIDRs:**
 
-    - Keep CIDR documentation updated
-    - Include all node network ranges
-    - Plan for cluster expansion
+   - Keep CIDR documentation updated
+   - Include all node network ranges
+   - Plan for cluster expansion
 
 1. **Monitor DRCluster status:**
 
-    - Check `Validated` condition after creation
-    - Monitor `maintenanceModes` during DR operations
-    - Watch fencing state during Sync (Metro) failovers
+   - Check `Validated` condition after creation
+   - Monitor `maintenanceModes` during DR operations
+   - Watch fencing state during Sync (Metro) failovers
 
 1. **Test before production:**
-    - Verify S3 access from managed clusters
-    - Test fencing operations in non-production
-    - Validate DRPolicy creation succeeds
+
+   - Verify S3 access from managed clusters
+   - Test fencing operations in non-production
+   - Validate DRPolicy creation succeeds
 
 ## Related Resources
 

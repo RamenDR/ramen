@@ -5,18 +5,18 @@ SPDX-License-Identifier: Apache-2.0
 
 # User quick start guide for testing application DR
 
-This page will help you to set up an environment for testing **Regional-DR**
-basic tests.
+This page will help you to set up an environment for testing **Regional-DR** basic
+tests.
 
-This video will demonstrate how to test application DR *after* completing the configuration.
+This video will demonstrate how to test application DR *after* completing the
+configuration.
 
 [![Video demo](https://img.youtube.com/vi/8-fpChSWzeo/hqdefault.jpg)](https://www.youtube.com/embed/8-fpChSWzeo)
 
 ## What you’ll need
 
-To set up a *Ramen* development environment you will need to run 3
-Kubernetes clusters. *Ramen* makes this easy using minikube, but you need
-enough resources:
+To set up a *Ramen* development environment you will need to run 3 Kubernetes clusters.
+*Ramen* makes this easy using minikube, but you need enough resources:
 
 - Bare metal or virtual machine with nested virtualization enabled
 - 8 CPUs or more
@@ -28,7 +28,8 @@ enough resources:
 
 ## Setting up your machine
 
-1. Fork the *Ramen* repository at [https://github.com/RamenDR/ramen](https://github.com/RamenDR/ramen)
+1. Fork the *Ramen* repository at
+   [https://github.com/RamenDR/ramen](https://github.com/RamenDR/ramen)
 
 1. Clone the source locally
 
@@ -39,16 +40,15 @@ enough resources:
 
 1. Create python virtual environment
 
-   The *Ramen* project use python tool to create and provision test
-   environment and run tests. The create a virtual environment including
-   the tools run:
+   The *Ramen* project use python tool to create and provision test environment and run
+   tests. The create a virtual environment including the tools run:
 
    ```
    make venv
    ```
 
-   This create a virtual environment in `~/.venv/ramen` and a symbolic
-   link `venv` for activating the environment.
+   This create a virtual environment in `~/.venv/ramen` and a symbolic link `venv` for
+   activating the environment.
 
    To activate the environment use:
 
@@ -85,7 +85,8 @@ enough resources:
    rpm -q libvirt virt-manager
    ```
 
-   For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
+   For more information see
+   [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
 1. Install minikube - on Fedora you can use::
 
@@ -167,8 +168,7 @@ enough resources:
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0.
-   Version v0.21.2 or later is required.
+   Tested with version v0.22.0. Version v0.21.2 or later is required.
 
 1. Install the `velero` tool
 
@@ -180,8 +180,7 @@ enough resources:
    velero version
    ```
 
-   For more info see
-   [Velero Basic Install](https://velero.io/docs/v1.14/basic-install/)
+   For more info see [Velero Basic Install](https://velero.io/docs/v1.14/basic-install/)
 
 1. Install the `virtctl` tool.
 
@@ -192,8 +191,7 @@ enough resources:
    virtctl version
    ```
 
-   For more info see
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+   For more info see [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
 
 1. Install `mc` tool
 
@@ -228,7 +226,8 @@ enough resources:
    argocd version --client
    ```
 
-   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+   For more info see
+   [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
 
 1. Install the `kubectl-gather` plugin
 
@@ -244,9 +243,8 @@ enough resources:
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
-   For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
+   kubectl-gather version 0.6.0 or later is required. Tested with version 0.8.0. For
+   more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 1. Install `helm` tool - on Fedora you can use:
 
@@ -258,8 +256,8 @@ enough resources:
    helm version
    ```
 
-   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
-   Tested with version v4.0.1.
+   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options Tested
+   with version v4.0.1.
 
 1. Install `podman` - on Fedora you can use:
 
@@ -281,21 +279,20 @@ enough resources:
 
 ## Starting the test environment
 
-Before using the `drenv` tool to start a test environment, you need to
-activate the python virtual environment:
+Before using the `drenv` tool to start a test environment, you need to activate the
+python virtual environment:
 
 ```
 cd ramen
 source venv
 ```
 
-This environment simulates a Regional DR setup, when the managed clusters are
-located in different zones (e.g. US, Europe) and storage is replicated
-asynchronously. This environment includes 3 clusters - a hub cluster (`hub`),
-and 2 managed clusters (`dr1`, `dr2`) using `Ceph` storage. The connectivity
-between managed clusters will be configured using subctl (Submariner client).
-In addition, rbd-mirroring is configured using the Submariner connection for
-ceph image replication of block volumes.
+This environment simulates a Regional DR setup, when the managed clusters are located in
+different zones (e.g. US, Europe) and storage is replicated asynchronously. This
+environment includes 3 clusters - a hub cluster (`hub`), and 2 managed clusters (`dr1`,
+`dr2`) using `Ceph` storage. The connectivity between managed clusters will be
+configured using subctl (Submariner client). In addition, rbd-mirroring is configured
+using the Submariner connection for ceph image replication of block volumes.
 
 To start the environment, run:
 
@@ -304,8 +301,7 @@ cd test
 drenv start envs/regional-dr.yaml
 ```
 
-Starting takes 10-15 minutes, depending on your machine and
-internet connection.
+Starting takes 10-15 minutes, depending on your machine and internet connection.
 
 Example output:
 
@@ -380,11 +376,10 @@ To deploy the *Ramen* operator in the test environment:
 ramendev deploy test/envs/regional-dr.yaml
 ```
 
-For more info on the `ramendev` tool see
-[ramendev/README.md](../ramendev/README.md).
+For more info on the `ramendev` tool see [ramendev/README.md](../ramendev/README.md).
 
-Ramen now needs to be configured to know about the managed clusters and the
-s3 endpoints. To configure the ramen operator for test environment:
+Ramen now needs to be configured to know about the managed clusters and the s3
+endpoints. To configure the ramen operator for test environment:
 
 ```
 ramendev config test/envs/regional-dr.yaml
@@ -392,12 +387,12 @@ ramendev config test/envs/regional-dr.yaml
 
 ## Running system tests
 
-At this point *Ramen* is ready to protect workloads in your cluster, and
-you are ready for testing basic flows.
+At this point *Ramen* is ready to protect workloads in your cluster, and you are ready
+for testing basic flows.
 
-Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
-Before running the tests, you need to deploy a channel pointing this
-repo:
+Ramen basic test use the
+[ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples). Before running
+the tests, you need to deploy a channel pointing this repo:
 
 ```
 kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel --context hub
@@ -418,8 +413,8 @@ This test does these operations:
 1. Disables DR for the application
 1. Uninstalls the application
 
-If needed, you can run one or more steps from this test, for example to
-deploy and enable DR run:
+If needed, you can run one or more steps from this test, for example to deploy and
+enable DR run:
 
 ```
 env=$PWD/test/envs/regional-dr.yaml
@@ -427,8 +422,7 @@ test/basic-test/deploy $env
 test/basic-test/enable-dr $env
 ```
 
-At this point you can run run manually failover, relocate one or more
-times as needed.
+At this point you can run run manually failover, relocate one or more times as needed.
 
 To clean up the basic-test for regional-dr.yaml run this command:
 
@@ -438,8 +432,8 @@ test/basic-test/undeploy $env
 
 ## Undeploying the test environment
 
-If you want to clean up your environment completely run this command.
-All clusters and resources will be deleted.
+If you want to clean up your environment completely run this command. All clusters and
+resources will be deleted.
 
 ```
 cd ramen/test

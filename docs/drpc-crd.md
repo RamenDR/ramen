@@ -7,21 +7,20 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **DRPlacementControl** (DRPC) custom resource is the primary interface
-for protecting and managing applications with disaster recovery capabilities.
-Created by users in the application namespace on the OCM hub cluster, it
-orchestrates:
+The **DRPlacementControl** (DRPC) custom resource is the primary interface for
+protecting and managing applications with disaster recovery capabilities. Created by
+users in the application namespace on the OCM hub cluster, it orchestrates:
 
 - Initial DR protection of applications deployed on the preferred cluster
 - Failover operations to peer clusters during disasters
 - Planned relocation between clusters
 
 The DRPC is the control plane for application DR - it creates and manages
-VolumeReplicationGroup (VRG) resources on managed clusters via ManifestWork,
-coordinates with OCM Placement, and tracks DR state.
+VolumeReplicationGroup (VRG) resources on managed clusters via ManifestWork, coordinates
+with OCM Placement, and tracks DR state.
 
-**Lifecycle:** One DRPC per application. Created when enabling DR protection,
-modified to trigger DR operations, deleted when removing DR protection.
+**Lifecycle:** One DRPC per application. Created when enabling DR protection, modified
+to trigger DR operations, deleted when removing DR protection.
 
 ## API Group and Version
 
@@ -53,13 +52,12 @@ placementRef:
   name: my-app-placement
 ```
 
-**How it works:** DRPC modifies the Placement decisions to control which
-cluster runs the application during DR operations.
+**How it works:** DRPC modifies the Placement decisions to control which cluster runs
+the application during DR operations.
 
 #### `drPolicyRef` (v1.ObjectReference)
 
-Reference to the DRPolicy that defines the DR topology and replication
-configuration.
+Reference to the DRPolicy that defines the DR topology and replication configuration.
 
 **Requirements:**
 
@@ -92,8 +90,8 @@ pvcSelector:
     protect: "true"
 ```
 
-**Best practice:** Use specific labels to avoid protecting unwanted PVCs
-(e.g., cache volumes).
+**Best practice:** Use specific labels to avoid protecting unwanted PVCs (e.g., cache
+volumes).
 
 ### Optional Fields
 
@@ -127,8 +125,8 @@ failoverCluster: west-cluster
 action: Failover
 ```
 
-**Note:** For relocate operations, change `preferredCluster` instead and `action`
-to `Relocate`
+**Note:** For relocate operations, change `preferredCluster` instead and `action` to
+`Relocate`
 
 #### `action` (DRAction)
 
@@ -180,12 +178,11 @@ Configuration for protecting Kubernetes resources (not just PVCs).
 
 **Fields:**
 
-- `captureInterval` (metav1.Duration) - How often to capture Kubernetes
-  objects (default: 5m)
+- `captureInterval` (metav1.Duration) - How often to capture Kubernetes objects
+  (default: 5m)
 - `recipeRef` (RecipeRef) - Reference to Recipe for custom workflows
 - `recipeParameters` (map[string][]string) - Parameters for Recipe
-- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to
-  protect
+- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to protect
 
 **Example:**
 
@@ -574,8 +571,7 @@ kubectl delete drpc myapp-drpc -n myapp
 kubectl get drpc -A
 ```
 
-Output shows: name, age, preferredCluster, failoverCluster, desiredState,
-currentState.
+Output shows: name, age, preferredCluster, failoverCluster, desiredState, currentState.
 
 ### View Detailed Status
 
@@ -617,11 +613,11 @@ kubectl get pvc -n myapp -l app=myapp
 kubectl get manifestwork -A | grep myapp
 ```
 
-**Common causes:** PVC selector mismatch, storage class not found on target
-cluster, or VRG not becoming ready.
+**Common causes:** PVC selector mismatch, storage class not found on target cluster, or
+VRG not becoming ready.
 
-**Solution:** Ensure PVCs have correct labels, storage class exists on managed
-cluster, and check VRG status for errors.
+**Solution:** Ensure PVCs have correct labels, storage class exists on managed cluster,
+and check VRG status for errors.
 
 ### Failover Not Progressing
 
@@ -632,11 +628,11 @@ kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
 kubectl get pods -n myapp --context west-cluster
 ```
 
-**Common causes:** Storage fencing in progress, application pods not ready,
-or S3 storage not accessible.
+**Common causes:** Storage fencing in progress, application pods not ready, or S3
+storage not accessible.
 
-**Solution:** Wait for fencing to complete (normal for Metro DR), fix
-application issues (image pull, resources), or verify S3 connectivity.
+**Solution:** Wait for fencing to complete (normal for Metro DR), fix application issues
+(image pull, resources), or verify S3 connectivity.
 
 ### Relocate Taking Too Long
 
@@ -647,11 +643,10 @@ kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
 kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.lastGroupSyncBytes}'
 ```
 
-**Common causes:** Large data sync in progress or source cluster not
-accessible.
+**Common causes:** Large data sync in progress or source cluster not accessible.
 
-**Solution:** Wait for final sync to complete. If source cluster is down,
-use Failover instead of Relocate.
+**Solution:** Wait for final sync to complete. If source cluster is down, use Failover
+instead of Relocate.
 
 ### PeerReady Condition False
 
@@ -662,11 +657,9 @@ kubectl get managedcluster west-cluster
 kubectl get vrg myapp-drpc -n myapp --context west-cluster
 ```
 
-**Common causes:** Peer cluster unavailable or storage replication not
-established.
+**Common causes:** Peer cluster unavailable or storage replication not established.
 
-**Solution:** Ensure peer cluster is healthy and replication is configured
-correctly.
+**Solution:** Ensure peer cluster is healthy and replication is configured correctly.
 
 ### Cannot Delete DRPC
 
@@ -679,41 +672,37 @@ kubectl get vrg -n myapp --context east-cluster
 
 **Common causes:** VRG cleanup pending on managed clusters.
 
-**Solution:** Wait for VRG cleanup. If stuck, manually delete VRG or remove
-finalizers (use with caution).
+**Solution:** Wait for VRG cleanup. If stuck, manually delete VRG or remove finalizers
+(use with caution).
 
 ## Best Practices
 
-1. **Use descriptive names** - Include app name in DRPC name (e.g.,
-   `myapp-drpc`)
+1. **Use descriptive names** - Include app name in DRPC name (e.g., `myapp-drpc`)
 
-1. **Label PVCs specifically** - Use unique labels to avoid protecting wrong
-   PVCs
+1. **Label PVCs specifically** - Use unique labels to avoid protecting wrong PVCs
 
-1. **Monitor status regularly** - Check `lastGroupSyncTime` to ensure
-   replication is working
+1. **Monitor status regularly** - Check `lastGroupSyncTime` to ensure replication is
+   working
 
 1. **Test failover** - Perform planned failover tests before actual disasters
 
-1. **Document procedures** - Create runbooks for DR operations specific to
-   your apps
+1. **Document procedures** - Create runbooks for DR operations specific to your apps
 
 1. **Use GitOps when possible** - For easier application recreation
 
 1. **Set appropriate capture intervals** - Balance protection vs. overhead
-    - Critical apps: 5m
-    - Standard apps: 15m to 30m
-    - Low-priority: 1h
 
-1. **Verify peer readiness** - Check `PeerReady` condition before triggering
-   DR
+   - Critical apps: 5m
+   - Standard apps: 15m to 30m
+   - Low-priority: 1h
+
+1. **Verify peer readiness** - Check `PeerReady` condition before triggering DR
 
 1. **Clean up after testing** - Remove DRPCs for apps that don't need DR
 
 ## Related Resources
 
 - [DRPolicy CRD](drpolicy-crd.md) - Defines DR topology referenced by DRPC
-- [VolumeReplicationGroup CRD](vrg-crd.md) - Created by DRPC on managed
-  clusters
+- [VolumeReplicationGroup CRD](vrg-crd.md) - Created by DRPC on managed clusters
 - [Usage Guide](usage.md) - How to protect workloads with Ramen
 - [Recipe Documentation](recipe.md) - For Recipe-based protection

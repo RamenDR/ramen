@@ -5,29 +5,28 @@ SPDX-License-Identifier: Apache-2.0
 
 # End to End testing
 
-RamenDR end-to-end (e2e) tests validate various scenarios for regional DR
-using predefined workloads and deployment methods.
+RamenDR end-to-end (e2e) tests validate various scenarios for regional DR using
+predefined workloads and deployment methods.
 
 ## Running End to End tests
 
-> [!IMPORTANT]
-> All commands must be ran from the e2e directory.
+> [!IMPORTANT] All commands must be ran from the e2e directory.
 
 ### Preparing a `config.yaml` file
 
 #### For drenv environment
 
-If `drenv` was used to configure RDR clusters, easily copy `config.yaml.sample`
-and add the clusters kubeconfig paths into `config.yaml` using:
+If `drenv` was used to configure RDR clusters, easily copy `config.yaml.sample` and add
+the clusters kubeconfig paths into `config.yaml` using:
 
 ```sh
 cat config.yaml.sample ~/.config/drenv/rdr/config.yaml > config.yaml
 ```
 
-If the `drenv` tool was used to configure RDR clusters with the KubeVirt addon
-for deploying VirtualMachine workloads using the configuration file located at
-`envs/regional-dr-kubevirt.yaml`, follow these steps to complete the e2e setup
-for VM workload testing:
+If the `drenv` tool was used to configure RDR clusters with the KubeVirt addon for
+deploying VirtualMachine workloads using the configuration file located at
+`envs/regional-dr-kubevirt.yaml`, follow these steps to complete the e2e setup for VM
+workload testing:
 
 ```sh
 cat config-vm.yaml.sample ~/.config/drenv/rdr-kubevirt/config.yaml > config.yaml
@@ -47,8 +46,8 @@ Create a `config.yaml` file by copying the `config.yaml.sample` template:
 cp config.yaml.sample config.yaml
 ```
 
-Update `config.yaml` by uncommenting and adding cluster kubeconfig paths
-for the hub and managed clusters.
+Update `config.yaml` by uncommenting and adding cluster kubeconfig paths for the hub and
+managed clusters.
 
 ```yaml
 Clusters:
@@ -62,8 +61,8 @@ Clusters:
 
 ### Validating the clusters
 
-Before running tests it is useful to validate that the clusters are accessible
-and ready for testing. You can verify it using:
+Before running tests it is useful to validate that the clusters are accessible and ready
+for testing. You can verify it using:
 
 ```sh
 ./run.sh -test.run TestValidation
@@ -97,14 +96,14 @@ To run all the DR tests run the TestDR test:
 ./run.sh -test.run TestDR
 ```
 
-The test perform a full DR flow with a tiny workload with multiple deployemnet
-methods and storage configurations.
+The test perform a full DR flow with a tiny workload with multiple deployemnet methods
+and storage configurations.
 
-> [!TIP]
-> The tests typically complete in 10 minutes, depending the machine running the tests.
+> [!TIP] The tests typically complete in 10 minutes, depending the machine running the
+> tests.
 
-When all tests complete we will see a test summary showing the status of all
-tests and the time to complete every step:
+When all tests complete we will see a test summary showing the status of all tests and
+the time to complete every step:
 
 ```console
 --- PASS: TestDR (6.13s)
@@ -164,9 +163,9 @@ All tests completed successfully!
 
 ### Tests configuration
 
-The tests are defined in the configuration file. Each test specifies a deployer
-name, workload name, and PVCSpec. The PVCSpec and Deployer names should match a
-name in the PVCSpecs and Deployers sections of the configuration file.:
+The tests are defined in the configuration file. Each test specifies a deployer name,
+workload name, and PVCSpec. The PVCSpec and Deployer names should match a name in the
+PVCSpecs and Deployers sections of the configuration file.:
 
 ```yaml
 tests:
@@ -177,26 +176,25 @@ tests:
 ```
 
 By default, the test name is generated from the configuration as
-"TestDR/{deployer}-{workload}-{pvcspec}".
-See [Running DR tests](#running-dr-tests) section for complete test list.
+"TestDR/{deployer}-{workload}-{pvcspec}". See [Running DR tests](#running-dr-tests)
+section for complete test list.
 
 #### Deployers
 
-The deployers section defines the available deployment methods. Each deployer
-has a name, type, and description. The type is used to identify the deployer
-implementation. There are 3 types available, appset, subscr, and disapp. For
-disapp, optional fields for recipe are added. The description provides
-additional context about the deployer.
+The deployers section defines the available deployment methods. Each deployer has a
+name, type, and description. The type is used to identify the deployer implementation.
+There are 3 types available, appset, subscr, and disapp. For disapp, optional fields for
+recipe are added. The description provides additional context about the deployer.
 
 #### Testing multiple applications
 
-By default, each combination of deployer, workload, and pvcSpec must be unique.
-To run multiple applications with the same configuration, add an explicit
-`name` to each test. This is useful for stress testing storage by running
-multiple applications concurrently on the same storage class.
+By default, each combination of deployer, workload, and pvcSpec must be unique. To run
+multiple applications with the same configuration, add an explicit `name` to each test.
+This is useful for stress testing storage by running multiple applications concurrently
+on the same storage class.
 
-For example, testing 4 CephFS applications concurrently using the discovered
-application deployer:
+For example, testing 4 CephFS applications concurrently using the discovered application
+deployer:
 
 ```yaml
 tests:
@@ -219,15 +217,15 @@ tests:
 ```
 
 Each test gets its own namespace (`test-cephfs-1`, `test-cephfs-2`, etc.) and
-independent DR resources. The name must be a valid DNS label (lowercase
-alphanumeric and hyphens, max 63 characters including the namespace prefix).
+independent DR resources. The name must be a valid DNS label (lowercase alphanumeric and
+hyphens, max 63 characters including the namespace prefix).
 
 ### Run specific DR tests
 
-Running specific tests is commonly used when debugging a failing test,
-developing a new test, or working on a new deployer or workload. It allows to
-selectively execute specific tests by matching full test names using regular
-expressions, making it easier to focus on specific scenarios.
+Running specific tests is commonly used when debugging a failing test, developing a new
+test, or working on a new deployer or workload. It allows to selectively execute
+specific tests by matching full test names using regular expressions, making it easier
+to focus on specific scenarios.
 
 #### Run a single DR test
 
@@ -247,8 +245,8 @@ Example:
 ./run.sh -test.run TestDR/appset
 ```
 
-This command runs all DR tests related to ApplicationSet, covering both RBD and
-CephFS PVC based applications. Useful when focusing on a specific deployer.
+This command runs all DR tests related to ApplicationSet, covering both RBD and CephFS
+PVC based applications. Useful when focusing on a specific deployer.
 
 #### Run DR tests using a specific storage
 
@@ -258,13 +256,13 @@ Example:
 ./run.sh -test.run TestDR/rbd
 ```
 
-This command runs all DR tests related to RBD PVCs across all deployers. Ideal
-for verifying functionality specific to a storage type.
+This command runs all DR tests related to RBD PVCs across all deployers. Ideal for
+verifying functionality specific to a storage type.
 
 ### Using multiple config files
 
-Use this option if you want to maintain multiple configuration files and run
-tests using a specific one. Example usage:
+Use this option if you want to maintain multiple configuration files and run tests using
+a specific one. Example usage:
 
 ```sh
 ./run.sh -config my_config.yaml
@@ -272,9 +270,9 @@ tests using a specific one. Example usage:
 
 ### Stress testing
 
-Stress test configurations run multiple instances of the same application
-concurrently to investigate storage performance under load. This is useful
-for detecting issues like CephFS quiesce serialization during failover.
+Stress test configurations run multiple instances of the same application concurrently
+to investigate storage performance under load. This is useful for detecting issues like
+CephFS quiesce serialization during failover.
 
 Available stress test configurations:
 

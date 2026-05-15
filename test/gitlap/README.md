@@ -18,8 +18,8 @@
    sudo git clone --bare https://github.com/nirs/ocm-kubevirt-samples.git
    ```
 
-   Set git repo permissions so you can push changes, and the web server
-   can serve the repo.
+   Set git repo permissions so you can push changes, and the web server can serve the
+   repo.
 
    ```
    sudo chown -R $USER:lighttpd /var/www/gitlap
