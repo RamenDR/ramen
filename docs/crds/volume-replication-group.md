@@ -597,8 +597,8 @@ When using VolSync for replication:
 
 ## Related Resources
 
-- [DRPlacementControl CRD](drpc-crd.md) - Creates and manages VRGs
-- [DRPolicy CRD](drpolicy-crd.md) - Defines replication configuration used
+- [DRPlacementControl](dr-placement-control.md) - Creates and manages VRGs
+- [DRPolicy](dr-policy.md) - Defines replication configuration used
   by VRG
-- [Usage Guide](usage.md) - How VRG fits into workload protection
-- [Recipe Documentation](recipe.md) - For custom VRG workflows
+- [Usage Guide](../usage.md) - How VRG fits into workload protection
+- [Recipe Documentation](../recipe.md) - For custom VRG workflows

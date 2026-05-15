@@ -729,7 +729,7 @@ kubectl label storageclass <storage-class-name> \
 - Verify VolumeReplicationClass or VolumeSnapshotClass exists with proper labels
 - Check that storage replication is configured between clusters
 
-For additional troubleshooting, see [drpolicy-crd.md](drpolicy-crd.md#troubleshooting).
+For additional troubleshooting, see [DRPolicy](crds/dr-policy.md#troubleshooting).
 
 ## Next Steps
 
@@ -750,7 +750,7 @@ Depending on your use case, you may want to configure:
 - Recipe CRD for recipe-based workload protection
 - Cluster fencing for Metro DR scenarios
   ([DRCluster-CRD.md](DRCluster-CRD.md#cluster-fencing))
-- Maintenance modes for Regional DR ([maintenancemode-crd.md](maintenancemode-crd.md))
+- Maintenance modes for Regional DR ([MaintenanceMode](crds/maintenance-mode.md))
 
 ### Quick Reference
 
@@ -780,7 +780,7 @@ kubectl get drcluster <cluster-name> -o jsonpath='{.status.conditions[?(@.type==
 
 For more detailed information about each resource, refer to:
 
-- [DRCluster-CRD.md](DRCluster-CRD.md) - Complete DRCluster reference
-- [drpolicy-crd.md](drpolicy-crd.md) - Complete DRPolicy reference
-- [install.md](install.md) - Installation guide
-- [usage.md](usage.md) - Protecting and managing workloads
+- [DRCluster](crds/dr-cluster.md) - Complete DRCluster reference
+- [DRPolicy](crds/dr-policy.md) - Complete DRPolicy reference
+- [Installation Guide](install.md) - Installation guide
+- [Usage Guide](usage.md) - Protecting and managing workloads
