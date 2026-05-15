@@ -121,6 +121,15 @@ func (f *fakeObjectStorer) DownloadObject(key string, objectPointer interface{})
 	return nil
 }
 
+func (f *fakeObjectStorer) ObjectExists(key string) (bool, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	_, ok := f.objects[key]
+
+	return ok, nil
+}
+
 func (f *fakeObjectStorer) ListKeys(keyPrefix string) ([]string, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()

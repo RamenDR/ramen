@@ -98,6 +98,8 @@ func (v *VRGInstance) kubeObjectsProtect(
 	vrg := v.instance
 	status := &vrg.Status.KubeObjectProtection
 
+	v.initializeS3Metadata()
+
 	captureToRecoverFrom := status.CaptureToRecoverFrom
 	if captureToRecoverFrom == nil {
 		v.log.Info("Kube objects capture-to-recover-from nil")
@@ -518,6 +520,9 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 		delaySetMinimum(result)
 		v.log.Info("Kube objects capture schedule to run immediately")
 	}
+
+	// Reflect successful cluster-data upload in S3 metadata only after VRG upload and capture cleanup succeed.
+	v.updateS3MetadataAfterCapture(captureToRecoverFromIdentifier.Number)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureStatusFalse(reason, message string) {
@@ -1401,4 +1406,97 @@ func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
 	}
 
 	return metav1.Time{}
+}
+
+func (v *VRGInstance) initializeS3Metadata() {
+	if len(v.metadataRepos) == 0 {
+		v.log.Info("No metadata repositories configured")
+
+		return
+	}
+
+	primaryCluster := v.getClusterName()
+
+	for s3ProfileName, repo := range v.metadataRepos {
+		existingMetadata, exists, err := repo.Get()
+		if err != nil {
+			// Transient S3/network errors: do not create or rewrite metadata; retry next reconcile.
+			v.log.Error(err, "Failed to check metadata", "s3Profile", s3ProfileName)
+
+			continue
+		}
+
+		if !exists {
+			metadata := NewS3StoreMetadata(primaryCluster)
+
+			if err := repo.Create(metadata); err != nil {
+				v.log.Error(err, "Failed to create initial metadata", "s3Profile", s3ProfileName)
+
+				continue
+			}
+
+			v.log.Info("Created initial S3 metadata", "s3Profile", s3ProfileName)
+
+			continue
+		}
+
+		needsResync, reason := NeedsS3ClusterDataResync(existingMetadata)
+		if needsResync {
+			v.log.Info("S3 store needs cluster-data re-upload; refreshing metadata",
+				"reason", reason,
+				"s3Profile", s3ProfileName,
+				"oldSchema", existingMetadata.SchemaVersion,
+				"newSchema", S3StoreSchemaVersion)
+
+			metadata := NewS3StoreMetadata(primaryCluster)
+
+			if err := repo.Update(metadata); err != nil {
+				v.log.Error(err, "Failed to update metadata after resync decision", "s3Profile", s3ProfileName)
+			}
+
+			continue
+		}
+
+		v.log.V(1).Info("S3 metadata present and schema current for this profile",
+			"s3Profile", s3ProfileName)
+	}
+}
+
+func (v *VRGInstance) updateS3MetadataAfterCapture(captureNumber int64) {
+	if len(v.metadataRepos) == 0 {
+		v.log.Info("No metadata repositories to update")
+
+		return
+	}
+
+	primaryCluster := v.getClusterName()
+
+	for s3ProfileName, repo := range v.metadataRepos {
+		metadata := NewS3StoreMetadata(primaryCluster)
+
+		if err := repo.Update(metadata); err != nil {
+			v.log.Error(err, "Failed to update metadata after capture",
+				"s3Profile", s3ProfileName,
+				"captureNumber", captureNumber)
+
+			continue
+		}
+
+		v.log.Info("Updated S3 metadata after successful capture",
+			"s3Profile", s3ProfileName,
+			"captureNumber", captureNumber,
+			"clusterID", metadata.ClusterID)
+	}
+}
+
+func (v *VRGInstance) getClusterName() string {
+	if v.instance.Annotations == nil {
+		return ""
+	}
+
+	if clusterName := v.instance.Annotations[DestinationClusterAnnotationKey]; clusterName != "" {
+		return clusterName
+	}
+
+	return ""
 }
