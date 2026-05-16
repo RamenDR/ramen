@@ -1791,21 +1791,6 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
-	// We already have the vrg.spec.state set to Secondary, so the user has been
-	// asked to cleanup the resources and we cannot upload the kube resources
-	// here. This final sync of kube resources should happen before the user is
-	// asked to cleanup the resources. This bug will be fixed in the future
-	// after we reconcile the volsync and volrep processes to be similar.
-	// TODO: Do a final sync of kube resources at the same place where we do the
-	// final sync of the volsync resources.
-
-	// Clear the conditions only if there are no more work as secondary and the RDSpec is not empty.
-	// Note: When using VolSync, we preserve the secondary and we need the status of the VRG to be
-	// clean. In all other cases, the VRG will be deleted and we don't care about the its conditions.
-	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 {
-		v.instance.Status.Conditions = []metav1.Condition{}
-	}
-
 	return result
 }
 
