@@ -8,7 +8,7 @@ from drenv import ceph
 from drenv import kubectl
 
 PACKAGE_DIR = Path(__file__).parent
-CACHE_KEY = "addons/rook-toolbox-1.18.yaml"
+CACHE_KEY = "addons/rook-toolbox-1.19.yaml"
 
 
 def start(cluster):
