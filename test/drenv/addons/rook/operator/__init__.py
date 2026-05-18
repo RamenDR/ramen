@@ -7,7 +7,7 @@ from drenv import cache as _cache
 from drenv import kubectl
 
 PACKAGE_DIR = Path(__file__).parent
-CACHE_KEY = "addons/rook-operator-1.18-5.yaml"
+CACHE_KEY = "addons/rook-operator-1.19.yaml"
 
 
 def start(cluster):
