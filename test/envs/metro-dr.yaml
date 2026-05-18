@@ -89,3 +89,6 @@ workers:
   - addons:
       - name: argocd
         args: ["hub", "dr1", "dr2"]
+  - addons:
+      - name: volsync
+        args: ["dr1", "dr2", "skip-test"]
