@@ -511,13 +511,20 @@ func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics
 	}
 }
 
-// validateCIDRsDetected ensures all CIDRs in DRCluster spec are detected
-// in StorageAccessDetails from DRClusterConfig status.
+// validateCIDRsConfigured ensures all detected CIDRs from DRClusterConfig StorageAccessDetails
+// are configured in the DRCluster. Additional CIDRs in DRCluster that are undetected
+// (not present in StorageAccessDetails) are allowed.
+//
+// Terminology:
+//   - detected:     CIDRs in DRClusterConfig StorageAccessDetails, auto-detected by the storage provisioner
+//   - undetected:   CIDRs in DRCluster.Spec not present in StorageAccessDetails (additional, allowed)
+//   - unconfigured: CIDRs detected by the storage provisioner but not configured in DRCluster.Spec
+//     (these cause a validation error)
 //
 // Validation is skipped if DRClusterConfig is not found or StorageAccessDetails is empty.
 // The watch on ManagedClusterView/ManifestWork will trigger reconciliation when these
-// become available. Returns an error if any CIDRs in spec are not found in the detected set.
-func (u *drclusterInstance) validateCIDRsDetected() error {
+// become available. Returns an error if any detected CIDRs are not configured.
+func (u *drclusterInstance) validateCIDRsConfigured() error {
 	drcConfig, err := u.getDRCCFromCluster(u.object)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -546,15 +553,22 @@ func (u *drclusterInstance) validateCIDRsDetected() error {
 
 	cidrsFromDRCluster := sets.NewString(u.object.Spec.CIDRs...)
 
-	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
-	if len(undetectedCIDRs) > 0 {
-		return fmt.Errorf("undetected CIDRs specified %s", strings.Join(undetectedCIDRs, ", "))
+	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
+	if len(unconfiguredCIDRs) > 0 {
+		return fmt.Errorf("expected CIDRs not configured %s", strings.Join(unconfiguredCIDRs, ", "))
 	}
+
+	// TODO: raise an alert for undetectedCIDRs (cidrsFromDRCluster.Difference(cidrsFromDRCC))
+	// to surface additional CIDRs in DRCluster that are not present in StorageAccessDetails.
 
 	return nil
 }
 
 func (u *drclusterInstance) validateCIDRs(metrics InvalidCIDRsDetectedMetrics, log logr.Logger) error {
+	if len(u.object.Spec.CIDRs) == 0 {
+		return nil
+	}
+
 	err := validateCIDRsFormat(u.object, log)
 	if err != nil {
 		metrics.InvalidCIDRsDetected.Set(1)
@@ -562,7 +576,7 @@ func (u *drclusterInstance) validateCIDRs(metrics InvalidCIDRsDetectedMetrics, l
 		return err
 	}
 
-	err = u.validateCIDRsDetected()
+	err = u.validateCIDRsConfigured()
 	if err != nil {
 		metrics.InvalidCIDRsDetected.Set(1)
 
