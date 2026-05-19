@@ -188,12 +188,13 @@ func (d *DRPCInstance) handleTestFailoverTransition() (bool, error) {
 	return true, nil
 }
 
-// removeTestFailoverAnnotation removes the test failover annotation after cleanup completes.
-// Also ensures VRG annotation is removed regardless of action (Failover, Relocate, empty).
+// cleanupTestFailoverAnnotation cleans up the test failover annotation after cleanup completes.
+// It removes the annotation from DRPC and sets it to "false" on the VRG (via ManifestWork).
+// Setting to "false" instead of deleting ensures ManifestWork controller syncs the change.
 //
 //nolint:gocognit,cyclop,nestif,funlen // Complexity/length for handling multiple test failover scenarios
-func (d *DRPCInstance) removeTestFailoverAnnotation() error {
-	d.log.Info("Removing test failover annotation",
+func (d *DRPCInstance) cleanupTestFailoverAnnotation() error {
+	d.log.Info("Cleaning up test failover annotation",
 		"reason", "cleanup completed or user manually removed dryRun",
 		"progression", d.instance.Status.Progression)
 
@@ -225,7 +226,7 @@ func (d *DRPCInstance) removeTestFailoverAnnotation() error {
 	delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
 
 	if clusterToUpdate != "" {
-		d.log.Info("Removing test failover annotation from VRG", "cluster", clusterToUpdate)
+		d.log.Info("Setting test failover annotation to false on VRG", "cluster", clusterToUpdate)
 
 		// Get ManifestWork containing the VRG
 		mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterToUpdate)
@@ -243,11 +244,12 @@ func (d *DRPCInstance) removeTestFailoverAnnotation() error {
 			return fmt.Errorf("failed to extract VRG from ManifestWork on cluster %s: %w", clusterToUpdate, err)
 		}
 
-		d.log.Info("Removing annotation from VRG",
+		d.log.Info("Setting test failover annotation to false on VRG",
 			"cluster", clusterToUpdate, "vrgName", vrg.Name, "vrgNamespace", vrg.Namespace)
 
-		// Remove test failover annotation from VRG (only touching annotations, not spec)
-		delete(vrg.Annotations, DRPCTestFailoverDryRunAnnotation)
+		// Set annotation to "false" instead of deleting it
+		// ManifestWork controller doesn't sync deletions, but it does sync value changes
+		vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
 
 		// Update ManifestWork with modified VRG
 		if err := d.mwu.UpdateVRGManifestWork(vrg, mw); err != nil {
@@ -256,7 +258,7 @@ func (d *DRPCInstance) removeTestFailoverAnnotation() error {
 			return fmt.Errorf("failed to update VRG ManifestWork on cluster %s: %w", clusterToUpdate, err)
 		}
 
-		d.log.Info("Successfully removed annotation from VRG", "cluster", clusterToUpdate)
+		d.log.Info("Successfully set annotation to false on VRG", "cluster", clusterToUpdate)
 	}
 
 	if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
@@ -284,11 +286,13 @@ func (d *DRPCInstance) handleTestFailoverExit() (bool, error) {
 	// or if we're in the middle of cleaning up after test failover
 	if !d.isInTestFailoverFlow() {
 		// Cleanup is complete, remove annotation from DRPC and VRG
-		if err := d.removeTestFailoverAnnotation(); err != nil {
+		if err := d.cleanupTestFailoverAnnotation(); err != nil {
 			return false, err
 		}
 
-		return false, nil
+		// Requeue to ensure fresh DRPC state is loaded before continuing
+		// This prevents stale in-memory DRPC from re-adding the annotation to VRG
+		return true, nil
 	}
 
 	// If in CleaningUp or WaitOnUserToCleanUp progression, monitor cleanup progress
@@ -304,11 +308,13 @@ func (d *DRPCInstance) handleTestFailoverExit() (bool, error) {
 		}
 
 		// Cleanup complete, remove annotation from DRPC and VRG
-		if err := d.removeTestFailoverAnnotation(); err != nil {
+		if err := d.cleanupTestFailoverAnnotation(); err != nil {
 			return false, err
 		}
 
-		return false, nil
+		// Requeue to ensure fresh DRPC state is loaded before continuing
+		// This prevents stale in-memory DRPC from re-adding the annotation to VRG
+		return true, nil
 	}
 
 	// If in TestingFailover progression, initiate cleanup
@@ -408,10 +414,18 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 	if d.instance.Spec.FailoverCluster == testFailoverCluster &&
 		!d.instance.Spec.DryRun &&
 		d.instance.Spec.Action == rmn.ActionFailover {
-		d.log.Info("Promoting test failover to real failover, letting normal failover flow continue",
+		d.log.Info("Promoting test failover to real failover, setting annotation to false",
 			"failoverCluster", d.instance.Spec.FailoverCluster,
 			"testFailoverCluster", testFailoverCluster)
 
+		// Remove test failover annotation during promotion
+		// removeTestFailoverAnnotation() sets annotation to "false" (not delete)
+		// This ensures ManifestWork controller syncs the change
+		if err := d.cleanupTestFailoverAnnotation(); err != nil {
+			return false, err
+		}
+
+		// Let normal failover flow continue
 		return false, nil
 	}
 
@@ -507,19 +521,22 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 	// For discovered apps, check if user has cleaned up the app
 	// Once app is cleaned up, VRG will transition to Secondary
 	if isDiscoveredApp(d.instance) {
-		// Re-evaluate progression to track cleanup progress
-		// This updates progression from WaitOnUserToCleanUp -> CleaningUp when app is cleaned
-		d.setDiscoveredAppGCProgression(testFailoverCluster)
-
-		// If still waiting for user cleanup, continue monitoring
-		if d.instance.Status.Progression == rmn.ProgressionWaitOnUserToCleanUp {
-			d.log.Info("Still waiting for user to cleanup discovered app", "cluster", testFailoverCluster)
+		// Check if VRG has reached Secondary state (indicating manual cleanup is complete)
+		if vrg.Status.State == rmn.SecondaryState && vrg.Status.ObservedGeneration == vrg.Generation {
+			d.log.Info("User cleanup detected - VRG is Secondary, setting progression to CleaningUp",
+				"cluster", testFailoverCluster)
+			d.setProgression(rmn.ProgressionCleaningUp)
+		} else {
+			// Still waiting for user to clean up the app
+			d.log.Info("Still waiting for user to cleanup discovered app",
+				"cluster", testFailoverCluster,
+				"vrgState", vrg.Status.State,
+				"vrgGeneration", vrg.Generation,
+				"vrgObservedGeneration", vrg.Status.ObservedGeneration)
+			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 
 			return true, nil
 		}
-
-		d.log.Info("User cleanup detected, waiting for VRG to reach Secondary state",
-			"cluster", testFailoverCluster, "progression", d.instance.Status.Progression)
 	}
 
 	// Wait for VRG to reach Secondary state (for both discovered and non-discovered apps)
@@ -536,6 +553,9 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 	// VRG has reached Secondary state, cleanup is complete
 	// Note: Placement decision was already removed in initiateTestFailoverCleanup
 	d.log.Info("VRG cleanup completed successfully", "cluster", testFailoverCluster)
+
+	// Set Phase to Deployed and Progression to Completed
+	d.setDRState(rmn.Deployed)
 	d.setProgression(rmn.ProgressionCompleted)
 
 	return false, nil
@@ -2331,11 +2351,15 @@ func (d *DRPCInstance) setVRGAnnotations(vrg *rmn.VolumeReplicationGroup, homeCl
 		rmnutil.EnableDiffAnnotation:          d.instance.GetAnnotations()[rmnutil.EnableDiffAnnotation],
 	}
 
-	// Propagate test failover annotation only to the failover cluster's VRG when in test failover mode
+	// Only set test failover annotation on the failover cluster during active test failover
+	// This annotation is used by VRG controller to enable AutoResync during test failover
 	if homeCluster == d.instance.Spec.FailoverCluster &&
-		d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation] == DRPCTestFailoverDryRunAnnotationValueTrue {
+		d.instance.Spec.DryRun &&
+		d.instance.Spec.Action == rmn.ActionFailover {
 		vrg.ObjectMeta.Annotations[DRPCTestFailoverDryRunAnnotation] = DRPCTestFailoverDryRunAnnotationValueTrue
 	}
+	// Note: We don't set it on other clusters or when not in test failover
+	// The removeTestFailoverAnnotation() function handles cleanup by setting to "false"
 
 	// Propagate global VGR label to VRG for consensus checks.
 	if d.hasGlobalVGRLabel() {

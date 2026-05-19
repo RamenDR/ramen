@@ -342,6 +342,9 @@ func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*
 
 	dstVRG := d.newVRG(dstCluster, rmn.Secondary, nil)
 
+	// Note: setVRGAnnotations() (called by newVRG) only sets the test failover annotation
+	// on the failover cluster during active test failover, so we don't need to handle it here
+
 	if d.drType == DRTypeAsync {
 		if len(srcVRGView.Status.ProtectedPVCs) != 0 {
 			d.resetRDSpec(srcVRGView, &dstVRG)
