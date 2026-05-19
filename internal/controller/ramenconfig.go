@@ -475,8 +475,8 @@ func findHubOperatorSubscription(ctx context.Context, apiReader client.Reader,
 	return nil
 }
 
-func applyDrClusterOperatorFromSubscriptionSpec(
-	spec *operatorsv1alpha1.SubscriptionSpec,
+func applyDrClusterOperatorFromSubscription(
+	sub *operatorsv1alpha1.Subscription,
 	cfg *ramendrv1alpha1.RamenConfig,
 ) {
 	const (
@@ -484,13 +484,20 @@ func applyDrClusterOperatorFromSubscriptionSpec(
 		clusterSubstring = "-cluster-"
 	)
 
+	spec := sub.Spec
 	dco := &cfg.DrClusterOperator
 
 	dco.ChannelName = spec.Channel
 	dco.PackageName = strings.Replace(spec.Package, hubSubstring, clusterSubstring, 1)
 	dco.CatalogSourceName = spec.CatalogSource
 	dco.CatalogSourceNamespaceName = spec.CatalogSourceNamespace
-	dco.ClusterServiceVersionName = strings.Replace(spec.StartingCSV, hubSubstring, clusterSubstring, 1)
+	csvName := sub.Status.CurrentCSV
+
+	if csvName == "" {
+		csvName = spec.StartingCSV
+	}
+
+	dco.ClusterServiceVersionName = strings.Replace(csvName, hubSubstring, clusterSubstring, 1)
 }
 
 func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader client.Reader,
@@ -507,7 +514,7 @@ func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader clie
 		return
 	}
 
-	applyDrClusterOperatorFromSubscriptionSpec(sub.Spec, cfg)
+	applyDrClusterOperatorFromSubscription(sub, cfg)
 
 	if sub.Namespace == openshiftOperatorsNamespace {
 		cfg.DrClusterOperator.NamespaceName = openshiftDRSystemNamespace
