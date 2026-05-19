@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -39,6 +40,20 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 			},
 		}
 		Expect(k8sClient.Create(context.TODO(), ns)).To(Succeed())
+
+		// Create namespaces for managed clusters (required by OCM for ManagedClusterAddOns)
+		for _, cluster := range asyncClusters {
+			clusterNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: cluster.Name,
+				},
+			}
+
+			err := k8sClient.Create(context.TODO(), clusterNs)
+			if err != nil && !k8serrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		}
 
 		// Create managed clusters and DRClusters using existing helpers
 		createManagedClusters(asyncClusters)
