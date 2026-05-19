@@ -62,7 +62,7 @@ spec:
           labels:
             severity: critical
           annotations:
-            description: "Invalid or undetected CIDRs Specified (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
+            description: "CIDRs validation failed: invalid format or expected CIDRs not configured (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
             alert_type: "DisasterRecovery"
         - alert: ApplicationCleanupPending
           expr: ramen_progression_state{state="WaitOnUserToCleanUp"} == 1
