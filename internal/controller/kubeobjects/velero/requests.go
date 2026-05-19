@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -31,6 +32,9 @@ const (
 	path         = "velero/"
 	protectsPath = path + "backups/"
 	recoversPath = path + "restores/"
+	// BSL cleanup constants
+	bslDeletionWaitSeconds = 2
+	bslStaleValidationTime = 5 * time.Minute
 )
 
 type (
@@ -511,6 +515,53 @@ type objectWriter struct {
 	log logr.Logger
 }
 
+// cleanupStaleBSLIfExists checks for and deletes stale BSL before creating a new one
+func (w objectWriter) cleanupStaleBSLIfExists(
+	requestsNamespaceName string,
+	requestName string,
+) error {
+	existingBSL := &velero.BackupStorageLocation{}
+
+	err := w.Get(w.ctx, client.ObjectKey{
+		Namespace: requestsNamespaceName,
+		Name:      requestName,
+	}, existingBSL)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// No existing BSL, nothing to clean up
+			return nil
+		}
+
+		w.log.Error(err, "Failed to check for existing BSL", "name", requestName)
+
+		return fmt.Errorf("failed to check for existing BSL: %w", err)
+	}
+
+	// BSL exists - check if it's stale or unhealthy
+	isStale := existingBSL.Status.Phase != velero.BackupStorageLocationPhaseAvailable ||
+		(existingBSL.Status.LastValidationTime != nil &&
+			time.Since(existingBSL.Status.LastValidationTime.Time) > bslStaleValidationTime)
+
+	if !isStale {
+		// BSL is healthy, no need to delete
+		return nil
+	}
+
+	w.log.Info("Found stale BSL, deleting before creating new one",
+		"name", requestName,
+		"phase", existingBSL.Status.Phase,
+		"lastValidation", existingBSL.Status.LastValidationTime)
+
+	if err := w.Delete(w.ctx, existingBSL); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete stale BSL: %w", err)
+	}
+
+	// Wait for deletion to complete
+	time.Sleep(bslDeletionWaitSeconds * time.Second)
+
+	return nil
+}
+
 func backupRequestCreate(
 	w objectWriter,
 	s3Url string,
@@ -530,6 +581,11 @@ func backupRequestCreate(
 			Namespace: requestsNamespaceName,
 			Name:      requestName,
 		},
+	}
+
+	// Check for and delete any existing stale BSL before creating new one
+	if err := w.cleanupStaleBSLIfExists(requestsNamespaceName, requestName); err != nil {
+		return nil, nil, err
 	}
 
 	err := w.bslCreateOrUpdate(s3Url,

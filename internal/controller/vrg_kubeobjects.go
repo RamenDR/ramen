@@ -12,12 +12,14 @@ import (
 
 	"github.com/go-logr/logr"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/hooks"
@@ -937,12 +939,72 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	}
 
 	vrg := v.instance
+	labels := util.OwnerLabels(vrg)
 
-	return v.kubeObjectsRecoverRequestsDelete(
+	err := v.kubeObjectsRecoverRequestsDelete(
 		result,
 		v.veleroNamespaceName(),
-		util.OwnerLabels(vrg),
+		// util.OwnerLabels(vrg),
+		labels,
 	)
+	if err != nil {
+		v.log.Error(err, "Label-based BSL deletion failed, attempting namespace-wide cleanup")
+
+		// Fallback: Delete all BSLs created by Ramen in the namespace
+		// This handles cases where labels don't match (e.g., VRG name changed)
+		return v.forceDeleteRamenBSLs(result)
+	}
+
+	return nil
+}
+
+// forceDeleteRamenBSLs deletes all BSLs created by Ramen in the Velero namespace
+// This is a fallback when label-based deletion fails
+func (v *VRGInstance) forceDeleteRamenBSLs(result *ctrl.Result) error {
+	veleroNamespace := v.veleroNamespaceName()
+
+	// List all BSLs with Ramen's creation label
+	bslList := &velero.BackupStorageLocationList{}
+	if err := v.reconciler.List(v.ctx, bslList,
+		client.InNamespace(veleroNamespace),
+		client.MatchingLabels{util.CreatedByRamenLabel: "true"},
+	); err != nil {
+		v.log.Error(err, "Failed to list BSLs for force deletion")
+
+		result.Requeue = true
+
+		return err
+	}
+
+	if len(bslList.Items) == 0 {
+		v.log.Info("No Ramen-created BSLs found for force deletion")
+
+		return nil
+	}
+
+	v.log.Info("Force deleting Ramen-created BSLs", "count", len(bslList.Items))
+
+	for i := range bslList.Items {
+		bsl := &bslList.Items[i]
+		v.log.Info("Force deleting BSL",
+			"name", bsl.Name,
+			"phase", bsl.Status.Phase,
+			"namespace", bsl.Namespace)
+
+		if err := v.reconciler.Delete(v.ctx, bsl); err != nil {
+			if !k8serrors.IsNotFound(err) {
+				v.log.Error(err, "Failed to force delete BSL", "name", bsl.Name)
+
+				result.Requeue = true
+
+				return err
+			}
+		}
+	}
+
+	v.log.Info("Force deletion of Ramen-created BSLs completed")
+
+	return nil
 }
 
 // mergeExcludedResources merges ConfigMap default exclusions with recipe-level exclusions.
