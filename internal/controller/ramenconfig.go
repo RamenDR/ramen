@@ -90,8 +90,9 @@ func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv
 			LeaderElect:  &leaderElect,
 			ResourceName: leaderElectionResourceName,
 		},
-		RamenOpsNamespace:         "ramen-ops",
-		VolumeUnprotectionEnabled: true,
+		RamenOpsNamespace:             "ramen-ops",
+		VolumeUnprotectionEnabled:     true,
+		RetainNamespaceSCCAcrossPeers: true,
 	}
 
 	cfg.DrClusterOperator.DeploymentAutomationEnabled = true
