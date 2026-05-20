@@ -1000,13 +1000,42 @@ func (v *VSHandler) configureReplicationSourceSpec(rs *volsyncv1alpha1.Replicati
 	return nil
 }
 
+// cleanupMountJobForFinalSync deletes the mount job and waits for deletion to complete.
+// This must be called before PVC cleanup to release the kubernetes.io/pvc-protection finalizer.
+func (v *VSHandler) cleanupMountJobForFinalSync(tmpPVCName, pvcNamespace string) error {
+	if err := v.DeleteMountJob(tmpPVCName, pvcNamespace); err != nil {
+		return fmt.Errorf("failed to delete mount job for %s/%s: %w", pvcNamespace, tmpPVCName, err)
+	}
+
+	deleted, err := v.WaitForMountJobDeletion(tmpPVCName, pvcNamespace)
+	if err != nil {
+		return fmt.Errorf("error waiting for mount job deletion for %s/%s: %w", pvcNamespace, tmpPVCName, err)
+	}
+
+	if !deleted {
+		return fmt.Errorf("waiting for mount job deletion to complete for %s/%s", pvcNamespace, tmpPVCName)
+	}
+
+	v.log.V(1).Info("Mount job cleanup completed", "tmpPVCName", tmpPVCName)
+
+	return nil
+}
+
 //nolint:cyclop,funlen
 func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 	v.log.V(1).Info("Undo after final sync", "pvcName", pvcName)
+
+	tmpPVCName := util.GetTmpPVCNameForFinalSync(pvcName)
+
+	// Clean up mount job first to release the PVC protection finalizer
+	if err := v.cleanupMountJobForFinalSync(tmpPVCName, pvcNamespace); err != nil {
+		return err
+	}
+
 	// Remove claimRef and reset the original PVC claimRef (without uid)
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvcNamespace,
-		Name:      util.GetTmpPVCNameForFinalSync(pvcName),
+		Name:      tmpPVCName,
 	})
 	if err == nil {
 		err2 := v.client.Delete(v.ctx, tmpPVC)
@@ -3377,6 +3406,71 @@ func (v *VSHandler) EnsureMountJobForUnmountedPVC(rsSpec *ramendrv1alpha1.VolSyn
 	}
 
 	return v.handleMountJobResult(job, pvcNamespacedName, log)
+}
+
+// DeleteMountJob deletes the mount job for a given PVC if it exists
+func (v *VSHandler) DeleteMountJob(pvcName, pvcNamespace string) error {
+	jobName := util.GetJobName(VolSyncMountJobNamePrefix, pvcName)
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: pvcNamespace,
+		},
+	}
+
+	v.log.V(1).Info("Deleting mount job", "jobName", jobName, "namespace", pvcNamespace)
+
+	err := v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground))
+	if err != nil {
+		if errors.IsNotFound(err) {
+			v.log.V(1).Info("Mount job not found, already deleted", "jobName", jobName)
+
+			return nil
+		}
+
+		v.log.Error(err, "Failed to delete mount job", "jobName", jobName)
+
+		return fmt.Errorf("failed to delete mount job %s/%s: %w", pvcNamespace, jobName, err)
+	}
+
+	v.log.Info("Successfully deleted mount job", "jobName", jobName, "namespace", pvcNamespace)
+
+	return nil
+}
+
+// WaitForMountJobDeletion waits for the mount job and its pods to be fully deleted
+func (v *VSHandler) WaitForMountJobDeletion(pvcName, pvcNamespace string) (bool, error) {
+	jobName := util.GetJobName(VolSyncMountJobNamePrefix, pvcName)
+
+	job := &batchv1.Job{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{
+		Name:      jobName,
+		Namespace: pvcNamespace,
+	}, job)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			v.log.V(1).Info("Mount job fully deleted", "jobName", jobName)
+
+			return true, nil // Job is gone, deletion complete
+		}
+
+		return false, fmt.Errorf("failed to check mount job status %s/%s: %w", pvcNamespace, jobName, err)
+	}
+
+	// Job still exists, check if it's being deleted
+	if job.DeletionTimestamp != nil {
+		v.log.V(1).Info("Mount job deletion in progress", "jobName", jobName,
+			"deletionTimestamp", job.DeletionTimestamp)
+
+		return false, nil // Still deleting, need to wait
+	}
+
+	// Job exists but not marked for deletion - this shouldn't happen
+	v.log.Info("Mount job exists but not marked for deletion", "jobName", jobName)
+
+	return false, fmt.Errorf("mount job %s/%s exists but not marked for deletion", pvcNamespace, jobName)
 }
 
 func (v *VSHandler) mountJobRequired(
