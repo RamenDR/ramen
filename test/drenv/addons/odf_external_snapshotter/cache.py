@@ -3,8 +3,12 @@
 
 from drenv import cache as _cache
 
-from .config import CACHE_KEY, PACKAGE_DIR
+from .config import CONTROLLER_CACHE_KEY, CRDS_CACHE_KEY, PACKAGE_DIR
 
 
 def cache():
-    _cache.refresh(str(PACKAGE_DIR / "start-data" / "crds"), CACHE_KEY)
+    """
+    Refresh the cached kustomization yaml.
+    """
+    _cache.refresh(str(PACKAGE_DIR / "start-data" / "crds"), CRDS_CACHE_KEY)
+    _cache.refresh(str(PACKAGE_DIR / "start-data" / "controller"), CONTROLLER_CACHE_KEY)
