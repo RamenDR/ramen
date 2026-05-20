@@ -148,8 +148,10 @@ func (r *DRPolicyReconciler) reconcile(
 	ramenConfig *ramen.RamenConfig,
 	drClusterIDsToNames map[string]string,
 ) (ctrl.Result, error) {
-	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+	if !u.isConflictFound() {
+		if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+		}
 	}
 
 	if err := updatePeerClasses(u, r.MCVGetter); err != nil {
@@ -435,6 +437,16 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 	}
 
 	return nil
+}
+
+func (u *drpolicyUpdater) isConflictFound() bool {
+	for _, condition := range u.object.Status.Conditions {
+		if condition.Type == ramen.DRPolicyValidated && condition.Reason == ReasonDRPolicyConflictFound {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (u *drpolicyUpdater) validatedSetTrue(reason, message string) error {
