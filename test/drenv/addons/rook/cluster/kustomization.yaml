@@ -29,3 +29,7 @@ patches:
           enabled: true
           periodicity: daily
           maxLogSize: 50M
+      # Last ceph image that worked on arm64. Since v20.2.1 rbd-mirror is broken on arm64.
+      - op: replace
+        path: /spec/cephVersion/image
+        value: quay.io/ceph/ceph:v20.2.0
