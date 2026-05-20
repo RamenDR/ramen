@@ -4,4 +4,5 @@
 from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).parent
-CACHE_KEY = "addons/odf-external-snapshotter-8.4.yaml"
+CRDS_CACHE_KEY = "addons/odf-external-snapshotter-crds-8.4.yaml"
+CONTROLLER_CACHE_KEY = "addons/odf-external-snapshotter-controller-8.4.yaml"
