@@ -940,69 +940,115 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 
 	vrg := v.instance
 	labels := util.OwnerLabels(vrg)
-
-	err := v.kubeObjectsRecoverRequestsDelete(
-		result,
-		v.veleroNamespaceName(),
-		// util.OwnerLabels(vrg),
-		labels,
-	)
-	if err != nil {
-		v.log.Error(err, "Label-based BSL deletion failed, attempting namespace-wide cleanup")
-
-		// Fallback: Delete all BSLs created by Ramen in the namespace
-		// This handles cases where labels don't match (e.g., VRG name changed)
-		return v.forceDeleteRamenBSLs(result)
-	}
-
-	return nil
-}
-
-// forceDeleteRamenBSLs deletes all BSLs created by Ramen in the Velero namespace
-// This is a fallback when label-based deletion fails
-func (v *VRGInstance) forceDeleteRamenBSLs(result *ctrl.Result) error {
 	veleroNamespace := v.veleroNamespaceName()
 
-	// List all BSLs with Ramen's creation label
+	err := v.kubeObjectsRecoverRequestsDelete(result, veleroNamespace, labels)
+	if err != nil {
+		v.log.Error(err, "Label-based kube objects protection deletion failed")
+
+		if fallbackErr := v.deleteRamenBSLsWithOwnerLabels(result, veleroNamespace, labels); fallbackErr != nil {
+			return fallbackErr
+		}
+	}
+
+	if orphanErr := v.deleteOrphanedRamenBSLs(result, veleroNamespace); orphanErr != nil {
+		return orphanErr
+	}
+
+	return err
+}
+
+// veleroBSL orphanedByVRGRename is true when owner labels reference this namespace but a different VRG name.
+func veleroBSLOrphanedByVRGRename(labels map[string]string, vrgNamespace, vrgName string) bool {
+	ownerNamespace, hasNamespace := labels[util.LabelOwnerNamespaceName]
+
+	ownerName, hasName := labels[util.LabelOwnerName]
+	if !hasNamespace || ownerNamespace != vrgNamespace || !hasName {
+		return false
+	}
+
+	return ownerName != vrgName
+}
+
+// deleteRamenBSLsWithOwnerLabels deletes BSLs for the current VRG when DeleteAllOf fails.
+func (v *VRGInstance) deleteRamenBSLsWithOwnerLabels(
+	result *ctrl.Result, veleroNamespace string, ownerLabels map[string]string,
+) error {
+	selectorLabels := make(map[string]string, len(ownerLabels)+1)
+	for key, value := range ownerLabels {
+		selectorLabels[key] = value
+	}
+
+	selectorLabels[util.CreatedByRamenLabel] = "true"
+
 	bslList := &velero.BackupStorageLocationList{}
 	if err := v.reconciler.List(v.ctx, bslList,
 		client.InNamespace(veleroNamespace),
-		client.MatchingLabels{util.CreatedByRamenLabel: "true"},
+		client.MatchingLabels(selectorLabels),
 	); err != nil {
-		v.log.Error(err, "Failed to list BSLs for force deletion")
+		v.log.Error(err, "Failed to list BSLs for owner-label deletion")
 
 		result.Requeue = true
 
 		return err
 	}
 
-	if len(bslList.Items) == 0 {
-		v.log.Info("No Ramen-created BSLs found for force deletion")
-
-		return nil
-	}
-
-	v.log.Info("Force deleting Ramen-created BSLs", "count", len(bslList.Items))
-
 	for i := range bslList.Items {
 		bsl := &bslList.Items[i]
-		v.log.Info("Force deleting BSL",
-			"name", bsl.Name,
-			"phase", bsl.Status.Phase,
-			"namespace", bsl.Namespace)
+		if err := v.reconciler.Delete(v.ctx, bsl); err != nil && !k8serrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to delete BSL with owner labels", "name", bsl.Name)
 
-		if err := v.reconciler.Delete(v.ctx, bsl); err != nil {
-			if !k8serrors.IsNotFound(err) {
-				v.log.Error(err, "Failed to force delete BSL", "name", bsl.Name)
+			result.Requeue = true
 
-				result.Requeue = true
-
-				return err
-			}
+			return err
 		}
 	}
 
-	v.log.Info("Force deletion of Ramen-created BSLs completed")
+	return nil
+}
+
+// deleteOrphanedRamenBSLs removes Ramen BSLs left from a renamed VRG (stale owner-name label).
+func (v *VRGInstance) deleteOrphanedRamenBSLs(result *ctrl.Result, veleroNamespace string) error {
+	bslList := &velero.BackupStorageLocationList{}
+	if err := v.reconciler.List(v.ctx, bslList,
+		client.InNamespace(veleroNamespace),
+		client.MatchingLabels{util.CreatedByRamenLabel: "true"},
+	); err != nil {
+		v.log.Error(err, "Failed to list BSLs for orphaned deletion")
+
+		result.Requeue = true
+
+		return err
+	}
+
+	vrg := v.instance
+	deleted := 0
+
+	for i := range bslList.Items {
+		bsl := &bslList.Items[i]
+		if !veleroBSLOrphanedByVRGRename(bsl.Labels, vrg.Namespace, vrg.Name) {
+			continue
+		}
+
+		v.log.Info("Deleting orphaned Ramen BSL from prior VRG owner",
+			"name", bsl.Name,
+			"ownerNamespace", bsl.Labels[util.LabelOwnerNamespaceName],
+			"ownerName", bsl.Labels[util.LabelOwnerName])
+
+		if err := v.reconciler.Delete(v.ctx, bsl); err != nil && !k8serrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to delete orphaned BSL", "name", bsl.Name)
+
+			result.Requeue = true
+
+			return err
+		}
+
+		deleted++
+	}
+
+	if deleted > 0 {
+		v.log.Info("Deleted orphaned Ramen BSLs", "count", deleted)
+	}
 
 	return nil
 }

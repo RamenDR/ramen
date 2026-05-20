@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -32,9 +31,6 @@ const (
 	path         = "velero/"
 	protectsPath = path + "backups/"
 	recoversPath = path + "restores/"
-	// BSL cleanup constants
-	bslDeletionWaitSeconds = 2
-	bslStaleValidationTime = 5 * time.Minute
 )
 
 type (
@@ -515,6 +511,42 @@ type objectWriter struct {
 	log logr.Logger
 }
 
+func (w objectWriter) pairedBackupGet(requestsNamespaceName, requestName string) (*velero.Backup, error) {
+	existingBackup := &velero.Backup{}
+
+	backupErr := w.Get(w.ctx, client.ObjectKey{
+		Namespace: requestsNamespaceName,
+		Name:      requestName,
+	}, existingBackup)
+	if backupErr == nil {
+		return existingBackup, nil
+	}
+
+	if k8serrors.IsNotFound(backupErr) {
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("failed to check for existing backup: %w", backupErr)
+}
+
+func (w objectWriter) waitForBSLDeletion(requestsNamespaceName, requestName string) error {
+	existingBSL := &velero.BackupStorageLocation{}
+
+	err := w.Get(w.ctx, client.ObjectKey{
+		Namespace: requestsNamespaceName,
+		Name:      requestName,
+	}, existingBSL)
+	if err == nil {
+		return kubeobjects.RequestProcessingErrorCreate("backupstoragelocation deletion in progress")
+	}
+
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+
+	return fmt.Errorf("failed to confirm stale BSL deletion: %w", err)
+}
+
 // cleanupStaleBSLIfExists checks for and deletes stale BSL before creating a new one
 func (w objectWriter) cleanupStaleBSLIfExists(
 	requestsNamespaceName string,
@@ -528,7 +560,6 @@ func (w objectWriter) cleanupStaleBSLIfExists(
 	}, existingBSL)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			// No existing BSL, nothing to clean up
 			return nil
 		}
 
@@ -537,29 +568,26 @@ func (w objectWriter) cleanupStaleBSLIfExists(
 		return fmt.Errorf("failed to check for existing BSL: %w", err)
 	}
 
-	// BSL exists - check if it's stale or unhealthy
-	isStale := existingBSL.Status.Phase != velero.BackupStorageLocationPhaseAvailable ||
-		(existingBSL.Status.LastValidationTime != nil &&
-			time.Since(existingBSL.Status.LastValidationTime.Time) > bslStaleValidationTime)
+	pairedBackup, err := w.pairedBackupGet(requestsNamespaceName, requestName)
+	if err != nil {
+		return err
+	}
 
-	if !isStale {
-		// BSL is healthy, no need to delete
+	if !IsBSLStale(existingBSL, pairedBackup) {
 		return nil
 	}
 
 	w.log.Info("Found stale BSL, deleting before creating new one",
 		"name", requestName,
 		"phase", existingBSL.Status.Phase,
-		"lastValidation", existingBSL.Status.LastValidationTime)
+		"creationTimestamp", existingBSL.CreationTimestamp,
+		"pairedBackup", pairedBackup != nil)
 
 	if err := w.Delete(w.ctx, existingBSL); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete stale BSL: %w", err)
 	}
 
-	// Wait for deletion to complete
-	time.Sleep(bslDeletionWaitSeconds * time.Second)
-
-	return nil
+	return w.waitForBSLDeletion(requestsNamespaceName, requestName)
 }
 
 func backupRequestCreate(
