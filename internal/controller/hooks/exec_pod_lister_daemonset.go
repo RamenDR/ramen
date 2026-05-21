@@ -92,7 +92,7 @@ func (l *DaemonSetPodLister) getPodsFromDaemonSets(daemonSets []appsv1.DaemonSet
 				continue
 			}
 
-			cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+			cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 			if err != nil {
 				return execPods, fmt.Errorf("error converting command to string array: %w", err)
 			}
@@ -127,7 +127,7 @@ func (l *DaemonSetPodLister) getAllPodsFromDaemonSets(
 ) ([]ExecPodSpec, error) {
 	execPods := make([]ExecPodSpec, 0)
 
-	cmd, err := covertCommandToStringArray(l.Hook.Op.Command)
+	cmd, err := ConvertCommandToStringArray(l.Hook.Op.Command)
 	if err != nil {
 		return execPods, fmt.Errorf("error converting command to string array: %w", err)
 	}

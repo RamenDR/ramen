@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/shlex"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -309,7 +310,7 @@ func getContainerName(containerName string, pod *corev1.Pod) string {
 	return pod.Spec.Containers[0].Name
 }
 
-func covertCommandToStringArray(command string) ([]string, error) {
+func ConvertCommandToStringArray(command string) ([]string, error) {
 	var cmd []string
 	if isJSONArray(command) {
 		err := json.Unmarshal([]byte(command), &cmd)
@@ -317,7 +318,13 @@ func covertCommandToStringArray(command string) ([]string, error) {
 			return []string{}, err
 		}
 	} else {
-		cmd = strings.Split(command, " ")
+		// Use shlex to properly parse shell commands with quotes and escapes
+		var err error
+
+		cmd, err = shlex.Split(command)
+		if err != nil {
+			return []string{}, fmt.Errorf("failed to parse command: %w", err)
+		}
 	}
 
 	return cmd, nil
