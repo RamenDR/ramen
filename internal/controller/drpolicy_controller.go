@@ -50,6 +50,9 @@ const ReasonDRClusterNotFound = "DRClusterNotFound"
 // ReasonDRClustersUnavailable is set when the DRPolicy has none of the referenced DRCluster(s) are in a validated state
 const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 
+// ReasonDRPolicyConflictFound is set when the DRPolicy has overlapping metro clusters with another DRPolicy
+const ReasonDRPolicyConflictFound = "DRPolicyConflictFound"
+
 // AllDRPolicyAnnotation is added to related resources that can be watched to reconcile all related DRPolicy resources
 const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
 
@@ -145,8 +148,10 @@ func (r *DRPolicyReconciler) reconcile(
 	ramenConfig *ramen.RamenConfig,
 	drClusterIDsToNames map[string]string,
 ) (ctrl.Result, error) {
-	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+	if !u.isConflictFound() {
+		if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
+		}
 	}
 
 	if err := updatePeerClasses(u, r.MCVGetter); err != nil {
@@ -160,7 +165,11 @@ func (r *DRPolicyReconciler) reconcile(
 	// we will be able to validate conflicts only after PeerClasses are updated
 	err := validatePolicyConflicts(u.ctx, r.APIReader, u.object, drClusterIDsToNames)
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("drpolicy conflict validate failed")
+		return ctrl.Result{}, u.validatedSetFalse(ReasonDRPolicyConflictFound, err)
+	}
+
+	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
 	}
 
 	if err := r.initiateDRPolicyMetrics(u.object); err != nil {
@@ -329,6 +338,12 @@ func HasConflictingDRPolicy(
 			continue
 		}
 
+		// Only the newer policy is invalidated to avoid oscillation where
+		// both policies keep toggling between validated and invalid.
+		if match.CreationTimestamp.Before(&drp.CreationTimestamp) {
+			continue
+		}
+
 		// None of the common managed clusters should belong to Metro clusters in either of the drpolicies.
 		if haveOverlappingMetroZones(match, drp, drClusterIDsToNames) {
 			return fmt.Errorf("drpolicy: %v has overlapping clusters with another drpolicy %v", match.Name, drp.Name)
@@ -422,6 +437,16 @@ func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
 	}
 
 	return nil
+}
+
+func (u *drpolicyUpdater) isConflictFound() bool {
+	for _, condition := range u.object.Status.Conditions {
+		if condition.Type == ramen.DRPolicyValidated && condition.Reason == ReasonDRPolicyConflictFound {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (u *drpolicyUpdater) validatedSetTrue(reason, message string) error {
