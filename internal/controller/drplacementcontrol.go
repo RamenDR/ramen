@@ -120,12 +120,8 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 
 	// Handle test failover transition (annotation management and cleanup)
 	shouldContinue, err := d.handleTestFailoverTransition()
-	if err != nil {
+	if err != nil || !shouldContinue {
 		return false, err
-	}
-
-	if !shouldContinue {
-		return false, nil
 	}
 
 	return d.executeAction()
@@ -154,7 +150,6 @@ func (d *DRPCInstance) handleTestFailoverTransition() (bool, error) {
 		if !rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
 			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
 
-			// Persist the annotation to the API server
 			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
 				return false, fmt.Errorf("failed to add test failover annotation: %w", err)
 			}
@@ -203,63 +198,86 @@ func (d *DRPCInstance) cleanupTestFailoverAnnotation() error {
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	clusterToUpdate := ""
 
-	// Find the peer cluster (the other cluster in the DR relationship)
+	// Validate that lastAppCluster is a valid cluster name
+	isValidLastAppCluster := false
+
 	for _, drCluster := range d.drClusters {
-		if drCluster.Name != lastAppCluster {
-			clusterToUpdate = drCluster.Name
-			d.log.Info("Determined test failover cluster from last-app-deployment-cluster",
-				"lastAppCluster", lastAppCluster,
-				"testFailoverCluster", clusterToUpdate)
+		if drCluster.Name == lastAppCluster {
+			isValidLastAppCluster = true
 
 			break
 		}
 	}
 
-	if clusterToUpdate == "" {
-		d.log.Info("Could not determine test failover cluster",
+	if !isValidLastAppCluster {
+		d.log.Info("Invalid or missing last-app-deployment-cluster annotation",
 			"lastAppCluster", lastAppCluster,
-			"reason", "last-app-deployment-cluster not set or no peer cluster found")
+			"reason", "annotation not set or does not match any DR cluster")
+	} else {
+		// Find the peer cluster (the other cluster in the DR relationship)
+		for _, drCluster := range d.drClusters {
+			if drCluster.Name != lastAppCluster {
+				clusterToUpdate = drCluster.Name
+				d.log.Info("Determined test failover cluster from last-app-deployment-cluster",
+					"lastAppCluster", lastAppCluster,
+					"testFailoverCluster", clusterToUpdate)
+
+				break
+			}
+		}
+
+		if clusterToUpdate == "" {
+			d.log.Error(nil, "Could not determine test failover cluster - this should not happen if DRPC has the annotation",
+				"lastAppCluster", lastAppCluster,
+				"reason", "no peer cluster found")
+
+			return fmt.Errorf("failed to determine test failover cluster: no peer found for %s", lastAppCluster)
+		}
+	}
+
+	// If we couldn't determine the cluster (invalid lastAppCluster), return error
+	// If DRPC has the test failover annotation, VRG should have it too
+	if clusterToUpdate == "" {
+		return fmt.Errorf("cannot cleanup test failover annotation: invalid or missing last-app-deployment-cluster")
 	}
 
 	// Delete DRPC annotation FIRST before updating VRG
 	// This ensures setVRGAnnotations() won't find the annotation and re-add it to VRG
 	delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
 
-	if clusterToUpdate != "" {
-		d.log.Info("Setting test failover annotation to false on VRG", "cluster", clusterToUpdate)
+	d.log.Info("Setting test failover annotation to false on VRG", "cluster", clusterToUpdate)
 
-		// Get ManifestWork containing the VRG
-		mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterToUpdate)
-		if err != nil {
-			d.log.Error(err, "Failed to find VRG ManifestWork", "cluster", clusterToUpdate)
+	// Get ManifestWork containing the VRG
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterToUpdate)
+	if err != nil {
+		d.log.Error(err, "Failed to find VRG ManifestWork", "cluster", clusterToUpdate)
 
-			return fmt.Errorf("failed to find VRG ManifestWork on cluster %s: %w", clusterToUpdate, err)
-		}
-
-		// Extract VRG from ManifestWork
-		vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
-		if err != nil {
-			d.log.Error(err, "Failed to extract VRG from ManifestWork", "cluster", clusterToUpdate)
-
-			return fmt.Errorf("failed to extract VRG from ManifestWork on cluster %s: %w", clusterToUpdate, err)
-		}
-
-		d.log.Info("Setting test failover annotation to false on VRG",
-			"cluster", clusterToUpdate, "vrgName", vrg.Name, "vrgNamespace", vrg.Namespace)
-
-		// Set annotation to "false" instead of deleting it
-		// ManifestWork controller doesn't sync deletions, but it does sync value changes
-		vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
-
-		// Update ManifestWork with modified VRG
-		if err := d.mwu.UpdateVRGManifestWork(vrg, mw); err != nil {
-			d.log.Error(err, "Failed to update VRG ManifestWork", "cluster", clusterToUpdate)
-
-			return fmt.Errorf("failed to update VRG ManifestWork on cluster %s: %w", clusterToUpdate, err)
-		}
-
-		d.log.Info("Successfully set annotation to false on VRG", "cluster", clusterToUpdate)
+		return fmt.Errorf("failed to find VRG ManifestWork on cluster %s: %w", clusterToUpdate, err)
 	}
+
+	// Extract VRG from ManifestWork
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	if err != nil {
+		d.log.Error(err, "Failed to extract VRG from ManifestWork", "cluster", clusterToUpdate)
+
+		return fmt.Errorf("failed to extract VRG from ManifestWork on cluster %s: %w", clusterToUpdate, err)
+	}
+
+	d.log.Info("Setting test failover annotation to false on VRG",
+		"cluster", clusterToUpdate, "vrgName", vrg.Name, "vrgNamespace", vrg.Namespace)
+
+	// Set annotation to "false" instead of deleting it
+	// ManifestWork controller doesn't sync deletions, but it does sync value changes
+	vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
+
+	// Update ManifestWork with modified VRG
+	if err := d.mwu.UpdateVRGManifestWork(vrg, mw); err != nil {
+		d.log.Error(err, "Failed to update VRG ManifestWork", "cluster", clusterToUpdate)
+
+		return fmt.Errorf("failed to update VRG ManifestWork on cluster %s: %w", clusterToUpdate, err)
+	}
+
+	d.log.Info("Successfully set annotation to false on VRG", "cluster", clusterToUpdate)
 
 	if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
 		return fmt.Errorf("failed to remove persisted DRPC dry-run annotation: %w", err)
@@ -418,9 +436,9 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 			"failoverCluster", d.instance.Spec.FailoverCluster,
 			"testFailoverCluster", testFailoverCluster)
 
-		// Remove test failover annotation during promotion
-		// removeTestFailoverAnnotation() sets annotation to "false" (not delete)
-		// This ensures ManifestWork controller syncs the change
+		// Clean up test failover annotation during promotion
+		// cleanupTestFailoverAnnotation() removes annotation from DRPC and sets it to "false" on VRG
+		// Setting to "false" (not deleting) ensures ManifestWork controller syncs the change
 		if err := d.cleanupTestFailoverAnnotation(); err != nil {
 			return false, err
 		}
@@ -491,7 +509,7 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 	d.log.Info("Monitoring cleanup progress")
 
 	// Determine test failover cluster - it's the peer cluster (not where app was running)
-	// This matches the logic in initiateTestFailoverCleanup() and removeTestFailoverAnnotation()
+	// This matches the logic in initiateTestFailoverCleanup() and cleanupTestFailoverAnnotation()
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	testFailoverCluster := ""
 
@@ -2359,7 +2377,7 @@ func (d *DRPCInstance) setVRGAnnotations(vrg *rmn.VolumeReplicationGroup, homeCl
 		vrg.ObjectMeta.Annotations[DRPCTestFailoverDryRunAnnotation] = DRPCTestFailoverDryRunAnnotationValueTrue
 	}
 	// Note: We don't set it on other clusters or when not in test failover
-	// The removeTestFailoverAnnotation() function handles cleanup by setting to "false"
+	// The cleanupTestFailoverAnnotation() function handles cleanup by removing from DRPC and setting to "false" on VRG
 
 	// Propagate global VGR label to VRG for consensus checks.
 	if d.hasGlobalVGRLabel() {
