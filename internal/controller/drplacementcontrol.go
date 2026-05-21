@@ -162,20 +162,27 @@ func (d *DRPCInstance) cleanupTestFailoverIfNeeded() (bool, error) {
 	return false, nil
 }
 
-func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
-	d.log.Info("Initiating cleanup after exiting test failover")
+func (d *DRPCInstance) determineTestFailoverCluster() (string, error) {
+	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 
-	// If failoverCluster is still set, this is a promotion (test -> real failover), not a revert
-	// In this case, skip test failover cleanup and let normal failover flow handle everything
-	// including cleanup of the old primary cluster
-	if d.instance.Spec.FailoverCluster != "" {
-		d.log.Info("Promoting test failover to real failover, letting normal failover flow continue",
-			"failoverCluster", d.instance.Spec.FailoverCluster)
-
-		return false, nil
+	for _, drCluster := range d.drClusters {
+		if drCluster.Name != lastAppCluster {
+			return drCluster.Name, nil
+		}
 	}
 
-	// This is a revert case (failoverCluster is empty) - find the test failover cluster to clean up
+	return "", fmt.Errorf(
+		"could not determine test failover cluster: last-app-deployment-cluster not set or no peer found")
+}
+
+func (d *DRPCInstance) isPromotionScenario(testFailoverCluster string) bool {
+	return d.instance.Spec.FailoverCluster == testFailoverCluster &&
+		!d.instance.Spec.DryRun &&
+		d.instance.Spec.Action == rmn.ActionFailover
+}
+
+func (d *DRPCInstance) cleanupTestFailoverRevert() (bool, error) {
+	// Find the test failover cluster to clean up
 	var clusterName string
 
 	for cn, vrg := range d.vrgs {
@@ -208,7 +215,6 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 
 		d.log.Info("VRG updated to Secondary, will monitor cleanup progress", "cluster", clusterName)
 
-		// Return to allow VRG to process the state change
 		return true, nil
 	}
 
@@ -220,6 +226,36 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 	d.log.Info("Removed test failover cluster from placement", "cluster", clusterName)
 
 	return true, nil
+}
+
+func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
+	d.log.Info("Initiating cleanup after exiting test failover")
+
+	testFailoverCluster, err := d.determineTestFailoverCluster()
+	if err != nil {
+		return false, err
+	}
+
+	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+
+	d.log.Info("Determined clusters for cleanup",
+		"lastAppCluster", lastAppCluster,
+		"testFailoverCluster", testFailoverCluster)
+
+	// Check if this is a promotion (test -> real failover)
+	if d.isPromotionScenario(testFailoverCluster) {
+		d.log.Info("Promoting test failover to real failover, cleaning up old primary",
+			"failoverCluster", d.instance.Spec.FailoverCluster,
+			"testFailoverCluster", testFailoverCluster,
+			"oldPrimaryCluster", lastAppCluster)
+
+		// Trigger cleanup by passing the NEW primary cluster (testFailoverCluster/dr2)
+		// This mirrors normal failover behavior and ensures proper cleanup of old primary
+		return d.ensureFailoverActionCompleted(testFailoverCluster)
+	}
+
+	// This is a revert case - clean up the test failover cluster
+	return d.cleanupTestFailoverRevert()
 }
 
 func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
