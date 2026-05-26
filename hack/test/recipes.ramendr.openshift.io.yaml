@@ -270,6 +270,39 @@ spec:
                       description: Defaults to true, if set to false, a failure is
                         not necessarily handled as fatal
                       type: boolean
+                    jobs:
+                      description: List of Jobs
+                      items:
+                        description: Details of a Job
+                        properties:
+                          forceCreate:
+                            default: false
+                            description: Whether to create the Job or not if it already
+                              exists. Default to false.
+                            type: boolean
+                          inverseOp:
+                            description: Name of another operation that reverts the
+                              effect of this operation (e.g. quiesce vs. unquiesce)
+                            type: string
+                          name:
+                            description: Name of the job. Should be unique from list
+                              of available jobs
+                            type: string
+                          onError:
+                            description: How to handle command returning with non-zero
+                              exit code. Defaults to Fail.
+                            type: string
+                          timeout:
+                            description: How long to wait for the command to execute,
+                              in seconds
+                            type: integer
+                        required:
+                        - name
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
                     labelSelector:
                       description: If specified, resource object needs to match this
                         label selector
@@ -389,6 +422,7 @@ spec:
                       - exec
                       - scale
                       - check
+                      - job
                       type: string
                   required:
                   - name

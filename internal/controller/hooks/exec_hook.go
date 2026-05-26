@@ -8,12 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/shlex"
-	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,12 +22,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 type ExecHook struct {
 	Hook           *kubeobjects.HookSpec
+	Client         client.Client
 	Reader         client.Reader
 	Scheme         *runtime.Scheme
 	RecipeElements util.RecipeElements
@@ -61,7 +61,7 @@ func (e ExecHook) Execute(log logr.Logger) error {
 	inverseOp := e.Hook.Op.InverseOp
 
 	failedPod, err := e.executeCommands(execPods, log)
-	if shouldInverseOpBeExecuted(inverseOp, e.Hook, err) {
+	if common.ShouldInverseOpBeExecuted(inverseOp, e.Hook, err) {
 		e.executeInverseOp(inverseOp, log)
 
 		return fmt.Errorf("error executing exec hook on pod %s/%s: %w",
@@ -72,8 +72,6 @@ func (e ExecHook) Execute(log logr.Logger) error {
 }
 
 func (e ExecHook) executeInverseOp(inverseOp string, log logr.Logger) {
-	var inverseExecPod ExecPodSpec
-
 	hookSpecForInvHook := e.getHookSpecForInverseOp(inverseOp)
 	if hookSpecForInvHook == nil {
 		log.Error(nil, "inverse operation not found in recipe", "inverseOp", inverseOp)
@@ -83,91 +81,32 @@ func (e ExecHook) executeInverseOp(inverseOp string, log logr.Logger) {
 
 	log.Info("executing inverse operation", "inverseOp", inverseOp, "namespace", hookSpecForInvHook.Namespace)
 
-	tempE := ExecHook{
-		Hook:           hookSpecForInvHook,
+	executor, err := GetHookExecutor(HookContext{
+		Hook:           *hookSpecForInvHook,
+		Client:         e.Client,
 		Reader:         e.Reader,
 		Scheme:         e.Scheme,
 		RecipeElements: e.RecipeElements,
-	}
-
-	lister := NewPodLister(tempE)
-
-	execPods, err := lister.GetPods(log)
+	})
 	if err != nil {
-		log.Error(err, "error getting pods for inverse operation", "inverseOp", inverseOp)
-	}
-
-	inverseExecPod, err = tempE.executeCommands(execPods, log)
-	if err != nil {
-		log.Error(err, "error executing inverse operation", "inverseOp", inverseOp, "pod", inverseExecPod.PodName,
-			"namespace", inverseExecPod.Namespace, "command", inverseExecPod.Command)
+		log.Error(err, "failed to resolve executor for inverse operation", "inverseOp", inverseOp)
 
 		return
 	}
 
-	log.Info("executed inverse operation successfully", "inverseOp", inverseOp, "pod", inverseExecPod.PodName,
-		"namespace", inverseExecPod.Namespace, "command", inverseExecPod.Command)
-}
+	if err := executor.Execute(log); err != nil {
+		log.Error(err, "error executing inverse operation", "inverseOp", inverseOp)
 
-func shouldInverseOpBeExecuted(inverseOp string, hookSpec *kubeobjects.HookSpec, err error) bool {
-	return err != nil && inverseOp != "" && shouldOpHookBeFailedOnError(hookSpec)
+		return
+	}
+
+	log.Info("executed inverse operation successfully", "inverseOp", inverseOp)
 }
 
 func (e ExecHook) getHookSpecForInverseOp(inverseOp string) *kubeobjects.HookSpec {
-	invHookParts := make([]string, 0)
-	if strings.Contains(inverseOp, "/") {
-		invHookParts = strings.Split(inverseOp, "/")
-	} else {
-		invHookParts = append(invHookParts, e.Hook.Name)
-		invHookParts = append(invHookParts, inverseOp)
-	}
-
 	hooks := e.RecipeElements.RecipeWithParams.Spec.Hooks
 
-	hook := getMatchingHook(hooks, invHookParts[0])
-	if hook != nil {
-		return getHookSpec(hook, invHookParts[1])
-	}
-
-	return nil
-}
-
-func getHookSpec(hook *recipev1.Hook, inverseOp string) *kubeobjects.HookSpec {
-	for _, op := range hook.Ops {
-		if op.Name == inverseOp {
-			return &kubeobjects.HookSpec{
-				Name: hook.Name,
-				Op: kubeobjects.Operation{
-					Name:      op.Name,
-					Command:   op.Command,
-					Container: op.Container,
-					InverseOp: op.InverseOp,
-					Timeout:   op.Timeout,
-					OnError:   op.OnError,
-				},
-				SelectResource: hook.SelectResource,
-				LabelSelector:  hook.LabelSelector,
-				NameSelector:   hook.NameSelector,
-				Namespace:      hook.Namespace,
-				SinglePodOnly:  hook.SinglePodOnly,
-				Timeout:        hook.Timeout,
-				Essential:      hook.Essential,
-				OnError:        hook.OnError,
-			}
-		}
-	}
-
-	return nil
-}
-
-func getMatchingHook(hooks []*recipev1.Hook, hookName string) *recipev1.Hook {
-	for _, hook := range hooks {
-		if hook.Name == hookName && hook.Type == "exec" {
-			return hook
-		}
-	}
-
-	return nil
+	return common.GetHookSpecForInverseOp(hooks, inverseOp, e.Hook.Name)
 }
 
 func (e ExecHook) executeCommands(execPods []ExecPodSpec, log logr.Logger) (ExecPodSpec, error) {
@@ -183,7 +122,7 @@ func (e ExecHook) executeCommands(execPods []ExecPodSpec, log logr.Logger) (Exec
 
 	for _, execPod := range execPods {
 		err := executeCommand(coreClient, restCfg, &execPod, e.Hook, e.Scheme, log)
-		if err != nil && getOpHookOnError(e.Hook) == defaultOnErrorValue {
+		if err != nil && common.ShouldFailOnError(e.Hook) {
 			log.Error(err, "error executing command on pod", "pod", execPod.PodName,
 				"namespace", execPod.Namespace, "command", execPod.Command)
 
@@ -220,7 +159,7 @@ func executeCommand(coreClient *kubernetes.Clientset, restCfg *rest.Config, exec
 	}
 
 	// This time duration should be used from hook definition
-	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(getOpHookTimeoutValue(hook))*time.Second)
+	ctx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(common.GetHookTimeout(hook))*time.Second)
 	defer cancelFunc()
 
 	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
@@ -328,17 +267,4 @@ func ConvertCommandToStringArray(command string) ([]string, error) {
 	}
 
 	return cmd, nil
-}
-
-func shouldOpHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
-	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
-	if hook.Op.OnError != "" && hook.Op.OnError == "continue" {
-		return false
-	}
-
-	if hook.OnError != "" && hook.OnError == "continue" {
-		return false
-	}
-
-	return true
 }

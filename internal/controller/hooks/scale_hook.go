@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
@@ -147,7 +148,7 @@ func (s ScaleHook) processResources(resources []client.Object, scaleOp string, l
 		}
 
 		if err != nil {
-			if s.Hook.OnError == "continue" {
+			if !common.ShouldFailOnError(s.Hook) {
 				lastErr = err
 
 				continue
@@ -157,7 +158,7 @@ func (s ScaleHook) processResources(resources []client.Object, scaleOp string, l
 		}
 	}
 
-	if lastErr != nil && s.Hook.OnError == "continue" {
+	if lastErr != nil && !common.ShouldFailOnError(s.Hook) {
 		return lastErr
 	}
 
@@ -306,7 +307,7 @@ func (s ScaleHook) ScaleUpResource(resource Resource, log logr.Logger) error {
 
 // SyncResource waits until the resource reflects its target replica count
 func (s ScaleHook) SyncResource(resource Resource, log logr.Logger) error {
-	timeout := getHookTimeoutValue(s.Hook)
+	timeout := common.GetHookTimeout(s.Hook)
 
 	name := resource.GetObjectMeta().GetName()
 	namespace := resource.GetObjectMeta().GetNamespace()
@@ -458,12 +459,4 @@ func (s ScaleHook) refreshResource(reader client.Reader, resource Resource) (Res
 		return nil, fmt.Errorf("unsupported resource type for hook %s when fetching resource %s/%s",
 			s.Hook.Name, namespace, name)
 	}
-}
-
-func getHookTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
 }

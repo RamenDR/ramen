@@ -7,29 +7,34 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
+	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 const (
-	jobPollInterval = 5 * time.Second
+	jobPollInterval           = 5 * time.Second
+	jobDeletionTimeoutSeconds = 60
+	jobDeletionPollSeconds    = 2
 )
 
 type JobHook struct {
 	Hook           *kubeobjects.HookSpec
 	Client         client.Client
+	Reader         client.Reader
+	Scheme         *runtime.Scheme
 	RecipeElements util.RecipeElements
 }
 
@@ -45,20 +50,21 @@ func (j JobHook) Execute(log logr.Logger) error {
 
 	// Create or get the job
 	ctx := context.Background()
-	job, err := j.createOrGetJob(ctx, jobTemplate, log)
+
+	job, err := j.CreateOrGetJob(ctx, jobTemplate, log)
 	if err != nil {
 		return fmt.Errorf("failed to create or get job: %w", err)
 	}
 
 	// Monitor job completion
-	err = j.monitorJobCompletion(job, log)
+	err = j.MonitorJobCompletion(job, log)
 	if err != nil {
 		// Check if inverse operation should be executed
-		if j.shouldExecuteInverseOp(err) {
+		if common.ShouldInverseOpBeExecuted(j.Hook.Job.InverseOp, j.Hook, err) {
 			j.executeInverseOp(log)
 		}
 
-		if shouldJobHookBeFailedOnError(j.Hook) {
+		if common.ShouldFailOnError(j.Hook) {
 			return fmt.Errorf("job hook failed: %w", err)
 		}
 
@@ -79,9 +85,11 @@ func (j JobHook) getJobTemplateFromRecipe() (*batchv1.Job, error) {
 
 	// Look for the job template by name
 	var jobTemplateStr *string
+
 	for _, jobMap := range jobs {
 		if templateStr, exists := jobMap[j.Hook.Job.Name]; exists {
 			jobTemplateStr = templateStr
+
 			break
 		}
 	}
@@ -111,14 +119,15 @@ func (j JobHook) getJobTemplateFromRecipe() (*batchv1.Job, error) {
 	if job.Labels == nil {
 		job.Labels = make(map[string]string)
 	}
+
 	job.Labels["ramendr.openshift.io/hook-name"] = j.Hook.Name
 	job.Labels["ramendr.openshift.io/job-name"] = j.Hook.Job.Name
 
 	return job, nil
 }
 
-// createOrGetJob creates a new job or retrieves an existing one based on ForceCreate flag.
-func (j JobHook) createOrGetJob(ctx context.Context, jobTemplate *batchv1.Job, log logr.Logger) (*batchv1.Job, error) {
+// CreateOrGetJob creates a new job or retrieves an existing one based on ForceCreate flag.
+func (j JobHook) CreateOrGetJob(ctx context.Context, jobTemplate *batchv1.Job, log logr.Logger) (*batchv1.Job, error) {
 	jobKey := types.NamespacedName{
 		Name:      j.Hook.Job.Name,
 		Namespace: j.Hook.Namespace,
@@ -139,6 +148,7 @@ func (j JobHook) createOrGetJob(ctx context.Context, jobTemplate *batchv1.Job, l
 	// Use existing job if found
 	if exists {
 		log.Info("Job already exists, using existing job", "jobName", j.Hook.Job.Name)
+
 		return existingJob, nil
 	}
 
@@ -149,8 +159,8 @@ func (j JobHook) createOrGetJob(ctx context.Context, jobTemplate *batchv1.Job, l
 // getExistingJob checks if a job exists and returns it along with existence status.
 func (j JobHook) getExistingJob(ctx context.Context, jobKey types.NamespacedName) (*batchv1.Job, bool, error) {
 	job := &batchv1.Job{}
-	err := j.Client.Get(ctx, jobKey, job)
 
+	err := j.Client.Get(ctx, jobKey, job)
 	if err == nil {
 		return job, true, nil
 	}
@@ -168,7 +178,9 @@ func (j JobHook) shouldForceRecreate() bool {
 }
 
 // recreateJob deletes an existing job and creates a new one.
-func (j JobHook) recreateJob(ctx context.Context, existingJob, jobTemplate *batchv1.Job, log logr.Logger) (*batchv1.Job, error) {
+func (j JobHook) recreateJob(
+	ctx context.Context, existingJob, jobTemplate *batchv1.Job, log logr.Logger,
+) (*batchv1.Job, error) {
 	log.Info("Job exists but ForceCreate is true, deleting existing job", "jobName", j.Hook.Job.Name)
 
 	// Delete the existing job
@@ -194,6 +206,7 @@ func (j JobHook) recreateJob(ctx context.Context, existingJob, jobTemplate *batc
 	}
 
 	log.Info("Job created successfully after deletion", "jobName", j.Hook.Job.Name)
+
 	return jobTemplate, nil
 }
 
@@ -205,16 +218,17 @@ func (j JobHook) createNewJob(ctx context.Context, jobTemplate *batchv1.Job, log
 	}
 
 	log.Info("Job created successfully", "jobName", j.Hook.Job.Name)
+
 	return jobTemplate, nil
 }
 
 // waitForJobDeletion waits for a job to be fully deleted.
 func (j JobHook) waitForJobDeletion(ctx context.Context, jobKey types.NamespacedName, log logr.Logger) error {
-	// Create a timeout context for deletion wait (60 seconds)
-	deleteCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// Create a timeout context for deletion wait
+	deleteCtx, cancel := context.WithTimeout(ctx, jobDeletionTimeoutSeconds*time.Second)
 	defer cancel()
 
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(jobDeletionPollSeconds * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -228,6 +242,7 @@ func (j JobHook) waitForJobDeletion(ctx context.Context, jobKey types.Namespaced
 
 			if k8serrors.IsNotFound(err) {
 				log.Info("Job deleted successfully", "jobName", jobKey.Name)
+
 				return nil
 			}
 
@@ -241,59 +256,63 @@ func (j JobHook) waitForJobDeletion(ctx context.Context, jobKey types.Namespaced
 	}
 }
 
-// monitorJobCompletion monitors the job until it completes or times out.
-func (j JobHook) monitorJobCompletion(job *batchv1.Job, log logr.Logger) error {
-	timeout := getJobHookTimeoutValue(j.Hook)
+// MonitorJobCompletion monitors the job until it completes or times out.
+func (j JobHook) MonitorJobCompletion(job *batchv1.Job, log logr.Logger) error {
+	timeout := common.GetHookTimeout(j.Hook)
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(jobPollInterval)
 	defer ticker.Stop()
 
-	jobKey := types.NamespacedName{
-		Name:      job.Name,
-		Namespace: job.Namespace,
-	}
+	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("timeout waiting for job completion after %d seconds", timeout)
 		case <-ticker.C:
-			currentJob := &batchv1.Job{}
-			if err := j.Client.Get(context.Background(), jobKey, currentJob); err != nil {
-				return fmt.Errorf("failed to get job status: %w", err)
+			if done, err := j.checkJobStatus(ctx, jobKey, job.Name, log); done || err != nil {
+				return err
 			}
-
-			// Check if job succeeded
-			if currentJob.Status.Succeeded > 0 {
-				log.Info("Job completed successfully",
-					"jobName", job.Name,
-					"succeeded", currentJob.Status.Succeeded,
-					"completionTime", currentJob.Status.CompletionTime)
-
-				return nil
-			}
-
-			// Check if job failed
-			if currentJob.Status.Failed > 0 {
-				return fmt.Errorf("job failed: succeeded=%d, failed=%d",
-					currentJob.Status.Succeeded, currentJob.Status.Failed)
-			}
-
-			// Job is still running
-			log.Info("Job still running",
-				"jobName", job.Name,
-				"active", currentJob.Status.Active,
-				"succeeded", currentJob.Status.Succeeded,
-				"failed", currentJob.Status.Failed)
 		}
 	}
 }
 
-// shouldExecuteInverseOp determines if the inverse operation should be executed.
-func (j JobHook) shouldExecuteInverseOp(err error) bool {
-	return err != nil && j.Hook.Job.InverseOp != "" && shouldJobHookBeFailedOnError(j.Hook)
+// checkJobStatus fetches the current job and inspects its conditions.
+// Returns (true, nil) on success, (true, err) on failure, (false, nil) if still running.
+func (j JobHook) checkJobStatus(ctx context.Context, jobKey types.NamespacedName, jobName string,
+	log logr.Logger,
+) (bool, error) {
+	currentJob := &batchv1.Job{}
+	if err := j.Client.Get(ctx, jobKey, currentJob); err != nil {
+		return true, fmt.Errorf("failed to get job status: %w", err)
+	}
+
+	for _, cond := range currentJob.Status.Conditions {
+		if cond.Type == batchv1.JobComplete && cond.Status == corev1.ConditionTrue {
+			log.Info("Job completed successfully",
+				"jobName", jobName,
+				"succeeded", currentJob.Status.Succeeded,
+				"completionTime", currentJob.Status.CompletionTime)
+
+			return true, nil
+		}
+
+		if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+			return true, fmt.Errorf("job failed: succeeded=%d, failed=%d",
+				currentJob.Status.Succeeded, currentJob.Status.Failed)
+		}
+	}
+
+	log.Info("Job still running",
+		"jobName", jobName,
+		"active", currentJob.Status.Active,
+		"succeeded", currentJob.Status.Succeeded,
+		"failed", currentJob.Status.Failed)
+
+	return false, nil
 }
 
 // executeInverseOp executes the inverse operation if defined.
@@ -308,13 +327,20 @@ func (j JobHook) executeInverseOp(log logr.Logger) {
 		return
 	}
 
-	tempJobHook := JobHook{
-		Hook:           hookSpecForInvOp,
+	executor, err := GetHookExecutor(HookContext{
+		Hook:           *hookSpecForInvOp,
 		Client:         j.Client,
+		Reader:         j.Reader,
+		Scheme:         j.Scheme,
 		RecipeElements: j.RecipeElements,
+	})
+	if err != nil {
+		log.Error(err, "Failed to resolve executor for inverse operation", "inverseOp", inverseOp)
+
+		return
 	}
 
-	if err := tempJobHook.Execute(log); err != nil {
+	if err := executor.Execute(log); err != nil {
 		log.Error(err, "Failed to execute inverse operation", "inverseOp", inverseOp)
 
 		return
@@ -326,185 +352,7 @@ func (j JobHook) executeInverseOp(log logr.Logger) {
 // getHookSpecForInverseOp retrieves the hook specification for the inverse operation.
 // It supports all hook types: exec, check, scale, and job.
 func (j JobHook) getHookSpecForInverseOp(inverseOp string) *kubeobjects.HookSpec {
-	hookName, opName := parseInverseOp(inverseOp, j.Hook.Name)
-	if hookName == "" || opName == "" {
-		return nil
-	}
-
 	hooks := j.RecipeElements.RecipeWithParams.Spec.Hooks
 
-	// Find the hook by name and dispatch based on its type
-	for i := range hooks {
-		if hooks[i].Name == hookName {
-			return getHookSpecByType(hooks[i], opName)
-		}
-	}
-
-	return nil
-}
-
-// parseInverseOp parses the inverse operation string into hookName and opName.
-// Supported formats:
-//   - "/opName" - uses defaultHookName with the specified opName
-//   - "hookName/opName" - uses the specified hookName and opName
-//   - "opName" - uses defaultHookName with the specified opName
-func parseInverseOp(inverseOp, defaultHookName string) (hookName, opName string) {
-	if inverseOp == "" {
-		return "", ""
-	}
-
-	// Handle "/opName" format (same hook)
-	if strings.HasPrefix(inverseOp, "/") {
-		return defaultHookName, strings.TrimPrefix(inverseOp, "/")
-	}
-
-	// Handle "hookName/opName" or "opName" format
-	parts := strings.SplitN(inverseOp, "/", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
-	}
-
-	// Just "opName" - use default hook
-	return defaultHookName, parts[0]
-}
-
-// getHookSpecByType dispatches to the appropriate hook spec builder based on hook type.
-func getHookSpecByType(hook *Recipe.Hook, opName string) *kubeobjects.HookSpec {
-	switch hook.Type {
-	case "job":
-		return getJobHookSpec(hook, opName)
-	case "exec":
-		return getExecHookSpec(hook, opName)
-	case "check":
-		return getCheckHookSpec(hook, opName)
-	case "scale":
-		return getScaleHookSpec(hook, opName)
-	default:
-		return nil
-	}
-}
-
-// getJobHookSpec creates a HookSpec for a job type hook.
-func getJobHookSpec(hook *Recipe.Hook, opName string) *kubeobjects.HookSpec {
-	for _, jobDetail := range hook.Jobs {
-		if jobDetail.Name == opName {
-			return &kubeobjects.HookSpec{
-				Name:      hook.Name,
-				Namespace: hook.Namespace,
-				Type:      "job",
-				Job: kubeobjects.JobSpec{
-					Name:        jobDetail.Name,
-					OnError:     jobDetail.OnError,
-					Timeout:     jobDetail.Timeout,
-					InverseOp:   jobDetail.InverseOp,
-					ForceCreate: jobDetail.ForceCreate,
-				},
-				Timeout:   hook.Timeout,
-				Essential: hook.Essential,
-				OnError:   hook.OnError,
-			}
-		}
-	}
-
-	return nil
-}
-
-// getExecHookSpec creates a HookSpec for an exec type hook.
-func getExecHookSpec(hook *Recipe.Hook, opName string) *kubeobjects.HookSpec {
-	for _, op := range hook.Ops {
-		if op.Name == opName {
-			return &kubeobjects.HookSpec{
-				Name:      hook.Name,
-				Namespace: hook.Namespace,
-				Type:      "exec",
-				Op: kubeobjects.Operation{
-					Name:      op.Name,
-					Command:   op.Command,
-					Container: op.Container,
-					InverseOp: op.InverseOp,
-				},
-				SelectResource: hook.SelectResource,
-				LabelSelector:  hook.LabelSelector,
-				NameSelector:   hook.NameSelector,
-				SinglePodOnly:  hook.SinglePodOnly,
-				Timeout:        hook.Timeout,
-				Essential:      hook.Essential,
-				OnError:        hook.OnError,
-			}
-		}
-	}
-
-	return nil
-}
-
-// getCheckHookSpec creates a HookSpec for a check type hook.
-func getCheckHookSpec(hook *Recipe.Hook, opName string) *kubeobjects.HookSpec {
-	for _, chk := range hook.Chks {
-		if chk.Name == opName {
-			return &kubeobjects.HookSpec{
-				Name:      hook.Name,
-				Namespace: hook.Namespace,
-				Type:      "check",
-				Chk: kubeobjects.Check{
-					Name:      chk.Name,
-					Condition: chk.Condition,
-				},
-				SelectResource:       hook.SelectResource,
-				LabelSelector:        hook.LabelSelector,
-				NameSelector:         hook.NameSelector,
-				Timeout:              chk.Timeout,
-				OnError:              chk.OnError,
-				SkipHookIfNotPresent: hook.SkipHookIfNotPresent,
-				Essential:            hook.Essential,
-			}
-		}
-	}
-
-	return nil
-}
-
-// getScaleHookSpec creates a HookSpec for a scale type hook.
-func getScaleHookSpec(hook *Recipe.Hook, opName string) *kubeobjects.HookSpec {
-	return &kubeobjects.HookSpec{
-		Name:           hook.Name,
-		Namespace:      hook.Namespace,
-		Type:           "scale",
-		SelectResource: hook.SelectResource,
-		LabelSelector:  hook.LabelSelector,
-		NameSelector:   hook.NameSelector,
-		Essential:      hook.Essential,
-		Timeout:        hook.Timeout,
-		OnError:        hook.OnError,
-		Scale: kubeobjects.ScaleSpec{
-			Operation: opName,
-		},
-	}
-}
-
-// shouldJobHookBeFailedOnError determines if the job hook should fail on error.
-func shouldJobHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
-	// hook.Job.OnError overwrites the feature of hook.OnError -- defaults to fail
-	if hook.Job.OnError != "" {
-		return hook.Job.OnError != "continue"
-	}
-
-	if hook.OnError != "" {
-		return hook.OnError != "continue"
-	}
-
-	return true
-}
-
-// getJobHookTimeoutValue returns the timeout value for the job hook.
-func getJobHookTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Job.Timeout != 0 {
-		return hook.Job.Timeout
-	}
-
-	if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
+	return common.GetHookSpecForInverseOp(hooks, inverseOp, j.Hook.Name)
 }
