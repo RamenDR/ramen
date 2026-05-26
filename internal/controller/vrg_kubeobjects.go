@@ -1259,10 +1259,10 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 	}, nil
 }
 
-// TODO: Return error as well or ensure that other than exec and check hooks are
+// TODO: Return error as well or ensure that other than exec, check, scale and job hooks are
 // handled properly.
 func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	// based on hook.type, the hook is chks, ops or scale
+	// based on hook.type, the hook is chks, ops, scale, or job
 	switch hook.Type {
 	case "exec":
 		return getOpHookSpec(&hook, suffix)
@@ -1270,6 +1270,8 @@ func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
 		return getChkHookSpec(&hook, suffix)
 	case "scale":
 		return getScaleHookSpec(&hook, suffix)
+	case "job":
+		return getJobHookSpec(&hook, suffix)
 	default:
 		return kubeobjects.HookSpec{}
 	}
@@ -1336,6 +1338,30 @@ func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
 					Container: op.Container,
 					Command:   op.Command,
 					InverseOp: op.InverseOp,
+				},
+			}
+		}
+	}
+
+	return kubeobjects.HookSpec{}
+}
+
+func getJobHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
+	for _, job := range hook.Jobs {
+		if job.Name == suffix {
+			return kubeobjects.HookSpec{
+				Name:      hook.Name,
+				Namespace: hook.Namespace,
+				Type:      hook.Type,
+				Timeout:   hook.Timeout,
+				OnError:   hook.OnError,
+				Essential: hook.Essential,
+				Job: kubeobjects.JobSpec{
+					Name:        suffix,
+					Timeout:     job.Timeout,
+					OnError:     job.OnError,
+					ForceCreate: job.ForceCreate,
+					InverseOp:   job.InverseOp,
 				},
 			}
 		}
