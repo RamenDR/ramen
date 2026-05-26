@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: The RamenDR authors
 // SPDX-License-Identifier: Apache-2.0
 
-package hooks
+package hooks_test
 
 import (
 	"context"
@@ -19,6 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/ramendr/ramen/internal/controller/hooks"
+	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
@@ -32,7 +34,7 @@ var _ = Describe("JobHook", func() {
 	var (
 		fakeClient client.Client
 		scheme     *runtime.Scheme
-		jobHook    JobHook
+		jobHook    hooks.JobHook
 		namespace  string
 		jobName    string
 		log        logr.Logger
@@ -54,7 +56,7 @@ var _ = Describe("JobHook", func() {
 			hook := &kubeobjects.HookSpec{
 				Job: kubeobjects.JobSpec{},
 			}
-			Expect(shouldJobHookBeFailedOnError(hook)).To(BeTrue())
+			Expect(common.ShouldFailOnError(hook)).To(BeTrue())
 		})
 
 		It("should return false when Job.OnError is continue", func() {
@@ -63,7 +65,7 @@ var _ = Describe("JobHook", func() {
 					OnError: "continue",
 				},
 			}
-			Expect(shouldJobHookBeFailedOnError(hook)).To(BeFalse())
+			Expect(common.ShouldFailOnError(hook)).To(BeFalse())
 		})
 
 		It("should return false when Hook.OnError is continue", func() {
@@ -71,7 +73,7 @@ var _ = Describe("JobHook", func() {
 				OnError: "continue",
 				Job:     kubeobjects.JobSpec{},
 			}
-			Expect(shouldJobHookBeFailedOnError(hook)).To(BeFalse())
+			Expect(common.ShouldFailOnError(hook)).To(BeFalse())
 		})
 
 		It("should prioritize Job.OnError over Hook.OnError", func() {
@@ -81,7 +83,7 @@ var _ = Describe("JobHook", func() {
 					OnError: "fail",
 				},
 			}
-			Expect(shouldJobHookBeFailedOnError(hook)).To(BeTrue())
+			Expect(common.ShouldFailOnError(hook)).To(BeTrue())
 		})
 	})
 
@@ -92,7 +94,7 @@ var _ = Describe("JobHook", func() {
 					Timeout: 600,
 				},
 			}
-			Expect(getJobHookTimeoutValue(hook)).To(Equal(600))
+			Expect(common.GetHookTimeout(hook)).To(Equal(600))
 		})
 
 		It("should return Hook.Timeout when Job.Timeout is not set", func() {
@@ -100,14 +102,14 @@ var _ = Describe("JobHook", func() {
 				Timeout: 450,
 				Job:     kubeobjects.JobSpec{},
 			}
-			Expect(getJobHookTimeoutValue(hook)).To(Equal(450))
+			Expect(common.GetHookTimeout(hook)).To(Equal(450))
 		})
 
 		It("should return default timeout when neither is set", func() {
 			hook := &kubeobjects.HookSpec{
 				Job: kubeobjects.JobSpec{},
 			}
-			Expect(getJobHookTimeoutValue(hook)).To(Equal(defaultTimeoutValue))
+			Expect(common.GetHookTimeout(hook)).To(Equal(common.DefaultTimeoutValue))
 		})
 
 		It("should prioritize Job.Timeout over Hook.Timeout", func() {
@@ -117,7 +119,7 @@ var _ = Describe("JobHook", func() {
 					Timeout: 600,
 				},
 			}
-			Expect(getJobHookTimeoutValue(hook)).To(Equal(600))
+			Expect(common.GetHookTimeout(hook)).To(Equal(600))
 		})
 	})
 
@@ -146,7 +148,7 @@ var _ = Describe("JobHook", func() {
 				},
 			}
 
-			jobHook = JobHook{
+			jobHook = hooks.JobHook{
 				Hook: &kubeobjects.HookSpec{
 					Name:      "test-hook",
 					Namespace: namespace,
@@ -161,7 +163,7 @@ var _ = Describe("JobHook", func() {
 
 		It("should create a new job when it doesn't exist", func() {
 			ctx := context.Background()
-			job, err := jobHook.createOrGetJob(ctx, jobTemplate, log)
+			job, err := jobHook.CreateOrGetJob(ctx, jobTemplate, log)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(job).NotTo(BeNil())
 			Expect(job.Name).To(Equal(jobName))
@@ -183,7 +185,7 @@ var _ = Describe("JobHook", func() {
 			forceCreate := false
 			jobHook.Hook.Job.ForceCreate = &forceCreate
 
-			job, err := jobHook.createOrGetJob(ctx, jobTemplate, log)
+			job, err := jobHook.CreateOrGetJob(ctx, jobTemplate, log)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(job).NotTo(BeNil())
 			Expect(job.Name).To(Equal(jobName))
@@ -201,7 +203,7 @@ var _ = Describe("JobHook", func() {
 			// Note: In a real test with a proper fake client that supports deletion,
 			// this would verify the job is deleted and recreated
 			// For now, we just verify the function doesn't error
-			_, err := jobHook.createOrGetJob(ctx, jobTemplate, log)
+			_, err := jobHook.CreateOrGetJob(ctx, jobTemplate, log)
 			// May error due to fake client limitations with deletion
 			_ = err
 		})
@@ -233,7 +235,7 @@ var _ = Describe("JobHook", func() {
 			// Create job without completion status
 			Expect(fakeClient.Create(context.Background(), job)).To(Succeed())
 
-			jobHook := JobHook{
+			jobHook := hooks.JobHook{
 				Hook: &kubeobjects.HookSpec{
 					Name:      "test-hook",
 					Namespace: namespace,
@@ -247,7 +249,7 @@ var _ = Describe("JobHook", func() {
 			}
 
 			start := time.Now()
-			err := jobHook.monitorJobCompletion(job, log)
+			err := jobHook.MonitorJobCompletion(job, log)
 			duration := time.Since(start)
 
 			Expect(err).To(HaveOccurred())
@@ -270,7 +272,7 @@ var _ = Describe("JobHook", func() {
 
 	Describe("shouldExecuteInverseOp", func() {
 		It("should return true when error exists, inverseOp is set, and onError is fail", func() {
-			jobHook = JobHook{
+			jobHook = hooks.JobHook{
 				Hook: &kubeobjects.HookSpec{
 					Job: kubeobjects.JobSpec{
 						InverseOp: "cleanup-job",
@@ -279,12 +281,13 @@ var _ = Describe("JobHook", func() {
 				},
 			}
 
-			result := jobHook.shouldExecuteInverseOp(context.DeadlineExceeded)
+			result := common.ShouldInverseOpBeExecuted(jobHook.Hook.Job.InverseOp, jobHook.Hook,
+				context.DeadlineExceeded)
 			Expect(result).To(BeTrue())
 		})
 
 		It("should return false when error is nil", func() {
-			jobHook = JobHook{
+			jobHook = hooks.JobHook{
 				Hook: &kubeobjects.HookSpec{
 					Job: kubeobjects.JobSpec{
 						InverseOp: "cleanup-job",
@@ -292,23 +295,24 @@ var _ = Describe("JobHook", func() {
 				},
 			}
 
-			result := jobHook.shouldExecuteInverseOp(nil)
+			result := common.ShouldInverseOpBeExecuted(jobHook.Hook.Job.InverseOp, jobHook.Hook, nil)
 			Expect(result).To(BeFalse())
 		})
 
 		It("should return false when inverseOp is not set", func() {
-			jobHook = JobHook{
+			jobHook = hooks.JobHook{
 				Hook: &kubeobjects.HookSpec{
 					Job: kubeobjects.JobSpec{},
 				},
 			}
 
-			result := jobHook.shouldExecuteInverseOp(context.DeadlineExceeded)
+			result := common.ShouldInverseOpBeExecuted(jobHook.Hook.Job.InverseOp, jobHook.Hook,
+				context.DeadlineExceeded)
 			Expect(result).To(BeFalse())
 		})
 
 		It("should return false when onError is continue", func() {
-			jobHook = JobHook{
+			jobHook = hooks.JobHook{
 				Hook: &kubeobjects.HookSpec{
 					Job: kubeobjects.JobSpec{
 						InverseOp: "cleanup-job",
@@ -317,7 +321,8 @@ var _ = Describe("JobHook", func() {
 				},
 			}
 
-			result := jobHook.shouldExecuteInverseOp(context.DeadlineExceeded)
+			result := common.ShouldInverseOpBeExecuted(jobHook.Hook.Job.InverseOp, jobHook.Hook,
+				context.DeadlineExceeded)
 			Expect(result).To(BeFalse())
 		})
 	})

@@ -41,6 +41,7 @@ func GetHookExecutor(ctx HookContext) (HookExecutor, error) {
 	case "exec":
 		return ExecHook{
 			Hook:           &ctx.Hook,
+			Client:         ctx.Client,
 			Reader:         ctx.Reader,
 			Scheme:         ctx.Scheme,
 			RecipeElements: ctx.RecipeElements,
@@ -57,6 +58,8 @@ func GetHookExecutor(ctx HookContext) (HookExecutor, error) {
 		return JobHook{
 			Hook:           &ctx.Hook,
 			Client:         ctx.Client,
+			Reader:         ctx.Reader,
+			Scheme:         ctx.Scheme,
 			RecipeElements: ctx.RecipeElements,
 		}, nil
 

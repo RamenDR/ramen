@@ -11,14 +11,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
@@ -44,7 +41,7 @@ func (c CheckHook) Execute(log logr.Logger) error {
 		return nil
 	}
 
-	if !hookResult && shouldChkHookBeFailedOnError(c.Hook) {
+	if !hookResult && common.ShouldFailOnError(c.Hook) {
 		return fmt.Errorf("stopping workflow as hook %s failed", c.Hook.Name)
 	}
 
@@ -53,25 +50,12 @@ func (c CheckHook) Execute(log logr.Logger) error {
 	return nil
 }
 
-func shouldChkHookBeFailedOnError(hook *kubeobjects.HookSpec) bool {
-	// hook.Check.OnError overwrites the feature of hook.OnError -- defaults to fail
-	if hook.Chk.OnError != "" && hook.Chk.OnError == "continue" {
-		return false
-	}
-
-	if hook.OnError != "" && hook.OnError == "continue" {
-		return false
-	}
-
-	return true
-}
-
 func EvaluateCheckHook(k8sReader client.Reader, hook *kubeobjects.HookSpec, log logr.Logger) (bool, error) {
 	if hook.LabelSelector == nil && hook.NameSelector == "" {
 		return false, fmt.Errorf("either nameSelector or labelSelector should be provided to get resources")
 	}
 
-	timeout := getChkHookTimeoutValue(hook)
+	timeout := common.GetHookTimeout(hook)
 
 	pollInterval := pInterval * time.Microsecond
 
@@ -203,14 +187,14 @@ func validateAndGetUnstructedListBasedOnType(resourceType string) (*unstructured
 	list := &unstructured.UnstructuredList{}
 
 	// process resource given as one of the predefined types pod, deployment or statefulset
-	gvkMap := prepareMapForDefinedTypes()
+	gvkMap := common.PrepareMapForDefinedTypes()
 	if gvk, ok := gvkMap[resourceType]; ok {
 		list.SetGroupVersionKind(gvk)
 
 		return list, nil
 	}
 
-	mapper, err := getRestMapper()
+	mapper, err := common.GetRestMapper()
 	if err != nil {
 		return list, err
 	}
@@ -223,7 +207,7 @@ func validateAndGetUnstructedListBasedOnType(resourceType string) (*unstructured
 			Resource: resourceParts[2],
 		}
 
-		gvk, err := convertGVRToGVK(mapper, gvr)
+		gvk, err := common.ConvertGVRToGVK(mapper, gvr)
 		if err != nil {
 			return list, err
 		}
@@ -240,7 +224,7 @@ func validateAndGetUnstructedListBasedOnType(resourceType string) (*unstructured
 		Resource: resourceType,
 	}
 
-	gvk, err := convertGVRToGVK(mapper, gvr)
+	gvk, err := common.ConvertGVRToGVK(mapper, gvr)
 	if err != nil {
 		return list, fmt.Errorf("unrecognized core resource or invalid format: %w", err)
 	}
@@ -248,57 +232,6 @@ func validateAndGetUnstructedListBasedOnType(resourceType string) (*unstructured
 	list.SetGroupVersionKind(*gvk)
 
 	return list, nil
-}
-
-func prepareMapForDefinedTypes() map[string]schema.GroupVersionKind {
-	gvkMap := make(map[string]schema.GroupVersionKind)
-	gvkMap["pod"] = schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "Pod",
-	}
-
-	gvkMap["deployment"] = schema.GroupVersionKind{
-		Group:   "apps",
-		Version: "v1",
-		Kind:    "Deployment",
-	}
-
-	gvkMap["statefulset"] = schema.GroupVersionKind{
-		Group:   "apps",
-		Version: "v1",
-		Kind:    "StatefulSet",
-	}
-
-	return gvkMap
-}
-
-func getRestMapper() (meta.RESTMapper, error) {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	dc, err := discovery.NewDiscoveryClientForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	apiGroupResources, err := restmapper.GetAPIGroupResources(dc)
-	if err != nil {
-		return nil, err
-	}
-
-	return restmapper.NewDiscoveryRESTMapper(apiGroupResources), nil
-}
-
-func convertGVRToGVK(mapper meta.RESTMapper, gvr schema.GroupVersionResource) (*schema.GroupVersionKind, error) {
-	gvk, err := mapper.KindFor(gvr)
-	if err != nil {
-		return nil, err
-	}
-
-	return &gvk, nil
 }
 
 func EvaluateCheckHookExp(booleanExpression string, jsonData interface{}) (bool, error) {
