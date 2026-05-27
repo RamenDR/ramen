@@ -103,7 +103,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	}
 
 	if processingErr != nil {
-		d.log.Info("Process placement", "error", processingErr.Error())
+		d.log.Error(processingErr, "Failed to process placement")
 
 		return requeue
 	}
@@ -580,6 +580,28 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 }
 
 func (d *DRPCInstance) executeAction() (bool, error) {
+	// Validate dryRun configuration
+	if d.instance.Spec.DryRun {
+		if d.instance.Spec.Action != rmn.ActionFailover {
+			err := fmt.Errorf("dryRun is enabled but action is not failover")
+			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
+
+			return false, err
+		}
+
+		// During dryRun, last-app-deployment-cluster always points to where the app is currently running
+		// (it's not updated during test failover). We cannot test failover to the same cluster.
+		lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+		if d.instance.Spec.FailoverCluster == lastAppCluster {
+			err := fmt.Errorf(
+				"dryRun is enabled, but cannot test failover to cluster %s where the application is currently running",
+				lastAppCluster)
+			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
+
+			return false, err
+		}
+	}
+
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.RunFailover()
