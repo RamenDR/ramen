@@ -125,62 +125,25 @@ const (
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	time := metav1.NewTime(time.Now())
 
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeDataReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeDataProtected,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataProtected,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeKubeObjectsReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeNoClusterDataConflict,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeAutoCleanup,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
+	for _, conditionType := range []string{
+		VRGConditionTypeDataReady,
+		VRGConditionTypeDataProtected,
+		VRGConditionTypeClusterDataReady,
+		VRGConditionTypeKubeObjectsReady,
+		VRGConditionTypeClusterDataProtected,
+		VRGConditionTypeAutoCleanup,
+		VRGConditionTypeNoClusterDataConflict,
+		VRGConditionTypeHooksReady,
+	} {
+		util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+			Type:               conditionType,
+			Reason:             VRGConditionReasonInitializing,
+			ObservedGeneration: observedGeneration,
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: time,
+			Message:            message,
+		})
+	}
 }
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
