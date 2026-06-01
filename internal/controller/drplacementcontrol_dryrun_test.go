@@ -235,18 +235,102 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		})
 
 		Context("When DryRun=true with Relocate action", func() {
-			It("should accept the configuration (though dry-run only applies to Failover)", func() {
+			It("should reject the configuration and not progress", func() {
 				drpc.Spec.Action = rmn.ActionRelocate
 				drpc.Spec.PreferredCluster = West1ManagedCluster
 				drpc.Spec.DryRun = true
 				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
 
+				// Verify DRPC was created
 				Eventually(func() error {
 					return apiReader.Get(context.TODO(), drpcNamespacedName, drpc)
 				}, timeout, interval).Should(Succeed())
 
+				// The controller should reject this and not progress
+				// We verify by checking that Phase remains empty (not progressing)
+				Consistently(func() rmn.DRState {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return ""
+					}
+
+					return drpc.Status.Phase
+				}, "2s", interval).Should(BeEmpty())
+			})
+		})
+
+		Context("When DryRun=true with Failover", func() {
+			It("should reject when failoverCluster equals last-app-deployment-cluster (initial deployment)", func() {
+				// App initially deployed to East1, trying to test failover to same cluster
+				drpc.Annotations = map[string]string{
+					"drplacementcontrol.ramendr.openshift.io/last-app-cluster": East1ManagedCluster,
+				}
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
+				drpc.Spec.FailoverCluster = East1ManagedCluster // Same as last-app-cluster
+				drpc.Spec.DryRun = true
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				// Verify DRPC was created
+				Eventually(func() error {
+					return apiReader.Get(context.TODO(), drpcNamespacedName, drpc)
+				}, timeout, interval).Should(Succeed())
+
+				// The controller should reject this and not progress
+				Consistently(func() rmn.DRState {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return ""
+					}
+
+					return drpc.Status.Phase
+				}, "2s", interval).Should(BeEmpty())
+			})
+
+			It("should reject when failoverCluster equals last-app-deployment-cluster (after real failover)", func() {
+				// App failed over to East1, trying to test failover to same cluster
+				drpc.Annotations = map[string]string{
+					"ramendr.openshift.io/last-action":                         string(rmn.ActionFailover),
+					"drplacementcontrol.ramendr.openshift.io/last-app-cluster": East1ManagedCluster,
+				}
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = West1ManagedCluster
+				drpc.Spec.FailoverCluster = East1ManagedCluster // Same as last-app-cluster
+				drpc.Spec.DryRun = true
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				// Verify DRPC was created
+				Eventually(func() error {
+					return apiReader.Get(context.TODO(), drpcNamespacedName, drpc)
+				}, timeout, interval).Should(Succeed())
+
+				// The controller should reject this and not progress
+				Consistently(func() rmn.DRState {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return ""
+					}
+
+					return drpc.Status.Phase
+				}, "2s", interval).Should(BeEmpty())
+			})
+
+			It("should accept when failoverCluster differs from last-app-deployment-cluster", func() {
+				// App on East1, testing failover to West1 (different cluster)
+				drpc.Annotations = map[string]string{
+					"drplacementcontrol.ramendr.openshift.io/last-app-cluster": East1ManagedCluster,
+				}
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = East1ManagedCluster
+				drpc.Spec.FailoverCluster = West1ManagedCluster // Different from last-app-cluster
+				drpc.Spec.DryRun = true
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				// Verify DRPC was created
+				Eventually(func() error {
+					return apiReader.Get(context.TODO(), drpcNamespacedName, drpc)
+				}, timeout, interval).Should(Succeed())
+
+				// Should be accepted since failoverCluster is different from where app is running
 				Expect(drpc.Spec.DryRun).To(BeTrue())
-				Expect(drpc.Spec.Action).To(Equal(rmn.ActionRelocate))
+				Expect(drpc.Spec.Action).To(Equal(rmn.ActionFailover))
 			})
 		})
 
