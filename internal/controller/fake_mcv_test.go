@@ -209,3 +209,9 @@ func (f FakeMCVGetter) GetRecipeFromManagedCluster(managedCluster, resourceName,
 ) (*recipev1.Recipe, error) {
 	return nil, nil
 }
+
+func (f FakeMCVGetter) DeleteRecipeManagedClusterView(
+	resourceName, resourceNamespace, clusterName string,
+) error {
+	return nil
+}

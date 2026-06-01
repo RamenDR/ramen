@@ -881,6 +881,13 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		}
 	}
 
+	// delete recipe manifestwork
+	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
+		if err := mwu.DeleteRecipeManifestWork(drClusterName); err != nil {
+			return err
+		}
+	}
+
 	// delete metrics if matching labels are found
 	syncTimeMetricLabels := SyncTimeMetricLabels(drPolicy, drpc)
 	DeleteSyncTimeMetric(syncTimeMetricLabels)
@@ -1003,6 +1010,18 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
 		if err != nil {
 			return fmt.Errorf("failed to delete namespace MCV %w", err)
+		}
+
+		// Delete MCV for Recipe
+		if drpc.Spec.KubeObjectProtection != nil &&
+			drpc.Spec.KubeObjectProtection.RecipeRef != nil {
+			recipeRef := drpc.Spec.KubeObjectProtection.RecipeRef
+
+			err = r.MCVGetter.DeleteRecipeManagedClusterView(
+				recipeRef.Name, recipeRef.Namespace, drClusterName)
+			if err != nil {
+				return fmt.Errorf("failed to delete recipe MCV %w", err)
+			}
 		}
 	}
 

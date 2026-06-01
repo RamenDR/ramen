@@ -735,6 +735,31 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations m
 	return nil
 }
 
+func (mwu *MWUtil) DeleteRecipeManifestWork(clusterName string) error {
+	mwName := mwu.BuildManifestWorkName(MWTypeRecipe)
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
+	}
+
+	if ResourceIsDeleted(mw) {
+		return nil
+	}
+
+	err = mwu.DeleteManifestWork(mwName, clusterName)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
+	return nil
+}
+
 func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	mwu.Log.Info("Delete ManifestWork from", "namespace", mwNamespace, "name", mwName)
 
