@@ -106,6 +106,8 @@ type ManagedClusterViewGetter interface {
 	DeleteNamespaceManagedClusterView(resourceName, resourceNamespace, clusterName, resourceType string) error
 
 	DeleteNFManagedClusterView(resourceName, resourceNamespace, clusterName, resourceType string) error
+
+	DeleteRecipeManagedClusterView(resourceName, resourceNamespace, clusterName string) error
 }
 
 type ManagedClusterViewGetterImpl struct {
@@ -653,6 +655,15 @@ func (m ManagedClusterViewGetterImpl) DeleteDRClusterConfigManagedClusterView(cl
 	mcvNameDRCConfig := BuildManagedClusterViewName(clusterName, "", MWTypeDRCConfig)
 
 	return m.DeleteManagedClusterView(clusterName, mcvNameDRCConfig, logger)
+}
+
+func (m ManagedClusterViewGetterImpl) DeleteRecipeManagedClusterView(
+	resourceName, resourceNamespace, clusterName string,
+) error {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
+	mcvName := BuildManagedClusterViewName(resourceName, resourceNamespace, "recipe")
+
+	return m.DeleteManagedClusterView(clusterName, mcvName, logger)
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {

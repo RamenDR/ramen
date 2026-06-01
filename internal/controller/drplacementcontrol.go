@@ -3590,7 +3590,15 @@ func (d *DRPCInstance) filterSCCAnnotations(annotations map[string]string) (map[
 }
 
 func (d *DRPCInstance) ensureRecipeManifestWork(srcCluster, dstCluster string) error {
-	if d.instance.Spec.KubeObjectProtection == nil || d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+	if d.instance.Spec.KubeObjectProtection == nil ||
+		d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+		return nil
+	}
+
+	// Built-in VM recipe is embedded in the VRG controller and does not need
+	// to be propagated via ManifestWork.
+	if d.instance.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName &&
+		d.instance.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(*d.ramenConfig) {
 		return nil
 	}
 
