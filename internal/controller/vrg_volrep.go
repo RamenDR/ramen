@@ -71,8 +71,6 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
-//
-//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 	// Check and cleanup dry-run snapshots when promoting test failover to real failover
 	// This handles Scenario 2: VRG stays Primary but DryRun changes from true to false
@@ -109,6 +107,17 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		v.log.Info("Dry-run snapshots taken successfully")
 	}
 
+	groupPVCs := v.processPVCsAsPrimary()
+
+	v.reconcileVolGroupRepsAsPrimary(groupPVCs)
+}
+
+// processPVCsAsPrimary processes all PVCs for volume replication as primary,
+// grouping CG-enabled PVCs and handling individual VR for others.
+// Returns a map of grouped PVCs for volume group replication.
+//
+//nolint:gocognit,cyclop,funlen
+func (v *VRGInstance) processPVCsAsPrimary() map[types.NamespacedName][]*corev1.PersistentVolumeClaim {
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
 	v.log.Info(fmt.Sprintf("Reconciling VolRep as Primary. %d VolRepPVCs", len(v.volRepPVCs)))
@@ -188,7 +197,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
 	}
 
-	v.reconcileVolGroupRepsAsPrimary(groupPVCs)
+	return groupPVCs
 }
 
 // reconcileVolRepsAsSecondary reconciles VolumeReplication resources for the VRG as secondary
@@ -834,6 +843,11 @@ func (v *VRGInstance) applyDestinationVolumeHandleToPV(
 // annotateWithDestinationVolumeHandleForVolRep looks up the VolumeReplication for the PVC
 // and annotates the PV with the destination volume handle if available.
 func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.PersistentVolumeClaim) error {
+	// Metro DR (Sync mode) doesn't use VolumeReplication
+	if v.instance.Spec.Sync != nil {
+		return nil
+	}
+
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		return fmt.Errorf("failed to get PV for PVC %s: %w", pvc.Name, err)
@@ -862,7 +876,11 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.P
 		return fmt.Errorf("destination volume ID is empty for VR %s", volRep.Name)
 	}
 
-	return v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID)
+	if err := v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {

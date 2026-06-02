@@ -947,6 +947,11 @@ func (v *VRGInstance) deleteVGR(vrNamespacedName types.NamespacedName, log logr.
 func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamespacedName types.NamespacedName,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
+	// Metro DR (Sync mode) doesn't use VolumeGroupReplication
+	if v.instance.Spec.Sync != nil {
+		return nil
+	}
+
 	pv, err := v.getPVFromPVC(pvc)
 	if err != nil {
 		return fmt.Errorf("failed to get PV for PVC %s: %w", pvc.Name, err)
@@ -977,16 +982,32 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamesp
 		return fmt.Errorf("failed to get VolumeGroupReplicationContent for VGR %s: %w", vgr.Name, err)
 	}
 
+	if err := v.findAndApplyPVMapping(&vgrc, &pv, vgr.Name); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// findAndApplyPVMapping searches for the PV mapping in the VolumeGroupReplicationContent
+// and applies the destination volume handle to the PV if found.
+func (v *VRGInstance) findAndApplyPVMapping(vgrc *volrep.VolumeGroupReplicationContent,
+	pv *corev1.PersistentVolume, vgrName string,
+) error {
 	for _, pvMapping := range vgrc.Status.PersistentVolumeMappingList {
 		if pvMapping.Name != pv.Name {
 			continue
 		}
 
 		if pvMapping.DestinationVolumeHandle == "" {
-			return fmt.Errorf("destination volume ID is empty for VGR %s", vgr.Name)
+			return fmt.Errorf("destination volume ID is empty for VGR %s", vgrName)
 		}
 
-		return v.applyDestinationVolumeHandleToPV(&pv, pvMapping.DestinationVolumeHandle)
+		if err := v.applyDestinationVolumeHandleToPV(pv, pvMapping.DestinationVolumeHandle); err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	return fmt.Errorf("no persistent volume mapping for PV %s in VolumeGroupReplicationContent %s",
