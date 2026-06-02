@@ -72,10 +72,9 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
-	// Check and cleanup dry-run snapshots when promoting test failover to real failover
-	// This handles Scenario 2: VRG stays Primary but DryRun changes from true to false
+	// Cleanup dry-run snapshots when promoting to real failover (DryRun: true → false)
 	if v.shouldCleanupDryRunSnapshots() {
-		v.log.Info("Promoting test failover to real, cleaning up dry-run snapshots while staying Primary")
+		v.log.Info("Promoting to real failover, cleaning up dry-run snapshots")
 
 		if err := cleanupDryRunSnapshots(v.ctx, v.reconciler.Client, v.log, v.instance, v.volRepPVCs); err != nil {
 			v.log.Error(err, "Failed to cleanup dry-run snapshots")
@@ -3491,25 +3490,15 @@ func (v *VRGInstance) shouldTakeDryRunSnapshots() bool {
 		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
 }
 
-// shouldCleanupDryRunSnapshots checks if dry-run snapshots should be cleaned up
-// This happens in two scenarios:
-// 1. When aborting test failover: VRG transitions to Secondary and DryRun is false/removed
-// 2. When promoting test to real: VRG stays Primary but DryRun changes from true to false/removed
+// shouldCleanupDryRunSnapshots determines if dry-run snapshots need cleanup
+// Returns true when transitioning out of dry-run mode (DryRun becomes false)
 func (v *VRGInstance) shouldCleanupDryRunSnapshots() bool {
-	// !v.instance.Spec.DryRun evaluates to true when:
-	// - DryRun = false (explicitly set to false)
-	// - DryRun is omitted/removed from DRPC spec (defaults to false)
-
-	// Scenario 1: Aborting test failover - transitioning to Secondary
-	// Always return true to attempt cleanup - the cleanup function will handle the case
-	// where no snapshots exist (it will be a no-op)
+	// Abort scenario: transitioning to Secondary with DryRun=false
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && !v.instance.Spec.DryRun {
 		return true
 	}
 
-	// Scenario 2: Promoting test to real failover - staying Primary
-	// When user sets DryRun=false or removes DryRun field while keeping Action=Failover
-	// We need to cleanup test snapshots before continuing with real failover
+	// Promotion scenario: staying Primary with DryRun=false and Action=Failover
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
 		!v.instance.Spec.DryRun &&
 		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover {
@@ -3593,7 +3582,7 @@ func (v *VRGInstance) filterNonCephFSPVCs() ([]*corev1.PersistentVolumeClaim, er
 			return nil, err
 		}
 
-		// Skip CephFS PVCs - they use VolumeGroupReplication
+		// Skip CephFS PVCs
 		if v.isCephFSProvisioner(storageClass.Provisioner) {
 			v.log.Info("Skipping CephFS PVC for dry-run snapshots",
 				"pvc", pvc.Name,

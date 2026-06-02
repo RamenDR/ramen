@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	controllers "github.com/ramendr/ramen/internal/controller"
 )
 
 var _ = Describe("DRPCDryRunTestFailover", func() {
@@ -288,8 +289,8 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 			It("should reject when failoverCluster equals last-app-deployment-cluster (after real failover)", func() {
 				// App failed over to East1, trying to test failover to same cluster
 				drpc.Annotations = map[string]string{
-					"ramendr.openshift.io/last-action":                         string(rmn.ActionFailover),
-					"drplacementcontrol.ramendr.openshift.io/last-app-cluster": East1ManagedCluster,
+					controllers.DRPCLastAction:           string(rmn.ActionFailover),
+					controllers.LastAppDeploymentCluster: East1ManagedCluster,
 				}
 				drpc.Spec.Action = rmn.ActionFailover
 				drpc.Spec.PreferredCluster = West1ManagedCluster
@@ -348,6 +349,99 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 
 				Expect(drpc.Spec.DryRun).To(BeFalse())
 				Expect(drpc.Spec.Action).To(Equal(rmn.ActionFailover))
+			})
+		})
+	})
+
+	Describe("DryRun Promotion and Abort Detection", func() {
+		Context("When changing dryRun from true to false", func() {
+			It("should accept promotion configuration (failoverCluster unchanged)", func() {
+				// Setup: Test failover scenario
+				drpc.Annotations = map[string]string{
+					"drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster": East1ManagedCluster,
+				}
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = East1ManagedCluster
+				drpc.Spec.FailoverCluster = West1ManagedCluster
+				drpc.Spec.DryRun = true
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				// Wait for test failover annotation
+				Eventually(func() string {
+					latest := &rmn.DRPlacementControl{}
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, latest); err != nil {
+						return ""
+					}
+
+					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
+				}, timeout, interval).Should(Equal("true"))
+
+				// Promote: Change dryRun to false (keeping failoverCluster)
+				Eventually(func() error {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return err
+					}
+
+					drpc.Spec.DryRun = false
+
+					return k8sClient.Update(context.TODO(), drpc)
+				}, timeout, interval).Should(Succeed())
+
+				// Verify spec changes accepted
+				Eventually(func() bool {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return true
+					}
+
+					return drpc.Spec.DryRun
+				}, timeout, interval).Should(BeFalse())
+
+				// Verify failoverCluster stays on West1 (promotion, not abort)
+				Expect(drpc.Spec.FailoverCluster).To(Equal(West1ManagedCluster))
+			})
+
+			It("should accept abort configuration (spec reverted to pre-test state)", func() {
+				// Setup: Test failover scenario
+				drpc.Annotations = map[string]string{
+					"drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster": East1ManagedCluster,
+				}
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = East1ManagedCluster
+				drpc.Spec.FailoverCluster = West1ManagedCluster
+				drpc.Spec.DryRun = true
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				// Wait for test failover annotation
+				Eventually(func() string {
+					latest := &rmn.DRPlacementControl{}
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, latest); err != nil {
+						return ""
+					}
+
+					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
+				}, timeout, interval).Should(Equal("true"))
+
+				// Abort: Change dryRun to false and revert spec
+				Eventually(func() error {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return err
+					}
+
+					drpc.Spec.DryRun = false
+					drpc.Spec.Action = ""
+					drpc.Spec.FailoverCluster = ""
+
+					return k8sClient.Update(context.TODO(), drpc)
+				}, timeout, interval).Should(Succeed())
+
+				// Verify spec changes accepted
+				Eventually(func() bool {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return true
+					}
+
+					return drpc.Spec.Action == "" && drpc.Spec.FailoverCluster == ""
+				}, timeout, interval).Should(BeTrue())
 			})
 		})
 	})
