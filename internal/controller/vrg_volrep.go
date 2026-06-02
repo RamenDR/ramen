@@ -843,6 +843,13 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.P
 	vrNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	if err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep); err != nil {
+		if k8serrors.IsNotFound(err) {
+			v.log.Info(fmt.Sprintf("VR %s not yet available for PV %s, will retry on next reconcile",
+				pvc.Name, pv.Name))
+
+			return nil
+		}
+
 		v.log.Info(fmt.Sprintf("failed to get VR %s for PV %s err %s", pvc.Name, pv.Name, err))
 
 		return err

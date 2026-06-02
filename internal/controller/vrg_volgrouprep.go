@@ -955,6 +955,13 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamesp
 	vgr := &volrep.VolumeGroupReplication{}
 
 	if err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr); err != nil {
+		if k8serrors.IsNotFound(err) {
+			v.log.Info(fmt.Sprintf("VGR %s not yet available for PV %s, will retry on next reconcile",
+				vrNamespacedName.Name, pv.Name))
+
+			return nil
+		}
+
 		v.log.Info(fmt.Sprintf("failed to get VGR %s for PV %s err %s", vrNamespacedName.Name, pv.Name, err))
 
 		return err
