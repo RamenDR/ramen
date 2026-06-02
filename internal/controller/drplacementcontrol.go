@@ -47,6 +47,9 @@ const (
 
 	// DRPCTestFailoverDryRunAnnotationValueTrue is the value set in the test failover annotation
 	DRPCTestFailoverDryRunAnnotationValueTrue = "true"
+
+	// Annotation for the last action performed on the DRPC
+	DRPCLastAction = "drplacementcontrol.ramendr.openshift.io/last-action"
 )
 
 var (
@@ -176,7 +179,7 @@ func (d *DRPCInstance) handleTestFailoverTransition() (bool, error) {
 		// Only update last-action when not in cleanup progression
 		// This preserves the pre-dryRun state during cleanup process
 		if !d.isInCleanupProgression() {
-			rmnutil.AddAnnotation(d.instance, "ramendr.openshift.io/last-action", string(d.instance.Spec.Action))
+			rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action))
 		}
 	}
 
@@ -189,57 +192,36 @@ func (d *DRPCInstance) handleTestFailoverTransition() (bool, error) {
 //
 //nolint:gocognit,cyclop,nestif,funlen // Complexity/length for handling multiple test failover scenarios
 func (d *DRPCInstance) cleanupTestFailoverAnnotation() error {
-	d.log.Info("Cleaning up test failover annotation",
-		"reason", "cleanup completed or user manually removed dryRun",
+	d.log.Info("Cleaning up dry-run annotation after promotion to real failover",
 		"progression", d.instance.Status.Progression)
 
-	// Determine test failover cluster - it's the peer cluster (not where app was running)
-	// Test failover always fails over to the OTHER cluster in the DR relationship
-	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
-	clusterToUpdate := ""
+	// During promotion, the failover cluster becomes the new primary
+	// We must update the annotation on the NEW PRIMARY (failover cluster), not the old primary
+	clusterToUpdate := d.instance.Spec.FailoverCluster
 
-	// Validate that lastAppCluster is a valid cluster name
-	isValidLastAppCluster := false
+	// Validate that failoverCluster is set and is a valid cluster name
+	if clusterToUpdate == "" {
+		return fmt.Errorf("cannot cleanup dry-run annotation: failover cluster not set in DRPC spec")
+	}
+
+	isValidCluster := false
 
 	for _, drCluster := range d.drClusters {
-		if drCluster.Name == lastAppCluster {
-			isValidLastAppCluster = true
+		if drCluster.Name == clusterToUpdate {
+			isValidCluster = true
 
 			break
 		}
 	}
 
-	if !isValidLastAppCluster {
-		d.log.Info("Invalid or missing last-app-deployment-cluster annotation",
-			"lastAppCluster", lastAppCluster,
-			"reason", "annotation not set or does not match any DR cluster")
-	} else {
-		// Find the peer cluster (the other cluster in the DR relationship)
-		for _, drCluster := range d.drClusters {
-			if drCluster.Name != lastAppCluster {
-				clusterToUpdate = drCluster.Name
-				d.log.Info("Determined test failover cluster from last-app-deployment-cluster",
-					"lastAppCluster", lastAppCluster,
-					"testFailoverCluster", clusterToUpdate)
-
-				break
-			}
-		}
-
-		if clusterToUpdate == "" {
-			d.log.Error(nil, "Could not determine test failover cluster - this should not happen if DRPC has the annotation",
-				"lastAppCluster", lastAppCluster,
-				"reason", "no peer cluster found")
-
-			return fmt.Errorf("failed to determine test failover cluster: no peer found for %s", lastAppCluster)
-		}
+	if !isValidCluster {
+		return fmt.Errorf("cannot cleanup dry-run annotation: failover cluster %s is not a valid DR cluster",
+			clusterToUpdate)
 	}
 
-	// If we couldn't determine the cluster (invalid lastAppCluster), return error
-	// If DRPC has the test failover annotation, VRG should have it too
-	if clusterToUpdate == "" {
-		return fmt.Errorf("cannot cleanup test failover annotation: invalid or missing last-app-deployment-cluster")
-	}
+	d.log.Info("Updating test-failover-dryrun annotation on new primary after promotion",
+		"newPrimaryCluster", clusterToUpdate,
+		"oldPrimaryCluster", d.instance.GetAnnotations()[LastAppDeploymentCluster])
 
 	// Delete DRPC annotation FIRST before updating VRG
 	// This ensures setVRGAnnotations() won't find the annotation and re-add it to VRG
@@ -348,50 +330,50 @@ func (d *DRPCInstance) handleTestFailoverExit() (bool, error) {
 // Returns nil if valid, error with message if invalid.
 //
 //nolint:cyclop // Complexity necessary for validating multiple revert scenarios
-func (d *DRPCInstance) validateTestFailoverRevertScenario(lastAppCluster string) error {
-	lastAction := rmn.DRAction(d.instance.GetAnnotations()["ramendr.openshift.io/last-action"])
+func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, lastAppCluster string) error {
+	lastAction := rmn.DRAction(drpc.GetAnnotations()[DRPCLastAction])
 
 	switch lastAction {
 	case rmn.ActionFailover:
 		// last-action=Failover: User must set action=Failover, failoverCluster=lastAppCluster
-		if d.instance.Spec.Action != rmn.ActionFailover {
+		if drpc.Spec.Action != rmn.ActionFailover {
 			return fmt.Errorf(
 				"revert validation failed: last-action=Failover requires action=Failover, got action=%s",
-				d.instance.Spec.Action)
+				drpc.Spec.Action)
 		}
 
-		if d.instance.Spec.FailoverCluster != lastAppCluster {
+		if drpc.Spec.FailoverCluster != lastAppCluster {
 			return fmt.Errorf(
 				"revert validation failed: last-action=Failover requires failoverCluster=%s, got %s",
-				lastAppCluster, d.instance.Spec.FailoverCluster)
+				lastAppCluster, drpc.Spec.FailoverCluster)
 		}
 
 	case rmn.ActionRelocate:
 		// last-action=Relocate: User must set action=Relocate, preferredCluster=lastAppCluster
-		if d.instance.Spec.Action != rmn.ActionRelocate {
+		if drpc.Spec.Action != rmn.ActionRelocate {
 			return fmt.Errorf(
 				"revert validation failed: last-action=Relocate requires action=Relocate, got action=%s",
-				d.instance.Spec.Action)
+				drpc.Spec.Action)
 		}
 
-		if d.instance.Spec.PreferredCluster != lastAppCluster {
+		if drpc.Spec.PreferredCluster != lastAppCluster {
 			return fmt.Errorf(
 				"revert validation failed: last-action=Relocate requires preferredCluster=%s, got %s",
-				lastAppCluster, d.instance.Spec.PreferredCluster)
+				lastAppCluster, drpc.Spec.PreferredCluster)
 		}
 
 	case "":
 		// last-action=empty: User must set action="" and failoverCluster=""
-		if d.instance.Spec.Action != "" {
+		if drpc.Spec.Action != "" {
 			return fmt.Errorf(
 				"revert validation failed: last-action=empty requires action=empty, got action=%s",
-				d.instance.Spec.Action)
+				drpc.Spec.Action)
 		}
 
-		if d.instance.Spec.FailoverCluster != "" {
+		if drpc.Spec.FailoverCluster != "" {
 			return fmt.Errorf(
 				"revert validation failed: last-action=empty requires failoverCluster=empty, got %s",
-				d.instance.Spec.FailoverCluster)
+				drpc.Spec.FailoverCluster)
 		}
 
 	default:
@@ -401,11 +383,11 @@ func (d *DRPCInstance) validateTestFailoverRevertScenario(lastAppCluster string)
 	return nil
 }
 
-//nolint:cyclop,funlen,gocognit // Complexity and length for handling promotion vs revert logic
+//nolint:cyclop,funlen,gocognit,gocyclo // Complexity and length for handling promotion vs revert logic
 func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
-	d.log.Info("Initiating cleanup after exiting test failover")
+	d.log.Info("Initiating cleanup after exiting dry-run mode")
 
-	// Determine test failover cluster - it's the peer cluster (not where app was running)
+	// Determine failover cluster from peer cluster relationship
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	testFailoverCluster := ""
 
@@ -419,44 +401,87 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 
 	if testFailoverCluster == "" {
 		return false, fmt.Errorf(
-			"could not determine test failover cluster: last-app-deployment-cluster not set or no peer found")
+			"could not determine failover cluster: last-app-deployment-cluster not set or no peer found")
 	}
 
-	d.log.Info("Determined test failover cluster",
-		"lastAppCluster", lastAppCluster,
-		"testFailoverCluster", testFailoverCluster)
+	d.log.Info("Determined failover cluster",
+		"sourceCluster", lastAppCluster,
+		"failoverCluster", testFailoverCluster)
 
 	// Check if this is a promotion to real failover
 	// Promotion requires: failoverCluster points to test failover cluster,
 	// dryRun is false, and action is still Failover
+	//nolint:nestif // Complexity necessary for promotion vs revert logic
 	if d.instance.Spec.FailoverCluster == testFailoverCluster &&
 		!d.instance.Spec.DryRun &&
 		d.instance.Spec.Action == rmn.ActionFailover {
-		d.log.Info("Promoting test failover to real failover, setting annotation to false",
+		d.log.Info("Promoting test failover to real failover",
 			"failoverCluster", d.instance.Spec.FailoverCluster,
-			"testFailoverCluster", testFailoverCluster)
+			"testFailoverCluster", testFailoverCluster,
+			"previousPrimaryCluster", lastAppCluster)
 
-		// Clean up test failover annotation during promotion
-		// cleanupTestFailoverAnnotation() removes annotation from DRPC and sets it to "false" on VRG
-		// Setting to "false" (not deleting) ensures ManifestWork controller syncs the change
-		if err := d.cleanupTestFailoverAnnotation(); err != nil {
+		// Remove "RetainedForFailover" placement decision before cleanup to allow workload deletion
+		if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
+			d.log.Error(err, "Failed to remove placement decision during promotion")
+
 			return false, err
 		}
 
-		// Let normal failover flow continue
-		return false, nil
+		d.log.Info("Removed RetainedForFailover placement decision", "cluster", lastAppCluster)
+
+		// Update VRG to Secondary on old primary (lastAppCluster) to trigger cleanup
+		// This is critical for CephFS/VolSync to properly transition ReplicationSource
+		d.log.Info("Updating VRG to Secondary on old primary for promotion cleanup", "cluster", lastAppCluster)
+
+		_, err := d.updateVRGState(lastAppCluster, rmn.Secondary)
+		if err != nil {
+			d.log.Error(err, "Failed to update VRG to Secondary on old primary during promotion")
+
+			return false, fmt.Errorf("failed to update VRG to Secondary on old primary %s: %w", lastAppCluster, err)
+		}
+
+		d.log.Info("VRG updated to Secondary on old primary", "cluster", lastAppCluster)
+
+		// Update annotations to reflect real failover state
+		rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action))
+		rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, testFailoverCluster)
+
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			d.log.Error(err, "Failed to update annotations during promotion")
+
+			return false, fmt.Errorf("failed to update DRPC annotations during promotion: %w", err)
+		}
+
+		d.log.Info("Updated annotations for promotion", "last-action", d.instance.Spec.Action,
+			"last-app-deployment-cluster", testFailoverCluster)
+
+		// Proceed with normal failover cleanup flow
+		done, err := d.ensureFailoverActionCompleted(testFailoverCluster)
+		if err != nil {
+			return done, err
+		}
+
+		// Cleanup test failover annotation from VRG after promotion completes
+		if done {
+			if err := d.cleanupTestFailoverAnnotation(); err != nil {
+				d.log.Error(err, "Failed to cleanup test failover annotation after promotion")
+				// Don't fail promotion if annotation cleanup fails
+			}
+		}
+
+		return done, nil
 	}
 
 	// This is a revert (abort) - validate user correctly set spec to pre-test-failover state
-	if err := d.validateTestFailoverRevertScenario(lastAppCluster); err != nil {
+	if err := validateTestFailoverRevertScenario(d.instance, lastAppCluster); err != nil {
 		d.log.Error(err, "Test failover revert scenario validation failed")
 
 		return false, err
 	}
 
-	d.log.Info("Test failover revert validation passed, will clean up test failover cluster",
-		"testFailoverCluster", testFailoverCluster,
-		"lastAppCluster", lastAppCluster)
+	d.log.Info("Revert validation passed, initiating cleanup",
+		"clusterToCleanup", testFailoverCluster,
+		"sourceCluster", lastAppCluster)
 
 	vrg, found := d.vrgs[testFailoverCluster]
 	if !found {
@@ -508,8 +533,7 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 	d.log.Info("Monitoring cleanup progress")
 
-	// Determine test failover cluster - it's the peer cluster (not where app was running)
-	// This matches the logic in initiateTestFailoverCleanup() and cleanupTestFailoverAnnotation()
+	// Determine failover cluster from peer cluster relationship
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	testFailoverCluster := ""
 
@@ -526,14 +550,24 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 			"could not determine test failover cluster: last-app-deployment-cluster not set or no peer found")
 	}
 
-	d.log.Info("Monitoring cleanup for test failover cluster",
-		"lastAppCluster", lastAppCluster,
-		"testFailoverCluster", testFailoverCluster)
+	d.log.Info("Monitoring cleanup progress",
+		"sourceCluster", lastAppCluster,
+		"failoverCluster", testFailoverCluster)
 
-	// Get VRG from testFailoverCluster
-	vrg, found := d.vrgs[testFailoverCluster]
+	// For promotion, monitor previous primary for cleanup completion
+	clusterToMonitor := testFailoverCluster
+	if d.instance.Spec.FailoverCluster == testFailoverCluster && !d.instance.Spec.DryRun {
+		// This is promotion - monitor old primary (lastAppCluster) for cleanup
+		clusterToMonitor = lastAppCluster
+		d.log.Info("Promotion detected - monitoring old primary for cleanup",
+			"oldPrimary", lastAppCluster,
+			"newPrimary", testFailoverCluster)
+	}
+
+	// Get VRG from the cluster we're monitoring
+	vrg, found := d.vrgs[clusterToMonitor]
 	if !found {
-		return false, fmt.Errorf("no VRG found on cluster %s during cleanup monitoring", testFailoverCluster)
+		return false, fmt.Errorf("no VRG found on cluster %s during cleanup monitoring", clusterToMonitor)
 	}
 
 	// For discovered apps, check if user has cleaned up the app
@@ -542,12 +576,12 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 		// Check if VRG has reached Secondary state (indicating manual cleanup is complete)
 		if vrg.Status.State == rmn.SecondaryState && vrg.Status.ObservedGeneration == vrg.Generation {
 			d.log.Info("User cleanup detected - VRG is Secondary, setting progression to CleaningUp",
-				"cluster", testFailoverCluster)
+				"cluster", clusterToMonitor)
 			d.setProgression(rmn.ProgressionCleaningUp)
 		} else {
 			// Still waiting for user to clean up the app
 			d.log.Info("Still waiting for user to cleanup discovered app",
-				"cluster", testFailoverCluster,
+				"cluster", clusterToMonitor,
 				"vrgState", vrg.Status.State,
 				"vrgGeneration", vrg.Generation,
 				"vrgObservedGeneration", vrg.Status.ObservedGeneration)
@@ -561,7 +595,7 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 	if vrg.Status.State != rmn.SecondaryState ||
 		vrg.Status.ObservedGeneration != vrg.Generation {
 		d.log.Info("Waiting for VRG to reach Secondary state during cleanup",
-			"cluster", testFailoverCluster,
+			"cluster", clusterToMonitor,
 			"currentState", vrg.Status.State,
 			"isDiscovered", isDiscoveredApp(d.instance))
 
@@ -570,7 +604,13 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 
 	// VRG has reached Secondary state, cleanup is complete
 	// Note: Placement decision was already removed in initiateTestFailoverCleanup
-	d.log.Info("VRG cleanup completed successfully", "cluster", testFailoverCluster)
+	d.log.Info("VRG cleanup completed successfully", "cluster", clusterToMonitor)
+
+	// Clean up test failover annotation after cleanup completes
+	if err := d.cleanupTestFailoverAnnotation(); err != nil {
+		d.log.Error(err, "Failed to cleanup test failover annotation after cleanup completion")
+		// Don't fail the cleanup if annotation cleanup fails - log and continue
+	}
 
 	// Set Phase to Deployed and Progression to Completed
 	d.setDRState(rmn.Deployed)
@@ -589,12 +629,11 @@ func (d *DRPCInstance) executeAction() (bool, error) {
 			return false, err
 		}
 
-		// During dryRun, last-app-deployment-cluster always points to where the app is currently running
-		// (it's not updated during test failover). We cannot test failover to the same cluster.
+		// Validate failover cluster is different from current deployment cluster
 		lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 		if d.instance.Spec.FailoverCluster == lastAppCluster {
 			err := fmt.Errorf(
-				"dryRun is enabled, but cannot test failover to cluster %s where the application is currently running",
+				"dryRun failover target cannot be the same as current deployment cluster: %s",
 				lastAppCluster)
 			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
 
@@ -2795,18 +2834,17 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 		return !peerReady, nil
 	}
 
-	// This is the time to cleanup the workload from the preferredCluster.
-	// For managed apps, it will be done automatically by ACM, when we update
-	// the placement to the targetCluster. For discovered apps, we have to let
-	// the user know that they need to clean up the apps.
-	// So set the progression to wait on user to clean up.
-	// If not discovered apps, then we can set the progression to cleaning up.
-	if isDiscoveredApp(d.instance) {
-		d.setDiscoveredAppGCProgression(clusterToSkip)
-	}
-
+	// Remove placement decision to trigger workload cleanup
+	// For managed apps: ACM automatically deletes workload
+	// For discovered apps: user must manually delete workload
 	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
 		return !peerReady, err
+	}
+
+	// Set progression based on app type and VRG state
+	// This must happen AFTER placement removal to ensure correct progression flow
+	if isDiscoveredApp(d.instance) {
+		d.setDiscoveredAppGCProgression(clusterToSkip)
 	}
 
 	if !d.ensureVRGIsSecondaryOnCluster(clusterName) {
