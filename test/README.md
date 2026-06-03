@@ -30,6 +30,47 @@ rpm -q libvirt virt-manager
 For more info see
 [Virtualization – Getting Started](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
+#### RHEL 10
+
+Also applies to Rocky Linux 10 and AlmaLinux 10.
+
+```console
+sudo dnf install -y qemu-kvm libvirt
+rpm -q libvirt
+```
+
+Enable the modular libvirt daemons:
+
+```console
+for drv in qemu network nodedev nwfilter secret storage interface; do
+  sudo systemctl enable --now virt${drv}d{,-ro,-admin}.socket
+done
+```
+
+Confirm the sockets are active:
+
+```console
+systemctl list-units 'virt*.socket' --no-legend
+```
+
+Each listed unit should show `active` and `listening`.
+
+For more info see
+[Preparing RHEL to host virtual machines](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/configuring_and_managing_linux_virtual_machines/preparing-rhel-to-host-virtual-machines).
+
+### Verify virtualization is supported
+
+After installing virtualization tools for your distribution, confirm the host
+can run KVM guests (required for the minikube `kvm2` driver):
+
+```console
+virt-host-validate qemu
+```
+
+All checks must be `PASS` or `WARN` (no `FAIL`). `WARN` for cgroups, IOMMU, or
+secure guest support is common on cloud VMs and is not a problem for the
+minikube `kvm2` driver. If any check is `FAIL`, fix it before continuing.
+
 ### Add yourself to the libvirt group
 
 Required for the minikube `kvm2` driver.
