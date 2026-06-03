@@ -5,14 +5,17 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -348,6 +351,89 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 
 				Expect(drpc.Spec.DryRun).To(BeFalse())
 				Expect(drpc.Spec.Action).To(Equal(rmn.ActionFailover))
+			})
+		})
+
+		Context("When DryRun is set on VolSync workload", func() {
+			It("should reject DryRun - CephFS not supported", func() {
+				// Setup: Create VRG with VolSync RDSpec (indicates CephFS workload)
+				vrg := &rmn.VolumeReplicationGroup{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "VolumeReplicationGroup",
+						APIVersion: "ramendr.openshift.io/v1alpha1",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-vrg",
+						Namespace: drpc.Namespace,
+					},
+					Spec: rmn.VolumeReplicationGroupSpec{
+						PVCSelector:      drpc.Spec.PVCSelector,
+						ReplicationState: rmn.Primary,
+						VolSync: rmn.VolSyncSpec{
+							RDSpec: []rmn.VolSyncReplicationDestinationSpec{
+								{
+									ProtectedPVC: rmn.ProtectedPVC{
+										Name: "test-cephfs-pvc",
+									},
+								},
+							},
+						},
+					},
+				}
+
+				// Create VRG ManifestWork on East1 (current primary cluster)
+				mwName := "ramen-vrg-test-drpc"
+
+				// Properly serialize VRG to JSON for ManifestWork
+				vrgJSON, err := json.Marshal(vrg)
+				Expect(err).NotTo(HaveOccurred())
+
+				mw := &ocmworkv1.ManifestWork{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      mwName,
+						Namespace: East1ManagedCluster,
+					},
+					Spec: ocmworkv1.ManifestWorkSpec{
+						Workload: ocmworkv1.ManifestsTemplate{
+							Manifests: []ocmworkv1.Manifest{
+								{
+									RawExtension: runtime.RawExtension{
+										Raw: vrgJSON,
+									},
+								},
+							},
+						},
+					},
+				}
+				Expect(k8sClient.Create(context.TODO(), mw)).To(Succeed())
+
+				// Setup DRPC with last-app-deployment-cluster annotation BEFORE creating it
+				if drpc.Annotations == nil {
+					drpc.Annotations = make(map[string]string)
+				}
+
+				drpc.Annotations["drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster"] = East1ManagedCluster
+				drpc.Spec.Action = rmn.ActionFailover
+				drpc.Spec.PreferredCluster = East1ManagedCluster
+				drpc.Spec.FailoverCluster = West1ManagedCluster
+				drpc.Spec.DryRun = true
+
+				Expect(k8sClient.Create(context.TODO(), drpc)).To(Succeed())
+
+				// Verify DRPC was created
+				Eventually(func() error {
+					return apiReader.Get(context.TODO(), drpcNamespacedName, drpc)
+				}, timeout, interval).Should(Succeed())
+
+				// The controller should reject DryRun for VolSync and not progress
+				// Verify Phase remains empty (validation blocks progression)
+				Consistently(func() rmn.DRState {
+					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
+						return ""
+					}
+
+					return drpc.Status.Phase
+				}, "3s", interval).Should(BeEmpty(), "Phase should remain empty - DryRun rejected for VolSync workload")
 			})
 		})
 	})

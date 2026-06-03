@@ -3501,13 +3501,6 @@ func (v *VRGInstance) ensureSnapshotsForDryRun() error {
 		return fmt.Errorf("filtering non-CephFS PVCs: %w", err)
 	}
 
-	// If no PVCs need snapshots, we're done
-	if len(nonCephFSPVCs) == 0 {
-		v.log.Info("No snapshots needed - all PVCs are CephFS")
-
-		return nil
-	}
-
 	// Collect unique namespaces from non-CephFS PVCs only
 	namespaces := make(map[string]bool)
 	for _, pvc := range nonCephFSPVCs {
