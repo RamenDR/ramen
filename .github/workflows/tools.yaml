@@ -192,3 +192,24 @@ jobs:
       - name: Run black
         run: make black
         working-directory: ramendev
+
+  timestamp:
+    name: timestamp
+    strategy:
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: test/timestamp/go.mod
+
+      - name: Run tests
+        run: make test
+        working-directory: test/timestamp
