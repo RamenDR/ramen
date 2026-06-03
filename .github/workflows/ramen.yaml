@@ -46,7 +46,7 @@ jobs:
           echo 'APT::Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip ruby
-          sudo gem install mdl
+          sudo gem install mdl -v 0.15.0
           sudo pip3 install yamllint
 
       - name: Run linters

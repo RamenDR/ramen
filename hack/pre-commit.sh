@@ -17,7 +17,14 @@ echo "${OUTPUTS_FILE}"
 
 check_version() {
     if ! [[ "$1" == "$(echo -e "$1\n$2" | sort -V | tail -n1)" ]] ; then
-        echo "ERROR: $3 version is too old. Expected $2, found $1"
+        echo "ERROR: $3 version is too old. Expected >= $2, found $1"
+        exit 1
+    fi
+}
+
+check_max_version() {
+    if ! [[ "$2" == "$(echo -e "$1\n$2" | sort -V | tail -n1)" ]] ; then
+        echo "ERROR: $3 version is too new. Expected <= $2, found $1"
         exit 1
     fi
 }
@@ -33,7 +40,7 @@ check_tool() {
         echo "You can install it by running:"
         case "$1" in
             mdl)
-                echo "  gem install mdl"
+                echo "  gem install mdl -v 0.15.0"
                 ;;
             shellcheck)
                 echo "  dnf install ShellCheck"
@@ -53,7 +60,8 @@ check_tool() {
 # https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
 run_mdl() {
     local tool="mdl"
-    local required_version="0.13.0"
+    local min_version="0.13.0"
+    local max_version="0.15.0"
     local detected_version
 
     echo "=====  $tool ====="
@@ -61,7 +69,8 @@ run_mdl() {
     check_tool "${tool}"
 
     detected_version=$("${tool}" --version)
-    check_version "${detected_version}" "${required_version}" "${tool}"
+    check_version "${detected_version}" "${min_version}" "${tool}"
+    check_max_version "${detected_version}" "${max_version}" "${tool}"
 
     get_files ".*\.md" | xargs -0 -r "${tool}" --style "${scriptdir}/mdl-style.rb" | tee -a "${OUTPUTS_FILE}"
     echo
