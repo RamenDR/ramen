@@ -67,3 +67,6 @@ ginkgo.report
 
 # Output files
 out/
+
+# Test programs
+/test/timestamp/timestamp
