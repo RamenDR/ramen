@@ -100,11 +100,15 @@ help: ## Display this help.
 
 ##@ Development
 
+# Use import paths, not filesystem ./..., to avoid traversing nested modules.
+# https://github.com/kubernetes-sigs/controller-tools/issues/1421
+CONTROLLER_GEN_PATHS := {github.com/ramendr/ramen/...,github.com/ramendr/ramen/api/...}
+
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=operator-role crd:generateEmbeddedObjectMeta=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=operator-role crd:generateEmbeddedObjectMeta=true webhook paths='$(CONTROLLER_GEN_PATHS)' output:crd:artifacts:config=config/crd/bases
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths='$(CONTROLLER_GEN_PATHS)'
 
 
 # golangci-lint has a limitation that it doesn't lint subdirectories if
