@@ -136,7 +136,7 @@ curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/downloa
 tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
 sudo install velero /usr/local/bin
 rm velero.tar.gz velero
-velero version
+velero version --client-only
 ```
 
 For more info see
