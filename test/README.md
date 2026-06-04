@@ -161,7 +161,7 @@ Tested with version v4.0.1.
 curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
 sudo install virtctl /usr/local/bin
 rm virtctl
-virtctl version
+virtctl version --client
 ```
 
 For more info see
