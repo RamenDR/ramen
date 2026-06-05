@@ -2362,6 +2362,8 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 	// Filter VRGs by global VGR label, if VGR exists in operator namespace.
 	if vgr.Namespace == RamenOperatorNamespace() {
 		return r.filterGlobalVGRVRGs(vgr.Name, vgrLog)
+	} else if vgr.Spec.External {
+		return r.filterVRGForOffloadedVGR(vgr, vgrLog)
 	}
 
 	return filterVRGDependentObjects(r.Client, obj, vgrLog)
@@ -2406,6 +2408,54 @@ func (r *VolumeReplicationGroupReconciler) filterGlobalVGRVRGs(
 	}
 
 	log.Info("Enqueuing VRGs for shared VGR change", "vrgs", names)
+
+	return req
+}
+
+func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
+	vgr *volrep.VolumeGroupReplication, log logr.Logger,
+) []reconcile.Request {
+	req := []reconcile.Request{}
+
+	// Get VRG owner information from VGR labels
+	ownerNamespace, ownerName, ok := util.OwnerNamespaceNameAndName(vgr.GetLabels())
+	if !ok {
+		log.V(1).Info("VGR does not have owner labels, skipping")
+		return req
+	}
+
+	// Fetch the VRG using the owner labels
+	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+	vrgNamespacedName := types.NamespacedName{
+		Namespace: ownerNamespace,
+		Name:      ownerName,
+	}
+
+	if err := r.Client.Get(context.TODO(), vrgNamespacedName, vrg); err != nil {
+		if k8serrors.IsNotFound(err) {
+			log.V(1).Info("VRG not found for VGR", "vrg", vrgNamespacedName)
+		} else {
+			log.Error(err, "Failed to get VRG for VGR", "vrg", vrgNamespacedName)
+		}
+
+		return req
+	}
+
+	// Compare VGR's LastSyncTime with VRG's LastGroupSyncTime
+	// If they differ, enqueue the VRG for reconciliation
+	if !reflect.DeepEqual(vgr.Status.LastSyncTime, vrg.Status.LastGroupSyncTime) {
+		req = append(req, reconcile.Request{
+			NamespacedName: vrgNamespacedName,
+		})
+
+		log.Info("Enqueuing VRG for offloaded VGR sync time change",
+			"vrg", vrgNamespacedName,
+			"vgrLastSyncTime", vgr.Status.LastSyncTime,
+			"vrgLastGroupSyncTime", vrg.Status.LastGroupSyncTime)
+	} else {
+		log.V(1).Info("VGR and VRG sync times match, skipping enqueue",
+			"vrg", vrgNamespacedName)
+	}
 
 	return req
 }
