@@ -1572,7 +1572,7 @@ func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pv
 ) error {
 	if !skipPVCDisownership {
 		if err := v.RemoveOwnerFromPVC(rs, pvcName, pvcNamespace); err != nil {
-			v.log.Error(err, "Failed to disown PVC before deleting RD", "rs", rs.GetName(), "error", err)
+			v.log.Error(err, "Failed to disown PVC before deleting RS", "rs", rs.GetName(), "error", err)
 
 			return err
 		}
