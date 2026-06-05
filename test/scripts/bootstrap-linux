@@ -1,0 +1,401 @@
+#!/usr/bin/python3 -u
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+Bootstrap script for dnf-based distros (Fedora, RHEL 10, Rocky Linux 10,
+AlmaLinux 10). Installs all dependencies for drenv and creates a Python venv.
+"""
+
+import hashlib
+import logging
+import os
+import platform
+import pwd
+import subprocess
+import tarfile
+import tempfile
+import time
+import urllib.request
+
+LOG_FILE = "bootstrap.log"
+
+log = logging.getLogger("bootstrap")
+
+VENV = ".venv/ramen"
+
+# Platform detection for download URLs.
+GOOS = "darwin" if platform.system() == "Darwin" else "linux"
+GOARCH = "arm64" if platform.machine() == "aarch64" else "amd64"
+
+RPM_PACKAGES = [
+    "bash-completion",
+    "fio",
+    "git",
+    "golang",
+    "jq",
+    "make",
+    "podman",
+    "sysstat",
+    "tmux",
+    "tree",
+    "vim",
+]
+
+RHEL_PACKAGES = [*RPM_PACKAGES, "libvirt", "qemu-kvm"]
+
+FEDORA_PACKAGES = [*RPM_PACKAGES, "@virtualization"]
+
+# Keyed by ID from /etc/os-release.
+DISTRO_PACKAGES = {
+    "fedora": FEDORA_PACKAGES,
+    "rhel": RHEL_PACKAGES,
+    "rocky": RHEL_PACKAGES,
+    "almalinux": RHEL_PACKAGES,
+}
+
+LIBVIRT_DRIVERS = [
+    "qemu",
+    "network",
+    "nodedev",
+    "nwfilter",
+    "secret",
+    "storage",
+    "interface",
+]
+
+TOOLS = [
+    {
+        "name": "minikube",
+        "version": "v1.38.1",
+        "url": "https://github.com/kubernetes/minikube/releases/download/{version}/minikube-{goos}-{goarch}",
+        "digest": "099477eaf248bcb5bcea8ce78a2898e93ac01461c35189da1848c3de82ecd22e",
+        "verify": ["minikube", "version"],
+    },
+    {
+        "name": "clusteradm",
+        "version": "v0.11.2",
+        "url": "https://github.com/open-cluster-management-io/clusteradm/releases/download/{version}/clusteradm_{goos}_{goarch}.tar.gz",
+        "digest": "13ae4582e0756dfc9b581ce13ec96b48c56514a2a0cca111bfaf1a8fd4aed48e",
+        "member": "clusteradm",
+        "verify": ["clusteradm", "version"],
+        # clusteradm version always tries to reach the cluster:
+        # Error: Get "http://localhost:8080/version?timeout=32s": dial tcp ... connection refused
+        "verify_check": False,
+    },
+    {
+        "name": "kubectl",
+        "version": "v1.36.1",
+        "url": "https://dl.k8s.io/release/{version}/bin/{goos}/{goarch}/kubectl",
+        "digest": "629d3f410e09bf49b64ae7079f7f0bda1191efed311f7d37fdbab0ad5b0ec2b7",
+        "verify": ["kubectl", "version", "--client"],
+    },
+    {
+        "name": "subctl",
+        "version": "v0.24.0",
+        "url": "https://github.com/submariner-io/releases/releases/download/{version}/subctl-{version}-{goos}-{goarch}.tar.xz",
+        "digest": "39610186fe3064a161cd2837334645e194d594b4938288a480d6caa71ed9e0a6",
+        "member": "subctl-{version}/subctl",
+        "verify": ["subctl", "version"],
+    },
+    {
+        "name": "velero",
+        "version": "v1.16.1",
+        "url": "https://github.com/vmware-tanzu/velero/releases/download/{version}/velero-{version}-{goos}-{goarch}.tar.gz",
+        "digest": "0a576053cd051268aee40a3ebc9fbf8f72c4fa6a03792100d9009c50367e795f",
+        "member": "velero-{version}-{goos}-{goarch}/velero",
+        "verify": ["velero", "version", "--client-only"],
+    },
+    {
+        "name": "helm",
+        "version": "v4.2.0",
+        "url": "https://get.helm.sh/helm-{version}-{goos}-{goarch}.tar.gz",
+        "digest": "97dbeb971be4ac4b27e3839976d9564c0fb35c6f3b1da89dd1e292d236af4096",
+        "member": "{goos}-{goarch}/helm",
+        "verify": ["helm", "version"],
+    },
+    {
+        "name": "virtctl",
+        "version": "v1.6.0",
+        "url": "https://github.com/kubevirt/kubevirt/releases/download/{version}/virtctl-{version}-{goos}-{goarch}",
+        "digest": "a14455a7f27734a2329cde779289133d859bbedf37bf93fdf2eeea6ea0efe693",
+        "verify": ["virtctl", "version", "--client"],
+    },
+    {
+        "name": "mc",
+        "version": "RELEASE.2025-08-13T08-35-41Z",
+        "url": "https://dl.min.io/client/mc/release/{goos}-{goarch}/archive/mc.{version}",
+        "digest": "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891",
+        "verify": ["mc", "--version"],
+    },
+    {
+        "name": "kustomize",
+        "version": "v5.8.1",
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F{version}/kustomize_{version}_{goos}_{goarch}.tar.gz",
+        "digest": "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d",
+        "member": "kustomize",
+        "verify": ["kustomize", "version"],
+    },
+    {
+        "name": "argocd",
+        "version": "v2.11.3",
+        "url": "https://github.com/argoproj/argo-cd/releases/download/{version}/argocd-{goos}-{goarch}",
+        "digest": "6b7551e83e8296a7b0ee265400429e81185fc49f012b537016ded6ef17c178f0",
+        "verify": ["argocd", "version", "--client"],
+    },
+    {
+        "name": "kubectl-gather",
+        "version": "v0.13.0",
+        "url": "https://github.com/nirs/kubectl-gather/releases/download/{version}/kubectl-gather-{version}-{goos}-{goarch}",
+        "digest": "d508a7bb4d789e4d31bc32a66a75524720aaebb7857d7a215fc5632c64fb8fc5",
+        "verify": ["kubectl-gather", "--version"],
+    },
+]
+
+
+def main():
+    if os.getuid() == 0:
+        raise SystemExit("Do not run this script as root or with sudo.")
+
+    os.chdir(project_root())
+    setup_logging()
+
+    install_packages()
+    setup_libvirt()
+    verify_virtualization()
+    add_libvirt_group()
+    install_tools()
+    create_venv()
+
+
+def install_packages():
+    distro = detect_distro()
+    packages = DISTRO_PACKAGES.get(distro)
+    if packages is None:
+        raise SystemExit(
+            f"Unsupported distro: {distro!r}\n"
+            f"Supported distros: {', '.join(DISTRO_PACKAGES)}"
+        )
+    log.info("Installing system packages for %s...", distro)
+    run("sudo", "dnf", "install", "-y", *packages)
+
+
+def setup_libvirt():
+    # Not needed on Fedora, but harmless since the sockets are already active.
+    log.info("Enabling libvirt modular daemons...")
+    log.debug("Enabling sockets for drivers: %s", ", ".join(LIBVIRT_DRIVERS))
+    sockets = []
+    for drv in LIBVIRT_DRIVERS:
+        for suffix in ("", "-ro", "-admin"):
+            sockets.append(f"virt{drv}d{suffix}.socket")
+    run("sudo", "systemctl", "enable", "--now", *sockets)
+    run("systemctl", "list-sockets", "virt*")
+
+
+def verify_virtualization():
+    log.info("Verifying virtualization support...")
+    run("virt-host-validate", "qemu")
+
+
+def add_libvirt_group():
+    # Running with sudo: SUDO_USER is the real username.
+    # Running without sudo: SUDO_USER not defined, use the uid.
+    user = os.environ.get("SUDO_USER") or pwd.getpwuid(os.getuid()).pw_name
+    groups = run("id", "-nG", user)
+    if "libvirt" in groups.split():
+        log.info("User %s is already in the libvirt group", user)
+    else:
+        log.info(
+            "Adding %s to the libvirt group (log out and back in to take effect)", user
+        )
+        run("sudo", "usermod", "-a", "-G", "libvirt", user)
+
+
+def resolve_tools():
+    """Resolve URL templates in the TOOLS list for the current platform."""
+    fmt = {"goos": GOOS, "goarch": GOARCH}
+    resolved = []
+    for tool in TOOLS:
+        tool = dict(tool)
+        fmt["version"] = tool["version"]
+        tool["url"] = tool["url"].format(**fmt)
+        if "member" in tool:
+            tool["member"] = tool["member"].format(**fmt)
+        resolved.append(tool)
+    return resolved
+
+
+def install_tools():
+    for tool in resolve_tools():
+        if "member" in tool:
+            install_tarball(tool)
+        else:
+            install_binary(tool)
+        verify_tool(tool)
+
+
+def verify_tool(tool):
+    """Run the tool's verify command and check that the version appears in the output."""
+    output = run(*tool["verify"], check=tool.get("verify_check", True))
+    semver = tool["version"].lstrip("v")
+    if semver not in output:
+        raise RuntimeError(
+            f"{tool['name']} version {semver} not found in output: {output.strip()!r}"
+        )
+
+
+def create_venv():
+    log.info("Creating virtual environment in %s...", VENV)
+    run("hack/make-venv", VENV)
+    log.info("")
+    log.info("To activate the environment run:")
+    log.info("")
+    log.info("    source venv")
+    log.info("")
+
+
+# --- Helpers ---
+
+
+def setup_logging():
+    # Console: INFO level, message only.
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(logging.Formatter("%(message)s"))
+
+    # File: DEBUG level, with timestamp.
+    logfile = logging.FileHandler(LOG_FILE, mode="a")
+    logfile.setLevel(logging.DEBUG)
+    logfile.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s"))
+
+    log.setLevel(logging.DEBUG)
+    log.addHandler(console)
+    log.addHandler(logfile)
+
+    log.info("Logging to %s", LOG_FILE)
+
+
+def project_root():
+    return os.path.realpath(os.path.join(os.path.dirname(__file__), "../.."))
+
+
+def detect_distro():
+    """
+    Detect the Linux distribution from /etc/os-release.
+
+    Parses /etc/os-release which has shell variable format:
+        ID="rocky"
+        ID_LIKE="rhel centos fedora"
+        VERSION_ID="10.2"
+    """
+    log.debug("Detecting distro from /etc/os-release...")
+    with open("/etc/os-release") as f:
+        for line in f:
+            key, _, value = line.strip().partition("=")
+            if key == "ID":
+                distro = value.strip('"')
+                log.debug("Detected distro: %s", distro)
+                return distro
+    raise SystemExit("Cannot detect distro: ID not found in /etc/os-release")
+
+
+def install_binary(tool):
+    """Download a binary, verify checksum, and install to /usr/local/bin."""
+    name = tool["name"]
+    log.info("Installing %s %s...", name, tool["version"])
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, name)
+        download(tool["url"], path, tool["digest"])
+        install(path)
+
+
+def install_tarball(tool):
+    """Download a tarball, verify checksum, extract member, and install."""
+    name = tool["name"]
+    log.info("Installing %s %s...", name, tool["version"])
+    with tempfile.TemporaryDirectory() as tmp:
+        tarball = os.path.join(tmp, name + ".tar")
+        download(tool["url"], tarball, tool["digest"])
+        extract(tarball, tmp, name, tool["member"])
+        install(os.path.join(tmp, name))
+
+
+def install(path):
+    """Install a binary to /usr/local/bin."""
+    log.debug("Installing %s to /usr/local/bin/", os.path.basename(path))
+    run("sudo", "install", path, "/usr/local/bin/")
+
+
+def download(url, path, expected_digest):
+    """Download a URL to a file, computing and verifying SHA256 checksum."""
+    log.debug("Downloading %s", url)
+    h = hashlib.sha256()
+    start = time.monotonic()
+    with urllib.request.urlopen(url) as resp:
+        with open(path, "wb") as f:
+            while True:
+                chunk = resp.read(128 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                h.update(chunk)
+    elapsed = time.monotonic() - start
+    size = os.path.getsize(path)
+    log.debug(
+        "Downloaded %s in %.1fs (%.1f MB/s)",
+        format_size(size),
+        elapsed,
+        size / elapsed / 1024 / 1024,
+    )
+    actual = h.hexdigest()
+    if actual != expected_digest:
+        raise RuntimeError(
+            f"Checksum mismatch for {url}:\n"
+            f"  expected: {expected_digest}\n"
+            f"  actual:   {actual}"
+        )
+    log.debug("Checksum verified: %s", actual)
+
+
+def extract(tarball, dest, name, member):
+    """Extract a member from a tarball, saving it as name in dest."""
+    log.debug("Extracting member %r from %s", member, os.path.basename(tarball))
+    with tarfile.open(tarball) as tf:
+        info = tf.getmember(member)
+        info.name = name
+        # Using filter="data" to strip metadata we don't need
+        # (ownership, permissions). install will set the mode.
+        tf.extract(info, path=dest, filter="data")
+
+
+def run(*args, check=True):
+    """Run a command. Returns stdout as text. Raises on failure unless check=False."""
+    log.debug("Running: %s", " ".join(args))
+    cp = subprocess.run(
+        args, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    if cp.stdout:
+        log.debug("stdout:\n%s", indent(cp.stdout.rstrip()))
+    if cp.stderr:
+        log.debug("stderr:\n%s", indent(cp.stderr.rstrip()))
+    if check and cp.returncode != 0:
+        raise subprocess.CalledProcessError(cp.returncode, args)
+    return cp.stdout
+
+
+def format_size(size):
+    """Format a byte size as a human-readable string."""
+    if size >= 1024 * 1024:
+        return f"{size / 1024 / 1024:.1f} MiB"
+    if size >= 1024:
+        return f"{size / 1024:.1f} KiB"
+    return f"{size} bytes"
+
+
+def indent(text):
+    """Indent each line of text for debug logging. Uses 2 spaces to match pip output."""
+    return "\n".join("  " + line for line in text.splitlines())
+
+
+if __name__ == "__main__":
+    main()
