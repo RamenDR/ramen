@@ -698,6 +698,19 @@ func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 ) (bool, bool, error) {
 	const requeue = true
 
+	v.log.V(1).Info("create or update VGR", "state", state, "pvcs", len(pvcs))
+	// ensure PVCs have the vgr name label
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		err := rmnutil.NewResourceUpdater(pvc).
+			AddLabel("volumegroupreplication-owner", vrNamespacedName.Name).
+			Update(v.ctx, v.reconciler.Client)
+		if err != nil {
+			return requeue, false, fmt.Errorf("failed to update PVC labels", err)
+		}
+	}
+
 	volRep := &volrep.VolumeGroupReplication{}
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep)
