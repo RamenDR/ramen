@@ -404,11 +404,11 @@ func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string
 }
 
 func CreateVGRName(prefix string, suffix string) string {
-	return TrimToK8sResourceNameLength("vgr-" + prefix + "-" + suffix)
+	return TrimToK8sResourceNameLength("vgr-" + strings.ToLower(prefix) + "-" + strings.ToLower(suffix))
 }
 
 func GlobalVGRName(groupReplicationID string) string {
-	return TrimToK8sResourceNameLength("global-" + groupReplicationID)
+	return TrimToK8sResourceNameLength("global-" + strings.ToLower(groupReplicationID))
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
