@@ -319,6 +319,9 @@ def _container_command(name, config):
         f"{name}:/var/lib/registry",
         "--env",
         f"REGISTRY_PROXY_REMOTEURL={config['upstream']}",
+        # Default log level is debug, filling the logs with unneeded noise.
+        "--env",
+        "REGISTRY_LOG_LEVEL=info",
         "--label",
         f"{CONFIG_LABEL}=",
         CACHE_IMAGE,
