@@ -127,9 +127,6 @@ def start(profile, verbose=False, timeout=_START_TIMEOUT, local_registry=False):
         # Unlike --extra-config this requires one comma separated value.
         args.extend(("--feature-gates", ",".join(profile["feature_gates"])))
 
-    if verbose:
-        args.append("--alsologtostderr")
-
     if local_registry:
         args.append(f"--insecure-registry={LOCAL_REGISTRY}")
 
