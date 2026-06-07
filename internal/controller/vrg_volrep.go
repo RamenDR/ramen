@@ -876,11 +876,7 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.P
 		return fmt.Errorf("destination volume ID is empty for VR %s", volRep.Name)
 	}
 
-	if err := v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID); err != nil {
-		return err
-	}
-
-	return nil
+	return v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID)
 }
 
 func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
