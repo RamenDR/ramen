@@ -982,11 +982,7 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamesp
 		return fmt.Errorf("failed to get VolumeGroupReplicationContent for VGR %s: %w", vgr.Name, err)
 	}
 
-	if err := v.findAndApplyPVMapping(&vgrc, &pv, vgr.Name); err != nil {
-		return err
-	}
-
-	return nil
+	return v.findAndApplyPVMapping(&vgrc, &pv, vgr.Name)
 }
 
 // findAndApplyPVMapping searches for the PV mapping in the VolumeGroupReplicationContent
@@ -1003,11 +999,7 @@ func (v *VRGInstance) findAndApplyPVMapping(vgrc *volrep.VolumeGroupReplicationC
 			return fmt.Errorf("destination volume ID is empty for VGR %s", vgrName)
 		}
 
-		if err := v.applyDestinationVolumeHandleToPV(pv, pvMapping.DestinationVolumeHandle); err != nil {
-			return err
-		}
-
-		return nil
+		return v.applyDestinationVolumeHandleToPV(pv, pvMapping.DestinationVolumeHandle)
 	}
 
 	return fmt.Errorf("no persistent volume mapping for PV %s in VolumeGroupReplicationContent %s",
