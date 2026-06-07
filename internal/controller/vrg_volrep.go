@@ -107,97 +107,102 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		v.log.Info("Dry-run snapshots taken successfully")
 	}
 
-	groupPVCs := v.processPVCsAsPrimary()
-
-	v.reconcileVolGroupRepsAsPrimary(groupPVCs)
-}
-
-// processPVCsAsPrimary processes all PVCs for volume replication as primary,
-// grouping CG-enabled PVCs and handling individual VR for others.
-// Returns a map of grouped PVCs for volume group replication.
-//
-//nolint:gocognit,cyclop,funlen
-func (v *VRGInstance) processPVCsAsPrimary() map[types.NamespacedName][]*corev1.PersistentVolumeClaim {
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
 	v.log.Info(fmt.Sprintf("Reconciling VolRep as Primary. %d VolRepPVCs", len(v.volRepPVCs)))
 
 	for idx := range v.volRepPVCs {
 		pvc := &v.volRepPVCs[idx]
-		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
-		log := v.log.WithValues("pvc", pvcNamespacedName.String())
+		log := logWithPvcName(v.log, pvc)
 
-		if v.pvcUnprotectVolRepIfDeleted(*pvc, log) {
-			continue
-		}
-
-		if err := v.updateProtectedPVCs(pvc); err != nil {
-			v.requeue()
-
-			continue
-		}
-
-		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
-		if requeueResult {
-			v.requeue()
-
-			continue
-		}
-
-		if skip {
-			continue
-		}
-
-		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
-			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
-
-			continue
-		}
-
-		// If VR did not reach primary state, it is fine to still upload the PV and continue processing
-		requeueResult, _, err := v.processVRAsPrimary(pvcNamespacedName, pvc, log)
-		if requeueResult {
-			v.requeue()
-		}
-
-		if err != nil {
-			log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
-				"errorValue", err)
-
-			continue
-		}
-
-		// Annotate the PV with the destination volume handle if available from VR status.
-		// This allows the secondary cluster to restore the PV with the correct volume handle
-		// when source and destination volume IDs differ.
-		if err := v.annotateWithDestinationVolumeHandleForVolRep(pvc); err != nil {
-			log.Error(err, fmt.Sprintf("failed to annotate PV of PVC %s with destination volume handle",
-				pvc.Name))
-
-			v.requeue()
-
-			continue
-		}
-
-		// Protect the PVC's PV object stored in etcd by uploading it to S3
-		// store(s).  Note that the VRG is responsible only to protect the PV
-		// object of each PVC of the subscription.  However, the PVC object
-		// itself is assumed to be protected along with other k8s objects in the
-		// subscription, such as, the deployment, pods, services, etc., by an
-		// entity external to the VRG a la IaC.
-		if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
-			log.Error(err, "Requeuing due to failure to upload PV object to S3 store(s)")
-
-			v.requeue()
-
-			continue
-		}
-
-		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
+		v.processPVCAsPrimary(pvc, log, groupPVCs)
 	}
 
-	return groupPVCs
+	v.reconcileVolGroupRepsAsPrimary(groupPVCs)
+}
+
+func (v *VRGInstance) processPVCAsPrimary(
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
+) {
+	if v.pvcUnprotectVolRepIfDeleted(*pvc, log) {
+		return
+	}
+
+	if err := v.updateProtectedPVCs(pvc); err != nil {
+		v.requeue()
+
+		return
+	}
+
+	requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
+	if requeueResult {
+		v.requeue()
+
+		return
+	}
+
+	if skip {
+		return
+	}
+
+	if cg, ok := v.isCGEnabled(pvc); ok {
+		vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+		groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
+
+		return
+	}
+
+	v.reconcilePVCVRAsPrimary(pvc, log)
+}
+
+func (v *VRGInstance) reconcilePVCVRAsPrimary(
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+) {
+	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	// If VR did not reach primary state, it is fine to still upload the PV and continue processing
+	requeueResult, _, err := v.processVRAsPrimary(pvcNamespacedName, pvc, log)
+	if requeueResult {
+		v.requeue()
+	}
+
+	if err != nil {
+		log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
+			"errorValue", err)
+
+		return
+	}
+
+	// Annotate the PV with the destination volume handle if available from VR status.
+	// This allows the secondary cluster to restore the PV with the correct volume handle
+	// when source and destination volume IDs differ.
+	if err := v.annotateWithDestinationVolumeHandleForVolRep(pvc); err != nil {
+		log.Error(err, fmt.Sprintf("failed to annotate PV of PVC %s with destination volume handle",
+			pvc.Name))
+
+		v.requeue()
+
+		return
+	}
+
+	// Protect the PVC's PV object stored in etcd by uploading it to S3
+	// store(s).  Note that the VRG is responsible only to protect the PV
+	// object of each PVC of the subscription.  However, the PVC object
+	// itself is assumed to be protected along with other k8s objects in the
+	// subscription, such as, the deployment, pods, services, etc., by an
+	// entity external to the VRG a la IaC.
+	if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
+		log.Error(err, "Requeuing due to failure to upload PV object to S3 store(s)")
+
+		v.requeue()
+
+		return
+	}
+
+	log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
 }
 
 // reconcileVolRepsAsSecondary reconciles VolumeReplication resources for the VRG as secondary
