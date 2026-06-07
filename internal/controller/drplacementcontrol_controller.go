@@ -1325,13 +1325,13 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
-	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
-
 	userPlRule.DeepCopyInto(clonedPlRule)
 
 	clonedPlRule.Name = clonedPlRuleName
 	clonedPlRule.ResourceVersion = ""
 	clonedPlRule.Spec.SchedulerName = ""
+
+	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
 
 	err := r.addClusterPeersToPlacementRule(drPolicy, clonedPlRule, log)
 	if err != nil {

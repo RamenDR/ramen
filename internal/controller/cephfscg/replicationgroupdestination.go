@@ -393,12 +393,16 @@ func (m *rgdMachine) CreateReplicationDestinations(
 // getMoverConfig maps the MoverConfig defined in the ReplicationDestination (RD) spec
 // into a VolSync MoverConfig
 func getMoverConfig(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec) volsyncv1alpha1.MoverConfig {
-	if rdSpec.MoverConfig == nil {
-		return volsyncv1alpha1.MoverConfig{}
+	mc := volsyncv1alpha1.MoverConfig{
+		MoverPodLabels: map[string]string{
+			util.CreatedByRamenLabel: "true",
+		},
 	}
 
-	return volsyncv1alpha1.MoverConfig{
-		MoverSecurityContext: rdSpec.MoverConfig.MoverSecurityContext,
-		MoverServiceAccount:  rdSpec.MoverConfig.MoverServiceAccount,
+	if rdSpec.MoverConfig != nil {
+		mc.MoverSecurityContext = rdSpec.MoverConfig.MoverSecurityContext
+		mc.MoverServiceAccount = rdSpec.MoverConfig.MoverServiceAccount
 	}
+
+	return mc
 }

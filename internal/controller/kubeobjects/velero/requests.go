@@ -724,7 +724,7 @@ func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 	labels map[string]string,
 	annotations map[string]string,
 ) *velero.Backup {
-	return &velero.Backup{
+	backup := &velero.Backup{
 		TypeMeta: backupTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   namespaceName,
@@ -734,6 +734,10 @@ func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 		},
 		Spec: spec,
 	}
+
+	util.AddLabel(backup, util.CreatedByRamenLabel, "true")
+
+	return backup
 }
 
 func restore(
@@ -750,7 +754,7 @@ func restore(
 		includeClusterResources = &falseValue
 	}
 
-	return &velero.Restore{
+	restoreObj := &velero.Restore{
 		TypeMeta: restoreTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: requestNamespaceName,
@@ -772,6 +776,10 @@ func restore(
 			// TODO: preserveNodePorts?
 		},
 	}
+
+	util.AddLabel(restoreObj, util.CreatedByRamenLabel, "true")
+
+	return restoreObj
 }
 
 func backupStatusLog(backup *velero.Backup, log logr.Logger) {

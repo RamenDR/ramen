@@ -527,11 +527,15 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			}
 
 			moverConfigVal := util.GetRSMoverConfig(originalPVCName, replicationSourceNamespace, vrg.Spec.VolSync.MoverConfig)
+			replicationSource.Spec.RsyncTLS.MoverConfig = volsyncv1alpha1.MoverConfig{
+				MoverPodLabels: map[string]string{
+					util.CreatedByRamenLabel: "true",
+				},
+			}
+
 			if moverConfigVal != nil {
-				replicationSource.Spec.RsyncTLS.MoverConfig = volsyncv1alpha1.MoverConfig{
-					MoverSecurityContext: moverConfigVal.MoverSecurityContext,
-					MoverServiceAccount:  moverConfigVal.MoverServiceAccount,
-				}
+				replicationSource.Spec.RsyncTLS.MoverConfig.MoverSecurityContext = moverConfigVal.MoverSecurityContext
+				replicationSource.Spec.RsyncTLS.MoverConfig.MoverServiceAccount = moverConfigVal.MoverServiceAccount
 			}
 
 			return nil
