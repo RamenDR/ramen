@@ -96,6 +96,7 @@ var olmClusterRole = &rbacv1.ClusterRole{
 		Name: "open-cluster-management:klusterlet-work-sa:agent:olm-edit",
 		Labels: map[string]string{
 			util.ClusterRoleAggregateLabel: "true",
+			util.CreatedByRamenLabel:       "true",
 		},
 	},
 	Rules: []rbacv1.PolicyRule{
@@ -140,8 +141,14 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 
 func operatorGroup(namespaceName string) *operatorsv1.OperatorGroup {
 	return &operatorsv1.OperatorGroup{
-		TypeMeta:   metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ramen-operator-group", Namespace: namespaceName},
+		TypeMeta: metav1.TypeMeta{Kind: "OperatorGroup", APIVersion: "operators.coreos.com/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ramen-operator-group",
+			Namespace: namespaceName,
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
+		},
 	}
 }
 
@@ -154,8 +161,14 @@ func subscription(
 	clusterServiceVersionName string,
 ) *operatorsv1alpha1.Subscription {
 	return &operatorsv1alpha1.Subscription{
-		TypeMeta:   metav1.TypeMeta{Kind: "Subscription", APIVersion: "operators.coreos.com/v1alpha1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ramen-dr-cluster-subscription", Namespace: namespaceName},
+		TypeMeta: metav1.TypeMeta{Kind: "Subscription", APIVersion: "operators.coreos.com/v1alpha1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ramen-dr-cluster-subscription",
+			Namespace: namespaceName,
+			Labels: map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
+		},
 		Spec: &operatorsv1alpha1.SubscriptionSpec{
 			CatalogSource:          catalogSourceName,
 			CatalogSourceNamespace: catalogSourceNamespaceName,

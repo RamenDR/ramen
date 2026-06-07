@@ -144,6 +144,21 @@ func (v *VSHandler) SetWorkloadStatus(status string) {
 	v.workloadStatus = status
 }
 
+func buildMoverConfig(moverConfigSpec *ramendrv1alpha1.MoverConfig) volsyncv1alpha1.MoverConfig {
+	mc := volsyncv1alpha1.MoverConfig{
+		MoverPodLabels: map[string]string{
+			util.CreatedByRamenLabel: "true",
+		},
+	}
+
+	if moverConfigSpec != nil {
+		mc.MoverSecurityContext = moverConfigSpec.MoverSecurityContext
+		mc.MoverServiceAccount = moverConfigSpec.MoverServiceAccount
+	}
+
+	return mc
+}
+
 // returns replication destination only if create/update is successful and the RD is considered available.
 // Callers should assume getting a nil replication destination back means they should retry/requeue.
 //
@@ -398,14 +413,7 @@ func (v *VSHandler) createOrUpdateRD(
 		util.AddAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
-		moverConfig := volsyncv1alpha1.MoverConfig{}
-
-		if moverConfigSpec != nil {
-			moverConfig = volsyncv1alpha1.MoverConfig{
-				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
-				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
-			}
-		}
+		moverConfig := buildMoverConfig(moverConfigSpec)
 
 		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
 			params := map[string]string{
@@ -674,13 +682,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			return err
 		}
 
-		moverConfig := &volsyncv1alpha1.MoverConfig{}
-		if moverConfigSpec != nil {
-			moverConfig = &volsyncv1alpha1.MoverConfig{
-				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
-				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
-			}
-		}
+		moverConfig := buildMoverConfig(moverConfigSpec)
 
 		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
 			rs.Spec.External = &volsyncv1alpha1.ReplicationSourceExternalSpec{
@@ -708,7 +710,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 					StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
 					AccessModes:             rsSpec.ProtectedPVC.AccessModes,
 				},
-				MoverConfig: *moverConfig,
+				MoverConfig: moverConfig,
 			}
 		}
 
@@ -2702,13 +2704,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
 		}
 
-		moverConfig := &volsyncv1alpha1.MoverConfig{}
-		if moverConfigSpec != nil {
-			moverConfig = &volsyncv1alpha1.MoverConfig{
-				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
-				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
-			}
-		}
+		moverConfig := buildMoverConfig(moverConfigSpec)
 
 		lrd.Spec.External = nil
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
@@ -2722,7 +2718,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 				AccessModes:      pvcAccessModes,
 				DestinationPVC:   &rdSpec.ProtectedPVC.Name,
 			},
-			MoverConfig: *moverConfig,
+			MoverConfig: moverConfig,
 		}
 
 		return nil
@@ -2780,13 +2776,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 		lrs.Spec.SourcePVC = pvc.GetName()
 
-		moverConfig := &volsyncv1alpha1.MoverConfig{}
-		if moverConfigSpec != nil {
-			moverConfig = &volsyncv1alpha1.MoverConfig{
-				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
-				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
-			}
-		}
+		moverConfig := buildMoverConfig(moverConfigSpec)
 
 		lrs.Spec.External = nil
 		lrs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
@@ -2796,7 +2786,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				CopyMethod: volsyncv1alpha1.CopyMethodDirect,
 			},
-			MoverConfig: *moverConfig,
+			MoverConfig: moverConfig,
 		}
 
 		return nil

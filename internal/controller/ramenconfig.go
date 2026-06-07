@@ -25,6 +25,7 @@ import (
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rameninternalconfig "github.com/ramendr/ramen/internal/config"
+	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
 const (
@@ -416,6 +417,9 @@ func ConfigMapNew(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespaceName,
+			Labels: map[string]string{
+				rmnutil.CreatedByRamenLabel: "true",
+			},
 		},
 		Data: map[string]string{
 			ConfigMapRamenConfigKeyName: string(ramenConfigYaml),
