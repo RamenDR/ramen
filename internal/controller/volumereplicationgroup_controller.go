@@ -2421,6 +2421,7 @@ func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
 	ownerNamespace, ownerName, ok := util.OwnerNamespaceNameAndName(vgr.GetLabels())
 	if !ok {
 		log.V(1).Info("VGR does not have owner labels, skipping")
+
 		return req
 	}
 
