@@ -128,18 +128,21 @@ applications so Ramen can discover the storage relationship:
 ```bash
 kubectl label storageclass <storage-class-name> \
   ramendr.openshift.io/storageID=storage-cluster-1 \
-  ramendr.openshift.io/replicationID=replication-1 \
+  ramendr.openshift.io/groupreplicationid=replication-1 \
+  ramendr.openshift.io/offloaded=true \
   --context cluster-1
 
 kubectl label storageclass <storage-class-name> \
   ramendr.openshift.io/storageID=storage-cluster-2 \
-  ramendr.openshift.io/replicationID=replication-1 \
+  ramendr.openshift.io/groupreplicationid=replication-1 \
+  ramendr.openshift.io/offloaded=true \
   --context cluster-2
 ```
 
-The `replicationID` must match across both clusters to indicate they
-form a replication pair. The `storageID` values determine the DR
-topology:
+The `groupreplicationid` must match across both clusters to indicate
+they form a replication pair. The `offloaded` label tells Ramen that
+replication is managed externally by the storage backend, not by
+Ramen itself. The `storageID` values determine the DR topology:
 
 - **Regional DR (async):** Use **different** `storageID` values on each
   cluster — this tells Ramen the storage backends are independent and
@@ -177,11 +180,25 @@ metadata:
   name: <storage-vendor>-vgrc
   labels:
     ramendr.openshift.io/groupreplicationid: replication-1
+    ramendr.openshift.io/storageid: storage-cluster-1
+    ramendr.openshift.io/global: "true"
 spec:
   provisioner: <csi-driver-provisioner-name>
   parameters:
     schedulingInterval: "1h"
 ```
+
+The `global: "true"` label indicates that VGR resources created from
+this class are globally scoped — a single Global VGR per `storageid`
+manages all PVCs on that storage backend, rather than one VGR per
+application. This is the model used by IBM Fusion Access and other
+storage backends where replication occurs at the LUN or filesystem
+level.
+
+The `storageid` on the VGRClass must match the `storageID` label on the
+corresponding StorageClass. Note that the VGRClass `storageid` value is
+**cluster-local** — each cluster has its own value, unlike
+`groupreplicationid` which must match across clusters.
 
 The `schedulingInterval` value is not used operationally in Bronze
 tier — Ramen never passes it to the VolumeReplication CR and does not
@@ -288,9 +305,7 @@ still uploads PV metadata to S3 for these applications.
 This example assumes cluster-1 (primary) has suffered a failure and the
 user is failing over to cluster-2.
 
-**Ramen-side (hub cluster):**
-
-1. Set the failover action on the DRPC (on the hub):
+1. **Ramen — hub cluster:** Set the failover action on the DRPC:
 
    ```bash
    kubectl edit drpc <drpc-name> -n <app-namespace> --context hub
@@ -302,71 +317,95 @@ user is failing over to cluster-2.
      failoverCluster: cluster-2
    ```
 
-2. If cluster-1 is still accessible, scale down the application
-   workload to stop writes and avoid split-brain:
+1. **Ramen — hub cluster:** Ramen creates a VRG on cluster-2 with
+   `spec.replicationState: primary` and `spec.action: Failover`. The
+   VRG restores PV metadata from S3 and recreates the PVs.
+
+1. **Ramen — hub cluster:** For managed apps, ACM automatically
+   handles scaling down the application on cluster-1. For discovered
+   apps, if cluster-1 is still accessible, manually scale down the
+   workload to stop writes:
 
    ```bash
    kubectl scale deployment <app-name> --replicas=0 \
      -n <app-namespace> --context cluster-1
    ```
 
-   If cluster-1 is completely unavailable, skip this step — there are
-   no active writes to worry about.
+   If cluster-1 is completely unavailable, skip this step.
 
-**Storage-side (manual, outside Ramen):**
+1. **Storage-side (manual):** If the cluster-1 storage is still
+   accessible, demote the replicated volumes on the cluster-1 site to
+   read-only to prevent stale writes.
 
-3. If the cluster-1 storage is still accessible, demote the replicated
-   volumes on the cluster-1 site to read-only to prevent stale writes.
+1. **Storage-side (manual):** On the storage backend's management
+   interface, promote the replicated volumes on the cluster-2 site to
+   read-write.
 
-4. On the storage backend's management interface, promote the
-   replicated volumes on the cluster-2 site to read-write.
+   **Fencing warning:** Bronze tier does not have NetworkFence support.
+   If cluster-1 is unreachable and cannot be demoted above, there
+   is no automated mechanism to prevent it from continuing to write to
+   shared storage. This creates a risk of data divergence (split-brain)
+   until storage-level fencing is resolved manually on the storage
+   backend. Silver and Gold tiers avoid this risk through automated
+   NetworkFence CRDs.
 
-**Ramen-side (managed cluster):**
+1. **Ramen — managed cluster:** Ramen is now **blocked** waiting for
+   VGR/VR status to confirm that the volumes are ready on cluster-2.
+   Since the CSI driver does not update the status, the administrator
+   must patch each VGR and VR to unblock Ramen.
 
-5. Ramen creates a VRG on cluster-2 with `spec.replicationState:
-   secondary` and `spec.action: Failover`. The VRG restores PV metadata
-   from S3, recreates the PVs, and creates VolumeReplication CRs for
-   each protected PVC.
-
-6. Ramen is now **blocked** waiting for the VR status conditions to
-   indicate that the volumes are ready. Since the CSI driver does not
-   update these, the administrator must patch each VR and VGR to
-   unblock Ramen. Both resource types use the same status conditions —
-   the only difference is the resource name in the command:
+   First, fetch the current resource generation (Ramen validates
+   `observedGeneration` against `metadata.generation` and rejects stale
+   conditions):
 
    ```bash
-   # Patch a VolumeReplication
-   kubectl patch volumereplication <vr-name> \
+   GEN=$(kubectl get volumegroupreplication <vgr-name> \
+     --context cluster-2 -o jsonpath='{.metadata.generation}')
+   ```
+
+   Then patch the VGR status with `.state: Primary` and the required
+   conditions:
+
+   ```bash
+   kubectl patch volumegroupreplication <vgr-name> \
      --subresource=status --type=merge --context cluster-2 -p \
-     '{"status":{"conditions":[
+     '{"status":{"state":"Primary","conditions":[
        {"type":"Completed","status":"True",
-        "observedGeneration":1,
+        "observedGeneration":'$GEN',
         "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
         "reason":"Promoted","message":"promoted to primary"},
        {"type":"Degraded","status":"False",
-        "observedGeneration":1,
+        "observedGeneration":'$GEN',
         "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
         "reason":"Healthy","message":"not degraded"},
        {"type":"Resyncing","status":"False",
-        "observedGeneration":1,
+        "observedGeneration":'$GEN',
         "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
         "reason":"NotResyncing","message":"not resyncing"}
      ]}}'
+   ```
 
-   # Patch a VolumeGroupReplication (same conditions)
-   kubectl patch volumegroupreplication <vgr-name> \
+   Apply the same pattern for each VolumeReplication resource (same
+   conditions and `.status.state: Primary`, using the VR's own
+   `metadata.generation`):
+
+   ```bash
+   GEN=$(kubectl get volumereplication <vr-name> \
+     --context cluster-2 -o jsonpath='{.metadata.generation}')
+
+   kubectl patch volumereplication <vr-name> \
      --subresource=status --type=merge --context cluster-2 -p \
-     '{"status":{"conditions":[
+     '{"status":{"state":"Primary","conditions":[
        {"type":"Completed","status":"True",
-        "observedGeneration":1,
+        "observedGeneration":'$GEN',
         "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
         "reason":"Promoted","message":"promoted to primary"},
        {"type":"Degraded","status":"False",
-        "observedGeneration":1,
+        "observedGeneration":'$GEN',
         "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
         "reason":"Healthy","message":"not degraded"},
        {"type":"Resyncing","status":"False",
-        "observedGeneration":1,
+        "observedGeneration":'$GEN',
         "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
         "reason":"NotResyncing","message":"not resyncing"}
      ]}}'
@@ -374,7 +413,7 @@ user is failing over to cluster-2.
 
    A future MCO UI enhancement will allow this via a button press.
 
-7. Check which VRs or VGRs are still pending a status patch:
+1. Check which VRs or VGRs are still pending a status patch:
 
    ```bash
    # VRs without a Completed=True condition
@@ -390,25 +429,18 @@ user is failing over to cluster-2.
      ) | "\(.metadata.namespace)/\(.metadata.name)"'
    ```
 
-8. Once all VR conditions are satisfied, Ramen completes the failover:
-   PVCs are created, the application is placed on cluster-2, and the
-   DRPC status transitions to `FailedOver`.
+1. Once all VGR/VR status fields are satisfied, Ramen completes the
+   failover: PVCs are created, the application is placed on cluster-2,
+   and the DRPC status transitions to `FailedOver`.
 
-## Failback Flow
+## Failback (Relocate) Flow
 
 After the primary site recovers, the user relocates the workload back
-to cluster-1.
+to cluster-1. Unlike failover, relocation is a planned operation — both
+clusters are available and Ramen coordinates the transition through VGR
+replicationState changes.
 
-**Storage-side (manual, outside Ramen):**
-
-1. Re-establish replication from cluster-2 (current primary) to
-   cluster-1 on the storage backend.
-2. Wait for the initial sync to complete so cluster-1 has a consistent
-   copy of all data.
-
-**Ramen-side:**
-
-3. Set the relocate action on the DRPC (on the hub):
+1. **Ramen — hub cluster:** Set the relocate action on the DRPC:
 
    ```bash
    kubectl edit drpc <drpc-name> -n <app-namespace> --context hub
@@ -420,64 +452,82 @@ to cluster-1.
      preferredCluster: cluster-1
    ```
 
-4. Ramen initiates the relocate sequence. It sets
-   `spec.prepareForFinalSync` and then `spec.runFinalSync` on the VRG
-   to coordinate a final data sync before switchover.
+1. **Ramen — hub cluster:** Ramen changes the VGR
+   `spec.replicationState` from `Primary` to `Secondary` on cluster-2.
+   This signals that cluster-2 should relinquish its primary role.
 
-5. Ramen is again **blocked** waiting for VR conditions on both
-   clusters. The administrator must:
+1. **Storage-side (manual):** On the storage backend, perform the final
+   data sync from cluster-2 to cluster-1 and demote the cluster-2
+   volumes. The VGR replicationState change to Secondary is the trigger
+   to begin this process.
 
-   - Ensure the final data sync is complete on the storage backend.
+1. **Ramen — cluster-2 demotion acknowledgement:** Ramen is **blocked**
+   waiting for VGR/VR status on cluster-2 to confirm the demotion.
+   Patch each VGR and VR to acknowledge that the storage-side demotion
+   and final sync are complete:
 
-   - Patch the VR status on **cluster-2** to reflect successful
-     demotion:
+   ```bash
+   GEN=$(kubectl get volumegroupreplication <vgr-name> \
+     --context cluster-2 -o jsonpath='{.metadata.generation}')
 
-     ```bash
-     kubectl patch volumereplication <vr-name> \
-       --subresource=status --type=merge -p \
-       '{"status":{"conditions":[
-         {"type":"Completed","status":"True",
-          "observedGeneration":1,
-          "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-          "reason":"Demoted","message":"demoted to secondary"},
-         {"type":"Degraded","status":"False",
-          "observedGeneration":1,
-          "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-          "reason":"Healthy","message":"not degraded"},
-         {"type":"Resyncing","status":"False",
-          "observedGeneration":1,
-          "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-          "reason":"NotResyncing","message":"not resyncing"}
-       ]}}' \
-       --context cluster-2
-     ```
+   kubectl patch volumegroupreplication <vgr-name> \
+     --subresource=status --type=merge --context cluster-2 -p \
+     '{"status":{"state":"Secondary","conditions":[
+       {"type":"Completed","status":"True",
+        "observedGeneration":'$GEN',
+        "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+        "reason":"Demoted","message":"demoted to secondary"},
+       {"type":"Degraded","status":"False",
+        "observedGeneration":'$GEN',
+        "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+        "reason":"Healthy","message":"not degraded"},
+       {"type":"Resyncing","status":"False",
+        "observedGeneration":'$GEN',
+        "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+        "reason":"NotResyncing","message":"not resyncing"}
+     ]}}'
+   ```
 
-   - Patch the VR status on **cluster-1** to reflect successful
-     promotion:
+   Apply the same pattern for each VolumeReplication resource on
+   cluster-2 (`.status.state: Secondary`, using the VR's own
+   `metadata.generation`).
 
-     ```bash
-     kubectl patch volumereplication <vr-name> \
-       --subresource=status --type=merge -p \
-       '{"status":{"conditions":[
-         {"type":"Completed","status":"True",
-          "observedGeneration":1,
-          "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-          "reason":"Promoted","message":"promoted to primary"},
-         {"type":"Degraded","status":"False",
-          "observedGeneration":1,
-          "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-          "reason":"Healthy","message":"not degraded"},
-         {"type":"Resyncing","status":"False",
-          "observedGeneration":1,
-          "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-          "reason":"NotResyncing","message":"not resyncing"}
-       ]}}' \
-       --context cluster-1
-     ```
+1. **Ramen — hub cluster:** Ramen sees the acknowledgement and proceeds
+   to promote on cluster-1. It updates the VGR
+   `spec.replicationState` to `Primary` on cluster-1.
 
-   Use the same commands from step 7 of the failover flow to check
-   which VRs/VGRs are still pending on each cluster.
+1. **Storage-side (manual):** On the storage backend, promote the
+   cluster-1 volumes to read-write.
 
-6. Once all VR conditions are satisfied, Ramen completes the relocate:
-   the application is placed on cluster-1 and the DRPC status
-   transitions to `Relocated`.
+1. **Ramen — cluster-1 promotion acknowledgement:** Patch each VGR and
+   VR on cluster-1 to confirm the promotion:
+
+   ```bash
+   GEN=$(kubectl get volumegroupreplication <vgr-name> \
+     --context cluster-1 -o jsonpath='{.metadata.generation}')
+
+   kubectl patch volumegroupreplication <vgr-name> \
+     --subresource=status --type=merge --context cluster-1 -p \
+     '{"status":{"state":"Primary","conditions":[
+       {"type":"Completed","status":"True",
+        "observedGeneration":'$GEN',
+        "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+        "reason":"Promoted","message":"promoted to primary"},
+       {"type":"Degraded","status":"False",
+        "observedGeneration":'$GEN',
+        "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+        "reason":"Healthy","message":"not degraded"},
+       {"type":"Resyncing","status":"False",
+        "observedGeneration":'$GEN',
+        "lastTransitionTime":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+        "reason":"NotResyncing","message":"not resyncing"}
+     ]}}'
+   ```
+
+   Apply the same pattern for each VolumeReplication resource on
+   cluster-1. Use the pending-check commands from the failover flow to
+   verify which VRs/VGRs are still pending on each cluster.
+
+1. Once all VGR/VR status fields are satisfied on both clusters, Ramen
+   completes the relocate: the application is placed on cluster-1 and
+   the DRPC status transitions to `Relocated`.

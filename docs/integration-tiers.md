@@ -26,6 +26,10 @@ interface to that backend.
 - Ramen has **no visibility** into replication status — it cannot
   monitor replication health or alert when the desired RPO is not being
   met.
+- **No automated network fencing** — if the primary cluster fails
+  partially, there is no automated mechanism to prevent it from
+  continuing to write to shared storage (split-brain risk). Silver and
+  Gold tiers avoid this through automated NetworkFence CRDs.
 
 **Example:** IBM Fusion Access, which is itself vendor-agnostic and
 therefore cannot implement any higher tier.
@@ -67,7 +71,7 @@ and happen outside of Ramen. However, once configured:
   policy interval, replication health (degraded/resync state), workload
   protection status, and split-brain detection.
 
-**Current adopters:** IBM FlashSystem are planning to implement
+**Current adopters:** IBM FlashSystem is planning to implement
 this tier for their storage product.
 
 ## Gold — Full Upstream Contribution
