@@ -1,0 +1,61 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Prepare a linux VM for use as a GitHub self-hosted runner. The machine
+# must be prepared first with bootstrap-linux.
+#
+# The runner itself is installed later based on GitHub instructions when
+# adding the runner. After the runner is configured, the admin starts the
+# service using the svc.sh script in the runner directory.
+
+set -eu -o pipefail
+
+# The actions-runner requires the .NET runtime which depends on libicu.
+echo "Installing runner dependencies..."
+sudo dnf install -y libicu
+
+# Create a github user for running the actions-runner.
+if ! id -u github &>/dev/null; then
+    echo "Creating github user..."
+    sudo adduser github
+else
+    echo "User github already exists."
+fi
+
+# Add to libvirt group, required for using minikube with kvm driver.
+echo "Adding github to libvirt group..."
+sudo usermod -a -G libvirt github
+
+# Add public keys to allow admin to log in as github user.
+sudo mkdir -p /home/github/.ssh
+if [[ ! -f /home/github/.ssh/authorized_keys ]]; then
+    echo "Copying SSH authorized keys for github user..."
+    sudo cp ~/.ssh/authorized_keys /home/github/.ssh/
+else
+    echo "SSH authorized keys already exist for github user."
+fi
+sudo chown -R github:github /home/github/.ssh
+sudo chmod 0700 /home/github/.ssh
+sudo chmod 0600 /home/github/.ssh/authorized_keys
+
+# Create the actions-runner directory. When registering the runner we need to
+# install the runner in this directory.
+echo "Creating actions-runner directory..."
+sudo mkdir -p /home/github/actions-runner
+sudo chown -R github:github /home/github/actions-runner
+
+# Allow running anything in the actions-runner directory. This is needed for
+# running the actions-runner as a systemd service, and for running scripts from
+# checked-out repositories during workflows (e.g. drenv, ramendev). We cannot
+# restrict this further since we don't control what the workflows depend on.
+echo "Configuring SELinux for actions-runner..."
+sudo semanage fcontext -a -t bin_t "/home/github/actions-runner(/.*)?"
+sudo restorecon -Rv /home/github/actions-runner
+
+echo ""
+echo "Bootstrap complete."
+echo ""
+echo "Next steps:"
+echo "  1. Install the runner in /home/github/actions-runner following GitHub instructions."
+echo "  2. Start the service: sudo ./svc.sh install github && sudo ./svc.sh start"
