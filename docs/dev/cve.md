@@ -125,8 +125,9 @@ Where `<version>` corresponds to the ODF version.
 
 #### Step 2: Pull the downstream image
 
+Example for ODF 4.18:
+
 ```bash
-# Example for ODF 4.18
 podman pull quay.io/rhceph-dev/odf4-odr-rhel9-operator:v4.18
 ```
 
