@@ -28,9 +28,9 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal
 WORKDIR /
 COPY --from=builder /workspace/manager .
 
-# copy licenses to license folder
+# Copy the license.
 RUN mkdir -p licenses
-COPY LICENSES/Apache-2.0.txt licenses/Apache-2.0.txt
+COPY LICENSE licenses/Apache-2.0.txt
 
 USER 65532:65532
 
