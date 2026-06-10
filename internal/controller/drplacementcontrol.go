@@ -192,42 +192,53 @@ func (d *DRPCInstance) handleTestFailoverTransition() (bool, error) {
 //
 //nolint:gocognit,cyclop,nestif,funlen // Complexity/length for handling multiple test failover scenarios
 func (d *DRPCInstance) cleanupTestFailoverAnnotation() error {
-	d.log.Info("Cleaning up dry-run annotation after promotion to real failover",
-		"progression", d.instance.Status.Progression)
-
-	// During promotion, the failover cluster becomes the new primary
-	// We must update the annotation on the NEW PRIMARY (failover cluster), not the old primary
-	clusterToUpdate := d.instance.Spec.FailoverCluster
-
-	// Validate that failoverCluster is set and is a valid cluster name
-	if clusterToUpdate == "" {
-		return fmt.Errorf("cannot cleanup dry-run annotation: failover cluster not set in DRPC spec")
-	}
-
-	isValidCluster := false
+	// Calculate test failover cluster first (peer of last-app-deployment-cluster)
+	// This is always available as last-app-deployment-cluster is never updated during dry-run
+	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+	testFailoverCluster := ""
 
 	for _, drCluster := range d.drClusters {
-		if drCluster.Name == clusterToUpdate {
-			isValidCluster = true
+		if drCluster.Name != lastAppCluster {
+			testFailoverCluster = drCluster.Name
 
 			break
 		}
 	}
 
-	if !isValidCluster {
-		return fmt.Errorf("cannot cleanup dry-run annotation: failover cluster %s is not a valid DR cluster",
-			clusterToUpdate)
+	if testFailoverCluster == "" {
+		return fmt.Errorf(
+			"cannot cleanup dry-run annotation: could not determine test failover cluster from last-app-deployment-cluster=%s",
+			lastAppCluster)
 	}
 
-	d.log.Info("Updating test-failover-dryrun annotation on new primary after promotion",
-		"newPrimaryCluster", clusterToUpdate,
-		"oldPrimaryCluster", d.instance.GetAnnotations()[LastAppDeploymentCluster])
+	// Determine scenario: promotion vs abort
+	// Promotion: FailoverCluster points to test failover cluster, Action is Failover, DryRun is false
+	// This matches the logic in initiateTestFailoverCleanup() at line 402-404
+	isPromotion := d.instance.Spec.FailoverCluster == testFailoverCluster &&
+		d.instance.Spec.Action == rmn.ActionFailover &&
+		!d.instance.Spec.DryRun
+
+	var clusterToUpdate string
+
+	if isPromotion {
+		// Promotion: Update VRG annotation on failoverCluster (new primary = test failover cluster)
+		clusterToUpdate = d.instance.Spec.FailoverCluster
+		d.log.Info("Cleaning up dry-run annotation after promotion",
+			"progression", d.instance.Status.Progression,
+			"newPrimary", clusterToUpdate,
+			"oldPrimary", lastAppCluster)
+	} else {
+		// Abort: Update VRG annotation on test failover cluster (where test was performed)
+		clusterToUpdate = testFailoverCluster
+		d.log.Info("Cleaning up dry-run annotation after abort",
+			"progression", d.instance.Status.Progression,
+			"testFailoverCluster", clusterToUpdate,
+			"sourceCluster", lastAppCluster)
+	}
 
 	// Delete DRPC annotation FIRST before updating VRG
 	// This ensures setVRGAnnotations() won't find the annotation and re-add it to VRG
 	delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
-
-	d.log.Info("Setting test failover annotation to false on VRG", "cluster", clusterToUpdate)
 
 	// Get ManifestWork containing the VRG
 	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterToUpdate)
@@ -296,25 +307,9 @@ func (d *DRPCInstance) handleTestFailoverExit() (bool, error) {
 	}
 
 	// If in CleaningUp or WaitOnUserToCleanUp progression, monitor cleanup progress
+	// Note: monitorTestFailoverCleanup() handles annotation cleanup internally when done
 	if d.isInCleanupProgression() {
-		cleanupInProgress, err := d.monitorTestFailoverCleanup()
-		if err != nil {
-			return false, err
-		}
-
-		if cleanupInProgress {
-			// Still cleaning up, requeue
-			return true, nil
-		}
-
-		// Cleanup complete, remove annotation from DRPC and VRG
-		if err := d.cleanupTestFailoverAnnotation(); err != nil {
-			return false, err
-		}
-
-		// Requeue to ensure fresh DRPC state is loaded before continuing
-		// This prevents stale in-memory DRPC from re-adding the annotation to VRG
-		return true, nil
+		return d.monitorTestFailoverCleanup()
 	}
 
 	// If in TestingFailover progression, initiate cleanup
