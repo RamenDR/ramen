@@ -41,7 +41,7 @@ jobs:
             source ../venv
             drenv cache envs/regional-dr.yaml
 
-  prune-images:
+  podman-maintenance:
     strategy:
       fail-fast: false
       matrix:
@@ -51,5 +51,20 @@ jobs:
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
+      - name: Log podman info
+        run: podman info
+
+      - name: Log containers
+        run: podman ps -a
+
+      - name: Log volumes
+        run: podman volume ls
+
+      - name: Log podman storage
+        run: podman system df
+
+      - name: Log images
+        run: podman image ls
+
       - name: Prune images
         run: podman image prune -f
