@@ -71,7 +71,6 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
-//
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 	// Cleanup dry-run snapshots when promoting to real failover (DryRun: true → false)
 	if v.shouldCleanupDryRunSnapshots() {

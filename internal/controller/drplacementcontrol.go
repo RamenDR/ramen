@@ -524,7 +524,7 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 	return true, nil
 }
 
-//nolint:gocognit,gocyclo,cyclop,funlen // Complexity/length for discovered vs non-discovered cleanup
+//nolint:gocognit,gocyclo,cyclop,funlen,nestif // Complexity/length for discovered vs non-discovered cleanup
 func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 	d.log.Info("Monitoring cleanup progress")
 
@@ -551,14 +551,60 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 
 	// For promotion, monitor previous primary for cleanup completion
 	clusterToMonitor := testFailoverCluster
-	if d.instance.Spec.FailoverCluster == testFailoverCluster &&
+	isPromotion := d.instance.Spec.FailoverCluster == testFailoverCluster &&
 		!d.instance.Spec.DryRun &&
-		d.instance.Spec.Action == rmn.ActionFailover {
+		d.instance.Spec.Action == rmn.ActionFailover
+
+	if isPromotion {
 		// This is promotion - monitor old primary (lastAppCluster) for cleanup
 		clusterToMonitor = lastAppCluster
 		d.log.Info("Promotion detected - monitoring old primary for cleanup",
 			"oldPrimary", lastAppCluster,
 			"newPrimary", testFailoverCluster)
+
+		// For promotion, ensure VRG states are updated correctly:
+		// - New primary (testFailoverCluster) should be Primary
+		// - Old primary (lastAppCluster) should be Secondary
+		newPrimaryVRG, foundNew := d.vrgs[testFailoverCluster]
+		oldPrimaryVRG, foundOld := d.vrgs[lastAppCluster]
+
+		if !foundNew || !foundOld {
+			return false, fmt.Errorf("VRG not found during promotion: new=%v, old=%v", foundNew, foundOld)
+		}
+
+		// Update new primary to Primary state if needed
+		if newPrimaryVRG.Spec.ReplicationState != rmn.Primary {
+			d.log.Info("Updating new primary VRG to Primary state",
+				"cluster", testFailoverCluster,
+				"currentState", newPrimaryVRG.Spec.ReplicationState)
+
+			updated, err := d.updateVRGState(testFailoverCluster, rmn.Primary)
+			if err != nil {
+				return false, fmt.Errorf("failed to update new primary VRG state: %w", err)
+			}
+
+			if updated {
+				// VRG was updated, requeue to wait for state transition
+				return true, nil
+			}
+		}
+
+		// Update old primary to Secondary state if needed
+		if oldPrimaryVRG.Spec.ReplicationState != rmn.Secondary {
+			d.log.Info("Updating old primary VRG to Secondary state",
+				"cluster", lastAppCluster,
+				"currentState", oldPrimaryVRG.Spec.ReplicationState)
+
+			updated, err := d.updateVRGState(lastAppCluster, rmn.Secondary)
+			if err != nil {
+				return false, fmt.Errorf("failed to update old primary VRG state: %w", err)
+			}
+
+			if updated {
+				// VRG was updated, requeue to wait for state transition
+				return true, nil
+			}
+		}
 	}
 
 	// Get VRG from the cluster we're monitoring
