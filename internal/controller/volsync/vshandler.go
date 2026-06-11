@@ -3303,10 +3303,11 @@ func (v *VSHandler) IsVRGInAdminNamespace() bool {
 	return v.vrgInAdminNamespace
 }
 
-func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error {
-	v.log.Info("Unprotecting VolSync PVC", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace())
+func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim, skipPVCDisownership bool) error {
+	v.log.Info("Unprotecting VolSync PVC", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace(),
+		"skipPVCDisownership", skipPVCDisownership)
 
-	err := v.DeleteRS(pvc.GetName(), pvc.GetNamespace(), false)
+	err := v.DeleteRS(pvc.GetName(), pvc.GetNamespace(), skipPVCDisownership)
 	if err != nil {
 		v.log.Info("Failed to delete RS", "rs name", pvc.GetName(), "error", err)
 

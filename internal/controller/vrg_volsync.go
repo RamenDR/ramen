@@ -897,9 +897,12 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		}
 	}
 
-	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
+	// Determine if VRG is being deleted to decide whether to skip PVC disownership
+	vrgBeingDeleted := util.ResourceIsDeleted(v.instance)
+
+	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name, "vrgBeingDeleted", vrgBeingDeleted)
 	// This call is only from Primary cluster. delete ReplicationSource/CG and related resources.
-	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
+	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc, vrgBeingDeleted); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
 
 		return
