@@ -190,7 +190,7 @@ spec:
    s3StoreProfiles:
      - s3ProfileName: s3-profile-east
        s3Bucket: ramen-dr-east
-       s3CompatibleEndpoint: https://s1.us-east-1.amazonaws.com
+       s3CompatibleEndpoint: https://s3.us-east-1.amazonaws.com
        s3Region: us-east-1
        s3SecretRef:
          name: s3-secret-east
