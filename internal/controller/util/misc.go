@@ -296,10 +296,26 @@ func RemoveOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (boo
 		return false, nil // No owner references to remove
 	}
 
-	// TODO: Remove just the owner's Reference instead of blindly removing all ownerreferences.
-	obj.SetOwnerReferences(nil)
+	ownerUID := owner.GetUID()
 
-	return true, nil
+	newOwnerRefs := []metav1.OwnerReference{}
+	removed := false
+
+	for _, ref := range currentOwnerRefs {
+		if ref.UID == ownerUID {
+			removed = true
+
+			continue
+		}
+
+		newOwnerRefs = append(newOwnerRefs, ref)
+	}
+
+	// Always update ownerReferences to maintain consistency
+	// Return true only if we actually removed an owner
+	obj.SetOwnerReferences(newOwnerRefs)
+
+	return removed, nil
 }
 
 func AddFinalizer(obj client.Object, finalizer string) bool {
