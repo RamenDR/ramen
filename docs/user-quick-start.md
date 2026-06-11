@@ -40,8 +40,11 @@ clusters. *Ramen* makes this easy using minikube, but you need enough resources:
 
 1. Create python virtual environment
 
-   The *Ramen* project use python tool to create and provision test environment
-   and run tests. The create a virtual environment including the tools run:
+
+   The *Ramen* project uses a python tool to create and provision test
+   environment and run tests. This creates a virtual environment including
+   the tools run:
+
 
    ```
    make venv
@@ -426,8 +429,10 @@ test/basic-test/deploy $env
 test/basic-test/enable-dr $env
 ```
 
-At this point you can run run manually failover, relocate one or more times as
-needed.
+
+At this point you can manually failover, relocate one or more
+times as needed.
+
 
 To clean up the basic-test for regional-dr.yaml run this command:
 
