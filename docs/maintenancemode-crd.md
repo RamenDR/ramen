@@ -493,7 +493,7 @@ metadata:
 provisioner: your.csi.driver
 ```
 
-### 1. Watch MaintenanceMode Resources
+### 2. Watch MaintenanceMode Resources
 
 ```go
 // Filter for your provisioner
@@ -503,7 +503,7 @@ func (r *YourReconciler) filterMaintenanceMode(obj client.Object) bool {
 }
 ```
 
-### 1. Reconcile MaintenanceMode
+### 3. Reconcile MaintenanceMode
 
 ```go
 func (r *YourReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -539,7 +539,7 @@ func (r *YourReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 }
 ```
 
-### 1. Handle Modes
+### 4. Handle Modes
 
 ```go
 for _, mode := range mmode.Spec.Modes {
