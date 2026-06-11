@@ -551,7 +551,9 @@ func (d *DRPCInstance) monitorTestFailoverCleanup() (bool, error) {
 
 	// For promotion, monitor previous primary for cleanup completion
 	clusterToMonitor := testFailoverCluster
-	if d.instance.Spec.FailoverCluster == testFailoverCluster && !d.instance.Spec.DryRun {
+	if d.instance.Spec.FailoverCluster == testFailoverCluster &&
+		!d.instance.Spec.DryRun &&
+		d.instance.Spec.Action == rmn.ActionFailover {
 		// This is promotion - monitor old primary (lastAppCluster) for cleanup
 		clusterToMonitor = lastAppCluster
 		d.log.Info("Promotion detected - monitoring old primary for cleanup",
