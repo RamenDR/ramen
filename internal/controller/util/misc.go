@@ -292,8 +292,7 @@ func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, 
 func RemoveOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {
 	currentOwnerRefs := obj.GetOwnerReferences()
 
-	length := len(currentOwnerRefs)
-	if length < 1 {
+	if len(currentOwnerRefs) < 1 {
 		return false, nil // No owner references to remove
 	}
 
