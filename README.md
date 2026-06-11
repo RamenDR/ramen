@@ -46,7 +46,7 @@ When storage is already highly available and requires no replication, Ramen
 manages only workload resources. It ensures access guarantees through the
 csi-addon
 [fencing specification](https://github.com/csi-addons/spec/tree/main/fence)
-and and csi-addons
+and csi-addons
 [NetworkFence](https://github.com/csi-addons/kubernetes-csi-addons/blob/main/docs/networkfence.md)
 APIs.
 
