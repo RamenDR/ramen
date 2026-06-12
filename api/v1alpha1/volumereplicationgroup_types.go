@@ -117,7 +117,7 @@ type VolSyncReplicationSourceSpec struct {
 	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
-// VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
+// VolSyncSpec defines the ReplicationDestination specs for the Secondary VRG, or
 // the ReplicationSource specs for the Primary VRG
 type VolSyncSpec struct {
 	// rdSpec array contains the PVCs information that will/are be/being protected by VolSync
