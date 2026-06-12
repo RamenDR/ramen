@@ -17,6 +17,7 @@ import (
 	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -1869,7 +1870,49 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		return fmt.Errorf("error creating or updating ServiceExport (%w)", err)
 	}
 
+	v.ensureVolSyncServiceLabels(serviceName, rd.GetNamespace())
+
 	return nil
+}
+
+func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
+	svc := &corev1.Service{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, svc)
+	if err != nil {
+		v.log.V(1).Info("VolSync Service not found yet, skipping label", "serviceName", serviceName)
+
+		return
+	}
+
+	err = util.NewResourceUpdater(svc).
+		AddLabel(util.CreatedByRamenLabel, "true").
+		Update(v.ctx, v.client)
+	if err != nil {
+		v.log.V(1).Info("Failed to label VolSync Service", "serviceName", serviceName, "error", err)
+	}
+
+	epSliceList := &discoveryv1.EndpointSliceList{}
+
+	err = v.client.List(v.ctx, epSliceList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{"kubernetes.io/service-name": serviceName},
+	)
+	if err != nil {
+		v.log.V(1).Info("Failed to list EndpointSlices, skipping label", "serviceName", serviceName)
+
+		return
+	}
+
+	for i := range epSliceList.Items {
+		err = util.NewResourceUpdater(&epSliceList.Items[i]).
+			AddLabel(util.CreatedByRamenLabel, "true").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync EndpointSlice",
+				"endpointSlice", epSliceList.Items[i].Name, "error", err)
+		}
+	}
 }
 
 func (v *VSHandler) listRSByOwner(rsNamespace string) (volsyncv1alpha1.ReplicationSourceList, error) {
@@ -2269,6 +2312,7 @@ func (v *VSHandler) validateAndProtectSnapshot(
 	err = updater.AddLabel(util.VRGOwnerNameLabel, v.owner.GetName()).
 		AddLabel(util.VRGOwnerNamespaceLabel, v.owner.GetNamespace()).
 		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
+		AddLabel(util.CreatedByRamenLabel, "true").
 		Update(v.ctx, v.client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add owner/label to snapshot %s (%w)", volSnap.GetName(), err)
