@@ -378,7 +378,6 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, lastAppClu
 	return nil
 }
 
-//nolint:cyclop,funlen,gocognit,gocyclo // Complexity and length for handling promotion vs revert logic
 func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 	d.log.Info("Initiating cleanup after exiting dry-run mode")
 
@@ -404,69 +403,71 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 		"failoverCluster", testFailoverCluster)
 
 	// Check if this is a promotion to real failover
-	// Promotion requires: failoverCluster points to test failover cluster,
-	// dryRun is false, and action is still Failover
-	//nolint:nestif // Complexity necessary for promotion vs revert logic
-	if d.instance.Spec.FailoverCluster == testFailoverCluster &&
+	isPromotion := d.instance.Spec.FailoverCluster == testFailoverCluster &&
 		!d.instance.Spec.DryRun &&
-		d.instance.Spec.Action == rmn.ActionFailover {
-		d.log.Info("Promoting test failover to real failover",
-			"failoverCluster", d.instance.Spec.FailoverCluster,
-			"testFailoverCluster", testFailoverCluster,
-			"previousPrimaryCluster", lastAppCluster)
+		d.instance.Spec.Action == rmn.ActionFailover
 
-		// Remove "RetainedForFailover" placement decision before cleanup to allow workload deletion
-		if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
-			d.log.Error(err, "Failed to remove placement decision during promotion")
-
-			return false, err
-		}
-
-		d.log.Info("Removed RetainedForFailover placement decision", "cluster", lastAppCluster)
-
-		// Update VRG to Secondary on old primary (lastAppCluster) to trigger cleanup
-		// This is critical for CephFS/VolSync to properly transition ReplicationSource
-		d.log.Info("Updating VRG to Secondary on old primary for promotion cleanup", "cluster", lastAppCluster)
-
-		_, err := d.updateVRGState(lastAppCluster, rmn.Secondary)
-		if err != nil {
-			d.log.Error(err, "Failed to update VRG to Secondary on old primary during promotion")
-
-			return false, fmt.Errorf("failed to update VRG to Secondary on old primary %s: %w", lastAppCluster, err)
-		}
-
-		d.log.Info("VRG updated to Secondary on old primary", "cluster", lastAppCluster)
-
-		// Cleanup test failover annotations BEFORE updating last-app-deployment-cluster
-		// This ensures cleanupTestFailoverAnnotation() uses the original value to calculate
-		// the correct test failover cluster (peer of lastAppCluster)
-		if err := d.cleanupTestFailoverAnnotation(); err != nil {
-			d.log.Error(err, "Failed to cleanup test failover annotation during promotion")
-			// Don't fail promotion if annotation cleanup fails, but log the error
-		}
-
-		// Update annotations to reflect real failover state
-		rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action))
-		rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, testFailoverCluster)
-
-		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-			d.log.Error(err, "Failed to update annotations during promotion")
-
-			return false, fmt.Errorf("failed to update DRPC annotations during promotion: %w", err)
-		}
-
-		d.log.Info("Updated annotations for promotion", "last-action", d.instance.Spec.Action,
-			"last-app-deployment-cluster", testFailoverCluster)
-
-		// Proceed with normal failover cleanup flow
-		done, err := d.ensureFailoverActionCompleted(testFailoverCluster)
-		if err != nil {
-			return done, err
-		}
-
-		return done, nil
+	if isPromotion {
+		return d.promoteTestFailover(testFailoverCluster, lastAppCluster)
 	}
 
+	return d.abortTestFailover(testFailoverCluster, lastAppCluster)
+}
+
+func (d *DRPCInstance) promoteTestFailover(testFailoverCluster, lastAppCluster string) (bool, error) {
+	d.log.Info("Promoting test failover to real failover",
+		"failoverCluster", d.instance.Spec.FailoverCluster,
+		"testFailoverCluster", testFailoverCluster,
+		"previousPrimaryCluster", lastAppCluster)
+
+	// Remove "RetainedForFailover" placement decision before cleanup to allow workload deletion
+	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
+		d.log.Error(err, "Failed to remove placement decision during promotion")
+
+		return false, err
+	}
+
+	d.log.Info("Removed RetainedForFailover placement decision", "cluster", lastAppCluster)
+
+	// Update VRG to Secondary on old primary (lastAppCluster) to trigger cleanup
+	// This is critical for CephFS/VolSync to properly transition ReplicationSource
+	d.log.Info("Updating VRG to Secondary on old primary for promotion cleanup", "cluster", lastAppCluster)
+
+	_, err := d.updateVRGState(lastAppCluster, rmn.Secondary)
+	if err != nil {
+		d.log.Error(err, "Failed to update VRG to Secondary on old primary during promotion")
+
+		return false, fmt.Errorf("failed to update VRG to Secondary on old primary %s: %w", lastAppCluster, err)
+	}
+
+	d.log.Info("VRG updated to Secondary on old primary", "cluster", lastAppCluster)
+
+	// Cleanup test failover annotations BEFORE updating last-app-deployment-cluster
+	// This ensures cleanupTestFailoverAnnotation() uses the original value to calculate
+	// the correct test failover cluster (peer of lastAppCluster)
+	if err := d.cleanupTestFailoverAnnotation(); err != nil {
+		d.log.Error(err, "Failed to cleanup test failover annotation during promotion")
+		// Don't fail promotion if annotation cleanup fails, but log the error
+	}
+
+	// Update annotations to reflect real failover state
+	rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action))
+	rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, testFailoverCluster)
+
+	if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+		d.log.Error(err, "Failed to update annotations during promotion")
+
+		return false, fmt.Errorf("failed to update DRPC annotations during promotion: %w", err)
+	}
+
+	d.log.Info("Updated annotations for promotion", "last-action", d.instance.Spec.Action,
+		"last-app-deployment-cluster", testFailoverCluster)
+
+	// Proceed with normal failover cleanup flow
+	return d.ensureFailoverActionCompleted(testFailoverCluster)
+}
+
+func (d *DRPCInstance) abortTestFailover(testFailoverCluster, lastAppCluster string) (bool, error) {
 	// This is a revert (abort) - validate user correctly set spec to pre-test-failover state
 	if err := validateTestFailoverRevertScenario(d.instance, lastAppCluster); err != nil {
 		d.log.Error(err, "Test failover revert scenario validation failed")
