@@ -293,14 +293,14 @@ type StorageIdentifiers struct {
 	// on the StorageClass as the value for the label "ramendr.openshift.io/storageid", that identifies
 	// the storage backend that was used to provision the volume. It is used to label different StorageClasses
 	// across different kubernetes clusters, that potentially share the same storage backend.
-	// It also contains any maintenance modes that the storage backend requires during vaious Ramen actions
+	// It also contains any maintenance modes that the storage backend requires during various Ramen actions
 	//+optional
 	StorageID Identifier `json:"storageID,omitempty"`
 
 	// ReplicationID contains the globally unique replication identifier, as reported by the storage backend
 	// on the VolumeReplicationClass as the value for the label "ramendr.openshift.io/replicationid", that
 	// identifies the storage backends across 2 (or more) storage instances where the volume is replicated
-	// It also contains any maintenance modes that the replication backend requires during vaious Ramen actions
+	// It also contains any maintenance modes that the replication backend requires during various Ramen actions
 	//+optional
 	ReplicationID Identifier `json:"replicationID,omitempty"`
 }
