@@ -437,6 +437,14 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 
 		d.log.Info("VRG updated to Secondary on old primary", "cluster", lastAppCluster)
 
+		// Cleanup test failover annotations BEFORE updating last-app-deployment-cluster
+		// This ensures cleanupTestFailoverAnnotation() uses the original value to calculate
+		// the correct test failover cluster (peer of lastAppCluster)
+		if err := d.cleanupTestFailoverAnnotation(); err != nil {
+			d.log.Error(err, "Failed to cleanup test failover annotation during promotion")
+			// Don't fail promotion if annotation cleanup fails, but log the error
+		}
+
 		// Update annotations to reflect real failover state
 		rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action))
 		rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, testFailoverCluster)
@@ -454,14 +462,6 @@ func (d *DRPCInstance) initiateTestFailoverCleanup() (bool, error) {
 		done, err := d.ensureFailoverActionCompleted(testFailoverCluster)
 		if err != nil {
 			return done, err
-		}
-
-		// Cleanup test failover annotation from VRG after promotion completes
-		if done {
-			if err := d.cleanupTestFailoverAnnotation(); err != nil {
-				d.log.Error(err, "Failed to cleanup test failover annotation after promotion")
-				// Don't fail promotion if annotation cleanup fails
-			}
 		}
 
 		return done, nil
