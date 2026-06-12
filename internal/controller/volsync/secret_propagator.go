@@ -216,6 +216,9 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 		"metadata": map[string]interface{}{
 			"name":      sp.DestSecretName,
 			"namespace": sp.DestSecretNamespace,
+			"labels": map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 		"type": "Opaque",
 		"data": secretData,
@@ -249,6 +252,8 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 			Severity:          "low",
 		},
 	}
+
+	util.AddLabel(embeddedConfigPolicy, util.CreatedByRamenLabel, "true")
 
 	return embeddedConfigPolicy, nil
 }

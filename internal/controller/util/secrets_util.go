@@ -335,7 +335,7 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 }
 
 func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
-	return &cpcv1.ConfigurationPolicy{
+	cp := &cpcv1.ConfigurationPolicy{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigurationPolicy",
 			APIVersion: "policy.open-cluster-management.io/v1",
@@ -354,6 +354,10 @@ func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.Co
 			},
 		},
 	}
+
+	AddLabel(cp, CreatedByRamenLabel, "true")
+
+	return cp
 }
 
 func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension) *gppv1.Policy {
