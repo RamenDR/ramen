@@ -3692,8 +3692,9 @@ func (v *VRGInstance) createSnapshot(pvc *corev1.PersistentVolumeClaim, snapshot
 			Name:      snapName,
 			Namespace: pvc.Namespace,
 			Labels: map[string]string{
-				dryRunSnapshotLabel: "true",
-				dryRunVRGLabel:      v.instance.Name,
+				dryRunSnapshotLabel:         "true",
+				dryRunVRGLabel:              v.instance.Name,
+				rmnutil.CreatedByRamenLabel: "true",
 			},
 		},
 		Spec: snapv1.VolumeSnapshotSpec{
