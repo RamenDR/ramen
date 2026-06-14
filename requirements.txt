@@ -1,6 +1,8 @@
 black
 coverage
 flake8
+mdformat
+mdformat-gfm
 pylint
 pytest
 setuptools

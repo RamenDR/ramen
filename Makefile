@@ -126,10 +126,11 @@ lint-api: golangci-bin ## Run configured golangci-lint for api module
 	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 
 .PHONY: fmt
-fmt: golangci-bin ## Run golangci-lint formatting on the codebase.
+fmt: golangci-bin ## Run golangci-lint and mdformat formatting on the codebase.
 	testbin/golangci-lint fmt
 	cd e2e && ../testbin/golangci-lint fmt
 	cd api && ../testbin/golangci-lint fmt
+	git ls-files -z '*.md' | xargs -0 mdformat
 
 .PHONY: create-rdr-env
 create-rdr-env: drenv-prereqs ## Create a new rdr environment.
