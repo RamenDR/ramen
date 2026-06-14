@@ -63,6 +63,16 @@ rules:
   verbs:
   - create
 - apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - addon.open-cluster-management.io
   resources:
   - managedclusteraddons
@@ -212,6 +222,16 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
