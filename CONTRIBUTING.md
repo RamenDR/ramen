@@ -5,16 +5,16 @@ SPDX-License-Identifier: Apache-2.0
 
 # How to Contribute
 
-The Ramen project is under [Apache 2.0 license](LICENSES/Apache-2.0.txt).
-We accept contributions via GitHub pull requests. This document outlines
-some of the conventions related to development workflow to make it
-easier to get your contribution accepted.
+The Ramen project is under [Apache 2.0 license](LICENSES/Apache-2.0.txt). We
+accept contributions via GitHub pull requests. This document outlines some of
+the conventions related to development workflow to make it easier to get your
+contribution accepted.
 
 ## Certificate of Origin
 
-By contributing to this project you agree to the Developer Certificate of
-Origin (DCO). This document was created by the Linux Kernel community and is a
-simple statement that you, as a contributor, have the legal right to make the
+By contributing to this project you agree to the Developer Certificate of Origin
+(DCO). This document was created by the Linux Kernel community and is a simple
+statement that you, as a contributor, have the legal right to make the
 contribution. See the [DCO](DCO) file for details.
 
 Contributors sign-off that they adhere to these requirements by adding a

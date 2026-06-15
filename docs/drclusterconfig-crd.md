@@ -7,29 +7,28 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **DRClusterConfig** custom resource provides cluster-specific
-disaster recovery configuration on managed clusters. It is a
-cluster-scoped resource that exists on each managed cluster (not on
-the hub) and serves two primary purposes:
+The **DRClusterConfig** custom resource provides cluster-specific disaster
+recovery configuration on managed clusters. It is a cluster-scoped resource that
+exists on each managed cluster (not on the hub) and serves two primary purposes:
 
-1. **Configuration Communication**: Conveys the cluster identity and
-    desired replication schedules from the hub to the managed cluster
+1. **Configuration Communication**: Conveys the cluster identity and desired
+   replication schedules from the hub to the managed cluster
 1. **Capability Discovery**: Scans the cluster for storage-related classes
-    (StorageClass, VolumeSnapshotClass, VolumeReplicationClass, etc.) that
-    have the required Ramen labels/annotations and reports them in its status.
-    See the Status Fields section below for the specific label/annotation
-    requirements for each class type.
+   (StorageClass, VolumeSnapshotClass, VolumeReplicationClass, etc.) that have
+   the required Ramen labels/annotations and reports them in its status. See the
+   Status Fields section below for the specific label/annotation requirements
+   for each class type.
 
-**Note:** DRClusterConfig does not create these classes. Storage providers
-or administrators must create and label/annotate the classes appropriately.
+**Note:** DRClusterConfig does not create these classes. Storage providers or
+administrators must create and label/annotate the classes appropriately.
 DRClusterConfig only discovers and reports them in its status.
 
-**Lifecycle:** Automatically created and managed by Ramen on each
-managed cluster. Users typically don't create this resource manually.
+**Lifecycle:** Automatically created and managed by Ramen on each managed
+cluster. Users typically don't create this resource manually.
 
-**Resource Name:** The DRClusterConfig resource name matches the name of
-the managed cluster. For example, if the managed cluster is named "cluster1",
-the DRClusterConfig resource will also be named "cluster1".
+**Resource Name:** The DRClusterConfig resource name matches the name of the
+managed cluster. For example, if the managed cluster is named "cluster1", the
+DRClusterConfig resource will also be named "cluster1".
 
 ## API Group and Version
 
@@ -44,8 +43,8 @@ the DRClusterConfig resource will also be named "cluster1".
 
 #### `clusterID` (string)
 
-The unique identifier for this cluster, derived from the kube-system
-namespace UID.
+The unique identifier for this cluster, derived from the kube-system namespace
+UID.
 
 **Source:** OCM ManagedCluster claim value for `id.k8s.io`
 
@@ -61,8 +60,8 @@ namespace UID.
 clusterID: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 ```
 
-**Purpose:** Used to correlate storage resources across clusters and
-identify the cluster in S3 metadata.
+**Purpose:** Used to correlate storage resources across clusters and identify
+the cluster in S3 metadata.
 
 ### Optional Fields
 
@@ -85,9 +84,9 @@ replicationSchedules:
 
 ## Status Fields
 
-The DRClusterConfig status is populated by the
-Ramen DR cluster operator, which scans the cluster for classes
-with the required labels/annotations and updates the status accordingly.
+The DRClusterConfig status is populated by the Ramen DR cluster operator, which
+scans the cluster for classes with the required labels/annotations and updates
+the status accordingly.
 
 ### `conditions` ([]metav1.Condition)
 
@@ -95,7 +94,8 @@ Standard Kubernetes conditions array.
 
 **Condition type:**
 
-- `Processed` - Indicates whether the DRClusterConfig configuration has been processed
+- `Processed` - Indicates whether the DRClusterConfig configuration has been
+  processed
 
 **Condition reasons:**
 
@@ -115,11 +115,13 @@ storageClasses:
   - file-storage
 ```
 
-**Purpose:** Reports available storage classes to the hub for peer class discovery.
+**Purpose:** Reports available storage classes to the hub for peer class
+discovery.
 
 ### `volumeSnapshotClasses` ([]string)
 
-List of VolumeSnapshotClass names with the `ramendr.openshift.io/storageid` label.
+List of VolumeSnapshotClass names with the `ramendr.openshift.io/storageid`
+label.
 
 **Example:**
 
@@ -133,8 +135,8 @@ volumeSnapshotClasses:
 
 ### `volumeGroupSnapshotClasses` ([]string)
 
-List of VolumeGroupSnapshotClass names with the
-`ramendr.openshift.io/storageid` label.
+List of VolumeGroupSnapshotClass names with the `ramendr.openshift.io/storageid`
+label.
 
 **Example:**
 
@@ -176,8 +178,8 @@ volumeGroupReplicationClasses:
 
 ### `networkFenceClasses` ([]string)
 
-List of NetworkFenceClass names with the
-`ramendr.openshift.io/storageid` annotation.
+List of NetworkFenceClass names with the `ramendr.openshift.io/storageid`
+annotation.
 
 **Example:**
 
@@ -296,12 +298,13 @@ kubectl get drclusterconfig cluster1 -o jsonpath='{.status}' | jq
    ```
 
 **Solution:** Ensure classes exist in the cluster and have the required
-labels/annotations as specified in the Overview section. Classes without
-the required labels/annotations will not be discovered by DRClusterConfig.
+labels/annotations as specified in the Overview section. Classes without the
+required labels/annotations will not be discovered by DRClusterConfig.
 
 ## Related Resources
 
 - [DRCluster](drcluster-crd.md) - Hub-side cluster configuration
 - [DRPolicy](drpolicy-crd.md) - Uses peer classes discovered via DRClusterConfig
-- [VolumeReplicationGroup](vrg-crd.md) - Consumes VolumeReplicationClass resources
+- [VolumeReplicationGroup](vrg-crd.md) - Consumes VolumeReplicationClass
+  resources
 - [Configuration Guide](configure.md) - S3 and storage configuration

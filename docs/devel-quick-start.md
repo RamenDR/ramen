@@ -11,9 +11,10 @@ SPDX-License-Identifier: Apache-2.0
 1. Create a branch from where you want to base your work (usually main).
 1. Make your changes and arrange them in readable commits.
 1. Make sure your commit messages are in the proper format.
-1. Make sure all [tests](./testing.md) pass, and add any new [tests](./testing.md)
-1. Push your changes to the branch in your fork of the repository.
-   as appropriate.
+1. Make sure all [tests](./testing.md) pass, and add any new
+   [tests](./testing.md)
+1. Push your changes to the branch in your fork of the repository. as
+   appropriate.
 1. Submit a pull request to the original repository.
 
 ## Getting the source
@@ -26,8 +27,7 @@ SPDX-License-Identifier: Apache-2.0
    git clone git@github.com:my-github-user/ramen.git
    ```
 
-1. Add an `upstream` remote, to make it easy to sync your repo from
-   upstream.
+1. Add an `upstream` remote, to make it easy to sync your repo from upstream.
 
    ```sh
    git remote add upstream https://github.com/RamenDR/ramen.git
@@ -35,9 +35,8 @@ SPDX-License-Identifier: Apache-2.0
 
 1. Add the commit-msg hook to sign off your commits
 
-   *Ramen* requires a `Signed-off-by: My Name <myemail@example.com>`
-   footer in the commit message. To add it automatically to all commits,
-   add this hook:
+   *Ramen* requires a `Signed-off-by: My Name <myemail@example.com>` footer in
+   the commit message. To add it automatically to all commits, add this hook:
 
    ```sh
    cp hack/commit-msg .git/hooks/
@@ -45,9 +44,8 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Setting up the environment for development and testing
 
-To set up a *Ramen* development environment you will need to run 3
-Kubernetes clusters. *Ramen* makes this easy using minikube, but you need
-enough resources:
+To set up a *Ramen* development environment you will need to run 3 Kubernetes
+clusters. *Ramen* makes this easy using minikube, but you need enough resources:
 
 - Bare metal or virtual machine with nested virtualization enabled
 - 8 CPUs or more
@@ -58,16 +56,15 @@ enough resources:
 
 ### Create and activate python virtual environment
 
-The *Ramen* project uses python tools to create and provision test
-environment and run tests. To create a virtual environment including
-the tools run:
+The *Ramen* project uses python tools to create and provision test environment
+and run tests. To create a virtual environment including the tools run:
 
 ```sh
 make venv
 ```
 
-This creates a virtual environment in `~/.venv/ramen` and a symbolic
-link `venv` for activating the environment.
+This creates a virtual environment in `~/.venv/ramen` and a symbolic link `venv`
+for activating the environment.
 
 Activate the python virtual environment:
 
@@ -106,20 +103,20 @@ You can either deploy the *Ramen* operator using the make targets or use the
 
 - Using `ramendev`
 
-    Ensure python virtual environment is active as `ramendev` is a python tool.
+  Ensure python virtual environment is active as `ramendev` is a python tool.
 
-    - Deploy the *Ramen* operator in the environment using `ramendev`.
+  - Deploy the *Ramen* operator in the environment using `ramendev`.
 
-     ```sh
-     ramendev deploy test/envs/regional-dr.yaml
-     ```
+  ```sh
+  ramendev deploy test/envs/regional-dr.yaml
+  ```
 
-    - Ramen needs to be configured to know about the managed clusters and the s3
-   endpoints. Configure the ramen operator for environment.
+  - Ramen needs to be configured to know about the managed clusters and the s3
+    endpoints. Configure the ramen operator for environment.
 
-    ```sh
-    ramendev config test/envs/regional-dr.yaml
-    ```
+  ```sh
+  ramendev config test/envs/regional-dr.yaml
+  ```
 
 ## Testing Ramen
 

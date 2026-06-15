@@ -21,10 +21,11 @@ This document outlines the logging standards and best practices for Ramen.
 
 - Loggers should be enriched with key contextual information to make the logs
   more informative. This includes:
-    - The name of the custom resource.
-    - Then namespace of the custom resource, if applicable.
-    - The UID of the custom resource.
-    - The version of the custom resource.
+
+  - The name of the custom resource.
+  - Then namespace of the custom resource, if applicable.
+  - The UID of the custom resource.
+  - The version of the custom resource.
 
   ```go
   logger = logger.WithValues("name", req.NamespacedName.Name, "rid", instance.ObjectMeta.UID, "version", instance.ObjectMeta.ResourceVersion)
@@ -44,7 +45,8 @@ This document outlines the logging standards and best practices for Ramen.
 - Log messages should be concise yet informative. Wherever possible, use
   structured logging to provide context.
 
-- Start and end of significant operations, like reconciliation, should be logged:
+- Start and end of significant operations, like reconciliation, should be
+  logged:
 
   ```go
   logger.Info("reconcile start")
@@ -59,29 +61,30 @@ This document outlines the logging standards and best practices for Ramen.
 
 - Use key-value pairs instead of concatenating the message and data.
 
-    For example, avoid logging like this:
+  For example, avoid logging like this:
 
-    ```go
-    log.Info(fmt.Sprintf("Requeuing after %v", duration))
-    ```
+  ```go
+  log.Info(fmt.Sprintf("Requeuing after %v", duration))
+  ```
 
-    This approach logs everything as one string, making it harder to parse and filter.
+  This approach logs everything as one string, making it harder to parse and
+  filter.
 
-    Log additional information as key-value pairs. This method ensures that
-    each piece of information is logged as a separate field, making it easier
-    to search and analyze.
+  Log additional information as key-value pairs. This method ensures that each
+  piece of information is logged as a separate field, making it easier to search
+  and analyze.
 
-    Example of a well-structured log message:
+  Example of a well-structured log message:
 
-    ```go
-    s.log.Info("reconcile end", "time spent", time.Since(start))
-    ```
+  ```go
+  s.log.Info("reconcile end", "time spent", time.Since(start))
+  ```
 
-    This will log in the following format, providing clear and structured context:
+  This will log in the following format, providing clear and structured context:
 
-    ```
-    2024-01-31T14:27:12.726-0500  INFO    pvrgl   reconcile end   {"name": "protectedvrglist-0", "rid": "1e09b0fb-687b-4100-9ab1-a52ba899b37b", "rv": "322", "time spent": 6ms}
-    ```
+  ```
+  2024-01-31T14:27:12.726-0500  INFO    pvrgl   reconcile end   {"name": "protectedvrglist-0", "rid": "1e09b0fb-687b-4100-9ab1-a52ba899b37b", "rv": "322", "time spent": 6ms}
+  ```
 
 ## Debugging with Logs
 

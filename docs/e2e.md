@@ -5,13 +5,12 @@ SPDX-License-Identifier: Apache-2.0
 
 # End to End testing
 
-RamenDR end-to-end (e2e) tests validate various scenarios for regional DR
-using predefined workloads and deployment methods.
+RamenDR end-to-end (e2e) tests validate various scenarios for regional DR using
+predefined workloads and deployment methods.
 
 ## Running End to End tests
 
-> [!IMPORTANT]
-> All commands must be ran from the e2e directory.
+> [!IMPORTANT] All commands must be ran from the e2e directory.
 
 ### Preparing a `config.yaml` file
 
@@ -47,8 +46,8 @@ Create a `config.yaml` file by copying the `config.yaml.sample` template:
 cp config.yaml.sample config.yaml
 ```
 
-Update `config.yaml` by uncommenting and adding cluster kubeconfig paths
-for the hub and managed clusters.
+Update `config.yaml` by uncommenting and adding cluster kubeconfig paths for the
+hub and managed clusters.
 
 ```yaml
 Clusters:
@@ -100,8 +99,8 @@ To run all the DR tests run the TestDR test:
 The test perform a full DR flow with a tiny workload with multiple deployemnet
 methods and storage configurations.
 
-> [!TIP]
-> The tests typically complete in 10 minutes, depending the machine running the tests.
+> [!TIP] The tests typically complete in 10 minutes, depending the machine
+> running the tests.
 
 When all tests complete we will see a test summary showing the status of all
 tests and the time to complete every step:
@@ -177,8 +176,8 @@ tests:
 ```
 
 By default, the test name is generated from the configuration as
-"TestDR/{deployer}-{workload}-{pvcspec}".
-See [Running DR tests](#running-dr-tests) section for complete test list.
+"TestDR/{deployer}-{workload}-{pvcspec}". See
+[Running DR tests](#running-dr-tests) section for complete test list.
 
 #### Deployers
 
@@ -191,9 +190,9 @@ additional context about the deployer.
 #### Testing multiple applications
 
 By default, each combination of deployer, workload, and pvcSpec must be unique.
-To run multiple applications with the same configuration, add an explicit
-`name` to each test. This is useful for stress testing storage by running
-multiple applications concurrently on the same storage class.
+To run multiple applications with the same configuration, add an explicit `name`
+to each test. This is useful for stress testing storage by running multiple
+applications concurrently on the same storage class.
 
 For example, testing 4 CephFS applications concurrently using the discovered
 application deployer:
@@ -237,7 +236,8 @@ Example:
 ./run.sh -test.run TestDR/subscr-deploy-rbd
 ```
 
-This command runs the specific test for subscription based RBD busybox application.
+This command runs the specific test for subscription based RBD busybox
+application.
 
 #### Run DR tests using a specific deployer
 
@@ -273,8 +273,8 @@ tests using a specific one. Example usage:
 ### Stress testing
 
 Stress test configurations run multiple instances of the same application
-concurrently to investigate storage performance under load. This is useful
-for detecting issues like CephFS quiesce serialization during failover.
+concurrently to investigate storage performance under load. This is useful for
+detecting issues like CephFS quiesce serialization during failover.
 
 Available stress test configurations:
 

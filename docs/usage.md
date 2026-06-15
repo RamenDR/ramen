@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # Workload Management Using Ramen
 
-This guide describes how to protect and manage workloads using Ramen's
-disaster recovery capabilities.
+This guide describes how to protect and manage workloads using Ramen's disaster
+recovery capabilities.
 
 ## Overview
 
@@ -16,8 +16,8 @@ Ramen supports protecting applications across three different deployment types:
   repositories via ArgoCD ApplicationSets
 - Discovered Applications - For existing applications deployed via kubectl,
   Helm, or other methods
-- Applications with Recipes - For complex stateful applications requiring
-  custom capture/recovery workflows
+- Applications with Recipes - For complex stateful applications requiring custom
+  capture/recovery workflows
 
 All methods support the same DR operations:
 
@@ -31,15 +31,14 @@ Before protecting workloads with Ramen, ensure:
 - Ramen is installed - See [install guide](install.md)
 - Ramen is configured - See [configure guide](configure.md)
 - DRPolicy is created - Defines the DR topology and peer clusters
-- Storage replication is configured - CSI storage driver with
-  VolumeReplication support (e.g., Ceph CSI)
+- Storage replication is configured - CSI storage driver with VolumeReplication
+  support (e.g., Ceph CSI)
 - S3 object storage is available - For storing VRG and PV metadata
 
 ## Key Concepts
 
-**Note:** All Ramen resources use the API group
-`ramendr.openshift.io/v1alpha1`, which is the upstream API group for the
-Ramen project.
+**Note:** All Ramen resources use the API group `ramendr.openshift.io/v1alpha1`,
+which is the upstream API group for the Ramen project.
 
 ### DRPlacementControl (DRPC)
 
@@ -78,8 +77,8 @@ spec:
 
 ### VolumeReplicationGroup (VRG)
 
-VRGs are automatically created and managed by the DRPC on managed clusters
-to handle volume replication and application resource protection.
+VRGs are automatically created and managed by the DRPC on managed clusters to
+handle volume replication and application resource protection.
 
 ## Application Deployment Types
 
@@ -94,18 +93,21 @@ and deployment.
 1. Deploy your application via ArgoCD ApplicationSet to your clusters
 1. Create an Open Cluster Management Placement to define cluster selection
 1. Create a DRPlacementControl referencing the Placement and DRPolicy
-1. Ramen automatically protects PVCs and manages application state across clusters
+1. Ramen automatically protects PVCs and manages application state across
+   clusters
 
 **Sample Applications:**
 
-For complete examples of GitOps applications with Ramen DR protection, see
-the [applicationset directory](https://github.com/RamenDR/ocm-ramen-samples/tree/main/applicationset)
+For complete examples of GitOps applications with Ramen DR protection, see the
+[applicationset directory](https://github.com/RamenDR/ocm-ramen-samples/tree/main/applicationset)
 in the ocm-ramen-samples repository.
 
 The repository provides sample applications including:
 
-- **Deployment samples**: Busybox deployment examples with different storage configurations
-- **KubeVirt samples**: Virtual machine examples with different storage configurations
+- **Deployment samples**: Busybox deployment examples with different storage
+  configurations
+- **KubeVirt samples**: Virtual machine examples with different storage
+  configurations
 - **Complete DR setup**: DRPlacementControl examples in `dr/` directory
 
 **Example workflow:**
@@ -122,8 +124,8 @@ applications, follow the instructions in the
 
 ### Discovered Applications
 
-Protects existing applications without GitOps. Ramen discovers and captures
-all Kubernetes resources.
+Protects existing applications without GitOps. Ramen discovers and captures all
+Kubernetes resources.
 
 **Workflow:**
 
@@ -134,17 +136,18 @@ all Kubernetes resources.
 
 **Sample Applications:**
 
-For examples of discovered applications that can be deployed and protected,
-see the [workloads directory](https://github.com/RamenDR/ocm-ramen-samples/tree/main/workloads)
+For examples of discovered applications that can be deployed and protected, see
+the
+[workloads directory](https://github.com/RamenDR/ocm-ramen-samples/tree/main/workloads)
 in the ocm-ramen-samples repository.
 
 The workloads directory contains sample applications including:
 
 - **Deployment samples**: Basic containerized applications (busybox)
 - **KubeVirt VMs**: Virtual machine workloads with persistent storage
-    - vm-pvc: PVC based VM
-    - vm-dv: DataVolume based VM
-    - vm-dvt: DataVolumeTemplate based VM
+  - vm-pvc: PVC based VM
+  - vm-dv: DataVolume based VM
+  - vm-dvt: DataVolumeTemplate based VM
 
 **Example workflow:**
 
@@ -167,7 +170,8 @@ protection, follow the instructions in the
 
 ### Applications with Recipes
 
-For complex stateful applications requiring custom workflows (e.g., databases, middleware).
+For complex stateful applications requiring custom workflows (e.g., databases,
+middleware).
 
 **Use cases:**
 
@@ -340,8 +344,10 @@ Look for:
 
 ## Next Steps
 
-- For development testing: See [user-quick-start.md](user-quick-start.md)
-  to set up a test environment
-- For Recipe details: See [recipe.md](recipe.md) for advanced Recipe-based protection
-- For operational guidance: See [configure.md](configure.md) for production configuration
+- For development testing: See [user-quick-start.md](user-quick-start.md) to set
+  up a test environment
+- For Recipe details: See [recipe.md](recipe.md) for advanced Recipe-based
+  protection
+- For operational guidance: See [configure.md](configure.md) for production
+  configuration
 - For metrics: See [metrics.md](metrics.md) to monitor Ramen operations
