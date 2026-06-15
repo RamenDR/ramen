@@ -46,8 +46,7 @@ To open an HTML coverage report in the default browser run:
 make coverage
 ```
 
-The coverage report depends on the tests ran before inspecting the
-coverage.
+The coverage report depends on the tests ran before inspecting the coverage.
 
 ### Using interfaces to mock in testing
 
@@ -67,16 +66,15 @@ The end-to-end testing framework isn't implemented yet. However, we have a basic
 test that you can use to test the basic flows of Ramen. `basic-test` requires
 the python virtual environment to be activated.
 
-Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
-Before running the tests, you need to deploy a channel pointing this
-repo:
+Ramen basic test use the
+[ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples). Before
+running the tests, you need to deploy a channel pointing this repo:
 
 ```sh
 kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel?ref=main --context hub
 ```
 
-> [!NOTE]
-> To test applications from your repo, you need to deploy a channel
+> [!NOTE] To test applications from your repo, you need to deploy a channel
 > pointing to your repo.
 
 To run basic tests using regional-dr environment run:
@@ -94,8 +92,8 @@ This test does these operations:
 1. Disables DR for the application
 1. Undeploys the application
 
-If needed, you can run one or more steps form this test, for example to
-deploy and enable DR run:
+If needed, you can run one or more steps form this test, for example to deploy
+and enable DR run:
 
 ```sh
 env=$PWD/test/envs/regional-dr.yaml
@@ -103,8 +101,8 @@ test/basic-test/deploy $env
 test/basic-test/enable-dr $env
 ```
 
-At this point you can run run manually failover, relocate one or more
-times as needed:
+At this point you can run run manually failover, relocate one or more times as
+needed:
 
 ```sh
 for i in $(seq 3); do
@@ -118,5 +116,4 @@ To clean up run:
 test/basic-test/undeploy $env
 ```
 
-For more info on writing such tests see
-[test/README.md](../test/README.md).
+For more info on writing such tests see [test/README.md](../test/README.md).

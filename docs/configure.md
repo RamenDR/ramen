@@ -5,20 +5,20 @@ SPDX-License-Identifier: Apache-2.0
 
 # Configure Ramen
 
-This guide describes how to configure Ramen for disaster recovery operations after
-installing the Ramen operators. Configuration involves setting up S3 storage profiles,
-creating DRCluster resources, and establishing DRPolicy resources to define replication
-relationships.
+This guide describes how to configure Ramen for disaster recovery operations
+after installing the Ramen operators. Configuration involves setting up S3
+storage profiles, creating DRCluster resources, and establishing DRPolicy
+resources to define replication relationships.
 
 ## Prerequisites
 
-Before configuring Ramen, ensure you have completed the installation steps described
-in [install.md](install.md). You should have:
+Before configuring Ramen, ensure you have completed the installation steps
+described in [install.md](install.md). You should have:
 
-1. **OCM (Open Cluster Management)** with at least two managed clusters registered
+1. **OCM (Open Cluster Management)** with at least two managed clusters
+   registered
 1. **Ramen hub operator** installed on the OCM hub cluster
-1. **Ramen catalog** installed on each managed cluster participating
-   in DR
+1. **Ramen catalog** installed on each managed cluster participating in DR
 
 ### Gather Required Information
 
@@ -28,13 +28,15 @@ Before starting configuration, collect the following information:
 
 For each S3 bucket to replicate Ramen protected k8s resources, prepare:
 
-- **S3 endpoint URL** (e.g., `https://s3.amazonaws.com` or `https://rgw.example.com`)
+- **S3 endpoint URL** (e.g., `https://s3.amazonaws.com` or
+  `https://rgw.example.com`)
 - **S3 bucket name** (one bucket per cluster pair)
 - **S3 region** (if applicable)
 - **Access credentials**:
-    - AWS Access Key ID
-    - AWS Secret Access Key
-- **S3 profile name** (a unique name to identify this S3 configuration within Ramen)
+  - AWS Access Key ID
+  - AWS Secret Access Key
+- **S3 profile name** (a unique name to identify this S3 configuration within
+  Ramen)
 
 #### Cluster Information
 
@@ -54,8 +56,8 @@ in the Ramen hub operator ConfigMap.
 
 ### Understanding S3 Profiles
 
-Each managed cluster should have an associated S3 profile that defines where to store
-and retrieve its metadata. The S3 profile configuration includes:
+Each managed cluster should have an associated S3 profile that defines where to
+store and retrieve its metadata. The S3 profile configuration includes:
 
 - Profile name (referenced in DRCluster resources)
 - S3 endpoint, bucket, and region
@@ -95,8 +97,8 @@ kubectl get secrets -n ramen-system | grep s3secret
 
 ### Step 2: Update Ramen Hub ConfigMap
 
-The Ramen hub operator configuration is stored in the `ramen-hub-operator-config`
-ConfigMap in the `ramen-system` namespace.
+The Ramen hub operator configuration is stored in the
+`ramen-hub-operator-config` ConfigMap in the `ramen-system` namespace.
 
 #### Retrieve the current ConfigMap
 
@@ -107,8 +109,8 @@ kubectl get configmap ramen-hub-operator-config -n ramen-system -o yaml \
 
 #### Edit the ConfigMap to add S3 profiles
 
-The ConfigMap contains a `ramen_manager_config.yaml` key with the Ramen configuration.
-You need to add or update the `s3StoreProfiles` section.
+The ConfigMap contains a `ramen_manager_config.yaml` key with the Ramen
+configuration. You need to add or update the `s3StoreProfiles` section.
 
 #### Example ConfigMap structure
 
@@ -180,13 +182,14 @@ TODO: Ideally this is not required!
 kubectl get pods -n ramen-system -w
 ```
 
-Wait for the hub operator pod to reach `Running` state with `2/2` containers ready.
+Wait for the hub operator pod to reach `Running` state with `2/2` containers
+ready.
 
 ## Create DRCluster Resources
 
-`DRCluster` resources represent managed clusters participating in disaster recovery
-operations. Each managed cluster in your DR topology requires a corresponding DRCluster
-resource on the hub cluster.
+`DRCluster` resources represent managed clusters participating in disaster
+recovery operations. Each managed cluster in your DR topology requires a
+corresponding DRCluster resource on the hub cluster.
 
 ### Understanding DRCluster
 
@@ -196,8 +199,8 @@ A DRCluster resource defines:
 - **Network CIDRs** for fencing operations (Metro DR)
 - **Fencing state** for disaster scenarios
 
-**Important**: DRCluster resources are created on the **hub cluster**, not on the
-managed clusters.
+**Important**: DRCluster resources are created on the **hub cluster**, not on
+the managed clusters.
 
 ### DRCluster Specification
 
@@ -205,20 +208,20 @@ Key fields:
 
 - `s3ProfileName` (Required, Immutable): S3 profile name from Ramen config
 - `cidrs` (Optional): Network CIDRs for the managed cluster nodes
-- `clusterFence` (Optional): Fencing state (`Unfenced`, `Fenced`, `ManuallyFenced`,
-  `ManuallyUnfenced`)
+- `clusterFence` (Optional): Fencing state (`Unfenced`, `Fenced`,
+  `ManuallyFenced`, `ManuallyUnfenced`)
 
 **Note**: The `region` field is deprecated. Ramen now uses StorageClass labels
-(`ramendr.openshift.io/storageid`) to automatically discover storage relationships
-between clusters.
+(`ramendr.openshift.io/storageid`) to automatically discover storage
+relationships between clusters.
 
 ### Storage Discovery Mechanism
 
 Ramen automatically discovers whether clusters have synchronous or asynchronous
 replication relationships, based on the following conditions:
 
-- **Same StorageClass names** across the clusters, backed by the same CSI driver,
-  and
+- **Same StorageClass names** across the clusters, backed by the same CSI
+  driver, and
 - **Same `storageID`** on StorageClasses across clusters → **Metro DR** (sync
   replication), or
 - **Different `storageID`** on StorageClasses across clusters → **Regional DR**
@@ -234,9 +237,10 @@ kubectl label storageclass <storage-class-name> \
 
 **Example:**
 
-- For Metro DR, use the same `storageid` on both clusters: `storagecluster-shared-instance-1`
-- For Regional DR, use different `storageID` values: `storagecluster-instance-east`
-  and `storagecluster-instance-west`
+- For Metro DR, use the same `storageid` on both clusters:
+  `storagecluster-shared-instance-1`
+- For Regional DR, use different `storageID` values:
+  `storagecluster-instance-east` and `storagecluster-instance-west`
 
 ### Example 1: Regional DR (Async) DRClusters
 
@@ -300,7 +304,8 @@ kubectl label storageclass ocs-storagecluster-ceph-rbd \
 
 ### Example 2: Metro DR (Sync) DRClusters
 
-For synchronous replication between clusters in the same metro area sharing storage.
+For synchronous replication between clusters in the same metro area sharing
+storage.
 
 **metro-cluster-1 DRCluster:**
 
@@ -420,45 +425,47 @@ status:
 
 1. Check S3 connectivity:
 
-    ```bash
-    # View detailed conditions
-    kubectl describe drcluster east-cluster
-    ```
+   ```bash
+   # View detailed conditions
+   kubectl describe drcluster east-cluster
+   ```
 
 1. Verify S3 profile configuration:
 
-    ```bash
-    kubectl get configmap ramen-hub-operator-config -n ramen-system -o yaml
-    ```
+   ```bash
+   kubectl get configmap ramen-hub-operator-config -n ramen-system -o yaml
+   ```
 
 1. Check S3 secrets exist:
 
-    ```bash
-    kubectl get secret s3secret-east-cluster -n ramen-system
-    ```
+   ```bash
+   kubectl get secret s3secret-east-cluster -n ramen-system
+   ```
 
 1. Review hub operator logs:
 
-    ```bash
-    kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager --tail=100
-    ```
+   ```bash
+   kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager --tail=100
+   ```
 
 1. Verify managed cluster is reachable:
 
-    ```bash
-    kubectl get managedcluster east-cluster
-    ```
+   ```bash
+   kubectl get managedcluster east-cluster
+   ```
 
-For more troubleshooting information, see [DRCluster-CRD.md](DRCluster-CRD.md#troubleshooting).
+For more troubleshooting information, see
+[DRCluster-CRD.md](DRCluster-CRD.md#troubleshooting).
 
 ### What Happens After DRCluster Creation
 
 When you create a DRCluster resource, the Ramen hub operator:
 
 1. Validates the S3 profile configuration and tests connectivity
-1. Deploys DR components to the managed cluster via ManifestWork (if deployment automation
-   is enabled)
-1. Creates a DRClusterConfig resource on the managed cluster containing cluster identification
+1. Deploys DR components to the managed cluster via ManifestWork (if deployment
+   automation is enabled)
+1. Creates a DRClusterConfig resource on the managed cluster containing cluster
+   identification
 1. Monitors cluster health and updates status conditions
 1. Prepares for fencing operations by tracking network CIDRs
 
@@ -466,9 +473,10 @@ The DRCluster resource is now ready to be referenced in DRPolicy resources.
 
 ## Create a DRPolicy Using the DRClusters
 
-`DRPolicy` resources define the disaster recovery topology and replication configuration
-between two managed clusters. A DRPolicy establishes the DR relationship and determines
-whether to use synchronous (Metro DR) or asynchronous (Regional DR) replication.
+`DRPolicy` resources define the disaster recovery topology and replication
+configuration between two managed clusters. A DRPolicy establishes the DR
+relationship and determines whether to use synchronous (Metro DR) or
+asynchronous (Regional DR) replication.
 
 ### Understanding DRPolicy
 
@@ -485,12 +493,12 @@ Key fields:
 
 - `drClusters` (Required, Immutable): List of exactly two cluster names
 - `schedulingInterval` (Optional, Immutable): Replication frequency
-    - Empty string `""` = Sync (Metro DR)
-    - Non-empty (e.g., `5m`, `1h`) = Async (Regional DR)
-- `replicationClassSelector` (Optional): Label selector for VolumeReplicationClass
-  (async DR)
-- `volumeSnapshotClassSelector` (Optional): Label selector for VolumeSnapshotClass
-  (sync DR)
+  - Empty string `""` = Sync (Metro DR)
+  - Non-empty (e.g., `5m`, `1h`) = Async (Regional DR)
+- `replicationClassSelector` (Optional): Label selector for
+  VolumeReplicationClass (async DR)
+- `volumeSnapshotClassSelector` (Optional): Label selector for
+  VolumeSnapshotClass (sync DR)
 
 ### Example 1: Regional DR (Async) Policy
 
@@ -654,18 +662,19 @@ kubectl get drpolicy metro-dr-policy -o jsonpath='{.status.sync.peerClasses}' | 
 
 - `storageClassName`: The common StorageClass name available on both clusters
 - `storageID`: Storage identifier(s)
-    - Single value (same ID) = Sync replication (Metro DR)
-    - Multiple values (different IDs) = Async replication (Regional DR)
+  - Single value (same ID) = Sync replication (Metro DR)
+  - Multiple values (different IDs) = Async replication (Regional DR)
 - `replicationID`: Replication backend identifier
 - `clusterIDs`: Kubernetes cluster UIDs (from `kube-system` namespace)
 
-**Important**: Only PVCs using StorageClasses that appear in the `peerClasses` list
-will be protected by Ramen. If no PeerClasses are discovered, check your StorageClass
-labels.
+**Important**: Only PVCs using StorageClasses that appear in the `peerClasses`
+list will be protected by Ramen. If no PeerClasses are discovered, check your
+StorageClass labels.
 
 #### Verify StorageClass Labels
 
-If no PeerClasses are discovered, verify StorageClass labels on the managed clusters:
+If no PeerClasses are discovered, verify StorageClass labels on the managed
+clusters:
 
 ```bash
 # On each managed cluster
@@ -674,7 +683,8 @@ kubectl get storageclass -o yaml | grep -A 5 "ramendr.openshift.io"
 
 **Required labels:**
 
-- `ramendr.openshift.io/storageID`: Must be present and consistent with your DR topology
+- `ramendr.openshift.io/storageID`: Must be present and consistent with your DR
+  topology
 - `ramendr.openshift.io/replicationID`: Should match across peer clusters
 
 **Add missing labels:**
@@ -700,28 +710,28 @@ kubectl label storageclass <storage-class-name> \
 
 1. Check DRCluster resources exist and are validated:
 
-    ```bash
-    kubectl get drcluster
-    ```
+   ```bash
+   kubectl get drcluster
+   ```
 
 1. Verify managed clusters are available:
 
-    ```bash
-    kubectl get managedclusters
-    ```
+   ```bash
+   kubectl get managedclusters
+   ```
 
 1. Check for proper StorageClass labels:
 
-    ```bash
-    # On each managed cluster
-    kubectl get sc -o yaml | grep "ramendr.openshift.io"
-    ```
+   ```bash
+   # On each managed cluster
+   kubectl get sc -o yaml | grep "ramendr.openshift.io"
+   ```
 
 1. Review Ramen hub operator logs:
 
-    ```bash
-    kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager | grep -i drpolicy
-    ```
+   ```bash
+   kubectl logs -n ramen-system deployment/ramen-hub-operator -c manager | grep -i drpolicy
+   ```
 
 **No PeerClasses discovered:**
 
@@ -729,17 +739,20 @@ kubectl label storageclass <storage-class-name> \
 - Verify VolumeReplicationClass or VolumeSnapshotClass exists with proper labels
 - Check that storage replication is configured between clusters
 
-For additional troubleshooting, see [drpolicy-crd.md](drpolicy-crd.md#troubleshooting).
+For additional troubleshooting, see
+[drpolicy-crd.md](drpolicy-crd.md#troubleshooting).
 
 ## Next Steps
 
-After successfully configuring Ramen with DRCluster and DRPolicy resources, you can:
+After successfully configuring Ramen with DRCluster and DRPolicy resources, you
+can:
 
-1. Protect your first workload - See [usage.md](usage.md) for detailed instructions
-   on creating DRPlacementControl resources
+1. Protect your first workload - See [usage.md](usage.md) for detailed
+   instructions on creating DRPlacementControl resources
 1. Test DR operations - Perform test failovers and relocations
 1. Monitor DR status - Set up monitoring and alerting for DR resources
-1. Explore advanced features - Learn about Recipe-based protection and custom hooks
+1. Explore advanced features - Learn about Recipe-based protection and custom
+   hooks
 
 ### Additional Configuration
 
@@ -750,14 +763,16 @@ Depending on your use case, you may want to configure:
 - Recipe CRD for recipe-based workload protection
 - Cluster fencing for Metro DR scenarios
   ([DRCluster-CRD.md](DRCluster-CRD.md#cluster-fencing))
-- Maintenance modes for Regional DR ([maintenancemode-crd.md](maintenancemode-crd.md))
+- Maintenance modes for Regional DR
+  ([maintenancemode-crd.md](maintenancemode-crd.md))
 
 ### Quick Reference
 
 **Key resources created:**
 
 - **S3 Secrets** (hub cluster, `ramen-system` namespace): Store S3 credentials
-- **ConfigMap** (hub cluster, `ramen-system` namespace): Contains S3 profile configuration
+- **ConfigMap** (hub cluster, `ramen-system` namespace): Contains S3 profile
+  configuration
 - **DRCluster** (hub cluster, cluster-scoped): One per managed cluster
 - **DRPolicy** (hub cluster, cluster-scoped): One per cluster pair
 

@@ -10,8 +10,8 @@ security flaw that's been assigned a CVE ID number.
 
 ### Checking if a CVE applies to Ramen
 
-**Note**: Ramen has two go modules, one for the main project and another for
-the api. You need to perform the check below for both the modules.
+**Note**: Ramen has two go modules, one for the main project and another for the
+api. You need to perform the check below for both the modules.
 
 When a CVE is filed on a direct or an indirect dependency of Ramen, you will
 first have to check if it applies to a particular branch. Some of the CVE
@@ -34,31 +34,31 @@ Here is an example of the command for three different scenarios
    controllers package makes use of the time module and specifically the rate
    package in it.
 
-    ```
-    $ go mod why -m golang.org/x/time
-    # golang.org/x/time
-    github.com/ramendr/ramen/internal/controller
-    golang.org/x/time/rate
-    ```
+   ```
+   $ go mod why -m golang.org/x/time
+   # golang.org/x/time
+   github.com/ramendr/ramen/internal/controller
+   golang.org/x/time/rate
+   ```
 
 1. When the module is an indirect dependency
 
-    ```
-    $ go mod why -m github.com/go-logr/zapr
-    # github.com/go-logr/zapr
-    github.com/ramendr/ramen
-    sigs.k8s.io/controller-runtime/pkg/log/zap
-    github.com/go-logr/zapr
-    ```
+   ```
+   $ go mod why -m github.com/go-logr/zapr
+   # github.com/go-logr/zapr
+   github.com/ramendr/ramen
+   sigs.k8s.io/controller-runtime/pkg/log/zap
+   github.com/go-logr/zapr
+   ```
 
 1. When a module isn't used by Ramen directly or indirectly. If a module isn't
    used by Ramen then you can ignore the CVE.
 
-    ```
-    $ go mod why -m github.com/open-telemetry/opentelemetry-go-contrib
-    # github.com/open-telemetry/opentelemetry-go-contrib
-    (main module does not need module github.com/open-telemetry/opentelemetry-go-contrib)
-    ```
+   ```
+   $ go mod why -m github.com/open-telemetry/opentelemetry-go-contrib
+   # github.com/open-telemetry/opentelemetry-go-contrib
+   (main module does not need module github.com/open-telemetry/opentelemetry-go-contrib)
+   ```
 
 ## Fixing the CVEs by updating the packages
 
@@ -66,17 +66,16 @@ Here is an example of the command for three different scenarios
    version of the module to the one that fixes the CVE is sufficient.
 
 1. When a module is an indirect dependency, you will have to determine if the
-   module which brings in the transitive dependency has a fix for the CVE. If
-   it does, you can update the version of the module to the one that fixes the
-   CVE using `go get`. If it doesn't, you will have to wait for the module to
-   update the version of the transitive dependency or you can use a replace
-   directive in the go.mod file to update the version of the transitive
-   dependency.
+   module which brings in the transitive dependency has a fix for the CVE. If it
+   does, you can update the version of the module to the one that fixes the CVE
+   using `go get`. If it doesn't, you will have to wait for the module to update
+   the version of the transitive dependency or you can use a replace directive
+   in the go.mod file to update the version of the transitive dependency.
 
 ## CVEs filed on Golang
 
-When a CVE is filed against Golang, you need to
-check both the upstream Ramen repository and the downstream container images.
+When a CVE is filed against Golang, you need to check both the upstream Ramen
+repository and the downstream container images.
 
 ### Checking the upstream Ramen repository
 
@@ -85,8 +84,8 @@ the Ramen repository. Downstream builds use a different Dockerfile and build
 process, so this method does not apply to downstream images.
 
 The relevant Go version for CVE checking is the one used to build the Ramen
-container image, not the `go.mod` compatibility version. Check the Dockerfile
-to see which Go version is used:
+container image, not the `go.mod` compatibility version. Check the Dockerfile to
+see which Go version is used:
 
 ```bash
 grep "FROM.*golang" Dockerfile
@@ -114,8 +113,8 @@ determine if the upstream code is vulnerable.
 
 #### Step 1: Identify the downstream image
 
-For ODF (OpenShift Data Foundation) builds, the downstream Ramen operator
-images are typically located at:
+For ODF (OpenShift Data Foundation) builds, the downstream Ramen operator images
+are typically located at:
 
 ```
 quay.io/rhceph-dev/odf4-odr-rhel9-operator:<version>
@@ -160,5 +159,5 @@ CVE fix versions:
 
 1. Check the CVE announcement for which Go versions include the fix
 1. Note that Red Hat's Go builds may include backported security fixes
-1. Go versions from Red Hat (indicated by "Red Hat" in the version string)
-   often have security patches backported to older minor versions
+1. Go versions from Red Hat (indicated by "Red Hat" in the version string) often
+   have security patches backported to older minor versions

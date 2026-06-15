@@ -7,8 +7,8 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Overview
 
-The **DRPlacementControl** (DRPC) custom resource is the primary interface
-for protecting and managing applications with disaster recovery capabilities.
+The **DRPlacementControl** (DRPC) custom resource is the primary interface for
+protecting and managing applications with disaster recovery capabilities.
 Created by users in the application namespace on the OCM hub cluster, it
 orchestrates:
 
@@ -53,8 +53,8 @@ placementRef:
   name: my-app-placement
 ```
 
-**How it works:** DRPC modifies the Placement decisions to control which
-cluster runs the application during DR operations.
+**How it works:** DRPC modifies the Placement decisions to control which cluster
+runs the application during DR operations.
 
 #### `drPolicyRef` (v1.ObjectReference)
 
@@ -76,7 +76,8 @@ drPolicyRef:
 
 #### `pvcSelector` (metav1.LabelSelector)
 
-Label selector to identify which PVCs in the application namespace need DR protection.
+Label selector to identify which PVCs in the application namespace need DR
+protection.
 
 **Requirements:**
 
@@ -92,8 +93,8 @@ pvcSelector:
     protect: "true"
 ```
 
-**Best practice:** Use specific labels to avoid protecting unwanted PVCs
-(e.g., cache volumes).
+**Best practice:** Use specific labels to avoid protecting unwanted PVCs (e.g.,
+cache volumes).
 
 ### Optional Fields
 
@@ -103,8 +104,8 @@ The cluster name where the application should run and return to after relocate.
 
 **Behavior:**
 
-- If set, application deploys to this cluster, if not already deployed or deployed
-  elsewhere
+- If set, application deploys to this cluster, if not already deployed or
+  deployed elsewhere
 - During relocate, application returns to this cluster
 - Can be changed to relocate application
 
@@ -127,8 +128,8 @@ failoverCluster: west-cluster
 action: Failover
 ```
 
-**Note:** For relocate operations, change `preferredCluster` instead and `action`
-to `Relocate`
+**Note:** For relocate operations, change `preferredCluster` instead and
+`action` to `Relocate`
 
 #### `action` (DRAction)
 
@@ -137,7 +138,8 @@ The DR action to perform: `Failover` or `Relocate`.
 **Valid values:**
 
 - `Failover` - Recover application on `failoverCluster` (assumes source is down)
-- `Relocate` - Migrate/Relocate application to target cluster (planned operation)
+- `Relocate` - Migrate/Relocate application to target cluster (planned
+  operation)
 
 **Example:**
 
@@ -155,7 +157,8 @@ preferredCluster: east-cluster
 
 #### `protectedNamespaces` ([]string)
 
-List of namespaces to protect when DRPC is created in the RamenOpsNamespace namespace.
+List of namespaces to protect when DRPC is created in the RamenOpsNamespace
+namespace.
 
 **Requirements:**
 
@@ -180,12 +183,11 @@ Configuration for protecting Kubernetes resources (not just PVCs).
 
 **Fields:**
 
-- `captureInterval` (metav1.Duration) - How often to capture Kubernetes
-  objects (default: 5m)
+- `captureInterval` (metav1.Duration) - How often to capture Kubernetes objects
+  (default: 5m)
 - `recipeRef` (RecipeRef) - Reference to Recipe for custom workflows
 - `recipeParameters` (map[string][]string) - Parameters for Recipe
-- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to
-  protect
+- `kubeObjectSelector` (metav1.LabelSelector) - Selector for objects to protect
 
 **Example:**
 
@@ -632,8 +634,8 @@ kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
 kubectl get pods -n myapp --context west-cluster
 ```
 
-**Common causes:** Storage fencing in progress, application pods not ready,
-or S3 storage not accessible.
+**Common causes:** Storage fencing in progress, application pods not ready, or
+S3 storage not accessible.
 
 **Solution:** Wait for fencing to complete (normal for Metro DR), fix
 application issues (image pull, resources), or verify S3 connectivity.
@@ -647,11 +649,10 @@ kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.progression}'
 kubectl get drpc myapp-drpc -n myapp -o jsonpath='{.status.lastGroupSyncBytes}'
 ```
 
-**Common causes:** Large data sync in progress or source cluster not
-accessible.
+**Common causes:** Large data sync in progress or source cluster not accessible.
 
-**Solution:** Wait for final sync to complete. If source cluster is down,
-use Failover instead of Relocate.
+**Solution:** Wait for final sync to complete. If source cluster is down, use
+Failover instead of Relocate.
 
 ### PeerReady Condition False
 
@@ -695,25 +696,24 @@ finalizers (use with caution).
 
 1. **Test failover** - Perform planned failover tests before actual disasters
 
-1. **Document procedures** - Create runbooks for DR operations specific to
-   your apps
+1. **Document procedures** - Create runbooks for DR operations specific to your
+   apps
 
 1. **Use GitOps when possible** - For easier application recreation
 
 1. **Set appropriate capture intervals** - Balance protection vs. overhead
-    - Critical apps: 5m
-    - Standard apps: 15m to 30m
-    - Low-priority: 1h
 
-1. **Verify peer readiness** - Check `PeerReady` condition before triggering
-   DR
+   - Critical apps: 5m
+   - Standard apps: 15m to 30m
+   - Low-priority: 1h
+
+1. **Verify peer readiness** - Check `PeerReady` condition before triggering DR
 
 1. **Clean up after testing** - Remove DRPCs for apps that don't need DR
 
 ## Related Resources
 
 - [DRPolicy CRD](drpolicy-crd.md) - Defines DR topology referenced by DRPC
-- [VolumeReplicationGroup CRD](vrg-crd.md) - Created by DRPC on managed
-  clusters
+- [VolumeReplicationGroup CRD](vrg-crd.md) - Created by DRPC on managed clusters
 - [Usage Guide](usage.md) - How to protect workloads with Ramen
 - [Recipe Documentation](recipe.md) - For Recipe-based protection

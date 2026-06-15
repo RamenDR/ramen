@@ -26,8 +26,8 @@ bash /tmp/netdata-kickstart.sh --no-updates --stable-channel
 
 ## Configuring netdata
 
-For stress testing, configure Netdata to use minimal resources and store
-data on disk (persists across restarts, uses less memory).
+For stress testing, configure Netdata to use minimal resources and store data on
+disk (persists across restarts, uses less memory).
 
 Edit `/opt/homebrew/etc/netdata/netdata.conf` (macOS) or
 `/etc/netdata/netdata.conf` (Linux):
@@ -89,8 +89,8 @@ sudo systemctl stop netdata
 
 ## Remote access (Linux)
 
-By default Netdata listens on localhost only. To access it from another
-machine, configure it to listen on all interfaces.
+By default Netdata listens on localhost only. To access it from another machine,
+configure it to listen on all interfaces.
 
 Edit `/etc/netdata/netdata.conf`:
 

@@ -76,8 +76,7 @@ environment.
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0.
-   Version v0.21.2 or later is required.
+   Tested with version v0.22.0. Version v0.21.2 or later is required.
 
 1. Install the `velero` tool
 
@@ -150,7 +149,8 @@ environment.
    argocd version --client
    ```
 
-   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+   For more info see
+   [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
 
 1. Install the `kubectl-gather` plugin
 
@@ -162,13 +162,12 @@ environment.
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.11.0 or later is required.
-   For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
+   kubectl-gather version 0.11.0 or later is required. For more info see
+   [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ## Setup on macOS 26+
 
-> [!IMPORTANT]
-> Older macOS are not supported.
+> [!IMPORTANT] Older macOS are not supported.
 
 1. Install the [Homebrew package manager](https://brew.sh/)
 
@@ -190,7 +189,8 @@ environment.
        virtctl
    ```
 
-   **NOTE**: minikube version 1.38.0 or later is required, latest version is recommended.
+   **NOTE**: minikube version 1.38.0 or later is required, latest version is
+   recommended.
 
 1. Install `vmnet-helper`
 
@@ -222,8 +222,7 @@ environment.
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0.
-   Version v0.21.2 or later is required.
+   Tested with version v0.22.0. Version v0.21.2 or later is required.
 
 1. Install the `kubectl-gather` plugin
 
@@ -235,8 +234,8 @@ environment.
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.11.0 or later is required.
-   For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
+   kubectl-gather version 0.11.0 or later is required. For more info see
+   [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ### Migrating from lima
 
@@ -272,15 +271,14 @@ scripts/drenv-selftest
 
 ## Using the drenv tool
 
-Before running the `drenv` tool you need to activate the virtual
-environment:
+Before running the `drenv` tool you need to activate the virtual environment:
 
 ```
 source venv
 ```
 
-The shell prompt will change to reflect that the `ramen` virtual
-environment is active:
+The shell prompt will change to reflect that the `ramen` virtual environment is
+active:
 
 ```
 (ramen) [user@host ramen]$
@@ -292,8 +290,8 @@ Change directory to the test directory:
 cd test
 ```
 
-To set up the host for running specific drenv environment file,
-run once before starting any environment:
+To set up the host for running specific drenv environment file, run once before
+starting any environment:
 
 ```
 drenv setup envs/regional-dr.yaml
@@ -325,9 +323,9 @@ To inspect a processed environment file:
 drenv dump envs/example.yaml
 ```
 
-Dumping the file shows how drenv binds templates, expands addons
-arguments, name workers, and applies default values. This can be useful
-to debugging drenv or when writing a new environment file.
+Dumping the file shows how drenv binds templates, expands addons arguments, name
+workers, and applies default values. This can be useful to debugging drenv or
+when writing a new environment file.
 
 To see all available commands:
 
@@ -358,16 +356,15 @@ This should not be needed.
 ## Configuring drenv
 
 drenv can be configured using an optional configuration file at
-`~/.config/drenv/config.yaml`. If the file does not exist, default
-values are used.
+`~/.config/drenv/config.yaml`. If the file does not exist, default values are
+used.
 
 ### Available options
 
-- `registry_host`: The hostname or IP address of the registry cache,
-  as reachable from inside minikube VMs. The default value
-  `host.minikube.internal` works for minikube VMs using podman machine.
-  Override this if you use a different VM setup (e.g. external VMs on
-  vmnet-shared).
+- `registry_host`: The hostname or IP address of the registry cache, as
+  reachable from inside minikube VMs. The default value `host.minikube.internal`
+  works for minikube VMs using podman machine. Override this if you use a
+  different VM setup (e.g. external VMs on vmnet-shared).
 
 ### Example configuration
 
@@ -377,8 +374,8 @@ registry_host: "192.168.105.2"
 
 ## Caching resources
 
-If you run the drenv tool with a flaky network you can improve
-reliability of starting the environment by caching resources.
+If you run the drenv tool with a flaky network you can improve reliability of
+starting the environment by caching resources.
 
 To cache resources for the `regional-dr.yaml` environment run:
 
@@ -386,9 +383,9 @@ To cache resources for the `regional-dr.yaml` environment run:
 drenv cache envs/regional-dr.yaml
 ```
 
-The cache expires in 2 days. To refresh the cache daily, you can install
-a cron job to run `scripts/refresh-cache` daily as the user used to run
-the environment.
+The cache expires in 2 days. To refresh the cache daily, you can install a cron
+job to run `scripts/refresh-cache` daily as the user used to run the
+environment.
 
 See the `scripts/refresh-cache.crontab` for example user crontab.
 
@@ -400,8 +397,8 @@ drenv clear
 
 ## Caching container images
 
-We use use local registry cache to cache container images. To check the
-cache stats you can use:
+We use use local registry cache to cache container images. To check the cache
+stats you can use:
 
 ```
 drenv registry-cache stats
@@ -411,8 +408,8 @@ See [`registry-cache/README.md`](registry-cache/README.md) for more details.
 
 ## The environment file
 
-To create an environment you need an yaml file describing the
-clusters and how to deploy them.
+To create an environment you need an yaml file describing the clusters and how
+to deploy them.
 
 ### Example environment file
 
@@ -434,14 +431,14 @@ profiles:
 
 ### Experimenting with the example environment
 
-You can play with the example environment to understand how the `drenv`
-tool works and how to write addons.
+You can play with the example environment to understand how the `drenv` tool
+works and how to write addons.
 
 #### Starting the example environment
 
-Starting the environment create 2 minikube clusters, deploy example
-deployment on every clusters, and finally run a self test verifying that
-the deployment is available on both clusters.
+Starting the environment create 2 minikube clusters, deploy example deployment
+on every clusters, and finally run a self test verifying that the deployment is
+available on both clusters.
 
 ```
 $ drenv start envs/example.yaml
@@ -493,9 +490,8 @@ Tue Jan  3 21:21:20 UTC 2023
 
 #### Isolating environments with --name-prefix
 
-To run multiple instances of the same environment, or multiple
-environments using the same profile names, use unique `--name-prefix`
-for each run.
+To run multiple instances of the same environment, or multiple environments
+using the same profile names, use unique `--name-prefix` for each run.
 
 Start first instance:
 
@@ -582,9 +578,8 @@ $ example/test ex1
 
 #### Starting a started environment
 
-If something failed while starting, or we change the scripts, we can run
-start again. This can be faster then creating the environment from
-scratch.
+If something failed while starting, or we change the scripts, we can run start
+again. This can be faster then creating the environment from scratch.
 
 ```
 $ drenv start envs/example.yaml
@@ -681,9 +676,8 @@ $ cat drenv.log
 
 #### Stopping the environment
 
-We can stop the environment, for example if we need to reboot the host,
-or don't have enough resources to run multiple environment at the same
-time.
+We can stop the environment, for example if we need to reboot the host, or don't
+have enough resources to run multiple environment at the same time.
 
 ```
 $ drenv stop envs/example.yaml
@@ -695,13 +689,13 @@ $ drenv stop envs/example.yaml
 2023-01-03 23:43:14,033 INFO    [example] Environment stopped in 4.86 seconds
 ```
 
-We can start the environment later. This can be faster than recreating
-it from scratch.
+We can start the environment later. This can be faster than recreating it from
+scratch.
 
 #### Deleting the environment
 
-To delete the environment including the VM disks and dropping all
-changes made to the environment:
+To delete the environment including the VM disks and dropping all changes made
+to the environment:
 
 ```
 $ drenv delete envs/example.yaml
@@ -716,81 +710,81 @@ $ drenv delete envs/example.yaml
 ### The environment file format
 
 - `templates`: templates for creating new profiles.
-    - `name`: profile name.
-    - `provider`: cluster provider. The default provider is "minikube",
-      creating cluster using VM or containers.  Use "external" to use
-      exsiting clusters not managed by `drenv`. Use the special value
-      "$provider" to select the best provider for the host. (default
-      "$provider")
-    - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
-      docker for VMs and containers. On MacOS, the defaults are hyperkit and
-      podman. Use "$vm" and "$container" values to use the recommended VM and
-      container drivers for the platform.
-    - `container_runtime`: The container runtime to be used. Valid
-      options: "docker", "cri-o", "containerd" (default: "containerd")
-    - `network`: The network to run minikube with. If left empty, the behavior
-      is same as that of minikube for the platform. Use
-      "$network" value to use the recommended network configuration
-      for the platform.
-    - `extra_disks`: Number of extra disks (default 0)
-    - `disk_size`: Disk size string (default "50g")
-    - `nodes`: Number of cluster nodes (default 1)
-    - `cni`: Network plugin (default "auto")
-    - `cpus`: Number of CPUs per VM (default 2)
-    - `memory`: Memory per VM (default 4g)
-    - `addons`: List of minikube addons to install
-    - `service_cluster_ip_range`: The CIDR to be used for service
-      cluster IPs.
-    - `extra_config`: List of extra config key=value. Each item adds
-      `--extra-config` minikube option. See `minikube start --help` to
-      see the possible keys and values.
-    - `feature_gates`: List of Kubernetes feature gates key=value. Each
-      item adds `--feature-gates` minikube option. See
-      [Feature Gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
-      for possible keys and values.
-    - `containerd`: Optional containerd configuration object. See
-      `containerd config default` for available options.
-    - `workers`: Optional list of workers to run when starting a
-      profile. Use multiple workers to run scripts in parallel.
-        - `name`: Optional worker name
-        - `addons`: Addons to deploy by this worker.
-            - `name`: Addon directory
-            - `args`: Optional argument to addon hooks. If not specified
-              the hooks are run with one argument, the profile name.
 
-- `profiles`: List of profile managed by the environment. Any template
-   key is valid in the profile, overriding the same key from the template.
-    - `template`: The template to create this profile from.
-
-- `workers`: Optional list of workers for deploying addons after all
-  profile are started.
+  - `name`: profile name.
+  - `provider`: cluster provider. The default provider is "minikube", creating
+    cluster using VM or containers. Use "external" to use exsiting clusters not
+    managed by `drenv`. Use the special value "$provider" to select the best
+    provider for the host. (default "$provider")
+  - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
+    docker for VMs and containers. On MacOS, the defaults are hyperkit and
+    podman. Use "$vm" and "$container" values to use the recommended VM and
+    container drivers for the platform.
+  - `container_runtime`: The container runtime to be used. Valid options:
+    "docker", "cri-o", "containerd" (default: "containerd")
+  - `network`: The network to run minikube with. If left empty, the behavior is
+    same as that of minikube for the platform. Use "$network" value to use the
+    recommended network configuration for the platform.
+  - `extra_disks`: Number of extra disks (default 0)
+  - `disk_size`: Disk size string (default "50g")
+  - `nodes`: Number of cluster nodes (default 1)
+  - `cni`: Network plugin (default "auto")
+  - `cpus`: Number of CPUs per VM (default 2)
+  - `memory`: Memory per VM (default 4g)
+  - `addons`: List of minikube addons to install
+  - `service_cluster_ip_range`: The CIDR to be used for service cluster IPs.
+  - `extra_config`: List of extra config key=value. Each item adds
+    `--extra-config` minikube option. See `minikube start --help` to see the
+    possible keys and values.
+  - `feature_gates`: List of Kubernetes feature gates key=value. Each item adds
+    `--feature-gates` minikube option. See
+    [Feature Gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
+    for possible keys and values.
+  - `containerd`: Optional containerd configuration object. See
+    `containerd config default` for available options.
+  - `workers`: Optional list of workers to run when starting a profile. Use
+    multiple workers to run scripts in parallel.
     - `name`: Optional worker name
-    - `addons`: Addons to deploy by this worker
-        - `name`: Addon directory
-        - `args`: Optional argument to the addon hooks. If not specified
-          the hooks are run without any arguments.
+    - `addons`: Addons to deploy by this worker.
+      - `name`: Addon directory
+      - `args`: Optional argument to addon hooks. If not specified the hooks are
+        run with one argument, the profile name.
+
+- `profiles`: List of profile managed by the environment. Any template key is
+  valid in the profile, overriding the same key from the template.
+
+  - `template`: The template to create this profile from.
+
+- `workers`: Optional list of workers for deploying addons after all profile are
+  started.
+
+  - `name`: Optional worker name
+  - `addons`: Addons to deploy by this worker
+    - `name`: Addon directory
+    - `args`: Optional argument to the addon hooks. If not specified the hooks
+      are run without any arguments.
 
 #### Addon hooks
 
-The addon directory may contain hooks to be run on certain events, based
-on the hook file name.
+The addon directory may contain hooks to be run on certain events, based on the
+hook file name.
 
-| Event        | Hooks         | Comment                             |
-|--------------|---------------|-------------------------------------|
-| start        | start, test   | after cluster was started           |
-| stop         | stop          | before cluster is stopped           |
-| delete       | -             |                                     |
+| Event  | Hooks       | Comment                   |
+| ------ | ----------- | ------------------------- |
+| start  | start, test | after cluster was started |
+| stop   | stop        | before cluster is stopped |
+| delete | -           |                           |
 
-The `start` and `test` hooks are not allowed to fail. If a hook fail,
-execution stops and the entire command will fail.
+The `start` and `test` hooks are not allowed to fail. If a hook fail, execution
+stops and the entire command will fail.
 
-The `stop` hook is allowed to fail. The failure is logged but the
-`stop` command will not fail.
+The `stop` hook is allowed to fail. The failure is logged but the `stop` command
+will not fail.
 
 #### Addon arguments
 
-When specifying addon `args`, you can use the special variable `$name`.
-This will be replaced with the profile name.
+When specifying addon `args`, you can use the special variable `$name`. This
+will be replaced with the profile name.
 
 Example yaml:
 
@@ -812,9 +806,9 @@ my-addon/test cluster1 arg2
 
 #### Hook working directory
 
-Hook should not assume the current working directory. To make the hook
-runnable from any directory the hook can change the current working
-directory to the hook directory:
+Hook should not assume the current working directory. To make the hook runnable
+from any directory the hook can change the current working directory to the hook
+directory:
 
 ```python
 import os
@@ -822,8 +816,8 @@ import os
 os.chdir(os.path.dirname(__file__))
 ```
 
-Now you can run the hook from any directory, and the hook can use
-relative path for resources in the same directory:
+Now you can run the hook from any directory, and the hook can use relative path
+for resources in the same directory:
 
 ```python
 kubectl.apply("--filename=deployment.yaml", context=cluster)
@@ -831,8 +825,8 @@ kubectl.apply("--filename=deployment.yaml", context=cluster)
 
 #### containerd options
 
-To configure containerd you can add a configuration object matching
-containerd toml structure.
+To configure containerd you can add a configuration object matching containerd
+toml structure.
 
 For example to enable this option containerd toml:
 
@@ -851,8 +845,8 @@ containerd:
       device_ownership_from_security_context: true
 ```
 
-When set, contained configuration is merged into the current
-configuration in `/etc/containerd/config.toml` in the node.
+When set, contained configuration is merged into the current configuration in
+`/etc/containerd/config.toml` in the node.
 
 ## Environment files
 
@@ -860,23 +854,22 @@ The environments files are located in the `envs` directory.
 
 ### Ramen testing environments
 
-- `regional-dr.yaml` - for testing regional DR using a hub cluster and 2
-  managed clusters with Ceph storage.
+- `regional-dr.yaml` - for testing regional DR using a hub cluster and 2 managed
+  clusters with Ceph storage.
 
-- `regional-dr-hubless.yaml` - for testing regional DR using a setup
-  without a hub.
+- `regional-dr-hubless.yaml` - for testing regional DR using a setup without a
+  hub.
 
-- `regional-dr-kubevirt.yaml` - for testing regional DR for kubevirt
-  workloads.
+- `regional-dr-kubevirt.yaml` - for testing regional DR for kubevirt workloads.
 
 - `regional-dr-external.yaml.example` - A starting point for creating
-   environment for testing regional DR using with external storage.
+  environment for testing regional DR using with external storage.
 
 ### drenv development environments
 
-These environments are useful for developing the `drenv` tool and
-scripts. When debugging an issue or adding a new component, it is much
-simpler and faster to work with a minimal environment.
+These environments are useful for developing the `drenv` tool and scripts. When
+debugging an issue or adding a new component, it is much simpler and faster to
+work with a minimal environment.
 
 - `vm.yaml` - for testing `drenv` with the $vm driver
 - `container.yaml` - for testing `drenv` with the $container driver
@@ -903,8 +896,7 @@ The tests requires a small test cluster. To create it use:
 make cluster
 ```
 
-This starts the `drenv-test-cluster` minikube profile using the kvm2
-driver.
+This starts the `drenv-test-cluster` minikube profile using the kvm2 driver.
 
 To delete the test cluster run:
 
@@ -940,8 +932,8 @@ make black-reformat
 
 ## Writing environment tests
 
-The `drenv` python package provides a `test` helper module to make
-writing good environment test easy.
+The `drenv` python package provides a `test` helper module to make writing good
+environment test easy.
 
 To create a new test, create a new directory in the test directory:
 
@@ -949,8 +941,8 @@ To create a new test, create a new directory in the test directory:
 mkdir my-test
 ```
 
-The directory can have one or more scripts as needed. The simplest test
-will have only a `run` script, and a configuration file:
+The directory can have one or more scripts as needed. The simplest test will
+have only a `run` script, and a configuration file:
 
 ```
 $ ls -1 my-test
@@ -970,10 +962,9 @@ $ ./run
 
 ### Writing complicated tests
 
-A more complicated test may have several steps. To keep the test simple
-and easy understand and debug, separate each step in a test scrip that
-can run by a developer manually. The `run` script will run all the steps
-in the right order.
+A more complicated test may have several steps. To keep the test simple and easy
+understand and debug, separate each step in a test scrip that can run by a
+developer manually. The `run` script will run all the steps in the right order.
 
 ```
 $ ls -1 basic-test/
@@ -1029,8 +1020,8 @@ This sets up the process for a new test:
 - create an arguments parser with the default options
 - installs a hook for logging unhandled exception to the test log
 
-If the test needs additional arguments it can add them using the same
-arguments accepted by the standard library `argparse` module:
+If the test needs additional arguments it can add them using the same arguments
+accepted by the standard library `argparse` module:
 
 ```python
 test.add_argument("cluster", help="Cluster name to deploy on.")
@@ -1042,8 +1033,8 @@ Finally the test parses the arguments:
 args = test.parse_args()
 ```
 
-If the command line arguments included the `-v' or '--verbose` option
-the test logger level is increased to debug level automatically.
+If the command line arguments included the `-v' or '--verbose` option the test
+logger level is increased to debug level automatically.
 
 To access the test configuration, use:
 
