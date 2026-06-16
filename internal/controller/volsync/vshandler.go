@@ -1886,10 +1886,24 @@ func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
 	}
 
 	err = util.NewResourceUpdater(svc).
-		AddLabel(util.CreatedByRamenLabel, "true").
+		AddLabel(util.CreatedByRamenLabel, "transitive").
 		Update(v.ctx, v.client)
 	if err != nil {
 		v.log.V(1).Info("Failed to label VolSync Service", "serviceName", serviceName, "error", err)
+	}
+
+	ep := &corev1.Endpoints{}
+
+	err = v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, ep)
+	if err != nil {
+		v.log.V(1).Info("VolSync Endpoints not found yet, skipping label", "serviceName", serviceName)
+	} else {
+		err = util.NewResourceUpdater(ep).
+			AddLabel(util.CreatedByRamenLabel, "transitive").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync Endpoints", "serviceName", serviceName, "error", err)
+		}
 	}
 
 	epSliceList := &discoveryv1.EndpointSliceList{}
@@ -1906,7 +1920,7 @@ func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
 
 	for i := range epSliceList.Items {
 		err = util.NewResourceUpdater(&epSliceList.Items[i]).
-			AddLabel(util.CreatedByRamenLabel, "true").
+			AddLabel(util.CreatedByRamenLabel, "transitive").
 			Update(v.ctx, v.client)
 		if err != nil {
 			v.log.V(1).Info("Failed to label VolSync EndpointSlice",

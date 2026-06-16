@@ -412,19 +412,20 @@ func ConfigMapNew(
 		return nil, fmt.Errorf("config map yaml marshal %w", err)
 	}
 
-	return &corev1.ConfigMap{
+	cm := &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{Kind: "ConfigMap", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespaceName,
-			Labels: map[string]string{
-				rmnutil.CreatedByRamenLabel: "true",
-			},
 		},
 		Data: map[string]string{
 			ConfigMapRamenConfigKeyName: string(ramenConfigYaml),
 		},
-	}, nil
+	}
+
+	rmnutil.AddLabel(cm, rmnutil.CreatedByRamenLabel, "true")
+
+	return cm, nil
 }
 
 func ConfigMapGet(
