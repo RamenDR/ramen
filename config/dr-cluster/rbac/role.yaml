@@ -49,6 +49,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - endpoints
   - services
   verbs:
   - get
