@@ -21,7 +21,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: /mnt/minio
+    path: /data/minio
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
