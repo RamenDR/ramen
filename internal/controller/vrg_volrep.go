@@ -149,8 +149,7 @@ func (v *VRGInstance) processPVCsAsPrimary() map[types.NamespacedName][]*corev1.
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
-			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
+			v.addPVCToGroupPVCs(pvc, cg, groupPVCs)
 
 			continue
 		}
@@ -1095,8 +1094,7 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 				cg = grID
 			}
 
-			vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
-			groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
+			v.addPVCToGroupPVCs(pvc, cg, groupPVCs)
 
 			continue
 		}
