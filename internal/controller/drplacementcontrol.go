@@ -122,7 +122,7 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
 	// Handle dryRun flow (annotation management and cleanup)
-	shouldContinue, err := d.startTestFailoverFlow()
+	shouldContinue, err := d.processTestFailoverFlowIfEnabled()
 	if err != nil {
 		return false, err
 	}
@@ -140,12 +140,33 @@ func (d *DRPCInstance) isInCleanupProgression() bool {
 		d.instance.Status.Progression == rmn.ProgressionWaitOnUserToCleanUp
 }
 
-// startTestFailoverFlow is the entry point for test failover lifecycle management.
-// It adds annotation when entering test failover and routes to promotion/abort handlers when exiting.
+// processTestFailoverFlowIfEnabled is the entry point for test failover lifecycle management.
+// It validates dryRun configuration, adds annotation when entering test failover,
+// and routes to promotion/revert handlers when exiting.
 // Returns true if processing should continue, false if a requeue is needed.
 //
-//nolint:cyclop
-func (d *DRPCInstance) startTestFailoverFlow() (bool, error) {
+//nolint:cyclop,gocognit,gocyclo
+func (d *DRPCInstance) processTestFailoverFlowIfEnabled() (bool, error) {
+	// Validate dryRun configuration
+	if d.instance.Spec.DryRun {
+		if d.instance.Spec.Action != rmn.ActionFailover {
+			err := fmt.Errorf("dryRun is enabled but action is not failover")
+			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
+
+			return false, err
+		}
+
+		// Validate failover cluster is different from current deployment cluster
+		lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+		if d.instance.Spec.FailoverCluster == lastAppCluster {
+			err := fmt.Errorf(
+				"dryRun failover target cannot be the same as current deployment cluster: %s",
+				lastAppCluster)
+			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
+
+			return false, err
+		}
+	}
 	// Add dry-run annotation when entering test failover
 	// Validate failover cluster is different from current deployment cluster
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
@@ -157,7 +178,7 @@ func (d *DRPCInstance) startTestFailoverFlow() (bool, error) {
 		if !rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
 			// Add test failover annotation
 			// Note: We don't update last-action/last-app-deployment-cluster annotations during dryRun,
-			// so they naturally preserve the pre-test state for abort validation
+			// so they naturally preserve the pre-test state for revert validation
 			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
 
 			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
@@ -178,10 +199,10 @@ func (d *DRPCInstance) startTestFailoverFlow() (bool, error) {
 	// 2. dryRun is false and we still have the dryRun annotation (cleanup in progress)
 	if (d.instance.Status.Progression == rmn.ProgressionTestingFailover && !d.instance.Spec.DryRun) ||
 		(!d.instance.Spec.DryRun && rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation)) {
-		d.log.Info("Detected dryRun exit - routing to promotion or abort handler")
+		d.log.Info("Detected dryRun exit - routing to promotion or revert handler")
 
-		// Detect if user wants promotion or abort, then route to appropriate handler
-		needsCleanup, err := d.detectPromotionOrAbort()
+		// Detect if user wants promotion or revert, then route to appropriate handler
+		needsCleanup, err := d.detectPromotionOrRevert()
 		if err != nil {
 			return false, err
 		}
@@ -247,9 +268,9 @@ func (d *DRPCInstance) cleanupTestFailoverAnnotation(clusterName string) error {
 	return nil
 }
 
-// detectPromotionOrAbort determines if user wants to promote test failover to real failover
-// or abort and revert to original state, then routes to the appropriate handler.
-func (d *DRPCInstance) detectPromotionOrAbort() (bool, error) {
+// detectPromotionOrRevert determines if user wants to promote test failover to real failover
+// or revert to original state, then routes to the appropriate handler.
+func (d *DRPCInstance) detectPromotionOrRevert() (bool, error) {
 	// Determine test failover cluster (peer of last-app-deployment-cluster)
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	testFailoverCluster := ""
@@ -266,7 +287,7 @@ func (d *DRPCInstance) detectPromotionOrAbort() (bool, error) {
 		return false, fmt.Errorf("could not determine test failover cluster")
 	}
 
-	// Determine if this is promotion or abort
+	// Determine if this is promotion or revert
 	// Promotion: failoverCluster still points to test cluster (user wants to keep it)
 	isPromotion := d.instance.Spec.FailoverCluster == testFailoverCluster &&
 		d.instance.Spec.Action == rmn.ActionFailover &&
@@ -276,7 +297,7 @@ func (d *DRPCInstance) detectPromotionOrAbort() (bool, error) {
 		return d.handlePromotion(testFailoverCluster, lastAppCluster)
 	}
 
-	return d.handleAbort(testFailoverCluster, lastAppCluster)
+	return d.handleRevert(testFailoverCluster, lastAppCluster)
 }
 
 // validateTestFailoverRevertScenario validates user correctly set spec to revert to original state.
@@ -292,7 +313,7 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, _ string) 
 	// Validate we have the saved state
 	if savedLastAppCluster == "" {
 		return "", fmt.Errorf(
-			"abort validation failed: saved state not found (missing last app deployment cluster)")
+			"revert validation failed: saved state not found (missing last app deployment cluster)")
 	}
 
 	switch savedLastAction {
@@ -300,13 +321,13 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, _ string) 
 		// Saved action was Failover: User must set action=Failover, failoverCluster=savedLastAppCluster
 		if drpc.Spec.Action != rmn.ActionFailover {
 			return "", fmt.Errorf(
-				"abort validation failed: saved last-action=Failover requires action=Failover, got action=%s",
+				"revert validation failed: saved last-action=Failover requires action=Failover, got action=%s",
 				drpc.Spec.Action)
 		}
 
 		if drpc.Spec.FailoverCluster != savedLastAppCluster {
 			return "", fmt.Errorf(
-				"abort validation failed: saved last-action=Failover requires failoverCluster=%s, got %s",
+				"revert validation failed: saved last-action=Failover requires failoverCluster=%s, got %s",
 				savedLastAppCluster, drpc.Spec.FailoverCluster)
 		}
 
@@ -316,13 +337,13 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, _ string) 
 		// Saved action was Relocate: User must set action=Relocate, preferredCluster=savedLastAppCluster
 		if drpc.Spec.Action != rmn.ActionRelocate {
 			return "", fmt.Errorf(
-				"abort validation failed: saved last-action=Relocate requires action=Relocate, got action=%s",
+				"revert validation failed: saved last-action=Relocate requires action=Relocate, got action=%s",
 				drpc.Spec.Action)
 		}
 
 		if drpc.Spec.PreferredCluster != savedLastAppCluster {
 			return "", fmt.Errorf(
-				"abort validation failed: saved last-action=Relocate requires preferredCluster=%s, got %s",
+				"revert validation failed: saved last-action=Relocate requires preferredCluster=%s, got %s",
 				savedLastAppCluster, drpc.Spec.PreferredCluster)
 		}
 
@@ -332,20 +353,20 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, _ string) 
 		// Saved action was empty: User must set action="" and failoverCluster=""
 		if drpc.Spec.Action != "" {
 			return "", fmt.Errorf(
-				"abort validation failed: saved last-action=empty requires action=empty, got action=%s",
+				"revert validation failed: saved last-action=empty requires action=empty, got action=%s",
 				drpc.Spec.Action)
 		}
 
 		if drpc.Spec.FailoverCluster != "" {
 			return "", fmt.Errorf(
-				"abort validation failed: saved last-action=empty requires failoverCluster=empty, got %s",
+				"revert validation failed: saved last-action=empty requires failoverCluster=empty, got %s",
 				drpc.Spec.FailoverCluster)
 		}
 
 		return rmn.Deployed, nil
 
 	default:
-		return "", fmt.Errorf("abort validation failed: unknown saved last-action value: %s", savedLastAction)
+		return "", fmt.Errorf("revert validation failed: unknown saved last-action value: %s", savedLastAction)
 	}
 }
 
@@ -382,24 +403,24 @@ func (d *DRPCInstance) handlePromotion(testFailoverCluster, lastAppCluster strin
 	return false, nil
 }
 
-// handleAbort handles aborting a test failover and reverting to original state.
-// It validates the abort scenario, cleans up test failover state, and restores original status.
+// handleRevert handles reverting a test failover and reverting to original state.
+// It validates the revert scenario, cleans up test failover state, and restores original status.
 //
 //nolint:cyclop
-func (d *DRPCInstance) handleAbort(testFailoverCluster, lastAppCluster string) (bool, error) {
-	d.log.Info("Aborting test failover",
+func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) (bool, error) {
+	d.log.Info("Reverting test failover",
 		"testCluster", testFailoverCluster,
 		"originalCluster", lastAppCluster)
 
 	// Validate user correctly set spec to original state and get derived phase
 	derivedDRState, err := validateTestFailoverRevertScenario(d.instance, lastAppCluster)
 	if err != nil {
-		d.log.Error(err, "Abort validation failed")
+		d.log.Error(err, "Revert validation failed")
 
 		return false, err
 	}
 
-	d.log.Info("Abort validation passed", "derivedDRState", derivedDRState)
+	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
 
 	// Check if cleanup is complete by checking if we're in cleanup progression states
 	if d.isInCleanupProgression() {
@@ -418,7 +439,7 @@ func (d *DRPCInstance) handleAbort(testFailoverCluster, lastAppCluster string) (
 				return false, err
 			}
 
-			d.log.Info("Abort complete")
+			d.log.Info("Revert complete")
 
 			return false, nil
 		}
@@ -446,7 +467,7 @@ func (d *DRPCInstance) handleAbort(testFailoverCluster, lastAppCluster string) (
 	// We must remove this before ensureActionCompleted() rebuilds PlacementDecision
 	// This applies to both managed and discovered apps (matches EnsureCleanup behavior)
 	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
-		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with abort")
+		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
 	}
 
 	// Restore original cluster as primary and clean up test failover cluster
@@ -454,27 +475,6 @@ func (d *DRPCInstance) handleAbort(testFailoverCluster, lastAppCluster string) (
 }
 
 func (d *DRPCInstance) executeAction() (bool, error) {
-	// Validate dryRun configuration
-	if d.instance.Spec.DryRun {
-		if d.instance.Spec.Action != rmn.ActionFailover {
-			err := fmt.Errorf("dryRun is enabled but action is not failover")
-			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
-
-			return false, err
-		}
-
-		// Validate failover cluster is different from current deployment cluster
-		lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
-		if d.instance.Spec.FailoverCluster == lastAppCluster {
-			err := fmt.Errorf(
-				"dryRun failover target cannot be the same as current deployment cluster: %s",
-				lastAppCluster)
-			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
-
-			return false, err
-		}
-	}
-
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.RunFailover()
