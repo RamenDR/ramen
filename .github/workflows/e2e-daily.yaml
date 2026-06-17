@@ -19,8 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - e2e-rdr-2
-          - e2e-rdr-3
+          - ramen-e2e-01
+          - ramen-e2e-02
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
@@ -46,8 +46,8 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - e2e-rdr-2
-          - e2e-rdr-3
+          - ramen-e2e-01
+          - ramen-e2e-02
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
