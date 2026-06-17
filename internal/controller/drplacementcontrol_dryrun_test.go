@@ -353,7 +353,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		})
 	})
 
-	Describe("DryRun Promotion and Abort Detection", func() {
+	Describe("DryRun Promotion and Revert Detection", func() {
 		Context("When changing dryRun from true to false", func() {
 			It("should accept promotion configuration (failoverCluster unchanged)", func() {
 				// Setup: Test failover scenario
@@ -396,11 +396,11 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 					return drpc.Spec.DryRun
 				}, timeout, interval).Should(BeFalse())
 
-				// Verify failoverCluster stays on West1 (promotion, not abort)
+				// Verify failoverCluster stays on West1 (promotion, not revert)
 				Expect(drpc.Spec.FailoverCluster).To(Equal(West1ManagedCluster))
 			})
 
-			It("should accept abort configuration (spec reverted to pre-test state)", func() {
+			It("should accept revert configuration (spec reverted to pre-test state)", func() {
 				// Setup: Test failover scenario
 				drpc.Annotations = map[string]string{
 					"drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster": East1ManagedCluster,
@@ -421,7 +421,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
 				}, timeout, interval).Should(Equal("true"))
 
-				// Abort: Change dryRun to false and revert spec
+				// Revert: Change dryRun to false and revert spec
 				Eventually(func() error {
 					if err := apiReader.Get(context.TODO(), drpcNamespacedName, drpc); err != nil {
 						return err

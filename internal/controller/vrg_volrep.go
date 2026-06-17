@@ -205,13 +205,13 @@ func (v *VRGInstance) processPVCsAsPrimary() map[types.NamespacedName][]*corev1.
 func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	requeue := false
 
-	// When transitioning to Secondary after a dry-run abort, cleanup snapshots first
+	// When transitioning to Secondary after a dry-run revert, cleanup snapshots first
 	// OR when staying Primary but promoting from test to real failover
 	// This happens when user sets spec.dryRun=false or removes dryRun field from DRPC spec
 	// The VRG must delete all dry-run snapshots BEFORE proceeding
 	if v.shouldCleanupDryRunSnapshots() {
 		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-			v.log.Info("Dry-run aborted, cleaning up snapshots before transitioning to Secondary")
+			v.log.Info("Dry-run reverted, cleaning up snapshots before transitioning to Secondary")
 		} else {
 			v.log.Info("Promoting test failover to real, cleaning up dry-run snapshots while staying Primary")
 		}
@@ -3493,7 +3493,7 @@ func (v *VRGInstance) shouldTakeDryRunSnapshots() bool {
 // shouldCleanupDryRunSnapshots determines if dry-run snapshots need cleanup
 // Returns true when transitioning out of dry-run mode (DryRun becomes false)
 func (v *VRGInstance) shouldCleanupDryRunSnapshots() bool {
-	// Abort scenario: transitioning to Secondary with DryRun=false
+	// Revert scenario: transitioning to Secondary with DryRun=false
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && !v.instance.Spec.DryRun {
 		return true
 	}
