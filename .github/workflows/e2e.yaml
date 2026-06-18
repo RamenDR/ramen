@@ -20,9 +20,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Check if the PR author is authorized to run e2e tests.  Runs on a free
+  # GitHub runner to avoid wasting self-hosted runner resources. The e2e job
+  # depends on this job and skips the run if the user is not authorized.
+  check:
+    runs-on: ubuntu-24.04
+    if: github.repository == 'RamenDR/ramen'
+    outputs:
+      authorized: ${{ steps.authorize.outputs.authorized }}
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v6
+
+    - name: Install PyYAML
+      run: pip install pyyaml
+
+    - name: Check e2e authorization
+      id: authorize
+      shell: python3 {0}
+      run: |
+        import yaml, os
+
+        with open("OWNERS") as f:
+            users = yaml.safe_load(f)["e2e"]
+
+        actor = "${{ github.actor }}"
+        authorized = actor in users
+
+        if not authorized:
+            print(f"::warning::User {actor} is not in the e2e group. "
+                  "Add yourself to the OWNERS file to run the e2e workflow.")
+
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"authorized={'true' if authorized else 'false'}\n")
+
+  # IMPORTANT: The authorization check must never be removed. It prevents
+  # unauthorized users from running workloads on self-hosted runners.
   e2e-rdr:
+    needs: check
     runs-on: [self-hosted, e2e-rdr]
-    if: github.repository == 'RamenDR/ramen' && github.event.pull_request.author_association == 'MEMBER'
+    if: needs.check.outputs.authorized == 'true'
 
     steps:
     - name: Checkout Repo
