@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# GitHub usernames authorized to run e2e workflows on self-hosted runners.
+e2e:
+  - BenamarMk
+  - ELENAGER
+  - ShyamsundarR
+  - am-agrawa
+  - asn1809
+  - kumarsgoyal
+  - nirs
+  - parikshithb
+  - pruthvitd
+  - raaizik
+  - raghavendra-talur
+  - rakeshgm
