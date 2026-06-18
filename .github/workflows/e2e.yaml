@@ -6,8 +6,17 @@
 name: e2e
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # IMPORTANT: workflow_run ensures this workflow file always comes from
+  # main and cannot be modified by a PR. Using pull_request would allow
+  # a fork PR to remove the authorization check and run arbitrary code
+  # on self-hosted runners. Do NOT change this to pull_request.
+  workflow_run:
+    workflows: [e2e-auth]
+    types: [completed]
+
+  # Allow manual run from any branch for testing workflow changes.
+  # Only users with write access can trigger this (safe).
+  workflow_dispatch:
 
 env:
   # Limit number of drenv workers.
@@ -15,18 +24,28 @@ env:
   BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
 
 # cancel the in-progress workflow when PR is refreshed.
+# workflow_run: use the PR branch name.
+# workflow_dispatch: use the selected branch name.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   e2e-rdr:
     runs-on: [self-hosted, e2e-rdr]
-    if: github.repository == 'RamenDR/ramen' && github.event.pull_request.author_association == 'MEMBER'
+    # workflow_run: run only if authorization succeeded.
+    # workflow_dispatch: always run (requires write access).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
-    - name: Checkout Repo
+    # workflow_run: checkout the PR commit.
+    # workflow_dispatch: checkout the selected branch.
+    - name: Checkout PR
       uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     - name: Build ramen-operator container
       run: make docker-build
