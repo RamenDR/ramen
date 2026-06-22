@@ -8,7 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 The registry cache provides pull-through caching for upstream container
 registries. This speeds up image pulls and reduces network traffic.
 
-> [!TIP] See [Initial setup - Linux](#initial-setup---linux) or
+> [!TIP]
+> See [Initial setup - Linux](#initial-setup---linux) or
 > [Initial setup - macOS](#initial-setup---macos) for first-time configuration.
 
 ## Architecture
