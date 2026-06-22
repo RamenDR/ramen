@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -93,6 +95,8 @@ type ObjectStoreGetter interface {
 type ObjectStorer interface {
 	UploadObject(key string, object interface{}) error
 	DownloadObject(key string, objectPointer interface{}) error
+	// ObjectExists reports whether an object is present at key without downloading its body.
+	ObjectExists(key string) (bool, error)
 	ListKeys(keyPrefix string) (keys []string, err error)
 	DeleteObject(key string) error
 	DeleteObjects(key ...string) error
@@ -633,6 +637,56 @@ func (s *s3ObjectStore) DownloadObject(key string,
 	}
 
 	return nil
+}
+
+// ObjectExists uses HeadObject to test key presence without transferring the object body.
+func (s *s3ObjectStore) ObjectExists(key string) (bool, error) {
+	bucket := s.s3Bucket
+
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
+	_, err := s.client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		if isS3ObjectHeadNotFound(err) {
+			return false, nil
+		}
+
+		errMsgPrefix := fmt.Errorf("failed to head object %s:%s", bucket, key)
+
+		return false, processAwsError(errMsgPrefix, err)
+	}
+
+	return true, nil
+}
+
+func isS3ObjectHeadNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if awsErr, ok := err.(awserr.Error); ok {
+		if awsErr.Code() == s3.ErrCodeNoSuchKey {
+			return true
+		}
+	}
+
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
+		if awsErr.Code() == s3.ErrCodeNoSuchKey {
+			return true
+		}
+	}
+
+	errMsg := err.Error()
+
+	return errors.Is(err, fs.ErrNotExist) ||
+		strings.Contains(errMsg, "NoSuchKey") ||
+		strings.Contains(errMsg, "NotFound") ||
+		strings.Contains(errMsg, "no such key")
 }
 
 func (s *s3ObjectStore) DeleteObject(key string) error {
