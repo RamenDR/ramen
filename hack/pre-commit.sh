@@ -40,7 +40,7 @@ check_tool() {
         echo "You can install it by running:"
         case "$1" in
             mdformat)
-                echo "  pip install mdformat mdformat-gfm"
+                echo "  pip install mdformat mdformat-gfm mdformat-gfm-alerts"
                 ;;
             shellcheck)
                 echo "  dnf install ShellCheck"

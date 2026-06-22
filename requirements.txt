@@ -3,6 +3,7 @@ coverage
 flake8
 mdformat
 mdformat-gfm
+mdformat-gfm-alerts
 pylint
 pytest
 setuptools
