@@ -64,7 +64,8 @@ sudo systemctl daemon-reload
 sudo systemctl start registry.service
 ```
 
-> [!NOTE] The service does not need to be enabled.
+> [!NOTE]
+> The service does not need to be enabled.
 
 ## Initial setup - macOS
 

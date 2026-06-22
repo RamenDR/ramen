@@ -167,7 +167,8 @@ environment.
 
 ## Setup on macOS 26+
 
-> [!IMPORTANT] Older macOS are not supported.
+> [!IMPORTANT]
+> Older macOS are not supported.
 
 1. Install the [Homebrew package manager](https://brew.sh/)
 

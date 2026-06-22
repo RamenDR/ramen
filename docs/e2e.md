@@ -10,7 +10,8 @@ predefined workloads and deployment methods.
 
 ## Running End to End tests
 
-> [!IMPORTANT] All commands must be ran from the e2e directory.
+> [!IMPORTANT]
+> All commands must be ran from the e2e directory.
 
 ### Preparing a `config.yaml` file
 
@@ -99,8 +100,9 @@ To run all the DR tests run the TestDR test:
 The test perform a full DR flow with a tiny workload with multiple deployemnet
 methods and storage configurations.
 
-> [!TIP] The tests typically complete in 10 minutes, depending the machine
-> running the tests.
+> [!TIP]
+> The tests typically complete in 10 minutes, depending the machine running the
+> tests.
 
 When all tests complete we will see a test summary showing the status of all
 tests and the time to complete every step:

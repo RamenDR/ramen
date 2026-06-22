@@ -40,8 +40,8 @@ Because the failures are random, a run may fail very quickly or only after many
 hours. As drenv becomes more reliable debugging random failures will become
 harder.
 
-> [!IMPORTANT] After debugging the failure, you need to delete the environment
-> manually.
+> [!IMPORTANT]
+> After debugging the failure, you need to delete the environment manually.
 
 ## Generating a report
 

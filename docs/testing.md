@@ -74,8 +74,9 @@ running the tests, you need to deploy a channel pointing this repo:
 kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel?ref=main --context hub
 ```
 
-> [!NOTE] To test applications from your repo, you need to deploy a channel
-> pointing to your repo.
+> [!NOTE]
+> To test applications from your repo, you need to deploy a channel pointing to
+> your repo.
 
 To run basic tests using regional-dr environment run:
 
