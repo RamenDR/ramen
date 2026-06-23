@@ -5,5 +5,5 @@ mdformat
 mdformat-gfm
 mdformat-gfm-alerts
 pylint
-pytest
+pytest>=9.0.3
 setuptools
