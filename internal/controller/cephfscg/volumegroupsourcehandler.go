@@ -549,7 +549,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		createdOrUpdated = createdOrUpdated ||
 			(op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated)
 
-		if err := h.assignRSOwnershipToPVC(replicationSource, restoredPVC.RestoredPVCName,
+		if err := h.assignRSOwnershipToPVC(replicationSource, originalPVCName,
 			replicationSourceNamespace, logger); err != nil {
 			return nil, createdOrUpdated, err
 		}
