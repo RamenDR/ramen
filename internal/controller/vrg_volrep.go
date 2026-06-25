@@ -2928,6 +2928,27 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 // if no ProtectedPVCs is in error and atleast one is progressing, then
 //
 //	VRG.conditions.Available.Status = false
+func buildPVCErrorMessage(protectedPVCs []ramendrv1alpha1.ProtectedPVC, conditionType string) string {
+	var errs []string
+
+	for i := range protectedPVCs {
+		pvc := &protectedPVCs[i]
+		condition := rmnutil.FindCondition(pvc.Conditions, conditionType)
+
+		if condition == nil || condition.Reason != VRGConditionReasonError {
+			continue
+		}
+
+		errs = append(errs, fmt.Sprintf("%s(%s)", pvc.Name, condition.Message))
+	}
+
+	if len(errs) == 0 {
+		return "All PVCs of the VolumeReplicationGroup are not ready"
+	}
+
+	return fmt.Sprintf("PVCs not ready: %s", strings.Join(errs, ", "))
+}
+
 //	VRG.conditions.Available.Reason = Progressing
 //
 //nolint:funlen
@@ -2997,7 +3018,7 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	// Set Error condition for VRG.
 	v.log.Info("Marking VRG not DataReady with error. All PVCs are not ready")
 
-	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	msg := buildPVCErrorMessage(v.instance.Status.ProtectedPVCs, VRGConditionTypeDataReady)
 
 	return newVRGDataErrorCondition(v.instance.Generation, msg)
 }
@@ -3085,7 +3106,7 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition 
 	// VRG is neither Data Protected nor Replicating
 	v.log.Info("Marking VRG data not protected with error. All PVCs are not ready")
 
-	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	msg := buildPVCErrorMessage(v.instance.Status.ProtectedPVCs, VRGConditionTypeDataProtected)
 
 	return newVRGAsDataNotProtectedCondition(v.instance.Generation, msg)
 }
