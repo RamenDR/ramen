@@ -46,6 +46,37 @@ func (u *drclusterInstance) clusterMModeHandler() error {
 	return nil
 }
 
+// shouldSkipDRPCForMMode checks if a DRPC has completed its failover and should be skipped
+// when determining required MaintenanceModes. Once a DRPC is fully available (Available=True),
+// we don't need to keep creating MaintenanceMode resources for it.
+func (u *drclusterInstance) shouldSkipDRPCForMMode(drpc *ramen.DRPlacementControl) bool {
+	availableCond := meta.FindStatusCondition(drpc.Status.Conditions, ramen.ConditionAvailable)
+
+	if availableCond != nil &&
+		availableCond.Status == metav1.ConditionTrue &&
+		availableCond.ObservedGeneration == drpc.Generation {
+		u.log.Info("Skipping DRPC with completed failover when determining required MaintenanceModes",
+			"drpc", drpc.GetName(),
+			"namespace", drpc.GetNamespace())
+
+		return true
+	}
+
+	return false
+}
+
+// mergeActivations merges new activations into the allActivations map
+func (u *drclusterInstance) mergeActivations(
+	allActivations map[string]ramen.StorageIdentifiers,
+	newActivations map[string]ramen.StorageIdentifiers,
+) {
+	for key, storageIdentifiers := range newActivations {
+		if _, ok := allActivations[key]; !ok {
+			allActivations[key] = storageIdentifiers
+		}
+	}
+}
+
 // mModeActivationsRequired determines all required maintenance modes for the current cluster based
 // on the DRPCs that are failing over to this cluster and their required maintenance modes. It returns
 // a map of StorageIdentifiers, with the key being the <ProvisionerName>+<ReplicationID>
@@ -60,6 +91,10 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 	}
 
 	for _, drpcCollection := range drpcCollections {
+		if u.shouldSkipDRPCForMMode(drpcCollection.drpc) {
+			continue
+		}
+
 		vrgs, err := u.getVRGs(drpcCollection)
 		if err != nil {
 			u.log.Info("Failed to get VRGs for DRPC that is failing over",
@@ -95,13 +130,7 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 			continue
 		}
 
-		for key, storageIdentifiers := range activationsRequired {
-			if _, ok := allActivations[key]; ok {
-				continue
-			}
-
-			allActivations[key] = storageIdentifiers
-		}
+		u.mergeActivations(allActivations, activationsRequired)
 	}
 
 	u.log.Info("Activations required", "count", len(allActivations))
