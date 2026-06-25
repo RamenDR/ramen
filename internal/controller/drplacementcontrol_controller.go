@@ -3074,15 +3074,17 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 	keys := []string{core.VMList, core.K8SLabelSelector, core.PVCLabelSelector}
 
 	for _, k := range keys {
-		// Default to marking conflict when overlap is found (matches prior behavior)
-		// Note: original observed generation-based tie-breaker preserved behavior omitted here;
-		// this logic marks overlap as conflict, which matches the earlier refactor decisions.
+		// If any recipe parameter key has overlapping values between the two DRPCs,
+		// they are protecting the same VM resources — not independent, so return false
+		// to let the namespace-conflict check run and produce an error.
 		if sets.NewString(drpcParams[k]...).Intersection(sets.NewString(otherParams[k]...)).Len() > 0 {
-			return true
+			return false
 		}
 	}
 
-	return false
+	// No overlap on any key: both DRPCs use vm-recipe and protect disjoint VMs
+	// in the same namespace — this is explicitly supported, skip the conflict check.
+	return true
 }
 
 // EnsureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
