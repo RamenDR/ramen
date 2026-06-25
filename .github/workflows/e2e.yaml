@@ -22,6 +22,9 @@ env:
   # Limit number of drenv workers.
   MAX_WORKERS: 4
   BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+  # For reporting check run status back to the PR.
+  CHECK_RUNS: repos/${{ github.repository }}/commits/${{ github.event.workflow_run.head_sha }}/check-runs
+  DETAILS_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 # cancel the in-progress workflow when PR is refreshed.
 # workflow_run: use the PR branch name.
@@ -33,6 +36,9 @@ concurrency:
 jobs:
   e2e-rdr:
     runs-on: [self-hosted, e2e-rdr]
+    permissions:
+      contents: read
+      checks: write
     # workflow_run: run only if authorization succeeded.
     # workflow_dispatch: always run (requires write access).
     if: >-
@@ -40,6 +46,29 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
 
     steps:
+    # Find the e2e check run created by the triggering e2e-auth run.
+    # We match by external_id which e2e-auth sets to its own run_id,
+    # ensuring an exact 1:1 match even with concurrent e2e-auth runs.
+    - name: Find check run
+      id: check
+      if: github.event_name == 'workflow_run'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        check_id=$(gh api "${{ env.CHECK_RUNS }}?check_name=e2e" \
+          --jq '.check_runs[] | select(.external_id=="${{ github.event.workflow_run.id }}") | .id')
+        echo "id=$check_id" >> "$GITHUB_OUTPUT"
+
+    - name: Set check run to in_progress
+      if: github.event_name == 'workflow_run'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api "repos/${{ github.repository }}/check-runs/${{ steps.check.outputs.id }}" \
+          -X PATCH \
+          -f status="in_progress" \
+          -f details_url="${{ env.DETAILS_URL }}"
+
     # workflow_run: checkout the PR commit.
     # workflow_dispatch: checkout the selected branch.
     - name: Checkout PR
@@ -156,3 +185,15 @@ jobs:
       run: |
         source ../venv
         drenv cleanup envs/regional-dr.yaml
+
+    # Report check run status back to the PR since workflow_run
+    # events don't appear in the PR checks list.
+    - name: Update check run
+      if: always() && github.event_name == 'workflow_run'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api "repos/${{ github.repository }}/check-runs/${{ steps.check.outputs.id }}" \
+          -X PATCH \
+          -f status="completed" \
+          -f conclusion="${{ job.status }}"

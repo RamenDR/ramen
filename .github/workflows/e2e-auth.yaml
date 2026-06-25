@@ -18,6 +18,7 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
+  checks: write
   contents: read
 
 jobs:
@@ -45,3 +46,17 @@ jobs:
             print(f"::warning::User {actor} is not in the e2e group. "
                   "Add yourself to the OWNERS file to run the e2e workflow.")
             sys.exit(1)
+
+    # Create the e2e check run so it is visible in the PR while the
+    # e2e job is queued, waiting for a self-hosted runner. This is
+    # needed because workflow_run events don't appear in the PR checks.
+    - name: Create e2e check run
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api repos/${{ github.repository }}/check-runs \
+          -X POST \
+          -f name="e2e" \
+          -f head_sha="${{ github.event.pull_request.head.sha }}" \
+          -f status="queued" \
+          -f external_id="${{ github.run_id }}"
