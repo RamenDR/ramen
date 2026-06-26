@@ -44,10 +44,10 @@ jobs:
         with open("OWNERS") as f:
             users = yaml.safe_load(f)["e2e"]
 
-        actor = "${{ github.actor }}"
+        author = "${{ github.event.pull_request.user.login }}"
 
-        if actor not in users:
-            print(f"::warning::User {actor} is not in the e2e group. "
+        if author not in users:
+            print(f"::warning::User {author} is not in the e2e group. "
                   "Add yourself to the OWNERS file to run the e2e workflow.")
             sys.exit(1)
 
