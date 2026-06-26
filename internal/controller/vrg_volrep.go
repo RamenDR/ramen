@@ -1332,7 +1332,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName,
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(pvc, nil)
 
 		return false, true, nil
 	}
@@ -1365,7 +1365,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonDataProtected,
 			msg)
-		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(pvc, nil)
 
 		return false, true, nil
 	}
@@ -1868,7 +1868,7 @@ func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, vol
 
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, status)
+		v.updatePVCLastSyncCounters(pvc, status)
 	}
 
 	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
@@ -1971,7 +1971,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvcs []*corev1.Pers
 	for idx := range pvcs {
 		pvc := pvcs[idx]
 
-		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, nil)
+		v.updatePVCLastSyncCounters(pvc, nil)
 	}
 
 	conditionMet, _, _ := isVRConditionMet(volRep, status, volrep.ConditionResyncing, metav1.ConditionTrue)
@@ -2291,8 +2291,55 @@ func (v *VRGInstance) checkAndUpdateDestinationInfoAvailable(
 	}
 }
 
-func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, status *volrep.VolumeReplicationStatus) {
-	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+// isPVCSyncedInVGR checks if a PVC should receive sync time updates from VGR.
+// It ensures:
+// 1. The PVC is in the grouped list (storage backend included it)
+// 2. The VGR sync time is newer than the PVC creation time (sync actually included this PVC)
+func (v *VRGInstance) isPVCSyncedInVGR(pvc *corev1.PersistentVolumeClaim,
+	vgrSyncTime *metav1.Time,
+) bool {
+	pvcInGroup := false
+
+	for _, group := range v.instance.Status.PVCGroups {
+		for _, groupedPVC := range group.Grouped {
+			if groupedPVC == pvc.Name {
+				pvcInGroup = true
+
+				break
+			}
+		}
+
+		if pvcInGroup {
+			break
+		}
+	}
+
+	if !pvcInGroup {
+		v.log.Info("Skipping sync time update for PVC not in VGR grouped list",
+			"pvc", pvc.Name)
+
+		return false
+	}
+
+	// PVC is in grouped list - check if VGR sync time is after PVC creation
+	if vgrSyncTime != nil && pvc.CreationTimestamp.After(vgrSyncTime.Time) {
+		// PVC was created after this sync - sync didn't include this PVC
+		v.log.Info("Skipping sync time update - VGR sync time is older than PVC creation",
+			"pvc", pvc.Name,
+			"pvcCreationTime", pvc.CreationTimestamp,
+			"vgrSyncTime", vgrSyncTime)
+
+		return false
+	}
+
+	// PVC is in grouped list and sync time is after PVC creation - proceed with update
+	return true
+}
+
+func (v *VRGInstance) updatePVCLastSyncCounters(pvc *corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus,
+) {
+	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
 		return
 	}
@@ -2305,6 +2352,13 @@ func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, st
 			protectedPVC.LastSyncBytes = nil
 		}
 	} else {
+		// Check if CG is enabled for this PVC
+		_, cgEnabled := v.isCGEnabled(pvc)
+
+		if cgEnabled && !v.isPVCSyncedInVGR(pvc, status.LastSyncTime) {
+			return
+		}
+
 		protectedPVC.LastSyncTime = status.LastSyncTime
 		protectedPVC.LastSyncDuration = status.LastSyncDuration
 
