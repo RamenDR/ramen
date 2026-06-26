@@ -350,17 +350,11 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, _ string) 
 		return rmn.Relocated, nil
 
 	case "":
-		// Saved action was empty: User must set action="" and failoverCluster=""
+		// Saved action was empty: User must set action="" to return to Deployed state
 		if drpc.Spec.Action != "" {
 			return "", fmt.Errorf(
 				"revert validation failed: saved last-action=empty requires action=empty, got action=%s",
 				drpc.Spec.Action)
-		}
-
-		if drpc.Spec.FailoverCluster != "" {
-			return "", fmt.Errorf(
-				"revert validation failed: saved last-action=empty requires failoverCluster=empty, got %s",
-				drpc.Spec.FailoverCluster)
 		}
 
 		return rmn.Deployed, nil
