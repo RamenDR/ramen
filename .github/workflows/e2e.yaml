@@ -3,49 +3,63 @@
 
 # yamllint disable rule:line-length
 ---
+# IMPORTANT: pull_request_target ensures this workflow file always comes
+# from the base branch (main) and cannot be modified by a PR. Do NOT
+# change this to pull_request, which would allow a fork PR to remove
+# the authorization check and run arbitrary code on self-hosted runners.
 name: e2e
 
 on:
-  # IMPORTANT: workflow_run ensures this workflow file always comes from
-  # main and cannot be modified by a PR. Using pull_request would allow
-  # a fork PR to remove the authorization check and run arbitrary code
-  # on self-hosted runners. Do NOT change this to pull_request.
-  workflow_run:
-    workflows: [e2e-auth]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
-  # Allow manual run from any branch for testing workflow changes.
-  # Only users with write access can trigger this (safe).
-  workflow_dispatch:
+permissions:
+  contents: read
 
 env:
   # Limit number of drenv workers.
   MAX_WORKERS: 4
   BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
 
-# cancel the in-progress workflow when PR is refreshed.
-# workflow_run: use the PR branch name.
-# workflow_dispatch: use the selected branch name.
+# Cancel the in-progress workflow when PR is refreshed.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  e2e-rdr:
+  auth:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout base branch
+      uses: actions/checkout@v6
+
+    - name: Install PyYAML
+      run: pip install pyyaml
+
+    - name: Check e2e authorization
+      shell: python3 {0}
+      run: |
+        import yaml, sys
+
+        with open("OWNERS") as f:
+            users = yaml.safe_load(f)["e2e"]
+
+        actor = "${{ github.actor }}"
+
+        if actor not in users:
+            print(f"::warning::User {actor} is not in the e2e group. "
+                  "Add yourself to the OWNERS file to run the e2e workflow.")
+            sys.exit(1)
+
+  test:
+    needs: auth
     runs-on: [self-hosted, e2e-rdr]
-    # workflow_run: run only if authorization succeeded.
-    # workflow_dispatch: always run (requires write access).
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
 
     steps:
-    # workflow_run: checkout the PR commit.
-    # workflow_dispatch: checkout the selected branch.
     - name: Checkout PR
       uses: actions/checkout@v6
       with:
-        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+        ref: ${{ github.event.pull_request.head.sha }}
 
     - name: Build ramen-operator container
       run: make docker-build
