@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# https://docs.coderabbit.ai/reference/configuration
+
+---
+reviews:
+  # Reduce nitpicky comments, focus on meaningful issues.
+  profile: chill
+
+  # Generate a high-level summary but put it in the walkthrough comment,
+  # not in the PR description. We don't want CodeRabbit modifying the PR body.
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+
+  # Enable all features for now. We may disable some after more experience
+  # with CodeRabbit.
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  review_status: true
+  review_details: true
+  commit_status: true
+  suggested_labels: true
+  suggested_reviewers: true
+
+  # Don't auto-generate PR titles.
+  auto_title_placeholder: ''
+
+  # Review comments about PR title/description quality are useful.
+  # Only disable auto-modification, not the feedback.
+  pre_merge_checks:
+    title:
+      mode: warning
+    description:
+      mode: warning
