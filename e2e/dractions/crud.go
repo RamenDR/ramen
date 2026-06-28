@@ -133,7 +133,9 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 		Spec: ramen.DRPlacementControlSpec{
 			PreferredCluster: clusterName,
 			DRPolicyRef: v1.ObjectReference{
-				Name: drPolicyName,
+				APIVersion: ramen.GroupVersion.String(),
+				Kind:       "DRPolicy",
+				Name:       drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
 				Kind:      "Placement",
@@ -216,7 +218,9 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 		Spec: ramen.DRPlacementControlSpec{
 			PreferredCluster: clusterName,
 			DRPolicyRef: v1.ObjectReference{
-				Name: drPolicyName,
+				APIVersion: ramen.GroupVersion.String(),
+				Kind:       "DRPolicy",
+				Name:       drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
 				Kind:      "Placement",
