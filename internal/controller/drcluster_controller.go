@@ -598,6 +598,10 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 		return "s3ConnectionFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
+	if err := objectStore.HeadBucket(); err != nil {
+		return "s3BucketNotFound", fmt.Errorf("%s: %w", s3ProfileName, err)
+	}
+
 	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
 		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
