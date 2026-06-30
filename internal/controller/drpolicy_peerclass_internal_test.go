@@ -1949,6 +1949,150 @@ var _ = Describe("updatePeerClassesInternal", func() {
 				},
 			},
 		),
+		Entry("Async peers sharing storageID with multiple VGRCs, each reports correct grID",
+			[]classLists{
+				{
+					clusterID: "cl-1",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-1-sID",
+									StorageOffloadedLabel:   "",
+									GroupReplicationIDLabel: "cl-1-2-grID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-1-sID",
+									StorageOffloadedLabel:   "",
+									GroupReplicationIDLabel: "cl-1-2-grID2",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-1-sID",
+									GroupReplicationIDLabel: "cl-1-2-grID1",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc2",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-1-sID",
+									GroupReplicationIDLabel: "cl-1-2-grID2",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+				{
+					clusterID: "cl-2",
+					sClasses: []*storagev1.StorageClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc1",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-2-sID",
+									StorageOffloadedLabel:   "",
+									GroupReplicationIDLabel: "cl-1-2-grID1",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "sc2",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-2-sID",
+									StorageOffloadedLabel:   "",
+									GroupReplicationIDLabel: "cl-1-2-grID2",
+								},
+							},
+							Provisioner: "sample.csi.com",
+						},
+					},
+					vgrClasses: []*volrep.VolumeGroupReplicationClass{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc2",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-2-sID",
+									GroupReplicationIDLabel: "cl-1-2-grID2",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "vgrc1",
+								Labels: map[string]string{
+									StorageIDLabel:          "cl-2-sID",
+									GroupReplicationIDLabel: "cl-1-2-grID1",
+								},
+							},
+							Spec: volrep.VolumeGroupReplicationClassSpec{
+								Provisioner: "sample.csi.com",
+								Parameters: map[string]string{
+									ReplicationClassScheduleKey: "1m",
+								},
+							},
+						},
+					},
+				},
+			},
+			"1m",
+			[]peerInfo{},
+			[]peerInfo{
+				{
+					replicationID:      "",
+					groupReplicationID: "cl-1-2-grID1",
+					storageIDs:         []string{"cl-1-sID", "cl-2-sID"},
+					storageClassName:   "sc1",
+					clusterIDs:         []string{"cl-1", "cl-2"},
+					offloaded:          true,
+					grouping:           true,
+				},
+				{
+					replicationID:      "",
+					groupReplicationID: "cl-1-2-grID2",
+					storageIDs:         []string{"cl-1-sID", "cl-2-sID"},
+					storageClassName:   "sc2",
+					clusterIDs:         []string{"cl-1", "cl-2"},
+					offloaded:          true,
+					grouping:           true,
+				},
+			},
+		),
 		Entry("Offloaded async peer, with a single sync peer, reports no async peers",
 			[]classLists{
 				{
