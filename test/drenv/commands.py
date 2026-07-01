@@ -33,6 +33,10 @@ _READ_BUF = 32 * 1024
 
 class Error(Exception):
 
+    # Set by with_exception() to the original exception that caused
+    # this error (e.g. FileNotFoundError for missing executables).
+    cause = None
+
     def __init__(self, command, error, exitcode=None, output=None):
         self.command = command
         self.error = error
@@ -44,6 +48,7 @@ class Error(Exception):
         Return a new error preserving the traceback from another excpetion.
         """
         self.__cause__ = None
+        self.cause = exc
         return self.with_traceback(exc.__traceback__)
 
     def __str__(self):
