@@ -252,6 +252,7 @@ def test_watch_error_missing_executable():
         r"Could not execute: .*'no-such-executable-in-path'.*",
         e.value.error,
     )
+    assert e.value.__cause__ is None
 
 
 def test_watch_error_empty():
@@ -399,6 +400,7 @@ def test_run_error_missing_executable():
         r"Could not execute: .*'no-such-executable-in-path'.*",
         e.value.error,
     )
+    assert e.value.__cause__ is None
 
 
 def test_run_error_empty():
