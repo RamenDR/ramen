@@ -88,7 +88,7 @@ var _ = Describe("Cghandler", func() {
 				}})
 			Expect(err).To(BeNil())
 			Expect(len(rgd.Spec.RDSpecs)).To(Equal(1))
-			Expect(cephfscg.DeleteRGD(Ctx, k8sClient, vgdName, "default", testLogger)).To(BeNil())
+			Expect(cephfscg.DeleteRGD(Ctx, k8sClient, vgdName, "default", testLogger, nil, true)).To(BeNil())
 			Eventually(func() bool {
 				err := k8sClient.Get(Ctx, types.NamespacedName{
 					Name:      rgdName,
@@ -204,7 +204,7 @@ var _ = Describe("Cghandler", func() {
 			Expect(finalSync).To(BeFalse())
 			Expect(rgs.Spec.Trigger.Schedule).NotTo(BeNil())
 			Expect(*rgs.Spec.Trigger.Schedule).NotTo(BeEmpty())
-			Expect(cephfscg.DeleteRGS(Ctx, k8sClient, vrgName, "default", testLogger)).To(BeNil())
+			Expect(cephfscg.DeleteRGS(Ctx, k8sClient, vrgName, "default", testLogger, nil, true)).To(BeNil())
 			Eventually(func() bool {
 				err := k8sClient.Get(Ctx, types.NamespacedName{
 					Name:      rgsName,
