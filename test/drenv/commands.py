@@ -45,7 +45,7 @@ class Error(Exception):
 
     def with_exception(self, exc):
         """
-        Return a new error preserving the traceback from another excpetion.
+        Return a new error preserving the traceback from another exception.
         """
         self.__cause__ = None
         self.cause = exc
