@@ -554,6 +554,15 @@ def test_pipeline_first_fail():
     ]
 
 
+def test_pipeline_error_missing_executable():
+    with pytest.raises(commands.PipelineError) as e:
+        commands.pipeline(
+            ["no-such-executable-in-path"],
+            ["true"],
+        )
+    assert e.value.__cause__ is None
+
+
 def test_pipeline_second_fail():
     with pytest.raises(commands.PipelineError) as e:
         commands.pipeline(
