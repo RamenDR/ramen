@@ -304,7 +304,9 @@ def pipeline(*commands, input=None, decode=True, timeout=_DEFAULT_TIMEOUT):
                     proc.kill()
                 for proc in procs:
                     proc.wait()
-                raise PipelineError([Failure(cmd, None, f"Could not execute: {e}")])
+                raise PipelineError(
+                    [Failure(cmd, None, f"Could not execute: {e}")]
+                ).with_exception(e)
 
             # Close our reference so the previous process gets SIGPIPE if this
             # one exits.
