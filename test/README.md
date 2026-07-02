@@ -10,233 +10,288 @@ environment.
 
 ## Setup on Linux
 
-1. Setup a development environment as describe in
-   [developer quick start guide](../docs/devel-quick-start.md)
+### Set up development environment
 
-1. Install `libvirt`
+Set up a development environment as described in the
+[developer quick start guide](../docs/devel-quick-start.md).
 
-   ```
-   sudo dnf install @virtualization
-   rpm -q libvirt virt-manager
-   ```
+### Install virtualization tools
 
-   For more info see
-   [Virtualization – Getting Started](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/)
+Install KVM, libvirt, and related tools before using the minikube `kvm2` driver.
+Use a `####` subsection per distribution.
 
-1. Add yourself to the libvirt group (required for minikube kvm2 driver).
+#### Fedora
 
-   ```
-   sudo usermod -a -G libvirt $(whoami)
-   ```
+```console
+sudo dnf install @virtualization
+rpm -q libvirt virt-manager
+```
 
-   Logout and login again for the change above to be in effect.
+For more info see
+[Virtualization – Getting Started](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
-1. Install minikube, for example on RHEL/CentOS/Fedora:
+#### RHEL 10
 
-   ```
-   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
-   minikube version
-   ```
+Also applies to Rocky Linux 10 and AlmaLinux 10.
 
-   Tested with version v1.38.0.
+```console
+sudo dnf install -y qemu-kvm libvirt
+rpm -q libvirt
+```
 
-1. Install the `kubectl` tool
+Enable the modular libvirt daemons:
 
-   ```
-   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-   sudo install kubectl /usr/local/bin
-   rm kubectl
-   kubectl version --client
-   ```
+```console
+for drv in qemu network nodedev nwfilter secret storage interface; do
+  sudo systemctl enable --now virt${drv}d{,-ro,-admin}.socket
+done
+```
 
-   For more info see
-   [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.34.1.
+Confirm the sockets are active:
 
-1. Install the `clusteradm` tool
+```console
+systemctl list-units 'virt*.socket' --no-legend
+```
 
-   ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
-   clusteradm version
-   ```
+Each listed unit should show `active` and `listening`.
 
-   For more info see
-   [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
+For more info see
+[Preparing RHEL to host virtual machines](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/10/html/configuring_and_managing_linux_virtual_machines/preparing-rhel-to-host-virtual-machines).
 
-   **WARNING**: clusteradm 0.11.1 is not compatible
+### Verify virtualization is supported
 
-1. Install the `subctl` tool
+After installing virtualization tools for your distribution, confirm the host
+can run KVM guests (required for the minikube `kvm2` driver):
 
-   ```
-   curl -Ls https://get.submariner.io | bash
-   sudo install ~/.local/bin/subctl /usr/local/bin/
-   rm ~/.local/bin/subctl
-   subctl version
-   ```
+```console
+virt-host-validate qemu
+```
 
-   For more info see
-   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0. Version v0.21.2 or later is required.
+All checks must be `PASS` or `WARN` (no `FAIL`). `WARN` for cgroups, IOMMU, or
+secure guest support is common on cloud VMs and is not a problem for the
+minikube `kvm2` driver. If any check is `FAIL`, fix it before continuing.
 
-1. Install the `velero` tool
+### Add yourself to the libvirt group
 
-   ```
-   curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
-   tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
-   sudo install velero /usr/local/bin
-   rm velero.tar.gz velero
-   velero version
-   ```
+Required for the minikube `kvm2` driver.
 
-   For more info see
-   [Velero Basic Install](https://velero.io/docs/v1.16/basic-install/)
+```console
+sudo usermod -a -G libvirt $(whoami)
+```
 
-1. Install `helm` tool - on Fedora you can use:
+Log out and log in again for the change to take effect.
 
-   ```
-    HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
-    curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
-    sudo install helm /usr/local/bin
-    rm -f helm
-    helm version
-   ```
+### Install minikube
 
-   See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
-   Tested with version v4.0.1.
+```console
+sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
+minikube version
+```
 
-1. Install the `virtctl` tool
+Tested with version v1.38.0.
 
-   ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
-   sudo install virtctl /usr/local/bin
-   rm virtctl
-   virtctl version
-   ```
+### Install kubectl
 
-   For more info see
-   [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
+```console
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin
+rm kubectl
+kubectl version --client
+```
 
-1. Install `mc` tool
+For more info see
+[Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/).
+Tested with version v1.34.1.
 
-   ```
-   curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
-   sudo install mc /usr/local/bin
-   rm mc
-   mc --version
-   ```
+### Install clusteradm
 
-   For more info see
-   [MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart)
+```console
+curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+clusteradm version
+```
 
-1. Install `kustomize` tool
+For more info see
+[Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
 
-   ```
-   curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-   sudo install kustomize /usr/local/bin
-   rm kustomize
-   kustomize version
-   ```
+> [!WARNING]
+> clusteradm 0.11.1 is not compatible.
 
-   For more info see
-   [kustomize install](https://kubectl.docs.kubernetes.io/installation/kustomize/)
+### Install subctl
 
-1. Install the `argocd` tool
+```console
+curl -Ls https://get.submariner.io | bash
+sudo install ~/.local/bin/subctl /usr/local/bin/
+rm ~/.local/bin/subctl
+subctl version
+```
 
-   ```
-   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
-   sudo install argocd /usr/local/bin/
-   rm argocd
-   argocd version --client
-   ```
+For more info see
+[Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
+Tested with version v0.22.0. Version v0.21.2 or later is required.
 
-   For more info see
-   [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+### Install velero
 
-1. Install the `kubectl-gather` plugin
+```console
+curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
+tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
+sudo install velero /usr/local/bin
+rm velero.tar.gz velero
+velero version --client-only
+```
 
-   ```
-   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
-   sudo install kubectl-gather /usr/local/bin
-   rm kubectl-gather
-   kubectl gather --version
-   ```
+For more info see
+[Velero Basic Install](https://velero.io/docs/v1.16/basic-install/)
 
-   kubectl-gather version 0.11.0 or later is required. For more info see
-   [kubectl-gather](https://github.com/nirs/kubectl-gather)
+### Install helm
+
+```console
+HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
+curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
+sudo install helm /usr/local/bin
+rm -f helm
+helm version
+```
+
+See [Installing Helm](https://helm.sh/docs/intro/install/) for other options.
+Tested with version v4.0.1.
+
+### Install virtctl
+
+```console
+curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
+sudo install virtctl /usr/local/bin
+rm virtctl
+virtctl version --client
+```
+
+For more info see
+[virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl).
+
+### Install mc
+
+```console
+curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
+sudo install mc /usr/local/bin
+rm mc
+mc --version
+```
+
+For more info see
+[MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart).
+
+### Install kustomize
+
+```console
+curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+sudo install kustomize /usr/local/bin
+rm kustomize
+kustomize version
+```
+
+For more info see
+[kustomize install](https://kubectl.docs.kubernetes.io/installation/kustomize/).
+
+### Install argocd
+
+```console
+curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+sudo install argocd /usr/local/bin/
+rm argocd
+argocd version --client
+```
+
+For more info see
+[argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/).
+
+### Install kubectl-gather
+
+```console
+tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
+curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
+sudo install kubectl-gather /usr/local/bin
+rm kubectl-gather
+kubectl gather --version
+```
+
+kubectl-gather version 0.11.0 or later is required. For more info see
+[kubectl-gather](https://github.com/nirs/kubectl-gather).
 
 ## Setup on macOS 26+
 
 > [!IMPORTANT]
 > Older macOS are not supported.
 
-1. Install the [Homebrew package manager](https://brew.sh/)
+### Install Homebrew
 
-1. Install required packages
+Install the [Homebrew package manager](https://brew.sh/).
 
-   ```
-   brew install \
-       argocd \
-       go \
-       helm \
-       kubectl \
-       kustomize \
-       minikube \
-       minio-mc \
-       python3 \
-       qemu \
-       velero \
-       vfkit \
-       virtctl
-   ```
+### Install required packages
 
-   **NOTE**: minikube version 1.38.0 or later is required, latest version is
-   recommended.
+```console
+brew install \
+    argocd \
+    go \
+    helm \
+    kubectl \
+    kustomize \
+    minikube \
+    minio-mc \
+    python3 \
+    qemu \
+    velero \
+    vfkit \
+    virtctl
+```
 
-1. Install `vmnet-helper`
+> [!NOTE]
+> minikube version 1.38.0 or later is required; the latest version is
+> recommended.
 
-   ```
-   brew tap nirs/vmnet-helper
-   brew install vmnet-helper
-   ```
+### Install vmnet-helper
 
-1. Install the `clusteradm` tool
+```console
+brew tap nirs/vmnet-helper
+brew install vmnet-helper
+```
 
-   ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
-   clusteradm version
-   ```
+### Install clusteradm
 
-   For more info see
-   [Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
+```console
+curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+clusteradm version
+```
 
-   **WARNING**: clusteradm 0.11.1 is not compatible
+For more info see
+[Install clusteradm CLI tool](https://open-cluster-management.io/docs/getting-started/installation/start-the-control-plane/#install-clusteradm-cli-tool).
 
-1. Install the `subctl` tool
+> [!WARNING]
+> clusteradm 0.11.1 is not compatible.
 
-   ```
-   curl -Ls https://get.submariner.io | bash
-   sudo install ~/.local/bin/subctl /usr/local/bin/
-   rm ~/.local/bin/subctl
-   subctl version
-   ```
+### Install subctl
 
-   For more info see
-   [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0. Version v0.21.2 or later is required.
+```console
+curl -Ls https://get.submariner.io | bash
+sudo install ~/.local/bin/subctl /usr/local/bin/
+rm ~/.local/bin/subctl
+subctl version
+```
 
-1. Install the `kubectl-gather` plugin
+For more info see
+[Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
+Tested with version v0.22.0. Version v0.21.2 or later is required.
 
-   ```
-   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
-   sudo install kubectl-gather /usr/local/bin
-   rm kubectl-gather
-   kubectl gather --version
-   ```
+### Install kubectl-gather
 
-   kubectl-gather version 0.11.0 or later is required. For more info see
-   [kubectl-gather](https://github.com/nirs/kubectl-gather)
+```console
+tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
+curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
+sudo install kubectl-gather /usr/local/bin
+rm kubectl-gather
+kubectl gather --version
+```
+
+kubectl-gather version 0.11.0 or later is required. For more info see
+[kubectl-gather](https://github.com/nirs/kubectl-gather).
 
 ### Migrating from lima
 
