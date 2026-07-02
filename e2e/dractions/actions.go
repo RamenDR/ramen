@@ -211,16 +211,8 @@ func Relocate(ctx types.TestContext) error {
 func Purge(ctx types.TestContext) error {
 	log := ctx.Logger()
 
-	cluster, err := util.GetCurrentCluster(ctx, ctx.ManagementNamespace(), ctx.Name())
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return err
-		}
-
-		log.Info("Purging workload")
-	} else {
-		log.Infof("Purging workload in cluster %q", cluster.Name)
-	}
+	// We cannot get the current cluster since the placement decision may be missing during relocate.
+	log.Info("Purging workload")
 
 	if err := deleteProtectionResources(ctx); err != nil {
 		return err
