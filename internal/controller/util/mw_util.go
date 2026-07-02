@@ -728,15 +728,8 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(mwName string, clusterName string
 		return nil
 	}
 
-	// check if the manifestwork has delete Option set
-	// if not set, call CreateOrUpdateNamespaceManifestWork such that it is
-	// updated with the delete option
 	if mw.Spec.DeleteOption == nil {
-		err = mwu.CreateOrUpdateNamespaceManifestWork(mwu.InstName, mwu.TargetNamespace, clusterName, annotations,
-			map[string]string{})
-		if err != nil {
-			mwu.Log.Info("error creating namespace via ManifestWork", "error", err, "cluster", clusterName)
-
+		if err := mwu.ensureOrphanDeleteOption(mwName, clusterName); err != nil {
 			return err
 		}
 	}
@@ -745,6 +738,32 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(mwName string, clusterName string
 	if err != nil {
 		return fmt.Errorf("%w", err)
 	}
+
+	return nil
+}
+
+// ensureOrphanDeleteOption sets the orphan delete option on a ManifestWork.  This is typically not needed since
+// CreateOrUpdateNamespaceManifestWork always sets the delete option, but is needed for MWs created by older versions.
+func (mwu *MWUtil) ensureOrphanDeleteOption(mwName string, clusterName string) error {
+	key := types.NamespacedName{Name: mwName, Namespace: clusterName}
+
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		mw := &ocmworkv1.ManifestWork{}
+		if err := mwu.Client.Get(mwu.Ctx, key, mw); err != nil {
+			return err
+		}
+
+		mw.Spec.DeleteOption = &ocmworkv1.DeleteOption{
+			PropagationPolicy: ocmworkv1.DeletePropagationPolicyTypeOrphan,
+		}
+
+		return mwu.Client.Update(mwu.Ctx, mw)
+	})
+	if err != nil {
+		return err
+	}
+
+	mwu.Log.Info("Updated ManifestWork delete option", "name", mwName, "namespace", clusterName)
 
 	return nil
 }
