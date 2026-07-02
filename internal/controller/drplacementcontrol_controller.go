@@ -815,15 +815,8 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		return err
 	}
 
-	// delete namespace manifestwork
-	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
-		annotations := make(map[string]string)
-		annotations[DRPCNameAnnotation] = drpc.Name
-		annotations[DRPCNamespaceAnnotation] = drpc.Namespace
-
-		if err := mwu.DeleteNamespaceManifestWork(drClusterName, annotations); err != nil {
-			return err
-		}
+	if err := deleteNamespaceManifestWorks(drpc, drPolicy, mwu, vrgNamespace); err != nil {
+		return err
 	}
 
 	// delete recipe manifestwork
@@ -856,6 +849,36 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 
 	globalActionLabels := GlobalActionLabels(drpc)
 	DeleteGlobalActionMetric(globalActionLabels)
+
+	return nil
+}
+
+// deleteNamespaceManifestWorks deletes namespace ManifestWorks for all
+// clusters in the DRPolicy, handling both discovered and non-discovered apps.
+// See createOrUpdateNamespaces for the symmetric create path.
+func deleteNamespaceManifestWorks(
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+	mwu rmnutil.MWUtil,
+	vrgNamespace string,
+) error {
+	namespaces := []string{vrgNamespace}
+	if isDiscoveredApp(drpc) {
+		namespaces = *drpc.Spec.ProtectedNamespaces
+	}
+
+	annotations := make(map[string]string)
+	annotations[DRPCNameAnnotation] = drpc.Name
+	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+
+	for _, ns := range namespaces {
+		for _, clusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
+			mwName := rmnutil.ManifestWorkName(drpc.Name, ns, rmnutil.MWTypeNS)
+			if err := mwu.DeleteNamespaceManifestWork(mwName, clusterName, annotations); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }
@@ -2798,7 +2821,7 @@ func adoptOrphanVRG(
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
 	// Adopt the namespace as well
-	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations, map[string]string{})
+	err := mwu.CreateOrUpdateNamespaceManifestWork(drpc.Name, vrgNamespace, cluster, annotations, map[string]string{})
 	if err != nil {
 		log.Info("error creating namespace via ManifestWork during adoption", "error", err, "cluster", cluster)
 
