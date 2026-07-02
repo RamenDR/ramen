@@ -146,6 +146,9 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			It("should set ClusterDataProtected status=Unknown reason=Initializing", func() {
 				vrgConditionStatusReasonExpect("ClusterDataProtected", metav1.ConditionUnknown, "Initializing")
 			})
+			It("should set HooksReady status=Unknown reason=Initializing", func() {
+				vrgConditionStatusReasonExpect("HooksReady", metav1.ConditionUnknown, "Initializing")
+			})
 		})
 		When("ReplicationState is primary, but sync and async are disabled", func() {
 			It("should change DataReady message", func() {
