@@ -711,8 +711,7 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 	return ctrlutil.OperationResultNone, nil
 }
 
-func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations map[string]string) error {
-	mwName := mwu.BuildManifestWorkName(MWTypeNS)
+func (mwu *MWUtil) DeleteNamespaceManifestWork(mwName string, clusterName string, annotations map[string]string) error {
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
