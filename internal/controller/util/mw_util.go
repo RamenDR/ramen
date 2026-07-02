@@ -679,18 +679,16 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 			return ctrlutil.OperationResultNone, fmt.Errorf("failed to fetch ManifestWork %s: %w", key, err)
 		}
 
-		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
-
 		if err := mwu.Create(mwu.Ctx, mw); err != nil {
 			return ctrlutil.OperationResultNone, err
 		}
+
+		mwu.Log.Info("Created ManifestWork", "name", mw.Name, "namespace", managedClusternamespace)
 
 		return ctrlutil.OperationResultCreated, nil
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
-		mwu.Log.Info("Updating ManifestWork", "name", mw.Name, "namespace", foundMW.Namespace)
-
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			if err := mwu.Client.Get(mwu.Ctx, key, foundMW); err != nil {
 				return err
@@ -704,6 +702,8 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 			return ctrlutil.OperationResultNone,
 				fmt.Errorf("failed to update ManifestWork %s: %w", key, err)
 		}
+
+		mwu.Log.Info("Updated ManifestWork", "name", mw.Name, "namespace", foundMW.Namespace)
 
 		return ctrlutil.OperationResultUpdated, nil
 	}
@@ -776,8 +776,6 @@ func (mwu *MWUtil) DeleteRecipeManifestWork(clusterName string) error {
 }
 
 func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
-	mwu.Log.Info("Delete ManifestWork from", "namespace", mwNamespace, "name", mwName)
-
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
@@ -789,12 +787,12 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
 	}
 
-	mwu.Log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
-
 	err = mwu.Client.Delete(mwu.Ctx, mw)
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete MW. Error %w", err)
 	}
+
+	mwu.Log.Info("Deleted ManifestWork", "name", mwName, "namespace", mwNamespace)
 
 	return nil
 }
