@@ -12,12 +12,14 @@ import (
 
 	"github.com/go-logr/logr"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/hooks"
@@ -988,12 +990,118 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	}
 
 	vrg := v.instance
+	labels := util.OwnerLabels(vrg)
+	veleroNamespace := v.veleroNamespaceName()
 
-	return v.kubeObjectsRecoverRequestsDelete(
-		result,
-		v.veleroNamespaceName(),
-		util.OwnerLabels(vrg),
-	)
+	err := v.kubeObjectsRecoverRequestsDelete(result, veleroNamespace, labels)
+	if err != nil {
+		v.log.Error(err, "Label-based kube objects protection deletion failed")
+
+		if fallbackErr := v.deleteRamenBSLsWithOwnerLabels(result, veleroNamespace, labels); fallbackErr != nil {
+			return fallbackErr
+		}
+	}
+
+	if orphanErr := v.deleteOrphanedRamenBSLs(result, veleroNamespace); orphanErr != nil {
+		return orphanErr
+	}
+
+	return err
+}
+
+// veleroBSL orphanedByVRGRename is true when owner labels reference this namespace but a different VRG name.
+func veleroBSLOrphanedByVRGRename(labels map[string]string, vrgNamespace, vrgName string) bool {
+	ownerNamespace, hasNamespace := labels[util.LabelOwnerNamespaceName]
+
+	ownerName, hasName := labels[util.LabelOwnerName]
+	if !hasNamespace || ownerNamespace != vrgNamespace || !hasName {
+		return false
+	}
+
+	return ownerName != vrgName
+}
+
+// deleteRamenBSLsWithOwnerLabels deletes BSLs for the current VRG when DeleteAllOf fails.
+func (v *VRGInstance) deleteRamenBSLsWithOwnerLabels(
+	result *ctrl.Result, veleroNamespace string, ownerLabels map[string]string,
+) error {
+	selectorLabels := make(map[string]string, len(ownerLabels)+1)
+	for key, value := range ownerLabels {
+		selectorLabels[key] = value
+	}
+
+	selectorLabels[util.CreatedByRamenLabel] = "true"
+
+	bslList := &velero.BackupStorageLocationList{}
+	if err := v.reconciler.List(v.ctx, bslList,
+		client.InNamespace(veleroNamespace),
+		client.MatchingLabels(selectorLabels),
+	); err != nil {
+		v.log.Error(err, "Failed to list BSLs for owner-label deletion")
+
+		result.Requeue = true
+
+		return err
+	}
+
+	for i := range bslList.Items {
+		bsl := &bslList.Items[i]
+		if err := v.reconciler.Delete(v.ctx, bsl); err != nil && !k8serrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to delete BSL with owner labels", "name", bsl.Name)
+
+			result.Requeue = true
+
+			return err
+		}
+	}
+
+	return nil
+}
+
+// deleteOrphanedRamenBSLs removes Ramen BSLs left from a renamed VRG (stale owner-name label).
+func (v *VRGInstance) deleteOrphanedRamenBSLs(result *ctrl.Result, veleroNamespace string) error {
+	bslList := &velero.BackupStorageLocationList{}
+	if err := v.reconciler.List(v.ctx, bslList,
+		client.InNamespace(veleroNamespace),
+		client.MatchingLabels{util.CreatedByRamenLabel: "true"},
+	); err != nil {
+		v.log.Error(err, "Failed to list BSLs for orphaned deletion")
+
+		result.Requeue = true
+
+		return err
+	}
+
+	vrg := v.instance
+	deleted := 0
+
+	for i := range bslList.Items {
+		bsl := &bslList.Items[i]
+		if !veleroBSLOrphanedByVRGRename(bsl.Labels, vrg.Namespace, vrg.Name) {
+			continue
+		}
+
+		v.log.Info("Deleting orphaned Ramen BSL from prior VRG owner",
+			"name", bsl.Name,
+			"ownerNamespace", bsl.Labels[util.LabelOwnerNamespaceName],
+			"ownerName", bsl.Labels[util.LabelOwnerName])
+
+		if err := v.reconciler.Delete(v.ctx, bsl); err != nil && !k8serrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to delete orphaned BSL", "name", bsl.Name)
+
+			result.Requeue = true
+
+			return err
+		}
+
+		deleted++
+	}
+
+	if deleted > 0 {
+		v.log.Info("Deleted orphaned Ramen BSLs", "count", deleted)
+	}
+
+	return nil
 }
 
 // mergeExcludedResources merges ConfigMap default exclusions with recipe-level exclusions.

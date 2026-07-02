@@ -511,6 +511,85 @@ type objectWriter struct {
 	log logr.Logger
 }
 
+func (w objectWriter) pairedBackupGet(requestsNamespaceName, requestName string) (*velero.Backup, error) {
+	existingBackup := &velero.Backup{}
+
+	backupErr := w.Get(w.ctx, client.ObjectKey{
+		Namespace: requestsNamespaceName,
+		Name:      requestName,
+	}, existingBackup)
+	if backupErr == nil {
+		return existingBackup, nil
+	}
+
+	if k8serrors.IsNotFound(backupErr) {
+		return nil, nil
+	}
+
+	return nil, fmt.Errorf("failed to check for existing backup: %w", backupErr)
+}
+
+func (w objectWriter) waitForBSLDeletion(requestsNamespaceName, requestName string) error {
+	existingBSL := &velero.BackupStorageLocation{}
+
+	err := w.Get(w.ctx, client.ObjectKey{
+		Namespace: requestsNamespaceName,
+		Name:      requestName,
+	}, existingBSL)
+	if err == nil {
+		return kubeobjects.RequestProcessingErrorCreate("backupstoragelocation deletion in progress")
+	}
+
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+
+	return fmt.Errorf("failed to confirm stale BSL deletion: %w", err)
+}
+
+// cleanupStaleBSLIfExists checks for and deletes stale BSL before creating a new one
+func (w objectWriter) cleanupStaleBSLIfExists(
+	requestsNamespaceName string,
+	requestName string,
+) error {
+	existingBSL := &velero.BackupStorageLocation{}
+
+	err := w.Get(w.ctx, client.ObjectKey{
+		Namespace: requestsNamespaceName,
+		Name:      requestName,
+	}, existingBSL)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		w.log.Error(err, "Failed to check for existing BSL", "name", requestName)
+
+		return fmt.Errorf("failed to check for existing BSL: %w", err)
+	}
+
+	pairedBackup, err := w.pairedBackupGet(requestsNamespaceName, requestName)
+	if err != nil {
+		return err
+	}
+
+	if !IsBSLStale(existingBSL, pairedBackup) {
+		return nil
+	}
+
+	w.log.Info("Found stale BSL, deleting before creating new one",
+		"name", requestName,
+		"phase", existingBSL.Status.Phase,
+		"creationTimestamp", existingBSL.CreationTimestamp,
+		"pairedBackup", pairedBackup != nil)
+
+	if err := w.Delete(w.ctx, existingBSL); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete stale BSL: %w", err)
+	}
+
+	return w.waitForBSLDeletion(requestsNamespaceName, requestName)
+}
+
 func backupRequestCreate(
 	w objectWriter,
 	s3Url string,
@@ -530,6 +609,11 @@ func backupRequestCreate(
 			Namespace: requestsNamespaceName,
 			Name:      requestName,
 		},
+	}
+
+	// Check for and delete any existing stale BSL before creating new one
+	if err := w.cleanupStaleBSLIfExists(requestsNamespaceName, requestName); err != nil {
+		return nil, nil, err
 	}
 
 	err := w.bslCreateOrUpdate(s3Url,
