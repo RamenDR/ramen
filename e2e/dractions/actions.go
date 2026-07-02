@@ -238,6 +238,17 @@ func Purge(ctx types.TestContext) error {
 		return err
 	}
 
+	// Delete namespaces only after the DRPC is fully deleted. We could delete them
+	// right after waitForProtectionResourcesDelete, but we keep the same order as
+	// Undeploy for consistency. See https://github.com/RamenDR/ramen/issues/2642
+	if err := ctx.Deployer().DeleteNamespaces(ctx); err != nil {
+		return err
+	}
+
+	if err := ctx.Deployer().WaitForNamespacesDelete(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Workload purged")
 
 	return nil
