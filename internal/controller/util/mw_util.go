@@ -353,7 +353,7 @@ func (mwu *MWUtil) IsManifestApplied(cluster, mwType string) bool {
 }
 
 // Namespace MW creation
-func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
+func (mwu *MWUtil) CreateOrUpdateNamespaceManifestWork(
 	name string, namespaceName string, managedClusterNamespace string,
 	annotations map[string]string, labels map[string]string,
 ) error {
@@ -730,10 +730,10 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations m
 	}
 
 	// check if the manifestwork has delete Option set
-	// if not set, call CreateOrUpdateNamespaceManifest such that it is
+	// if not set, call CreateOrUpdateNamespaceManifestWork such that it is
 	// updated with the delete option
 	if mw.Spec.DeleteOption == nil {
-		err = mwu.CreateOrUpdateNamespaceManifest(mwu.InstName, mwu.TargetNamespace, clusterName, annotations,
+		err = mwu.CreateOrUpdateNamespaceManifestWork(mwu.InstName, mwu.TargetNamespace, clusterName, annotations,
 			map[string]string{})
 		if err != nil {
 			mwu.Log.Info("error creating namespace via ManifestWork", "error", err, "cluster", clusterName)
