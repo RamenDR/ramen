@@ -154,6 +154,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - jobs/status
+  verbs:
+  - get
+- apiGroups:
   - cdi.kubevirt.io
   resources:
   - datavolumes
