@@ -700,9 +700,12 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 			return mwu.Client.Update(mwu.Ctx, foundMW)
 		})
-		if err == nil {
-			return ctrlutil.OperationResultUpdated, nil
+		if err != nil {
+			return ctrlutil.OperationResultNone,
+				fmt.Errorf("failed to update ManifestWork %s: %w", key, err)
 		}
+
+		return ctrlutil.OperationResultUpdated, nil
 	}
 
 	return ctrlutil.OperationResultNone, nil
