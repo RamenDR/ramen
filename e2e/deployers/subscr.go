@@ -115,6 +115,17 @@ func (s Subscription) Undeploy(ctx types.TestContext) error {
 		return err
 	}
 
+	// Delete namespaces only after resources are gone. Deleting the placement triggers
+	// DRPC deletion via the owner reference, and we must wait for the DRPC to be fully
+	// gone before deleting namespaces. See https://github.com/RamenDR/ramen/issues/2642
+	if err := s.DeleteNamespaces(ctx); err != nil {
+		return err
+	}
+
+	if err := s.WaitForNamespacesDelete(ctx); err != nil {
+		return err
+	}
+
 	log.Info("Workload undeployed")
 
 	return nil
@@ -137,14 +148,18 @@ func (s Subscription) DeleteResources(ctx types.TestContext) error {
 		return err
 	}
 
-	return util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace())
+	return nil
 }
 
 func (s Subscription) WaitForResourcesDelete(ctx types.TestContext) error {
-	if err := util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, ctx.ManagementNamespace()); err != nil {
-		return err
-	}
+	return util.WaitForNamespaceDelete(ctx, ctx.Env().Hub, ctx.ManagementNamespace())
+}
 
+func (s Subscription) DeleteNamespaces(ctx types.TestContext) error {
+	return util.DeleteNamespaceOnManagedClusters(ctx, ctx.AppNamespace())
+}
+
+func (s Subscription) WaitForNamespacesDelete(ctx types.TestContext) error {
 	return util.WaitForNamespaceDeleteOnManagedClusters(ctx, ctx.AppNamespace())
 }
 

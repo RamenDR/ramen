@@ -43,6 +43,8 @@ type WorkloadStatus struct {
 }
 
 // Deployer interface has methods to deploy a workload to a cluster
+//
+//nolint:interfacebloat
 type Deployer interface {
 	Deploy(TestContext) error
 	Undeploy(TestContext) error
@@ -52,10 +54,16 @@ type Deployer interface {
 	// IsDiscovered returns true for OCM discovered application, false for OCM managed applications.
 	IsDiscovered() bool
 
-	// DeleteResources removes all resources that were deployed as part of the workload
+	// DeleteResources removes all resources that were deployed as part of the workload, except namespaces.
 	DeleteResources(TestContext) error
-	// WaitForResourcesDelete waits for all workload resources to be deleted
+	// WaitForResourcesDelete waits for all workload resources to be deleted, except namespaces.
 	WaitForResourcesDelete(TestContext) error
+
+	// DeleteNamespaces deletes the application namespaces on managed clusters.  Must be called only after the DRPC is
+	// fully deleted. For more info see https://github.com/RamenDR/ramen/issues/2642
+	DeleteNamespaces(TestContext) error
+	// WaitForNamespacesDelete waits for the application namespaces to be deleted on managed clusters.
+	WaitForNamespacesDelete(TestContext) error
 
 	// GetRecipe returns the recipe if the deployer is configured to use one.
 	// Returns nil if the deployer is not configured to use a recipe.
