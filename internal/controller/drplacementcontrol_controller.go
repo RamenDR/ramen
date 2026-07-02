@@ -867,14 +867,10 @@ func deleteNamespaceManifestWorks(
 		namespaces = *drpc.Spec.ProtectedNamespaces
 	}
 
-	annotations := make(map[string]string)
-	annotations[DRPCNameAnnotation] = drpc.Name
-	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
-
 	for _, ns := range namespaces {
 		for _, clusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
 			mwName := rmnutil.ManifestWorkName(drpc.Name, ns, rmnutil.MWTypeNS)
-			if err := mwu.DeleteNamespaceManifestWork(mwName, clusterName, annotations); err != nil {
+			if err := mwu.DeleteNamespaceManifestWork(mwName, clusterName); err != nil {
 				return err
 			}
 		}
