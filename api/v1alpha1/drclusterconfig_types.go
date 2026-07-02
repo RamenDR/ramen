@@ -33,7 +33,7 @@ type DRClusterConfigSpec struct {
 
 const (
 	DRClusterConfigConfigurationProcessed string = "Processed"
-	DRClusterConfigS3Reachable            string = "Reachable"
+	DRClusterConfigS3Healthy              string = "MetaDataStoresHealthy"
 )
 
 // DRClusterConfigStatus defines the observed state of DRClusterConfig
