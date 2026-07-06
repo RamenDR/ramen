@@ -138,9 +138,9 @@ TOOLS = [
     },
     {
         "name": "argocd",
-        "version": "v2.11.3",
+        "version": "v3.4.4",
         "url": "https://github.com/argoproj/argo-cd/releases/download/{version}/argocd-{goos}-{goarch}",
-        "digest": "6b7551e83e8296a7b0ee265400429e81185fc49f012b537016ded6ef17c178f0",
+        "digest": "b93c312956880c9597a246a7d1e705fbb7ee7f19c5229affdec99b26d5663e09",
         "verify": ["argocd", "version", "--client"],
     },
     {

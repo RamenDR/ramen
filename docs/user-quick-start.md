@@ -222,7 +222,7 @@ clusters. *Ramen* makes this easy using minikube, but you need enough resources:
 1. Install the `argocd` tool
 
    ```
-   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v3.4.4/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
    argocd version --client
