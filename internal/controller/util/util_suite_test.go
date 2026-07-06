@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -114,6 +115,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = snapv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = ocmworkv1.Install(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating a k8s client")
