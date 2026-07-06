@@ -102,7 +102,7 @@ environment.
    ```
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
-   Tested with version v4.0.1.
+   Tested with version v4.2.2.
 
 1. Install the `virtctl` tool
 

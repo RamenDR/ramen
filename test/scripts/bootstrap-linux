@@ -108,9 +108,9 @@ TOOLS = [
     },
     {
         "name": "helm",
-        "version": "v4.2.0",
+        "version": "v4.2.2",
         "url": "https://get.helm.sh/helm-{version}-{goos}-{goarch}.tar.gz",
-        "digest": "97dbeb971be4ac4b27e3839976d9564c0fb35c6f3b1da89dd1e292d236af4096",
+        "digest": "9adafecab4d406853bba163a70e9f104f47dbbf65ce24b7653bae7e36150bcb6",
         "member": "{goos}-{goarch}/helm",
         "verify": ["helm", "version"],
     },
