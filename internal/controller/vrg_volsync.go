@@ -892,6 +892,7 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 		if err := markRGSResourceForDeletion(v.ctx, v.reconciler.Client, cg, pvc.Namespace); err != nil {
 			log.Error(err, "Failed to mark RGS for deletion", "CG", cg)
+			v.requeue()
 
 			return
 		}
@@ -903,6 +904,7 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 	// This call is only from Primary cluster. delete ReplicationSource/CG and related resources.
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc, skipPVCDisownership); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
+		v.requeue()
 
 		return
 	}
