@@ -29,7 +29,17 @@ def wait_for_clusters(clusters):
 def deploy_argocd(cluster):
     print("Deploying argocd")
     path = _cache.get(str(PACKAGE_DIR / "start-data"), CACHE_KEY)
-    kubectl.apply("--filename", path, "--namespace", "argocd", context=cluster)
+    # Using Server-side Apply to avoid this failure:
+    #   The CustomResourceDefinition "applicationsets.argoproj.io" is invalid:
+    #   metadata.annotations: Too long: may not be more than 262144 bytes
+    kubectl.apply(
+        "--filename",
+        path,
+        "--namespace",
+        "argocd",
+        "--server-side=true",
+        context=cluster,
+    )
 
 
 def wait_for_deployments(cluster):
