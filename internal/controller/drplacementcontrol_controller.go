@@ -915,7 +915,7 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	}
 
 	// delete MCVs
-	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DRPolicyClusterNames(drPolicy)); err != nil {
+	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DRPolicyClusterNames(drPolicy), vrgNamespace); err != nil {
 		return fmt.Errorf("error in deleting MCV (%w)", err)
 	}
 
@@ -960,12 +960,12 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 }
 
 func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
-	drpc *rmn.DRPlacementControl, clusterNames []string,
+	drpc *rmn.DRPlacementControl, clusterNames []string, vrgNamespace string,
 ) error {
 	// Only after the VRGs have been deleted, we delete the MCVs for the VRGs and the NS
 	for _, drClusterName := range clusterNames {
 		// Delete MCV for the VRG
-		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
+		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, vrgNamespace, drClusterName, rmnutil.MWTypeVRG)
 		if err != nil {
 			return fmt.Errorf("failed to delete VRG MCV %w", err)
 		}
