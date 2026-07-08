@@ -970,10 +970,9 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 			return fmt.Errorf("failed to delete VRG MCV %w", err)
 		}
 
-		// Delete MCV for Namespace
-		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
-		if err != nil {
-			return fmt.Errorf("failed to delete namespace MCV %w", err)
+		// Delete MCVs for protected namespaces
+		if err := r.deleteProtectedNamespaceMCVs(drpc, drClusterName); err != nil {
+			return err
 		}
 
 		// Delete MCV for Recipe
@@ -986,6 +985,25 @@ func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
 			if err != nil {
 				return fmt.Errorf("failed to delete recipe MCV %w", err)
 			}
+		}
+	}
+
+	return nil
+}
+
+// deleteProtectedNamespaceMCVs deletes MCVs for protected namespaces. These MCVs are created by
+// createOrUpdateNSForDiscoveredApps via GetNSFromManagedCluster, named "{namespace}-ns-mcv" (e.g.,
+// "test-multi-1-ns-mcv"). Does nothing for non-discovered apps.
+func (r *DRPlacementControlReconciler) deleteProtectedNamespaceMCVs(
+	drpc *rmn.DRPlacementControl, clusterName string,
+) error {
+	if !isDiscoveredApp(drpc) {
+		return nil
+	}
+
+	for _, ns := range *drpc.Spec.ProtectedNamespaces {
+		if err := r.MCVGetter.DeleteNamespaceManagedClusterView(ns, "", clusterName, rmnutil.MWTypeNS); err != nil {
+			return fmt.Errorf("failed to delete namespace MCV for %q: %w", ns, err)
 		}
 	}
 
