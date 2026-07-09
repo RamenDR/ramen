@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -18,7 +19,26 @@ import (
 const (
 	KindVirtualMachine = "VirtualMachine"
 	KubeVirtAPIVersion = "kubevirt.io/v1"
+	// VMStaticIPAnnotation is the annotation placed on spec.template.metadata
+	// to pre-reserve a specific IP from an OVN-K8s, used by DR to identify the
+	// static IP configured VM
+	VMStaticIPAnnotation = "network.kubevirt.io/addresses"
 )
+
+// VMStaticIPInfo holds per-VM static IP detection results.
+// HasStaticIP=false is not an error — it means the VM uses DHCP or pod
+// network and requires no IP translation during DR.
+type VMStaticIPInfo struct {
+	VMName    string
+	Namespace string
+	// HasStaticIP is true when the VM carries the network.kubevirt.io/addresses
+	// annotation on spec.template.metadata, indicating a UDN/CUDN static IP
+	// reservation that must be translated on failover/relocate.
+	HasStaticIP bool
+	// PrimaryAddresses holds the interface→IPs parsed directly from the
+	// annotation on the primary cluster. This is the source for translation.
+	PrimaryAddresses map[string][]string
+}
 
 func ListVMsByLabelSelector(
 	ctx context.Context,
@@ -235,4 +255,17 @@ func fetchPartialMeta(
 
 func gvkString(o metav1.OwnerReference) string {
 	return o.APIVersion + "/" + o.Kind
+}
+
+// ParseVMInterfaceAddresses parses the network.kubevirt.io/addresses annotation.
+// Value format: '{"primary-udn": ["192.168.0.100"]'
+// Returns the full interface→IPs mapping, or nil on parse failure.
+// Callers that only need interface names can iterate the map keys.
+func ParseVMInterfaceAddresses(raw string) map[string][]string {
+	var mapping map[string][]string
+	if err := json.Unmarshal([]byte(raw), &mapping); err != nil {
+		return nil
+	}
+
+	return mapping
 }
