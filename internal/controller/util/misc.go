@@ -292,13 +292,28 @@ func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, 
 func RemoveOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {
 	currentOwnerRefs := obj.GetOwnerReferences()
 
-	length := len(currentOwnerRefs)
-	if length < 1 {
+	if len(currentOwnerRefs) < 1 {
 		return false, nil // No owner references to remove
 	}
 
-	// TODO: Remove just the owner's Reference instead of blindly removing all ownerreferences.
-	obj.SetOwnerReferences(nil)
+	ownerObj, ok := owner.(client.Object)
+	if !ok {
+		return false, fmt.Errorf("%T is not a client.Object, cannot call RemoveOwnerReference", owner)
+	}
+
+	// If the owner reference is not present, treat it as a no-op rather than an error.
+	found, err := controllerutil.HasOwnerReference(currentOwnerRefs, ownerObj, scheme)
+	if err != nil {
+		return false, err
+	}
+
+	if !found {
+		return false, nil
+	}
+
+	if err := controllerutil.RemoveOwnerReference(owner, obj, scheme); err != nil {
+		return false, err
+	}
 
 	return true, nil
 }

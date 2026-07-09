@@ -298,25 +298,40 @@ func (v *VSHandler) setRDAndRSAsOwnerOfPVC(
 	obj client.Object,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
-	// Only set OwnerReference if RD and PVC are in the same namespace
+	// Only set OwnerReference if RD/RS and PVC are in the same namespace
 	if obj.GetNamespace() != pvc.Namespace {
 		return nil
 	}
-
-	// Work on a deep copy to avoid mutating caller's object
-	updated := pvc.DeepCopy()
 
 	kind, err := getKindRSorRD(obj)
 	if err != nil {
 		return err
 	}
 
-	// Create a new controller reference
-	ref := metav1.NewControllerRef(
-		obj,
-		volsyncv1alpha1.GroupVersion.WithKind(kind))
-	// Overwrite OwnerReferences with the new one
-	updated.SetOwnerReferences([]metav1.OwnerReference{*ref})
+	gvk := volsyncv1alpha1.GroupVersion.WithKind(kind)
+
+	// Neither RD nor RS is the controller of the PVC; they are non-controlling owners.
+	ref := metav1.OwnerReference{
+		APIVersion:         gvk.GroupVersion().String(),
+		Kind:               gvk.Kind,
+		Name:               obj.GetName(),
+		UID:                obj.GetUID(),
+		Controller:         ptr.To(false),
+		BlockOwnerDeletion: ptr.To(false),
+	}
+
+	// Skip the update if this owner reference is already present on the PVC
+	for _, existing := range pvc.GetOwnerReferences() {
+		if existing.UID == ref.UID {
+			return nil
+		}
+	}
+
+	// Work on a deep copy to avoid mutating caller's object
+	updated := pvc.DeepCopy()
+
+	newRefs := append(updated.GetOwnerReferences(), ref)
+	updated.SetOwnerReferences(newRefs)
 
 	// Update the PVC
 	if err := v.client.Update(v.ctx, updated); err != nil {
@@ -939,6 +954,7 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		}
 
 		tmpPVC = pvc.DeepCopy()
+		tmpPVC.SetOwnerReferences(nil)
 		tmpPVC.Name = util.GetTmpPVCNameForFinalSync(pvc.Name)
 		tmpPVC.ResourceVersion = ""
 		tmpPVC.UID = ""
@@ -3363,7 +3379,7 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim, skipP
 	}
 
 	// Remove the VolSync labels and annotations from the PVC
-	return util.NewResourceUpdater(pvc).
+	updater := util.NewResourceUpdater(pvc).
 		DeleteLabel(util.VRGOwnerNameLabel).
 		DeleteLabel(util.VRGOwnerNamespaceLabel).
 		DeleteLabel(VolSyncDoNotDeleteLabel).
@@ -3371,9 +3387,13 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim, skipP
 		DeleteLabel(util.LabelOwnerNamespaceName).
 		DeleteLabel(util.ConsistencyGroupLabel).
 		DeleteLabel(util.CreatedByRamenLabel).
-		RemoveFinalizer(PVCFinalizerProtected).
-		RemoveOwner(v.owner, v.client.Scheme()).
-		Update(v.ctx, v.client)
+		RemoveFinalizer(PVCFinalizerProtected)
+
+	if !skipPVCDisownership {
+		updater = updater.RemoveOwner(v.owner, v.client.Scheme())
+	}
+
+	return updater.Update(v.ctx, v.client)
 }
 
 func updateClaimRef(pv *corev1.PersistentVolume, name, namespace string) {
