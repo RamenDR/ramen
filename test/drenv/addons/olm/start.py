@@ -22,7 +22,7 @@ def deploy(cluster):
     #   is invalid: metadata.annotations: Too long: must have at most 262144 bytes
     # See https://medium.com/pareture/kubectl-install-crd-failed-annotations-too-long-2ebc91b40c7d
     path = _cache.get(str(PACKAGE_DIR / "start-data" / "crds"), CRDS_CACHE_KEY)
-    kubectl.apply("--filename", path, "--server-side=true", context=cluster)
+    kubectl.apply("--filename", path, context=cluster)
 
     print("Waiting until cdrs are established")
     kubectl.wait(

@@ -76,10 +76,15 @@ def exec(*args, context=None):
     return _run("exec", *args, context=context)
 
 
-def apply(*args, input=None, context=None, log=print):
+def apply(*args, server_side=True, input=None, context=None, log=print):
     """
     Run kubectl apply ... logging progress messages.
     """
+    for arg in args:
+        if "--server-side" in arg:
+            raise ValueError("use server_side argument instead of --server-side flag")
+    if server_side:
+        args = ("--server-side=true",) + args
     _watch("apply", *args, input=input, context=context, log=log)
 
 
