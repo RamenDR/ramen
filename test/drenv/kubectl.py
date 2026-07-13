@@ -79,12 +79,16 @@ def exec(*args, context=None):
 def apply(*args, server_side=True, input=None, context=None, log=print):
     """
     Run kubectl apply ... logging progress messages.
+
+    Server-side apply is enabled by default to avoid the large
+    last-applied-configuration annotation created by client-side apply.
     """
+    args = list(args)
     for arg in args:
-        if "--server-side" in arg:
+        if arg == "--server-side" or arg.startswith("--server-side="):
             raise ValueError("use server_side argument instead of --server-side flag")
     if server_side:
-        args = ("--server-side=true",) + args
+        args.append("--server-side=true")
     _watch("apply", *args, input=input, context=context, log=log)
 
 
