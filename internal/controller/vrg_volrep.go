@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -2929,6 +2930,92 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 // if no ProtectedPVCs is in error and atleast one is progressing, then
 //
 //	VRG.conditions.Available.Status = false
+const maxConditionMessageBytes = 16 * 1024
+const maxExemplarPVCs = 2
+
+func buildPVCErrorMessage(protectedPVCs []ramendrv1alpha1.ProtectedPVC, conditionType string) string {
+	type errorGroup struct {
+		message string
+		pvcs    []string
+	}
+
+	groupMap := make(map[string]*errorGroup)
+	multiNamespace := false
+
+	for i := range protectedPVCs {
+		pvc := &protectedPVCs[i]
+		condition := rmnutil.FindCondition(pvc.Conditions, conditionType)
+
+		if condition == nil || condition.Reason != VRGConditionReasonError {
+			continue
+		}
+
+		if pvc.Namespace != "" {
+			multiNamespace = true
+		}
+
+		grp, exists := groupMap[condition.Message]
+		if !exists {
+			grp = &errorGroup{message: condition.Message}
+			groupMap[condition.Message] = grp
+		}
+
+		pvcID := pvc.Name
+		if multiNamespace && pvc.Namespace != "" {
+			pvcID = pvc.Namespace + "/" + pvc.Name
+		}
+
+		grp.pvcs = append(grp.pvcs, pvcID)
+	}
+
+	if len(groupMap) == 0 {
+		return "All PVCs of the VolumeReplicationGroup are not ready"
+	}
+
+	groups := make([]*errorGroup, 0, len(groupMap))
+	for _, grp := range groupMap {
+		groups = append(groups, grp)
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		return len(groups[i].pvcs) > len(groups[j].pvcs)
+	})
+
+	var parts []string
+
+	for _, grp := range groups {
+		var part string
+
+		if len(grp.pvcs) == 1 {
+			part = fmt.Sprintf("%s (%s)", grp.pvcs[0], grp.message)
+		} else {
+			exemplars := grp.pvcs
+			if len(exemplars) > maxExemplarPVCs {
+				exemplars = exemplars[:maxExemplarPVCs]
+			}
+
+			part = fmt.Sprintf("%d PVCs including %s (%s)",
+				len(grp.pvcs), strings.Join(exemplars, ", "), grp.message)
+		}
+
+		parts = append(parts, part)
+	}
+
+	msg := fmt.Sprintf("PVCs not ready: %s", strings.Join(parts, "; "))
+
+	if len(msg) > maxConditionMessageBytes {
+		truncated := msg[:maxConditionMessageBytes-50]
+		remaining := len(groups) - strings.Count(truncated, ";") - 1
+		if remaining > 0 {
+			msg = truncated + fmt.Sprintf("... and %d more error groups", remaining)
+		} else {
+			msg = truncated + "..."
+		}
+	}
+
+	return msg
+}
+
 //	VRG.conditions.Available.Reason = Progressing
 //
 //nolint:funlen
@@ -2998,7 +3085,7 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	// Set Error condition for VRG.
 	v.log.Info("Marking VRG not DataReady with error. All PVCs are not ready")
 
-	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	msg := buildPVCErrorMessage(v.instance.Status.ProtectedPVCs, VRGConditionTypeDataReady)
 
 	return newVRGDataErrorCondition(v.instance.Generation, msg)
 }
@@ -3086,7 +3173,7 @@ func (v *VRGInstance) aggregateVolRepDataProtectedCondition() *metav1.Condition 
 	// VRG is neither Data Protected nor Replicating
 	v.log.Info("Marking VRG data not protected with error. All PVCs are not ready")
 
-	msg := "All PVCs of the VolumeReplicationGroup are not ready"
+	msg := buildPVCErrorMessage(v.instance.Status.ProtectedPVCs, VRGConditionTypeDataProtected)
 
 	return newVRGAsDataNotProtectedCondition(v.instance.Generation, msg)
 }
