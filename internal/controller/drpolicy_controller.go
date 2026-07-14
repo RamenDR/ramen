@@ -85,9 +85,9 @@ const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
 //nolint:cyclop,funlen
 func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drp", req.NamespacedName.Name, "rid", util.GetRID())
-	log.Info("reconcile enter")
+	log.Info("Entering reconcile loop")
 
-	defer log.Info("reconcile exit")
+	defer log.Info("Exiting reconcile loop")
 
 	drpolicy := &ramen.DRPolicy{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drpolicy); err != nil {
