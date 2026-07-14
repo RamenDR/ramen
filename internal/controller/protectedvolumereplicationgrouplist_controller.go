@@ -64,6 +64,12 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 		instance:   &ramendrv1alpha1.ProtectedVolumeReplicationGroupList{},
 	}
 
+	s.log.Info("Entering reconcile loop")
+
+	defer func() {
+		s.log.Info("Exiting reconcile loop", "time spent", time.Since(start))
+	}()
+
 	// get ProtectedVolumeReplicationGroupListInstance and save to s.instance
 	if err := r.Client.Get(s.ctx, req.NamespacedName, s.instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
@@ -72,12 +78,6 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 	s.log = s.log.WithValues("rid", s.instance.ObjectMeta.UID, "gen", s.instance.ObjectMeta.Generation,
 		"rv", s.instance.ObjectMeta.ResourceVersion)
 	s.ctx = ctrl.LoggerInto(ctx, s.log)
-
-	s.log.Info("reconcile start")
-
-	defer func() {
-		s.log.Info("reconcile end", "time spent", time.Since(start))
-	}()
 
 	if s.instance.Status != nil {
 		return ctrl.Result{}, nil

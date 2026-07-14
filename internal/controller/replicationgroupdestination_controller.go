@@ -40,8 +40,13 @@ type ReplicationGroupDestinationReconciler struct {
 //+kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;delete
 
+//nolint:funlen
 func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("rgd", req.NamespacedName, "rid", util.GetRID())
+	logger.Info("Entering reconcile loop")
+
+	defer logger.Info("Exiting reconcile loop")
+
 	logger.Info("Get ReplicationGroupDestination")
 
 	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
