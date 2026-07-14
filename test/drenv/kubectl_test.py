@@ -60,7 +60,7 @@ def test_apply(tmpenv, capsys):
 @pytest.mark.cluster
 @pytest.mark.parametrize(
     ("server_side", "has_last_applied"),
-    [(True, False), (False, True)],
+    [(None, False), (True, False), (False, True)],
 )
 def test_apply_mode(tmpenv, tmp_path, server_side, has_last_applied):
     name = f"test-apply-{secrets.token_hex(4)}"
@@ -72,9 +72,10 @@ def test_apply_mode(tmpenv, tmp_path, server_side, has_last_applied):
     )
 
     try:
+        kwargs = {} if server_side is None else {"server_side": server_side}
         kubectl.apply(
             f"--filename={manifest}",
-            server_side=server_side,
+            **kwargs,
             context=tmpenv.profile,
         )
         out = kubectl.get(resource, "--output=json", context=tmpenv.profile)
