@@ -84,7 +84,11 @@ def test_apply_mode(tmpenv, tmp_path, server_side, has_last_applied):
             "kubectl.kubernetes.io/last-applied-configuration" in annotations
         ) is has_last_applied
     finally:
-        kubectl.delete(resource, context=tmpenv.profile)
+        kubectl.delete(
+            resource,
+            "--ignore-not-found=true",
+            context=tmpenv.profile,
+        )
 
 
 @pytest.mark.parametrize(
