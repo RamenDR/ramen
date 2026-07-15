@@ -311,6 +311,80 @@ func SetVolumeGroupSnapshotSourceSelector(vgs client.Object, selector *metav1.La
 	}
 }
 
+// GetVolumeGroupSnapshotClasses returns VGS classes using the appropriate API.
+func GetVolumeGroupSnapshotClasses(
+	ctx context.Context,
+	k8sClient client.Client,
+	apiReader client.Reader,
+	volumeGroupSnapshotClassSelector metav1.LabelSelector,
+) ([]VolumeGroupSnapshotClassWrapper, error) {
+	if UsePublicVGSAPI(ctx, apiReader) {
+		return getPublicVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
+	}
+
+	return getPrivateVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
+}
+
+func getPublicVolumeGroupSnapshotClasses(
+	ctx context.Context,
+	k8sClient client.Client,
+	volumeGroupSnapshotClassSelector metav1.LabelSelector,
+) ([]VolumeGroupSnapshotClassWrapper, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&volumeGroupSnapshotClassSelector)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
+	}
+
+	vgscList := &publicgroupsnapv1.VolumeGroupSnapshotClassList{}
+	if err := k8sClient.List(ctx, vgscList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, fmt.Errorf("error listing public volumegroupsnapshotclasses (%w)", err)
+	}
+
+	wrappers := make([]VolumeGroupSnapshotClassWrapper, 0, len(vgscList.Items))
+	for i := range vgscList.Items {
+		wrappers = append(wrappers, &publicVGSCWrapper{vgsc: &vgscList.Items[i]})
+	}
+
+	return wrappers, nil
+}
+
+func getPrivateVolumeGroupSnapshotClasses(
+	ctx context.Context,
+	k8sClient client.Client,
+	volumeGroupSnapshotClassSelector metav1.LabelSelector,
+) ([]VolumeGroupSnapshotClassWrapper, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&volumeGroupSnapshotClassSelector)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
+	}
+
+	vgscList := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
+	if err := k8sClient.List(ctx, vgscList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, fmt.Errorf("error listing private volumegroupsnapshotclasses (%w)", err)
+	}
+
+	wrappers := make([]VolumeGroupSnapshotClassWrapper, 0, len(vgscList.Items))
+	for i := range vgscList.Items {
+		wrappers = append(wrappers, &privateVGSCWrapper{vgsc: &vgscList.Items[i]})
+	}
+
+	return wrappers, nil
+}
+
+// VolumeGroupSnapshotClassMatchStorageProviders checks if a VGS class matches any storage provider.
+func VolumeGroupSnapshotClassMatchStorageProviders(
+	volumeGroupSnapshotClass VolumeGroupSnapshotClassWrapper,
+	storageClassProviders []string,
+) bool {
+	for _, storageClassProvider := range storageClassProviders {
+		if storageClassProvider == volumeGroupSnapshotClass.GetDriver() {
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetVGSClassFromMCV unmarshals a VolumeGroupSnapshotClass from ManagedClusterView using the
 // apiVersion returned by the managed cluster.
 func GetVGSClassFromMCV(

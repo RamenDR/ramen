@@ -13,7 +13,6 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -82,6 +81,7 @@ type RestoredPVC struct {
 
 type volumeGroupSourceHandler struct {
 	client.Client
+	APIReader                    client.Reader
 	VolumeGroupSnapshotName      string
 	VolumeGroupSnapshotNamespace string
 	VolumeGroupSnapshotClassName string
@@ -94,6 +94,7 @@ type volumeGroupSourceHandler struct {
 
 func NewVolumeGroupSourceHandler(
 	client client.Client,
+	apiReader client.Reader,
 	rgs *ramendrv1alpha1.ReplicationGroupSource,
 	defaultCephFSCSIDriverName string,
 	vsHandler *volsync.VSHandler,
@@ -105,6 +106,7 @@ func NewVolumeGroupSourceHandler(
 
 	return &volumeGroupSourceHandler{
 		Client:                       client,
+		APIReader:                    apiReader,
 		VolumeGroupSnapshotName:      vgsName,
 		VolumeGroupSnapshotNamespace: rgs.Namespace,
 		VolumeGroupSnapshotClassName: rgs.Spec.VolumeGroupSnapshotClassName,
@@ -125,15 +127,13 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CreateOrUpdateVolumeGroupSnapshot")
 	logger.Info("Create or update volume group snapshot")
 
-	volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: h.VolumeGroupSnapshotNamespace,
-			Name:      h.VolumeGroupSnapshotName,
-		},
-	}
+	// Create or update VGS using the appropriate API type.
+	volumeGroupSnapshot := util.NewVolumeGroupSnapshot(
+		ctx, h.APIReader, h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace,
+	)
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, volumeGroupSnapshot, func() error {
-		if !volumeGroupSnapshot.DeletionTimestamp.IsZero() {
+		if !volumeGroupSnapshot.GetDeletionTimestamp().IsZero() {
 			return fmt.Errorf("the volume group snapshot is being deleted, need to wait")
 		}
 
@@ -146,8 +146,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNameAnnotation, owner.GetName())
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
 
-		volumeGroupSnapshot.Spec.VolumeGroupSnapshotClassName = &h.VolumeGroupSnapshotClassName
-		volumeGroupSnapshot.Spec.Source.Selector = h.VolumeGroupLabel
+		util.SetVolumeGroupSnapshotClassName(volumeGroupSnapshot, &h.VolumeGroupSnapshotClassName)
+		util.SetVolumeGroupSnapshotSourceSelector(volumeGroupSnapshot, h.VolumeGroupLabel)
 
 		return nil
 	})
@@ -157,7 +157,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		return false, err
 	}
 
-	logger.Info("VolumeGroupSnapshot successfully created or updated", "operation", op, "VGSUid", volumeGroupSnapshot.UID)
+	logger.Info("VolumeGroupSnapshot successfully created or updated",
+		"operation", op, "VGSUid", volumeGroupSnapshot.GetUID())
 
 	if op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated {
 		logger.Info("VolumeGroupSnapshot was created, need to wait until it is ready to be used")
@@ -175,10 +176,9 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CleanVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
-	if err := h.Client.Get(ctx, types.NamespacedName{
-		Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace,
-	}, vgs); err != nil {
+	vgs, err := util.GetVolumeGroupSnapshot(ctx, h.Client, h.APIReader,
+		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace)
+	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			logger.Info("Volume group snapshot was already deleted")
 
@@ -190,13 +190,13 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		return err
 	}
 
-	if vgs.Status != nil {
+	if util.GetStatus(vgs) != nil {
 		volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
 		if err != nil {
 			return err
 		}
 
-		logger.Info("Clean: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+		logger.Info("Clean: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.GetName())
 
 		for idx := range volumeSnapshots {
 			vs := &volumeSnapshots[idx]
@@ -265,10 +265,9 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 	logger := h.Logger.WithName("RestoreFromVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
-	if err := h.Client.Get(ctx,
-		types.NamespacedName{Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace},
-		vgs); err != nil {
+	vgs, err := util.GetVolumeGroupSnapshot(ctx, h.Client, h.APIReader,
+		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get volume group snapshot: %w", err)
 	}
 
@@ -281,7 +280,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		return nil, err
 	}
 
-	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.GetName())
 
 	return h.restorePVCsFromSnapshots(ctx, vgs, volumeSnapshots, owner, logger)
 }
@@ -289,7 +288,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 // restorePVCsFromSnapshots iterates over VolumeSnapshots owned by a VGS, restoring each to a read-only PVC.
 func (h *volumeGroupSourceHandler) restorePVCsFromSnapshots(
 	ctx context.Context,
-	vgs *vgsv1beta1.VolumeGroupSnapshot,
+	vgs client.Object,
 	volumeSnapshots []vsv1.VolumeSnapshot,
 	owner metav1.Object,
 	logger logr.Logger,
@@ -301,10 +300,10 @@ func (h *volumeGroupSourceHandler) restorePVCsFromSnapshots(
 			"PVCName", vs.Spec.Source.PersistentVolumeClaimName, "VolumeSnapshotName", vs.Name)
 
 		pvc, err := util.GetPVC(ctx, h.Client,
-			types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vgs.Namespace})
+			types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vgs.GetNamespace()})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get PVC from VGS %s: %w",
-				vgs.Namespace+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
+				vgs.GetNamespace()+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
 		}
 
 		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)

@@ -51,7 +51,7 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 				rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 			if err == nil {
 				cephfsCGHandler := cephfscg.NewVSCGHandler(
-					v.ctx, v.reconciler.Client, v.instance,
+					v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.instance,
 					&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: cgLabelVal}},
 					v.volSyncHandler, cgLabelVal, v.log,
 				)
@@ -230,7 +230,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		}
 
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
-			v.ctx, v.reconciler.Client, v.instance,
+			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.instance,
 			&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: cg}},
 			v.volSyncHandler, cg, v.log,
 		)
@@ -540,7 +540,7 @@ func (v *VRGInstance) createOrUpdateReplicationDestinations(
 
 	for groupKey, groupVal := range groups {
 		cephfsCGHandler := cephfscg.NewVSCGHandler(
-			v.ctx, v.reconciler.Client, v.instance,
+			v.ctx, v.reconciler.Client, v.reconciler.APIReader, v.instance,
 			&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: groupKey}},
 			v.volSyncHandler, groupKey, v.log,
 		)

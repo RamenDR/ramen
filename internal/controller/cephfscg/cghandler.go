@@ -27,6 +27,7 @@ import (
 func NewVSCGHandler(
 	ctx context.Context,
 	k8sClient client.Client,
+	apiReader client.Reader,
 	instance *ramendrv1alpha1.VolumeReplicationGroup,
 	volumeGroupSnapshotSource *metav1.LabelSelector,
 	vsHandler *volsync.VSHandler,
@@ -38,6 +39,7 @@ func NewVSCGHandler(
 	cgHandler := &cgHandler{
 		ctx:                       ctx,
 		Client:                    k8sClient,
+		apiReader:                 apiReader,
 		instance:                  instance,
 		VSHandler:                 vsHandler,
 		volumeGroupSnapshotSource: volumeGroupSnapshotSource,
@@ -83,6 +85,7 @@ type VSCGHandler interface {
 type cgHandler struct {
 	ctx context.Context
 	client.Client
+	apiReader client.Reader
 
 	instance  *ramendrv1alpha1.VolumeReplicationGroup
 	VSHandler *volsync.VSHandler // VSHandler will be used to call the exist funcs
@@ -404,7 +407,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		namespaces = *c.instance.Spec.ProtectedNamespaces
 	}
 
-	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(c.ctx, c.Client,
+	volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(c.ctx, c.Client, c.apiReader,
 		c.volumeGroupSnapshotClassSelector, *c.volumeGroupSnapshotSource, namespaces, c.logger)
 	if err != nil {
 		log.Error(err, "Failed to get VGSClass name")

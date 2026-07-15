@@ -11,7 +11,6 @@ import (
 	ramenutils "github.com/backube/volsync/controllers/utils"
 	"github.com/go-logr/logr"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -100,12 +99,14 @@ func DeleteReplicationGroupDestination(
 func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	ctx context.Context,
 	k8sClient client.Client,
+	apiReader client.Reader,
 	volumeGroupSnapshotClassSelector metav1.LabelSelector,
 	pvcsConsistencyGroupSelector metav1.LabelSelector,
 	namespace []string,
 	logger logr.Logger,
 ) (string, error) {
-	volumeGroupSnapshotClasses, err := GetVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
+	volumeGroupSnapshotClasses, err := GetVolumeGroupSnapshotClasses(
+		ctx, k8sClient, apiReader, volumeGroupSnapshotClassSelector)
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +135,7 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 
 	for _, volumeGroupSnapshotClass := range volumeGroupSnapshotClasses {
 		if VolumeGroupSnapshotClassMatchStorageProviders(volumeGroupSnapshotClass, storageClassProviders) {
-			matchedVolumeGroupSnapshotClassName = volumeGroupSnapshotClass.Name
+			matchedVolumeGroupSnapshotClassName = volumeGroupSnapshotClass.GetName()
 		}
 	}
 
@@ -147,42 +148,6 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	}
 
 	return matchedVolumeGroupSnapshotClassName, nil
-}
-
-func GetVolumeGroupSnapshotClasses(
-	ctx context.Context,
-	k8sClient client.Client,
-	volumeGroupSnapshotClassSelector metav1.LabelSelector,
-) ([]groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	selector, err := metav1.LabelSelectorAsSelector(&volumeGroupSnapshotClassSelector)
-	if err != nil {
-		return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
-	}
-
-	listOptions := []client.ListOption{
-		client.MatchingLabelsSelector{
-			Selector: selector,
-		},
-	}
-
-	vgscList := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
-	if err := k8sClient.List(ctx, vgscList, listOptions...); err != nil {
-		return nil, fmt.Errorf("error listing volumegroupsnapshotclasses (%w)", err)
-	}
-
-	return vgscList.Items, nil
-}
-
-func VolumeGroupSnapshotClassMatchStorageProviders(
-	volumeGroupSnapshotClass groupsnapv1beta1.VolumeGroupSnapshotClass, storageClassProviders []string,
-) bool {
-	for _, storageClassProvider := range storageClassProviders {
-		if storageClassProvider == volumeGroupSnapshotClass.Driver {
-			return true
-		}
-	}
-
-	return false
 }
 
 func IsRDExist(rdspec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
@@ -312,12 +277,12 @@ func CheckImagesReadyToUse(
 func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 	ctx context.Context,
 	k8sClient client.Client,
-	vgs *groupsnapv1beta1.VolumeGroupSnapshot,
+	vgs client.Object,
 	logger logr.Logger,
 ) ([]vsv1.VolumeSnapshot, error) {
 	volumeSnapshotList := &vsv1.VolumeSnapshotList{}
 	options := []client.ListOption{
-		client.InNamespace(vgs.Namespace),
+		client.InNamespace(vgs.GetNamespace()),
 	}
 
 	if err := k8sClient.List(ctx, volumeSnapshotList, options...); err != nil {
@@ -330,7 +295,7 @@ func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 
 	for _, snapshot := range volumeSnapshotList.Items {
 		for _, owner := range snapshot.ObjectMeta.OwnerReferences {
-			if owner.Kind == "VolumeGroupSnapshot" && owner.Name == vgs.Name && owner.UID == vgs.UID {
+			if owner.Kind == "VolumeGroupSnapshot" && owner.Name == vgs.GetName() && owner.UID == vgs.GetUID() {
 				volumeSnapshots = append(volumeSnapshots, snapshot)
 
 				break

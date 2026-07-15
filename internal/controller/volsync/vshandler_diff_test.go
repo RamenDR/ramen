@@ -61,7 +61,7 @@ var _ = Describe("VolSync Handler - Diff sync rollback", func() {
 		Expect(ownerCm.GetName()).NotTo(BeEmpty())
 		owner = ownerCm
 
-		vsHandler = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec,
+		vsHandler = volsync.NewVSHandler(ctx, k8sClient, k8sClient, logger, owner, asyncSpec,
 			testCephFSStorageDriverName, "Direct", false)
 	})
 

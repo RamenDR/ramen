@@ -15,9 +15,9 @@ import (
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -81,7 +81,7 @@ type ManagedClusterViewGetter interface {
 
 	GetVGSClassFromManagedCluster(
 		resourceName, managedCluster string,
-		annotations map[string]string) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error)
+		annotations map[string]string) (VolumeGroupSnapshotClassWrapper, error)
 
 	ListVGSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
@@ -337,10 +337,18 @@ func (m ManagedClusterViewGetterImpl) ListVSClassMCVs(cluster string) (*viewv1be
 
 func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName, managedCluster string,
 	annotations map[string]string,
-) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	vgsc := &groupsnapv1beta1.VolumeGroupSnapshotClass{}
+) (VolumeGroupSnapshotClassWrapper, error) {
+	gv, err := m.selectVGSGroupVersionFromManagedCluster(managedCluster, annotations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select VGS API for managed cluster %s: %w", managedCluster, err)
+	}
 
-	err := m.getResourceFromManagedCluster(
+	vgsc, err := NewEmptyVolumeGroupSnapshotClass(gv)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.getResourceFromManagedCluster(
 		resourceName,
 		"",
 		managedCluster,
@@ -348,12 +356,62 @@ func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName
 		map[string]string{VGSClassLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeVGSClass),
 		"VolumeGroupSnapshotClass",
-		groupsnapv1beta1.SchemeGroupVersion.Group,
-		groupsnapv1beta1.SchemeGroupVersion.Version,
+		gv.Group,
+		gv.Version,
 		vgsc,
 	)
 
-	return vgsc, err
+	wrapper, wrapErr := WrapVolumeGroupSnapshotClass(vgsc)
+	if wrapErr != nil {
+		return nil, wrapErr
+	}
+
+	return wrapper, err
+}
+
+// selectVGSGroupVersionFromManagedCluster picks public vs private from CRDs on the
+// managed cluster (same precedence as SelectVGSGroupVersion / IsCRDInstalled).
+func (m ManagedClusterViewGetterImpl) selectVGSGroupVersionFromManagedCluster(
+	managedCluster string,
+	annotations map[string]string,
+) (schema.GroupVersion, error) {
+	err := m.getCRDFromManagedCluster(VGSCRDName, managedCluster, annotations)
+	switch {
+	case err == nil:
+		return SelectPublicVGSGroupVersion(), nil
+	case !k8serrors.IsNotFound(err):
+		return schema.GroupVersion{}, fmt.Errorf("get public VGS CRD %q: %w", VGSCRDName, err)
+	}
+
+	err = m.getCRDFromManagedCluster(VGSCRDPrivateName, managedCluster, annotations)
+	switch {
+	case err == nil:
+		return SelectPrivateVGSGroupVersion(), nil
+	case !k8serrors.IsNotFound(err):
+		return schema.GroupVersion{}, fmt.Errorf("get private VGS CRD %q: %w", VGSCRDPrivateName, err)
+	}
+
+	return schema.GroupVersion{}, fmt.Errorf("no usable VGS API CRD")
+}
+
+func (m ManagedClusterViewGetterImpl) getCRDFromManagedCluster(
+	crdName, managedCluster string,
+	annotations map[string]string,
+) error {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+
+	return m.getResourceFromManagedCluster(
+		crdName,
+		"",
+		managedCluster,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(crdName, "", "crd"),
+		"CustomResourceDefinition",
+		apiextensionsv1.SchemeGroupVersion.Group,
+		apiextensionsv1.SchemeGroupVersion.Version,
+		crd,
+	)
 }
 
 func (m ManagedClusterViewGetterImpl) ListVGSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {

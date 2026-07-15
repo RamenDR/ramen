@@ -42,7 +42,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 		}
 
 		replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
-			k8sClient, rgd, volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgd,
+			k8sClient, rgd, volsync.NewVSHandler(context.Background(), k8sClient, k8sClient, testLogger, rgd,
 				&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 				"Direct", false,
 			), testLogger,
@@ -96,7 +96,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 				}
 
 				replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
-					mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+					mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, mgrClient, testLogger, rgd,
 						&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 						"Direct", false,
 					), testLogger,
@@ -144,7 +144,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 					rgd := newDiffSyncRGD(testStorageProvisioner)
 
 					replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
-						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, mgrClient, testLogger, rgd,
 							&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 							"Direct", false,
 						), testLogger,
@@ -184,7 +184,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 					rgd := newDiffSyncRGD("")
 
 					replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
-						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, mgrClient, testLogger, rgd,
 							&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 							"Direct", false,
 						), testLogger,
@@ -219,7 +219,7 @@ var _ = Describe("Replicationgroupdestination", func() {
 					rgd := newDiffSyncRGD(testStorageProvisioner)
 
 					replicationGroupDestinationMachine = cephfscg.NewRGDMachine(
-						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, testLogger, rgd,
+						mgrClient, rgd, volsync.NewVSHandler(context.Background(), mgrClient, mgrClient, testLogger, rgd,
 							&ramendrv1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
 							"Direct", false,
 						), testLogger,

@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
+	publicgroupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,7 +37,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 
 	BeforeEach(func() {
 		diffHandler = cephfscg.NewDiffVolumeGroupSourceHandler(
-			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, nil, testLogger,
+			k8sClient, k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, nil, testLogger,
 		)
 
 		CreatePVC("diff-apppvc")
@@ -51,7 +51,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 
 			// Verify a VGS was created with the expected labels
 			Eventually(func() bool {
-				vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+				vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 
 				err := k8sClient.List(context.TODO(), vgsList,
 					client.InNamespace("default"),
@@ -80,7 +80,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 				Expect(createdOrUpdated).To(BeTrue())
 
 				// Should still be exactly 1 VGS
-				vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+				vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 				Expect(k8sClient.List(context.TODO(), vgsList,
 					client.InNamespace("default"),
 					client.MatchingLabels{
@@ -129,7 +129,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 
 				// No current VGS should remain
 				Eventually(func() int {
-					vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+					vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 					Expect(k8sClient.List(context.TODO(), vgsList,
 						client.InNamespace("default"),
 						client.MatchingLabels{
@@ -142,7 +142,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 				}, timeout, interval).Should(Equal(0))
 
 				// At least one previous VGS should exist (the transitioned one)
-				vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+				vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 				Expect(k8sClient.List(context.TODO(), vgsList,
 					client.InNamespace("default"),
 					client.MatchingLabels{
@@ -176,7 +176,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 				// After cleanup: cleanOlderPreviousVGS keeps 1 of the 2 previous,
 				// then current is transitioned to previous → 2 total previous VGS
 				Eventually(func() int {
-					vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+					vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 					Expect(k8sClient.List(context.TODO(), vgsList,
 						client.InNamespace("default"),
 						client.MatchingLabels{
@@ -189,7 +189,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 				}, timeout, interval).Should(Equal(2))
 
 				// No current VGS should remain
-				vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+				vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 				Expect(k8sClient.List(context.TODO(), vgsList,
 					client.InNamespace("default"),
 					client.MatchingLabels{
@@ -231,7 +231,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 				_, err := diffHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 				Expect(err).To(BeNil())
 
-				vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+				vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 
 				Eventually(func() int {
 					Expect(k8sClient.List(context.TODO(), vgsList,
@@ -318,7 +318,7 @@ var _ = Describe("DiffVolumeGroupSourceHandler", func() {
 })
 
 func updateDiffVGSReady(ownerName string) {
-	vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+	vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 
 	Eventually(func() int {
 		Expect(k8sClient.List(context.TODO(), vgsList,
@@ -337,7 +337,7 @@ func updateDiffVGSReady(ownerName string) {
 
 func updateDiffVGSReadyByName(name string) {
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		vgs := &vgsv1beta1.VolumeGroupSnapshot{}
+		vgs := &publicgroupsnapv1.VolumeGroupSnapshot{}
 
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
 			Name:      name,
@@ -348,7 +348,7 @@ func updateDiffVGSReadyByName(name string) {
 		}
 
 		ready := true
-		vgs.Status = &vgsv1beta1.VolumeGroupSnapshotStatus{
+		vgs.Status = &publicgroupsnapv1.VolumeGroupSnapshotStatus{
 			ReadyToUse: &ready,
 		}
 
@@ -358,7 +358,7 @@ func updateDiffVGSReadyByName(name string) {
 }
 
 func cleanupAllDiffVGS(ownerName string) {
-	vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
+	vgsList := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 
 	Expect(k8sClient.List(context.TODO(), vgsList,
 		client.InNamespace("default"),
@@ -373,7 +373,7 @@ func cleanupAllDiffVGS(ownerName string) {
 
 	// Wait for all to be gone
 	Eventually(func() int {
-		list := &vgsv1beta1.VolumeGroupSnapshotList{}
+		list := &publicgroupsnapv1.VolumeGroupSnapshotList{}
 
 		Expect(k8sClient.List(context.TODO(), list,
 			client.InNamespace("default"),
@@ -386,7 +386,7 @@ func cleanupAllDiffVGS(ownerName string) {
 
 func createPreviousVGS(name, ownerName string) {
 	ready := true
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{
+	vgs := &publicgroupsnapv1.VolumeGroupSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
@@ -396,9 +396,9 @@ func createPreviousVGS(name, ownerName string) {
 				util.CreatedByRamenLabel:   "true",
 			},
 		},
-		Spec: vgsv1beta1.VolumeGroupSnapshotSpec{
+		Spec: publicgroupsnapv1.VolumeGroupSnapshotSpec{
 			VolumeGroupSnapshotClassName: &diffVGSCName,
-			Source: vgsv1beta1.VolumeGroupSnapshotSource{
+			Source: publicgroupsnapv1.VolumeGroupSnapshotSource{
 				Selector: &metav1.LabelSelector{MatchLabels: diffVGSLabel},
 			},
 		},
@@ -413,7 +413,7 @@ func createPreviousVGS(name, ownerName string) {
 			return err
 		}
 
-		vgs.Status = &vgsv1beta1.VolumeGroupSnapshotStatus{ReadyToUse: &ready}
+		vgs.Status = &publicgroupsnapv1.VolumeGroupSnapshotStatus{ReadyToUse: &ready}
 
 		return k8sClient.Status().Update(context.TODO(), vgs)
 	})
@@ -421,7 +421,7 @@ func createPreviousVGS(name, ownerName string) {
 }
 
 func createVSWithPVC(name, vgsName, namespace, pvcName string) {
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
+	vgs := &publicgroupsnapv1.VolumeGroupSnapshot{}
 	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
 		Name:      vgsName,
 		Namespace: namespace,
@@ -435,8 +435,8 @@ func createVSWithPVC(name, vgsName, namespace, pvcName string) {
 				{
 					APIVersion: fmt.Sprintf(
 						"%s/%s",
-						vgsv1beta1.SchemeGroupVersion.Group,
-						vgsv1beta1.SchemeGroupVersion.Version,
+						publicgroupsnapv1.SchemeGroupVersion.Group,
+						publicgroupsnapv1.SchemeGroupVersion.Version,
 					),
 					Kind: "VolumeGroupSnapshot",
 					Name: vgs.Name,
