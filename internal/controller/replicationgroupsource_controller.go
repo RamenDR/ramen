@@ -11,7 +11,6 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -216,10 +215,6 @@ func (r *ReplicationGroupSourceReconciler) runRGSReconcile(
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 	ramenConfig *ramendrv1alpha1.RamenConfig,
 ) error {
-	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDPrivateName) {
-		r.volumeGroupSnapshotCRsAreWatched = true
-	}
-
 	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
@@ -228,9 +223,11 @@ func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
 		For(&ramendrv1alpha1.ReplicationGroupSource{})
 
-	if r.volumeGroupSnapshotCRsAreWatched {
-		builder.Owns(&vgsv1beta1.VolumeGroupSnapshot{})
+	if err := util.EnsureLocalVGSAPI(context.TODO(), r.APIReader); err != nil {
+		return fmt.Errorf("VolSync is enabled but VolumeGroupSnapshot API is unavailable: %w", err)
 	}
+
+	r.volumeGroupSnapshotCRsAreWatched = util.OwnsVolumeGroupSnapshot(builder)
 
 	return builder.Complete(r)
 }
