@@ -13,9 +13,7 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
-	publicgroupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -585,15 +583,8 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn)
 
-	if util.UsePublicVGSAPI(context.TODO(), mgr.GetAPIReader()) {
-		r.Log.Info("Public VolumeGroupSnapshotClass CRD detected, watching public API")
-
-		controllerBuilder = controllerBuilder.Watches(&publicgroupsnapv1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn)
-	} else if util.UsePrivateVGSAPI(context.TODO(), mgr.GetAPIReader()) {
-		r.Log.Info("Private VolumeGroupSnapshotClass CRD detected, watching private API")
-
-		controllerBuilder = controllerBuilder.Watches(&groupsnapv1beta1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn)
-	}
+	controllerBuilder = util.WatchesVolumeGroupSnapshotClass(
+		context.TODO(), controllerBuilder, mgr.GetAPIReader(), r.Log, drccMapFn, drccPredFn)
 
 	return controllerBuilder.Complete(r)
 }
