@@ -14,7 +14,6 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -573,15 +572,21 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	controller := ctrl.NewControllerManagedBy(mgr)
 
-	return controller.WithOptions(ctrlcontroller.Options{
+	controllerBuilder := controller.WithOptions(ctrlcontroller.Options{
 		RateLimiter: rateLimiter,
 	}).For(&ramen.DRClusterConfig{}).
 		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
 		Watches(&snapv1.VolumeSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
-		Watches(&groupsnapv1beta1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
-		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn).
-		Complete(r)
+		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn)
+
+	if err := util.EnsureLocalVGSAPI(context.TODO(), mgr.GetAPIReader()); err != nil {
+		r.Log.Info("VolumeGroupSnapshotClass API not available, skipping watch", "reason", err.Error())
+	} else {
+		controllerBuilder = util.WatchesVolumeGroupSnapshotClass(controllerBuilder, r.Log, drccMapFn, drccPredFn)
+	}
+
+	return controllerBuilder.Complete(r)
 }
