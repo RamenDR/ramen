@@ -61,6 +61,10 @@ type RecoverSpec struct {
 	RestoreStatus *velero.RestoreStatusSpec `json:"restoreStatus,omitempty"`
 	//+optional
 	ExistingResourcePolicy velero.PolicyType `json:"existingResourcePolicy,omitempty"`
+	//+optional
+	// ResourceModifier specifies the ConfigMap reference for Velero resource modifier rules
+	// applied during restore (e.g. static IP translation).
+	ResourceModifier *corev1.TypedLocalObjectReference `json:"resourceModifier,omitempty"`
 }
 
 type Spec struct {

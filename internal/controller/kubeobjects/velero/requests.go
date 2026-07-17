@@ -771,6 +771,7 @@ func restore(
 			RestoreStatus:           recoverSpec.RestoreStatus,
 			IncludeClusterResources: includeClusterResources,
 			ExistingResourcePolicy:  recoverSpec.ExistingResourcePolicy,
+			ResourceModifier:        recoverSpec.ResourceModifier,
 			// TODO: hooks?
 			// TODO: restorePVs?
 			// TODO: preserveNodePorts?

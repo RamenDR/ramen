@@ -674,6 +674,22 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 		return nil
 	}
 
+	// When static IP translation rules are present, the ResourceModifier ConfigMap
+	// must exist in the velero namespace before the restore runs — Velero will
+	// reject a Restore that references a missing ConfigMap.
+	// This covers the failover case where the VRG was previously secondary (the CM
+	// was created there) but may have been deleted or not yet reconciled on this
+	// cluster.  Create-or-update it now and gate the restore on its presence.
+	if hasStaticIPTranslation(v.instance) {
+		if err := v.ensureResourceModifierCM(result); err != nil {
+			return err
+		}
+
+		if result.Requeue {
+			return fmt.Errorf("waiting for ResourceModifier ConfigMap to be ready before restore")
+		}
+	}
+
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		if err := v.kubeObjectsRecoverFromS3(result, s3StoreAccessor); err != nil {
 			v.log.Info("Kube objects restore error", "profile", s3StoreAccessor.S3ProfileName, "error", err)
@@ -895,6 +911,11 @@ func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s
 	labels map[string]string, groupNumber int,
 	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger,
 ) error {
+	// Inject the static IP ResourceModifier reference when translation rules are present.
+	if hasStaticIPTranslation(v.instance) && rg.ResourceModifier == nil {
+		rg.ResourceModifier = v.resourceModifierRef()
+	}
+
 	sourceVrgName := v.instance.Name
 	sourceVrgNamespaceName := v.instance.Namespace
 	request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
