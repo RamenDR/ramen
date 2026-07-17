@@ -496,6 +496,44 @@ spec:
                           items:
                             type: string
                           type: array
+                        staticIPTranslationSpec:
+                          properties:
+                            ipTranslations:
+                              items:
+                                properties:
+                                  networks:
+                                    items:
+                                      properties:
+                                        addresses:
+                                          items:
+                                            properties:
+                                              targetIP:
+                                                type: string
+                                            required:
+                                            - targetIP
+                                            type: object
+                                          type: array
+                                        networkName:
+                                          type: string
+                                      required:
+                                      - networkName
+                                      type: object
+                                    type: array
+                                  resourceRef:
+                                    properties:
+                                      name:
+                                        type: string
+                                      namespace:
+                                        type: string
+                                    required:
+                                    - name
+                                    - namespace
+                                    type: object
+                                required:
+                                - resourceRef
+                                type: object
+                              type: array
+                          type: object
                         sync:
                           description: VRGSyncSpec has the parameters associated with
                             VE
@@ -2411,6 +2449,39 @@ spec:
                           description: State captures the latest state of the replication
                             operation
                           type: string
+                        staticIPDiscovery:
+                          properties:
+                            resources:
+                              items:
+                                properties:
+                                  networks:
+                                    items:
+                                      properties:
+                                        addresses:
+                                          items:
+                                            type: string
+                                          type: array
+                                        networkName:
+                                          type: string
+                                      required:
+                                      - networkName
+                                      type: object
+                                    type: array
+                                  resourceRef:
+                                    properties:
+                                      name:
+                                        type: string
+                                      namespace:
+                                        type: string
+                                    required:
+                                    - name
+                                    - namespace
+                                    type: object
+                                required:
+                                - resourceRef
+                                type: object
+                              type: array
+                          type: object
                       type: object
                   type: object
                 type: array

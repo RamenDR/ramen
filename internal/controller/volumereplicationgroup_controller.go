@@ -1379,6 +1379,13 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return result
 	}
 
+	// Delete the static IP ResourceModifier ConfigMap if it was created.
+	if err := v.deleteResourceModifierCM(v.ctx, v.veleroNamespaceName()); err != nil {
+		v.log.Info("ResourceModifier ConfigMap deletion failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
+	}
+
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		if err := v.deleteClusterDataInS3Stores(v.log); err != nil {
 			v.log.Info("Requeuing due to failure in deleting cluster data from S3 stores",
@@ -1795,6 +1802,9 @@ func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
+	// Create/update the Velero ResourceModifier ConfigMap for static IP translation.
+	result.Requeue = v.staticIPResourceModifierReconcile() || result.Requeue
+
 	return result
 }
 
@@ -1810,6 +1820,11 @@ func (v *VRGInstance) resetInitialStatusAsSecondary() bool {
 	}
 
 	if kubeObjectsReady == nil || kubeObjectsReady.Reason != VRGConditionReasonClusterDataUnused {
+		update = true
+	}
+
+	if v.instance.Status.StaticIPDiscoveryStatus != nil {
+		v.instance.Status.StaticIPDiscoveryStatus = nil
 		update = true
 	}
 
@@ -2966,9 +2981,14 @@ func (v *VRGInstance) validateAndRecordStaticIPDiscovery(vmList []string, vmName
 		return fmt.Errorf("static IP validation failed: %w", err)
 	}
 
-	if infos != nil {
-		v.log.Info("Static IP discovery complete")
+	resources := buildDiscoveredResources(infos)
+
+	v.instance.Status.StaticIPDiscoveryStatus = &ramendrv1alpha1.StaticIPDiscoveryStatus{
+		Resources: resources,
 	}
+
+	v.log.Info("Static IP discovery complete",
+		"totalVMs", len(infos), "staticIPVMs", len(resources))
 
 	return nil
 }
@@ -2989,9 +3009,9 @@ func (v *VRGInstance) ValidateStaticIPNetworkMapping(
 	vmList []string, vmNamespaceList []string,
 ) ([]util.VMStaticIPInfo, error) {
 	if len(vmList) == 0 {
-		v.log.V(1).Info("No VM list found; no VMs to classify for static IP")
+		v.log.Info("No VM list found; no VMs to classify for static IP")
 
-		return nil, nil
+		return nil, fmt.Errorf("cannot perform VM network discovery: protected VM list is empty")
 	}
 
 	vms, err := util.ListVMsByVMNamespace(v.ctx, v.reconciler.Client, v.log, vmNamespaceList, vmList)
@@ -2999,52 +3019,72 @@ func (v *VRGInstance) ValidateStaticIPNetworkMapping(
 		return nil, fmt.Errorf("failed to list protected VMs for static IP validation: %w", err)
 	}
 
+	if len(vms) == 0 {
+		return nil, fmt.Errorf(
+			"none of the configured protected VMs were found in the protected namespaces",
+		)
+	}
+
 	v.log.Info("Classifying protected VMs for static IP translation", "count", len(vms))
 
 	results := make([]util.VMStaticIPInfo, 0, len(vms))
 
 	for i := range vms {
-		vm := &vms[i]
-
-		info := util.VMStaticIPInfo{
-			VMName:    vm.Name,
-			Namespace: vm.Namespace,
-			// HasStaticIP defaults to false — correct for DHCP VMs
-		}
-
-		// spec.template.metadata.annotations is where OVN-K8s
-		// places the static IP reservation - distinct from the VM object's own annotations.
-		// Template is a pointer in the KubeVirt API; guard before dereferencing.
-		if vm.Spec.Template != nil {
-			raw, ok := vm.Spec.Template.ObjectMeta.Annotations[util.VMStaticIPAnnotation]
-			if ok {
-				info.HasStaticIP = true
-				info.PrimaryAddresses = util.ParseVMInterfaceAddresses(raw)
-
-				if info.PrimaryAddresses == nil {
-					return results, fmt.Errorf(
-						"VM %s/%s has malformed static IP annotation %q (invalid JSON format); "+
-							"expected format: {\"interface-name\": [\"ip-address\"]}. "+
-							"Fix the annotation value to allow IP translation",
-						vm.Namespace, vm.Name, raw,
-					)
-				}
-
-				v.log.Info("VM has static IP reservation",
-					"vm", vm.Name,
-					"namespace", vm.Namespace,
-					"interfaces", info.PrimaryAddresses,
-				)
-			}
-		} else {
-			v.log.V(1).Info("VM has no static IP annotation, skipping",
-				"vm", vm.Name,
-				"namespace", vm.Namespace,
-			)
+		info, err := v.classifyVMStaticIP(&vms[i])
+		if err != nil {
+			return results, err
 		}
 
 		results = append(results, info)
 	}
 
 	return results, nil
+}
+
+func (v *VRGInstance) classifyVMStaticIP(
+	vm *virtv1.VirtualMachine,
+) (util.VMStaticIPInfo, error) {
+	info := util.VMStaticIPInfo{
+		VMName:    vm.Name,
+		Namespace: vm.Namespace,
+	}
+
+	if vm.Spec.Template == nil {
+		v.log.Info("VM template is nil, skipping static IP discovery",
+			"vm", vm.Name,
+			"namespace", vm.Namespace,
+		)
+
+		return info, nil
+	}
+
+	raw, ok := vm.Spec.Template.ObjectMeta.Annotations[util.VMStaticIPAnnotation]
+	if !ok {
+		v.log.Info("VM has no static IP annotation, skipping",
+			"vm", vm.Name,
+			"namespace", vm.Namespace,
+		)
+
+		return info, nil
+	}
+
+	info.HasStaticIP = true
+	info.PrimaryAddresses = util.ParseVMInterfaceAddresses(raw)
+
+	if info.PrimaryAddresses == nil {
+		return info, fmt.Errorf(
+			"VM %s/%s has malformed static IP annotation %q (invalid JSON format); "+
+				"expected format: {\"interface-name\": [\"ip-address\"]}. "+
+				"Fix the annotation value to allow IP translation",
+			vm.Namespace, vm.Name, raw,
+		)
+	}
+
+	v.log.Info("VM has static IP reservation",
+		"vm", vm.Name,
+		"namespace", vm.Namespace,
+		"interfaces", info.PrimaryAddresses,
+	)
+
+	return info, nil
 }
