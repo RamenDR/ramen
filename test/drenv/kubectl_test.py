@@ -106,7 +106,11 @@ def test_apply_rejects_raw_server_side_flags(args):
         ValueError,
         match="use server_side argument instead of --server-side flag",
     ):
-        kubectl.apply("--filename=resource.yaml", *args)
+        kubectl.apply(
+            "--filename=resource.yaml",
+            *args,
+            context="non-existing",
+        )
 
 
 @pytest.mark.cluster
