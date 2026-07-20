@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
+import argcomplete
 import argparse
 import concurrent.futures
 import json
@@ -10,6 +11,7 @@ import shutil
 import signal
 import sys
 import time
+
 
 from functools import partial
 
@@ -156,6 +158,7 @@ def parse_args():
     add_registry_cache_command(sp)
     add_stress_test_command(sp)
 
+    argcomplete.autocomplete(parser)
     return parser.parse_args()
 
 
@@ -259,7 +262,8 @@ def add_command(sp, name, func, help=None, envfile=True):
             metavar="PREFIX",
             help="prefix profile names",
         )
-        parser.add_argument("envfile", help="path to environment file")
+        arg = parser.add_argument("envfile", help="path to environment file")
+        arg.completer = argcomplete.completers.FilesCompleter(["*.yaml"])
     return parser
 
 
