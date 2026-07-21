@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 var _ = Describe("VRG_KubeObjectProtection", func() {
@@ -166,6 +167,35 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 
 			Expect(err).To(BeNil())
 			Expect(converted).To(Equal(targetRecoverSpec))
+		})
+	})
+
+	Context("Velero BSL orphan detection", func() {
+		const (
+			vrgNamespace = "app-ns"
+			vrgName      = "my-vrg"
+			oldVrgName   = "old-vrg"
+		)
+
+		It("detects BSL orphaned by VRG rename", func() {
+			labels := map[string]string{
+				util.LabelOwnerNamespaceName: vrgNamespace,
+				util.LabelOwnerName:          oldVrgName,
+			}
+			Expect(veleroBSLOrphanedByVRGRename(labels, vrgNamespace, vrgName)).To(BeTrue())
+		})
+
+		It("does not treat current VRG owner as orphaned", func() {
+			labels := util.OwnerLabels(&metav1.ObjectMeta{Namespace: vrgNamespace, Name: vrgName})
+			Expect(veleroBSLOrphanedByVRGRename(labels, vrgNamespace, vrgName)).To(BeFalse())
+		})
+
+		It("ignores BSLs owned by another namespace", func() {
+			labels := map[string]string{
+				util.LabelOwnerNamespaceName: "other-ns",
+				util.LabelOwnerName:          oldVrgName,
+			}
+			Expect(veleroBSLOrphanedByVRGRename(labels, vrgNamespace, vrgName)).To(BeFalse())
 		})
 	})
 })

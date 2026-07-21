@@ -1790,6 +1790,16 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result := ctrl.Result{}
 
+	// Clean up stale BSL/Backup objects from previous Primary state
+	// This handles the case where cluster went down during BSL creation
+	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
+		v.log.Info("Failed to cleanup stale kube objects protection", "error", err)
+
+		result.Requeue = true
+
+		return result
+	}
+
 	result.Requeue = v.HandleSecondaryConflictsAndCleanup() || result.Requeue
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
