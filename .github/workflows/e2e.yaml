@@ -3,10 +3,31 @@
 
 # yamllint disable rule:line-length
 ---
-# IMPORTANT: pull_request_target ensures this workflow file always comes
-# from the base branch (main) and cannot be modified by a PR. Do NOT
-# change this to pull_request, which would allow a fork PR to remove
-# the authorization check and run arbitrary code on self-hosted runners.
+# Security of pull_request_target with forked PR checkout
+#
+# This workflow uses pull_request_target to ensure the workflow file always
+# comes from the base branch (main) and cannot be modified by a PR author.
+# This is required to enforce the authorization check - using pull_request
+# would allow a fork PR to remove the check and run arbitrary code on
+# self-hosted runners.
+#
+# The test job checks out and executes PR code (allow-unsafe-pr-checkout)
+# in the pull_request_target security context. This is considered safe
+# because of the following controls and restrictions:
+#
+#   Risk              | Mitigation
+#   ------------------+--------------------------------------------------
+#   Unauthorized PRs  | The auth job verifies the PR author is listed in
+#                     | the OWNERS file (from the base branch) before
+#                     | the test job runs any PR code.
+#   GITHUB_TOKEN      | Scoped to read-only (permissions: contents: read).
+#                     | For fork PRs, pull_request also enforces read-only,
+#                     | so there is no additional exposure.
+#   Repo secrets      | Not used by this workflow. Do NOT add secrets
+#                     | without reviewing the security implications.
+#   Actions cache     | Not used by this workflow. Do NOT add actions/cache
+#                     | since pull_request_target can write to the default
+#                     | branch cache, enabling cache poisoning attacks.
 name: e2e
 
 on:
@@ -60,6 +81,7 @@ jobs:
       uses: actions/checkout@v6
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+        allow-unsafe-pr-checkout: true  # See security section above
 
     - name: Build ramen-operator container
       run: make docker-build
