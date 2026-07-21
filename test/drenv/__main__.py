@@ -12,7 +12,6 @@ import signal
 import sys
 import time
 
-
 from functools import partial
 
 import drenv
