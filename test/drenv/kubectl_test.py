@@ -54,7 +54,7 @@ def test_exec(tmpenv):
 def test_apply(tmpenv, capsys):
     kubectl.apply(f"--filename={example.DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()
-    assert out.strip() == "deployment.apps/example-deployment unchanged"
+    assert out.strip() == "deployment.apps/example-deployment serverside-applied"
 
 
 @pytest.mark.cluster
