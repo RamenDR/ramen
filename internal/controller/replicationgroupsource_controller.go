@@ -75,6 +75,10 @@ type ReplicationGroupSourceReconciler struct {
 //nolint:funlen
 func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("rgs", req.NamespacedName, "rid", util.GetRID())
+	logger.Info("Entering reconcile loop")
+
+	defer logger.Info("Exiting reconcile loop")
+
 	logger.Info("Get ReplicationGroupSource")
 
 	if !r.volumeGroupSnapshotCRsAreWatched {

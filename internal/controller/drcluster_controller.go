@@ -367,9 +367,9 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
 	log := r.Log.WithValues("drc", req.NamespacedName.Name, "rid", util.GetRID())
-	log.Info("reconcile enter")
+	log.Info("Entering reconcile loop")
 
-	defer log.Info("reconcile exit")
+	defer log.Info("Exiting reconcile loop")
 
 	drcluster := &ramen.DRCluster{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drcluster); err != nil {

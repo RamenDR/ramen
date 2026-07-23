@@ -49,8 +49,14 @@ This document outlines the logging standards and best practices for Ramen.
   logged:
 
   ```go
-  logger.Info("reconcile start")
-  defer logger.Info("reconcile end", "time spent", time.Since(start))
+  logger.Info("Entering reconcile loop")
+  defer logger.Info("Exiting reconcile loop")
+  ```
+
+  Controllers may also include duration on exit when useful:
+
+  ```go
+  defer logger.Info("Exiting reconcile loop", "time spent", time.Since(start))
   ```
 
 - When logging errors, include the context of the error:
@@ -77,13 +83,13 @@ This document outlines the logging standards and best practices for Ramen.
   Example of a well-structured log message:
 
   ```go
-  s.log.Info("reconcile end", "time spent", time.Since(start))
+  s.log.Info("Exiting reconcile loop", "time spent", time.Since(start))
   ```
 
   This will log in the following format, providing clear and structured context:
 
-  ```
-  2024-01-31T14:27:12.726-0500  INFO    pvrgl   reconcile end   {"name": "protectedvrglist-0", "rid": "1e09b0fb-687b-4100-9ab1-a52ba899b37b", "rv": "322", "time spent": 6ms}
+  ```text
+  2024-01-31T14:27:12.726-0500  INFO    pvrgl   Exiting reconcile loop   {"name": "protectedvrglist-0", "rid": "1e09b0fb-687b-4100-9ab1-a52ba899b37b", "rv": "322", "time spent": 6ms}
   ```
 
 ## Debugging with Logs
