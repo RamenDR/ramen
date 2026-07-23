@@ -17,9 +17,8 @@ from drenv.addons import example
 # Avoid random timeouts in github.
 TIMEOUT = 30
 
-pytestmark = pytest.mark.cluster
 
-
+@pytest.mark.cluster
 def test_version(tmpenv):
     out = kubectl.version(output="json", context=tmpenv.profile)
     info = json.loads(out)
@@ -28,16 +27,19 @@ def test_version(tmpenv):
     assert "clientVersion" in info
 
 
+@pytest.mark.cluster
 def test_get(tmpenv):
     out = kubectl.get("deploy", "--output=name", context=tmpenv.profile)
     assert out.strip() == "deployment.apps/example-deployment"
 
 
+@pytest.mark.cluster
 def test_config(tmpenv):
     out = kubectl.config("view", "--output=json")
     json.loads(out)
 
 
+@pytest.mark.cluster
 def test_exec(tmpenv):
     out = kubectl.exec(
         "deploy/example-deployment",
@@ -48,12 +50,70 @@ def test_exec(tmpenv):
     assert out.startswith("example-deployment-")
 
 
+@pytest.mark.cluster
 def test_apply(tmpenv, capsys):
     kubectl.apply(f"--filename={example.DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()
-    assert out.strip() == "deployment.apps/example-deployment unchanged"
+    assert out.strip() == "deployment.apps/example-deployment serverside-applied"
 
 
+@pytest.mark.cluster
+@pytest.mark.parametrize(
+    ("server_side", "has_last_applied"),
+    [(None, False), (True, False), (False, True)],
+)
+def test_apply_mode(tmpenv, tmp_path, server_side, has_last_applied):
+    name = f"test-apply-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+    manifest = tmp_path / "configmap.yaml"
+    manifest.write_text(
+        f"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\n",
+        encoding="utf-8",
+    )
+
+    try:
+        kwargs = {} if server_side is None else {"server_side": server_side}
+        kubectl.apply(
+            f"--filename={manifest}",
+            **kwargs,
+            context=tmpenv.profile,
+        )
+        out = kubectl.get(resource, "--output=json", context=tmpenv.profile)
+        metadata = json.loads(out)["metadata"]
+        annotations = metadata.get("annotations", {})
+        assert (
+            "kubectl.kubernetes.io/last-applied-configuration" in annotations
+        ) is has_last_applied
+    finally:
+        kubectl.delete(
+            resource,
+            "--ignore-not-found=true",
+            context=tmpenv.profile,
+        )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--server-side", "true"),
+        ("--server-side", "false"),
+        ("--server-side=true",),
+        ("--server-side=false",),
+    ],
+)
+def test_apply_rejects_raw_server_side_flags(args):
+    with pytest.raises(
+        ValueError,
+        match="use server_side argument instead of --server-side flag",
+    ):
+        kubectl.apply(
+            "--filename=resource.yaml",
+            *args,
+            context="non-existing",
+        )
+
+
+@pytest.mark.cluster
 def test_rollout_status(tmpenv, capsys):
     kubectl.rollout(
         "status",
@@ -65,6 +125,7 @@ def test_rollout_status(tmpenv, capsys):
     assert out.strip() == 'deployment "example-deployment" successfully rolled out'
 
 
+@pytest.mark.cluster
 def test_rollout_status_default_timeout(tmpenv, capsys):
     kubectl.rollout(
         "status",
@@ -75,6 +136,7 @@ def test_rollout_status_default_timeout(tmpenv, capsys):
     assert out.strip() == 'deployment "example-deployment" successfully rolled out'
 
 
+@pytest.mark.cluster
 def test_rollout_restart(tmpenv, capsys):
     kubectl.rollout(
         "restart",
@@ -104,6 +166,7 @@ def test_rollout_restart_unsupported_timeout():
         )
 
 
+@pytest.mark.cluster
 def test_wait(tmpenv, capsys):
     kubectl.wait(
         "deploy/example-deployment",
@@ -115,6 +178,7 @@ def test_wait(tmpenv, capsys):
     assert out.strip() == "deployment.apps/example-deployment condition met"
 
 
+@pytest.mark.cluster
 def test_wait_for_create(tmpenv):
     """Wait for a resource that does not exist yet."""
     name = f"test-wait-create-{secrets.token_hex(4)}"
@@ -143,6 +207,7 @@ def test_wait_for_create(tmpenv):
         kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
 
 
+@pytest.mark.cluster
 def test_wait_for_jsonpath_value(tmpenv):
     """Wait for a jsonpath field that does not exist yet."""
     name = f"test-wait-jsonpath-{secrets.token_hex(4)}"
@@ -179,6 +244,7 @@ def test_wait_for_jsonpath_value(tmpenv):
         kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
 
 
+@pytest.mark.cluster
 def test_wait_for_jsonpath_any_value(tmpenv):
     """Wait for a jsonpath field to have any non-empty value."""
     name = f"test-wait-any-{secrets.token_hex(4)}"
@@ -215,6 +281,7 @@ def test_wait_for_jsonpath_any_value(tmpenv):
         kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
 
 
+@pytest.mark.cluster
 def test_patch(tmpenv, capsys):
     pod = _current_pod(tmpenv.profile)
     kubectl.patch(
@@ -227,6 +294,7 @@ def test_patch(tmpenv, capsys):
     assert out.strip() == f"{pod} patched"
 
 
+@pytest.mark.cluster
 def test_label(tmpenv, capsys):
     pod = _current_pod(tmpenv.profile)
     name = f"test-{secrets.token_hex(8)}"
@@ -240,6 +308,7 @@ def test_label(tmpenv, capsys):
     assert out.strip() == f"{pod} labeled"
 
 
+@pytest.mark.cluster
 def test_annotate(tmpenv, capsys):
     pod = _current_pod(tmpenv.profile)
     annotation = f"test-{secrets.token_hex(8)}"
@@ -262,6 +331,7 @@ def test_annotate(tmpenv, capsys):
     assert annotation not in _get_annotations(pod, tmpenv.profile)
 
 
+@pytest.mark.cluster
 def test_delete(tmpenv, capsys):
     pod = _current_pod(tmpenv.profile)
     kubectl.delete(pod, context=tmpenv.profile)
@@ -270,6 +340,7 @@ def test_delete(tmpenv, capsys):
     assert out.strip().startswith(f'pod "{name}" deleted')
 
 
+@pytest.mark.cluster
 def test_watch(tmpenv):
     pod_name = kubectl.get(
         "pod",
@@ -286,6 +357,7 @@ def test_watch(tmpenv):
     assert pod["metadata"]["name"] == pod_name
 
 
+@pytest.mark.cluster
 def test_watch_leaf(tmpenv):
     pod_name = kubectl.get(
         "pod",
@@ -305,6 +377,7 @@ def test_watch_leaf(tmpenv):
     assert line == pod_name
 
 
+@pytest.mark.cluster
 def test_watch_jsonpath(tmpenv):
     pod_name = kubectl.get(
         "pod",
@@ -331,6 +404,7 @@ def test_watch_jsonpath(tmpenv):
     assert container["name"] == container_name
 
 
+@pytest.mark.cluster
 def test_watch_events(tmpenv):
     deploy = "deploy/example-deployment"
     label = f"test-{secrets.token_hex(8)}"
@@ -364,6 +438,7 @@ def test_watch_events(tmpenv):
             raise RuntimeError("Timeout waiting for event")
 
 
+@pytest.mark.cluster
 def test_watch_timeout(tmpenv):
     output = []
     with pytest.raises(commands.Timeout):
