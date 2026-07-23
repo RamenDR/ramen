@@ -3029,8 +3029,7 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
 
-	independentVMProtection := r.drpcProtectVMInNS(drpc, otherDRPC, ramenConfig)
-	if independentVMProtection {
+	if vmDRPCsProtectIndependentResources(drpc, otherDRPC, ramenConfig) {
 		return nil
 	}
 
@@ -3068,10 +3067,9 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
 }
 
-// drpcMetaAndOtherHaveVMRecipe is a pre-check helper that encapsulates VM recipe validation
-// to keep cyclomatic complexity low.
-func (r *DRPlacementControlReconciler) drpcMetaAndOtherHaveVMRecipe(drpc *rmn.DRPlacementControl,
-	otherdrpc *rmn.DRPlacementControl,
+// bothDRPCsUseVMRecipe returns true when both DRPCs reference the VM recipe
+// in the ramen operands namespace.
+func bothDRPCsUseVMRecipe(drpc, otherdrpc *rmn.DRPlacementControl,
 	ramenConfig *rmn.RamenConfig,
 ) bool {
 	if drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil {
@@ -3096,32 +3094,54 @@ func (r *DRPlacementControlReconciler) drpcMetaAndOtherHaveVMRecipe(drpc *rmn.DR
 	return true
 }
 
-func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementControl,
-	otherdrpc *rmn.DRPlacementControl,
-	ramenConfig *rmn.RamenConfig,
-) bool {
-	// Consolidate pre-checks in helper to keep complexity low
-	if !r.drpcMetaAndOtherHaveVMRecipe(drpc, otherdrpc, ramenConfig) {
-		return false
-	}
-
+// vmRecipeParametersOverlap returns true when any of the VM recipe parameter
+// keys (VM list, k8s label selector, PVC label selector) have common values
+// between the two DRPCs, AND the ObservedGeneration state indicates a real
+// conflict (not a transient state during initial creation).
+func vmRecipeParametersOverlap(drpc, otherdrpc *rmn.DRPlacementControl) bool {
 	drpcParams := drpc.Spec.KubeObjectProtection.RecipeParameters
 	otherParams := otherdrpc.Spec.KubeObjectProtection.RecipeParameters
 
 	keys := []string{core.VMList, core.K8SLabelSelector, core.PVCLabelSelector}
 
+	hasOverlap := false
+
 	for _, k := range keys {
-		// If any recipe parameter key has overlapping values between the two DRPCs,
-		// they are protecting the same VM resources — not independent, so return false
-		// to let the namespace-conflict check run and produce an error.
 		if sets.NewString(drpcParams[k]...).Intersection(sets.NewString(otherParams[k]...)).Len() > 0 {
-			return false
+			hasOverlap = true
+
+			break
 		}
 	}
 
-	// No overlap on any key: both DRPCs use vm-recipe and protect disjoint VMs
-	// in the same namespace — this is explicitly supported, skip the conflict check.
-	return true
+	if !hasOverlap {
+		return false
+	}
+
+	// Only flag overlapping resources as a conflict when the current DRPC is
+	// brand new (not yet reconciled) or both DRPCs have been reconciled at
+	// least once. When the current DRPC is established but the other is
+	// brand new, skip the conflict: the other DRPC will detect it on its
+	// own reconciliation pass, avoiding both DRPCs rejecting each other.
+	if drpc.Status.ObservedGeneration == 0 {
+		return true
+	}
+
+	return otherdrpc.Status.ObservedGeneration > 0
+}
+
+// vmDRPCsProtectIndependentResources returns true when both DRPCs use the VM
+// recipe and protect non-overlapping VM resources — meaning they can safely
+// coexist without conflict. Returns false in all other cases (not both VM
+// recipe, or resources overlap).
+func vmDRPCsProtectIndependentResources(drpc, otherdrpc *rmn.DRPlacementControl,
+	ramenConfig *rmn.RamenConfig,
+) bool {
+	if !bothDRPCsUseVMRecipe(drpc, otherdrpc, ramenConfig) {
+		return false
+	}
+
+	return !vmRecipeParametersOverlap(drpc, otherdrpc)
 }
 
 // EnsureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
