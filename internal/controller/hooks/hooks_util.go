@@ -14,11 +14,6 @@ import (
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
-const (
-	defaultTimeoutValue = 300
-	defaultOnErrorValue = "fail"
-)
-
 type NameSelectorType string
 
 const (
@@ -218,37 +213,6 @@ func isValidRegex(nameSelector string) bool {
 	_, err := regexp.Compile(nameSelector)
 
 	return err == nil
-}
-
-func getOpHookOnError(hook *kubeobjects.HookSpec) string {
-	if hook.Op.OnError != "" {
-		return hook.Op.OnError
-	} else if hook.OnError != "" {
-		return hook.OnError
-	}
-
-	// Default to fail if not specified
-	return defaultOnErrorValue
-}
-
-func getChkHookTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Chk.Timeout != 0 {
-		return hook.Chk.Timeout
-	} else if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
-}
-
-func getOpHookTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Op.Timeout != 0 {
-		return hook.Op.Timeout
-	} else if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
 }
 
 func getMatchingUnstructedObjs(uList *unstructured.UnstructuredList, re *regexp.Regexp) []client.Object {

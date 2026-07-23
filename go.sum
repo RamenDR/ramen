@@ -275,8 +275,8 @@ github.com/prometheus/common v0.67.5 h1:pIgK94WWlQt1WLwAC5j2ynLaBRDiinoAb86HZHTU
 github.com/prometheus/common v0.67.5/go.mod h1:SjE/0MzDEEAyrdr5Gqc6G+sXI67maCxzaT3A2+HqjUw=
 github.com/prometheus/procfs v0.20.1 h1:XwbrGOIplXW/AU3YhIhLODXMJYyC1isLFfYCsTEycfc=
 github.com/prometheus/procfs v0.20.1/go.mod h1:o9EMBZGRyvDrSPH1RqdxhojkuXstoe4UlK79eF5TGGo=
-github.com/ramendr/recipe v0.0.0-20250917131341-9ede78ec0623 h1:GJaB1cT1evVKA3XyD30f/AzFPlQVxz5EZ+l/XRMYEOk=
-github.com/ramendr/recipe v0.0.0-20250917131341-9ede78ec0623/go.mod h1:dGXrk743fq6VG8u6lflEce7ITM7d/9xSBeAbI2RXl9s=
+github.com/ramendr/recipe v0.0.0-20260511145713-454117f61334 h1:zQm08iieBQVHdoJ4nzeeRiC9t3aYf0ZdoRoSPtCHZc4=
+github.com/ramendr/recipe v0.0.0-20260511145713-454117f61334/go.mod h1:Bn5mdTSHEb5lb9uHFMy++syF2v5CKrWyiOjIY5eFmMc=
 github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096 h1:UKvDY0QbdEXn5JMP568aj5zj+ibkSrA3RqanvPT3Qyw=
 github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096/go.mod h1:5cstVYzNXZ6Fo8TKv7XpnlxXfTre5PQhK6EkP5lr3tE=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
