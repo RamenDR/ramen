@@ -31,4 +31,4 @@ patches:
           maxLogSize: 50M
       - op: replace
         path: /spec/cephVersion/image
-        value: quay.ceph.io/ceph-ci/ceph:wip-rbd-cgsm-base
+        value: ghcr.io/nikhil-ladha/rbd-group-mirroring:latest
