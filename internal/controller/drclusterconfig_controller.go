@@ -14,7 +14,6 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -56,6 +55,7 @@ const (
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
 type DRClusterConfigReconciler struct {
 	client.Client
+	APIReader   client.Reader
 	Scheme      *runtime.Scheme
 	Log         logr.Logger
 	RateLimiter *workqueue.TypedRateLimiter[reconcile.Request]
@@ -427,17 +427,19 @@ func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([
 func (r *DRClusterConfigReconciler) listDRSupportedVGSCs(ctx context.Context) ([]string, error) {
 	vgscs := []string{}
 
-	vgsClasses := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
-	if err := r.Client.List(ctx, vgsClasses); err != nil {
+	vgsClassWrappers, err := util.GetVolumeGroupSnapshotClasses(
+		ctx, r.Client, r.APIReader, metav1.LabelSelector{},
+	)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list VolumeGroupSnapshotClasses, %w", err)
 	}
 
-	for i := range vgsClasses.Items {
-		if !util.HasLabel(&vgsClasses.Items[i], StorageIDLabel) {
+	for _, vgscWrapper := range vgsClassWrappers {
+		if _, ok := vgscWrapper.GetLabels()[StorageIDLabel]; !ok {
 			continue
 		}
 
-		vgscs = append(vgscs, vgsClasses.Items[i].Name)
+		vgscs = append(vgscs, vgscWrapper.GetName())
 	}
 
 	return vgscs, nil
@@ -571,15 +573,18 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	controller := ctrl.NewControllerManagedBy(mgr)
 
-	return controller.WithOptions(ctrlcontroller.Options{
+	controllerBuilder := controller.WithOptions(ctrlcontroller.Options{
 		RateLimiter: rateLimiter,
 	}).For(&ramen.DRClusterConfig{}).
 		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
 		Watches(&snapv1.VolumeSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
-		Watches(&groupsnapv1beta1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
-		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn).
-		Complete(r)
+		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn)
+
+	controllerBuilder = util.WatchesVolumeGroupSnapshotClass(
+		context.TODO(), controllerBuilder, mgr.GetAPIReader(), r.Log, drccMapFn, drccPredFn)
+
+	return controllerBuilder.Complete(r)
 }

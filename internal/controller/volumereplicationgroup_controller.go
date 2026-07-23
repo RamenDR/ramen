@@ -506,7 +506,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 
 	r.ensureExcludedResourcesCM(ctx, ramenConfig, log)
 
-	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
+	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, r.APIReader, log, v.instance,
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
 		volSyncDestinationCopyMethodOrDefault(v.ramenConfig), adminNamespaceVRG)
 

@@ -30,8 +30,9 @@ import (
 // ReplicationGroupDestinationReconciler reconciles a ReplicationGroupDestination object
 type ReplicationGroupDestinationReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	Log       logr.Logger
 }
 
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupdestinations,verbs=get;list;watch;create;update;patch;delete
@@ -85,7 +86,7 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 	result, err := statemachine.Run(
 		ctx,
 		cephfscg.NewRGDMachine(r.Client, rgd,
-			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
+			volsync.NewVSHandler(ctx, r.Client, r.APIReader, logger, vrg,
 				&ramendrv1alpha1.VRGAsyncSpec{
 					VolumeSnapshotClassSelector: rgd.Spec.VolumeSnapshotClassSelector,
 				}, defaultCephFSCSIDriverName, volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,

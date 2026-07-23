@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 )
@@ -16,7 +17,7 @@ func TestIsVGSReady(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		vgs      *vgsv1beta1.VolumeGroupSnapshot
+		vgs      client.Object
 		expected bool
 	}{
 		{

@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
+	"github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
 )
 
@@ -53,10 +53,10 @@ func GetStorageClass(
 // ------------- [End] Edited from existing code in Ramen ----
 
 // IsVGSReady checks if a VolumeGroupSnapshot is ready to use
-func IsVGSReady(vgs *vgsv1beta1.VolumeGroupSnapshot) bool {
+func IsVGSReady(vgs client.Object) bool {
 	if vgs == nil {
 		return false
 	}
 
-	return vgs.Status != nil && vgs.Status.ReadyToUse != nil && *vgs.Status.ReadyToUse
+	return util.VolumeGroupSnapshotIsReady(vgs)
 }

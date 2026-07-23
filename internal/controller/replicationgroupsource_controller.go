@@ -11,7 +11,6 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -79,8 +78,9 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 	if !r.volumeGroupSnapshotCRsAreWatched {
 		return ctrl.Result{},
-			fmt.Errorf("ReplicationGroupSource {%s/%s} doesn't work if VolumeGroupSnapshot CRD is not installed. "+
-				"Please install VolumeGroupSnapshot CRD and restart the operator", req.Namespace, req.Name)
+			fmt.Errorf("ReplicationGroupSource {%s/%s} requires VolumeGroupSnapshot CRD. "+
+				"Please install either the public (groupsnapshot.storage.k8s.io) or private (groupsnapshot.storage.openshift.io) "+
+				"VolumeGroupSnapshot CRD and restart the operator", req.Namespace, req.Name)
 	}
 
 	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
@@ -115,16 +115,18 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 
-	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
+	vsHandler := volsync.NewVSHandler(ctx, r.Client, r.APIReader, logger, vrg,
 		&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
 		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
 	)
 
 	var vgsHandler cephfscg.VolumeGroupSourceHandler
 	if util.IsDiffSyncEnabled(rgs.GetAnnotations()) {
-		vgsHandler = cephfscg.NewDiffVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+		vgsHandler = cephfscg.NewDiffVolumeGroupSourceHandler(
+			r.Client, r.APIReader, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
 	} else {
-		vgsHandler = cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+		vgsHandler = cephfscg.NewVolumeGroupSourceHandler(
+			r.Client, r.APIReader, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
 	}
 
 	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
@@ -160,10 +162,6 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 	ramenConfig *ramendrv1alpha1.RamenConfig,
 ) error {
-	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDPrivateName) {
-		r.volumeGroupSnapshotCRsAreWatched = true
-	}
-
 	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
 			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
@@ -172,9 +170,7 @@ func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
 		For(&ramendrv1alpha1.ReplicationGroupSource{})
 
-	if r.volumeGroupSnapshotCRsAreWatched {
-		builder.Owns(&vgsv1beta1.VolumeGroupSnapshot{})
-	}
+	r.volumeGroupSnapshotCRsAreWatched = util.OwnsVolumeGroupSnapshot(context.TODO(), builder, r.APIReader)
 
 	return builder.Complete(r)
 }
