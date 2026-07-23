@@ -91,6 +91,7 @@ type ObjectStoreGetter interface {
 }
 
 type ObjectStorer interface {
+	HeadBucket() error
 	UploadObject(key string, object interface{}) error
 	DownloadObject(key string, objectPointer interface{}) error
 	ListKeys(keyPrefix string) (keys []string, err error)
@@ -242,6 +243,20 @@ func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 					bucket, aerr.Code(), aerr.Message())
 			}
 		}
+	}
+
+	return nil
+}
+
+func (s *s3ObjectStore) HeadBucket() error {
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
+	_, err := s.client.HeadBucketWithContext(ctx, &s3.HeadBucketInput{
+		Bucket: &s.s3Bucket,
+	})
+	if err != nil {
+		return processAwsError(fmt.Errorf("bucket %s does not exist or is not accessible", s.s3Bucket), err)
 	}
 
 	return nil

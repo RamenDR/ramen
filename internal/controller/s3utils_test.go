@@ -160,6 +160,10 @@ func (f *fakeObjectStorer) DeleteObjects(keys ...string) error {
 	return nil
 }
 
+func (f *fakeObjectStorer) HeadBucket() error {
+	return nil
+}
+
 func (f *fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
