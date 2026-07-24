@@ -350,17 +350,11 @@ func validateTestFailoverRevertScenario(drpc *rmn.DRPlacementControl, _ string) 
 		return rmn.Relocated, nil
 
 	case "":
-		// Saved action was empty: User must set action="" and failoverCluster=""
+		// Saved action was empty: User must set action="" to return to Deployed state
 		if drpc.Spec.Action != "" {
 			return "", fmt.Errorf(
 				"revert validation failed: saved last-action=empty requires action=empty, got action=%s",
 				drpc.Spec.Action)
-		}
-
-		if drpc.Spec.FailoverCluster != "" {
-			return "", fmt.Errorf(
-				"revert validation failed: saved last-action=empty requires failoverCluster=empty, got %s",
-				drpc.Spec.FailoverCluster)
 		}
 
 		return rmn.Deployed, nil
@@ -3411,16 +3405,9 @@ func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
 			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 		}
 	} else {
-		// For non-VM discovered apps, check if VRG has reached Secondary state
-		// indicating that manual cleanup is complete
-		vrg := d.getCleanupSecondaryVRG(clusterName)
-		if vrg != nil && vrg.Status.State == rmn.SecondaryState && vrg.Status.ObservedGeneration == vrg.Generation {
-			d.log.V(1).Info("Setting progression - Cleaning Up (non-VM app cleanup complete, VRG is Secondary)")
-			d.setProgression(rmn.ProgressionCleaningUp)
-		} else {
-			d.log.V(1).Info("Setting progression - WaitOnUserToCleanUp (waiting for manual cleanup)")
-			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
-		}
+		// For non-VM discovered apps, always wait for user to manually delete workload.
+		// VRG state transitions are automatic and independent of user cleanup actions.
+		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 	}
 }
 
