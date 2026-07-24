@@ -7,6 +7,8 @@ resources:
 - ../../rbac/service_account.yaml
 - role.yaml
 - role_binding.yaml
+- velero_configmap_role.yaml
+- velero_configmap_rolebinding.yaml
 - ../../rbac/leader_election_role.yaml
 - ../../rbac/leader_election_role_binding.yaml
 # The following resources support controller-runtime built-in metrics auth

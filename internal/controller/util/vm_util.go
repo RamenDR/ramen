@@ -19,9 +19,10 @@ import (
 const (
 	KindVirtualMachine = "VirtualMachine"
 	KubeVirtAPIVersion = "kubevirt.io/v1"
-	// VMStaticIPAnnotation is the annotation placed on spec.template.metadata
-	// to pre-reserve a specific IP from an OVN-K8s, used by DR to identify the
-	// static IP configured VM
+
+	// VMStaticIPAnnotation is the annotation on spec.template.metadata that
+	// pre-reserves a specific IP from an OVN-K8s UDN/CUDN network.
+	// VMs carrying this annotation require IP translation during DR.
 	VMStaticIPAnnotation = "network.kubevirt.io/addresses"
 )
 
@@ -31,13 +32,24 @@ const (
 type VMStaticIPInfo struct {
 	VMName    string
 	Namespace string
-	// HasStaticIP is true when the VM carries the network.kubevirt.io/addresses
-	// annotation on spec.template.metadata, indicating a UDN/CUDN static IP
-	// reservation that must be translated on failover/relocate.
+	// HasStaticIP is true when the VM carries the VMStaticIPAnnotation on
+	// spec.template.metadata, indicating a UDN/CUDN static IP reservation.
 	HasStaticIP bool
-	// PrimaryAddresses holds the interface→IPs parsed directly from the
+	// PrimaryAddresses holds the parsed interface→[]IP mapping from the
 	// annotation on the primary cluster. This is the source for translation.
 	PrimaryAddresses map[string][]string
+}
+
+// ParseVMInterfaceAddresses parses the network.kubevirt.io/addresses annotation.
+// Value format: {"primary-udn": ["192.168.0.100"]}
+// Returns nil on parse failure.
+func ParseVMInterfaceAddresses(raw string) map[string][]string {
+	var mapping map[string][]string
+	if err := json.Unmarshal([]byte(raw), &mapping); err != nil {
+		return nil
+	}
+
+	return mapping
 }
 
 func ListVMsByLabelSelector(
@@ -86,12 +98,23 @@ func ListVMsByVMNamespace(
 	vmList []string,
 ) ([]virtv1.VirtualMachine, error) {
 	var foundVMs []virtv1.VirtualMachine
+	// Track seen VMs to prevent duplicates when namespace list has duplicates
+	seenVMs := make(map[types.NamespacedName]struct{})
 
 	for _, ns := range vmNamespaceList {
 		for _, vm := range vmList {
+			// Create unique key for this VM
+			vmLookUp := types.NamespacedName{
+				Namespace: ns,
+				Name:      vm,
+			}
+
+			if _, exists := seenVMs[vmLookUp]; exists {
+				continue
+			}
+
 			foundVM := &virtv1.VirtualMachine{}
 
-			vmLookUp := types.NamespacedName{Namespace: ns, Name: vm}
 			if err := k8sclient.Get(ctx, vmLookUp, foundVM); err != nil {
 				if k8serrors.IsNotFound(err) {
 					continue
@@ -100,7 +123,8 @@ func ListVMsByVMNamespace(
 				return nil, err
 			}
 
-			foundVMs = append(foundVMs, *foundVM.DeepCopy())
+			foundVMs = append(foundVMs, *foundVM)
+			seenVMs[vmLookUp] = struct{}{}
 		}
 	}
 
