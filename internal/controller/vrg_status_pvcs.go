@@ -67,8 +67,6 @@ func (v *VRGInstance) vrgStatusPvcNamespacesSetIfUnset() {
 		log := v.log.WithValues("PVC", pvc.Name)
 
 		if pvc.Namespace != "" {
-			log.V(1).Info("VRG status PVC namespace set already", "namespace", pvc.Namespace)
-
 			continue
 		}
 
