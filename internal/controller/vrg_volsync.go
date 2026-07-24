@@ -892,18 +892,19 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 		if err := markRGSResourceForDeletion(v.ctx, v.reconciler.Client, cg, pvc.Namespace); err != nil {
 			log.Error(err, "Failed to mark RGS for deletion", "CG", cg)
+			v.requeue()
 
 			return
 		}
 	}
 
-	// Determine if VRG is being deleted to decide whether to skip PVC disownership
-	vrgBeingDeleted := util.ResourceIsDeleted(v.instance)
+	skipPVCDisownership := v.shouldSkipPVCDisownership()
 
-	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name, "vrgBeingDeleted", vrgBeingDeleted)
+	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name, "skipPVCDisownership", skipPVCDisownership)
 	// This call is only from Primary cluster. delete ReplicationSource/CG and related resources.
-	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc, vrgBeingDeleted); err != nil {
+	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc, skipPVCDisownership); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
+		v.requeue()
 
 		return
 	}
@@ -960,14 +961,16 @@ func (v *VRGInstance) cleanupResources() error {
 }
 
 func (v *VRGInstance) doCleanupResources(name, namespace string) error {
-	if err := v.volSyncHandler.DeleteRS(name, namespace, true); err != nil {
+	skipPVCDisownership := v.shouldSkipPVCDisownership()
+
+	if err := v.volSyncHandler.DeleteRS(name, namespace, skipPVCDisownership); err != nil {
 		return err
 	}
 
-	// Here, we don't remove the RD as an owner of the PVC as the RD is being deleted because the workload is being
-	// deleted. Instead, we want garbage collection to clean up the PVC as part of that RD deletion (because it is on
-	// the secondary.)
-	if err := v.volSyncHandler.DeleteRD(name, namespace, true); err != nil {
+	// When the workload is being deleted, we don't remove the RD as an owner of the PVC as the RD is being deleted.
+	// Instead, we want garbage collection to clean up the PVC as part of that RD deletion (because it is on
+	// the secondary.) During disable DR (do-not-delete-pvc), disown the PVC from the RD first so it survives.
+	if err := v.volSyncHandler.DeleteRD(name, namespace, skipPVCDisownership); err != nil {
 		return err
 	}
 
@@ -975,15 +978,27 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 		return err
 	}
 
-	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
+	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log,
+		v.volSyncHandler, skipPVCDisownership); err != nil {
 		return err
 	}
 
-	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
+	if err := cephfscg.DeleteRGD(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log,
+		v.volSyncHandler, skipPVCDisownership); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// shouldSkipPVCDisownership returns true when PVCs should be garbage-collected with VolSync resources
+// (workload deletion). Returns false during disable DR when do-not-delete-pvc is set and PVCs must survive.
+func (v *VRGInstance) shouldSkipPVCDisownership() bool {
+	if v.instance.GetAnnotations()[DoNotDeletePVCAnnotation] == DoNotDeletePVCAnnotationVal {
+		return false
+	}
+
+	return util.ResourceIsDeleted(v.instance)
 }
 
 func (v *VRGInstance) isSecondaryWithVolSyncProtectedPVCs() bool {
