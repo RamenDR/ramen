@@ -1136,7 +1136,7 @@ var _ = Describe("DRClusterController", func() {
 			drcluster = drclusters[0].DeepCopy()
 		})
 
-		When("provided CIDRs match detected StorageAccessDetails", func() {
+		When("provided CIDRs include all expected CIDRs from StorageAccessDetails", func() {
 			It("reports validated with reason Succeeded", func() {
 				NFClassCount = 1
 
@@ -1159,13 +1159,13 @@ var _ = Describe("DRClusterController", func() {
 			})
 		})
 
-		When("provided CIDRs do not match detected StorageAccessDetails", func() {
+		When("provided CIDRs do not include expected CIDRs from StorageAccessDetails", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
 				NFClassCount = 1
 
 				defer func() { NFClassCount = 0 }()
 
-				drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // CIDR not in StorageAccessDetails
+				drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // missing expected CIDRs from StorageAccessDetails
 				drcluster = updateDRClusterParameters(drcluster)
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
@@ -1175,7 +1175,7 @@ var _ = Describe("DRClusterController", func() {
 					drcluster,
 					metav1.ConditionFalse,
 					Equal(controllers.ReasonValidationFailed),
-					ContainSubstring("undetected CIDRs specified"),
+					ContainSubstring("expected CIDRs not configured"),
 					ramen.DRClusterValidated,
 					false,
 				)
