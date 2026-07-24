@@ -1,0 +1,15 @@
+# Certificate for the metrics server, issued by the same self-signed issuer
+# used for webhooks. Enable this when using cert-manager for metrics TLS.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: metrics-server-cert
+  namespace: system
+spec:
+  dnsNames:
+  - $(SERVICE_NAME).$(SERVICE_NAMESPACE).svc
+  - $(SERVICE_NAME).$(SERVICE_NAMESPACE).svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer
+  secretName: metrics-server-cert
