@@ -50,6 +50,13 @@ def deploy(cluster):
     )
     kubectl.apply("--filename=-", input=yaml_str, context=cluster)
 
+    print("Creating public SnapshotGroupClass")
+    template = _template("snapshot-group-class-public.yaml")
+    yaml_str = template.substitute(
+        cluster=cluster, scname=storage_class_name, fsname=FILE_SYSTEMS[0]
+    )
+    kubectl.apply("--filename=-", input=yaml_str, context=cluster)
+
 
 def wait(cluster):
     print("Waiting until Ceph File Systems are ready")
