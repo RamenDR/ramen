@@ -209,12 +209,6 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	// This happens when user sets spec.dryRun=false or removes dryRun field from DRPC spec
 	// The VRG must delete all dry-run snapshots BEFORE proceeding
 	if v.shouldCleanupDryRunSnapshots() {
-		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
-			v.log.Info("Dry-run reverted, cleaning up snapshots before transitioning to Secondary")
-		} else {
-			v.log.Info("Promoting test failover to real, cleaning up dry-run snapshots while staying Primary")
-		}
-
 		if err := cleanupDryRunSnapshots(v.ctx, v.reconciler.Client, v.log, v.instance, v.volRepPVCs); err != nil {
 			v.log.Error(err, "Failed to cleanup dry-run snapshots")
 
