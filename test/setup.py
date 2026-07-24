@@ -30,6 +30,7 @@ setuptools.setup(
         "toml",
         "packaging",
         "matplotlib",
+        "argcomplete",
     ],
     classifiers=[
         "Development Status :: 4 - Beta",

@@ -280,3 +280,16 @@ func fetchPartialMeta(
 func gvkString(o metav1.OwnerReference) string {
 	return o.APIVersion + "/" + o.Kind
 }
+
+// ParseVMInterfaceAddresses parses the network.kubevirt.io/addresses annotation.
+// Value format: '{"primary-udn": ["192.168.0.100"]'
+// Returns the full interface→IPs mapping, or nil on parse failure.
+// Callers that only need interface names can iterate the map keys.
+func ParseVMInterfaceAddresses(raw string) map[string][]string {
+	var mapping map[string][]string
+	if err := json.Unmarshal([]byte(raw), &mapping); err != nil {
+		return nil
+	}
+
+	return mapping
+}

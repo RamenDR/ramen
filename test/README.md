@@ -354,6 +354,49 @@ drenv cleanup
 
 This should not be needed.
 
+## Shell completion for `drenv`
+
+`drenv` supports shell completion, making it easier to complete subcommands,
+options, and environment file paths while typing.
+
+After activating the project's virtual environment, enable completion by running
+the following command. This works with the default shells on Linux (Bash) and
+macOS (Zsh):
+
+```sh
+source <(register-python-argcomplete drenv)
+```
+
+If you are using Zsh and shell completion is not already enabled in your
+environment, enable it once by running:
+
+```sh
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+```
+
+Open a new shell (or reload your shell configuration), activate the virtual
+environment, and run the completion command above.
+
+To verify the feature, try:
+
+```sh
+% drenv st[TAB]
+start        -- start an environment
+stop         -- stop an environment
+stress-test  -- run drenv stress test
+
+% drenv start --[TAB]
+--help            -- show this help message and exit
+--logfile         -- path to logfile (default 'drenv.log')
+--name-prefix     -- prefix profile names
+--skip-tests      -- Do not run addons 'test' hooks
+--skip-addons     -- Do not run addons 'start' hooks
+```
+
+`drenv` uses the Python `argcomplete` package, which integrates with `argparse`
+to keep shell completions synchronized with the command-line interface
+automatically.
+
 ## Configuring drenv
 
 drenv can be configured using an optional configuration file at

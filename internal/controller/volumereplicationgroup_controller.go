@@ -3068,3 +3068,95 @@ func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 func (v *VRGInstance) isDiscoveredApp() bool {
 	return v.instance.Spec.ProtectedNamespaces != nil && len(*v.instance.Spec.ProtectedNamespaces) > 0
 }
+
+// validateAndRecordStaticIPDiscovery validates static IP annotations and populates
+// v.instance.Status.StaticIPDiscoveryStatus using the already-fetched VM list.
+// This is called from CheckForVMConflictOnPrimary after label-selector validation.
+func (v *VRGInstance) validateAndRecordStaticIPDiscovery(vmList []string, vmNamespace []string) error {
+	infos, err := v.ValidateStaticIPNetworkMapping(vmList, vmNamespace)
+	if err != nil {
+		return fmt.Errorf("static IP validation failed: %w", err)
+	}
+
+	if infos != nil {
+		v.log.Info("Static IP discovery complete")
+	}
+
+	return nil
+}
+
+// ValidateStaticIPNetworkMapping inspects every protected VM in the VRG and
+// classifies each one as requiring static IP translation or not.
+//
+// This is intentionally per-VM: a single DRPC/VRG may protect a mixed group
+// where some VMs use a static IP via UDN/CUDN and others use plain pod
+// network with DHCP. Only VMs carrying the network.kubevirt.io/addresses
+// annotation need IP translation; the rest are left untouched.
+//
+// Returns (nil, nil) when no protected VM list is configured. Returns an error
+// if the protected VMs cannot be listed or if a static IP annotation is present
+// but malformed.
+
+func (v *VRGInstance) ValidateStaticIPNetworkMapping(
+	vmList []string, vmNamespaceList []string,
+) ([]util.VMStaticIPInfo, error) {
+	if len(vmList) == 0 {
+		v.log.V(1).Info("No VM list found; no VMs to classify for static IP")
+
+		return nil, nil
+	}
+
+	vms, err := util.ListVMsByVMNamespace(v.ctx, v.reconciler.Client, v.log, vmNamespaceList, vmList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list protected VMs for static IP validation: %w", err)
+	}
+
+	v.log.Info("Classifying protected VMs for static IP translation", "count", len(vms))
+
+	results := make([]util.VMStaticIPInfo, 0, len(vms))
+
+	for i := range vms {
+		vm := &vms[i]
+
+		info := util.VMStaticIPInfo{
+			VMName:    vm.Name,
+			Namespace: vm.Namespace,
+			// HasStaticIP defaults to false — correct for DHCP VMs
+		}
+
+		// spec.template.metadata.annotations is where OVN-K8s
+		// places the static IP reservation - distinct from the VM object's own annotations.
+		// Template is a pointer in the KubeVirt API; guard before dereferencing.
+		if vm.Spec.Template != nil {
+			raw, ok := vm.Spec.Template.ObjectMeta.Annotations[util.VMStaticIPAnnotation]
+			if ok {
+				info.HasStaticIP = true
+				info.PrimaryAddresses = util.ParseVMInterfaceAddresses(raw)
+
+				if info.PrimaryAddresses == nil {
+					return results, fmt.Errorf(
+						"VM %s/%s has malformed static IP annotation %q (invalid JSON format); "+
+							"expected format: {\"interface-name\": [\"ip-address\"]}. "+
+							"Fix the annotation value to allow IP translation",
+						vm.Namespace, vm.Name, raw,
+					)
+				}
+
+				v.log.Info("VM has static IP reservation",
+					"vm", vm.Name,
+					"namespace", vm.Namespace,
+					"interfaces", info.PrimaryAddresses,
+				)
+			}
+		} else {
+			v.log.V(1).Info("VM has no static IP annotation, skipping",
+				"vm", vm.Name,
+				"namespace", vm.Namespace,
+			)
+		}
+
+		results = append(results, info)
+	}
+
+	return results, nil
+}

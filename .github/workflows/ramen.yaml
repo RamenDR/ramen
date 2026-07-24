@@ -60,8 +60,7 @@ jobs:
           go mod tidy
           (cd e2e && go mod tidy)
           (cd api && go mod tidy)
-          git --no-pager diff
-          git diff-index --quiet HEAD
+          git --no-pager diff --exit-code
 
   golangci:
     name: Golangci Lint

@@ -3264,13 +3264,22 @@ func (v *VSHandler) checkLastSnapshotSyncStatus(lrs *volsyncv1alpha1.Replication
 	return !completed
 }
 
+func isDRManagedOwnerReference(ref metav1.OwnerReference) bool {
+	switch ref.Kind {
+	case "VolumeReplicationGroup", "ReplicationSource", "ReplicationDestination":
+		return true
+	default:
+		return false
+	}
+}
+
 func (v *VSHandler) DisownVolSyncManagedPVC(pvc *corev1.PersistentVolumeClaim) error {
-	// Remove only the VRG ownerReference, keeping VolSync resource (RS/RD) ownership
-	// This allows Kubernetes garbage collection to properly clean up PVCs when VolSync resources are deleted
+	// Called only when do-not-delete-pvc is set (disable DR). Strip DR-managed owners
+	// (VRG, RS, RD) so the application PVC survives VolSync resource teardown.
 	newRefs := []metav1.OwnerReference{}
 
 	for _, ref := range pvc.OwnerReferences {
-		if ref.Kind != "VolumeReplicationGroup" {
+		if !isDRManagedOwnerReference(ref) {
 			newRefs = append(newRefs, ref)
 		}
 	}
