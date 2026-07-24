@@ -26,6 +26,7 @@ from . import registry
 from . import shutdown
 from . import ssh
 from . import stress
+from . import tools
 from . import yaml
 
 ADDONS_DIR = "addons"
@@ -346,6 +347,10 @@ def handle_termination_signal(signo, frame):
 def do_setup(args):
     env = load_env(args)
     logging.info("[main] Setting up drenv")
+
+    # Install required tools first
+    tools.setup()
+
     ssh.setup()
     for name in set(p["provider"] for p in env["profiles"]):
         logging.info("[main] Setting up '%s' for drenv", name)
