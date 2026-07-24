@@ -8,10 +8,10 @@ import (
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	vgsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -59,7 +59,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 			_, err := volumeGroupSourceHandler.CreateOrUpdateVolumeGroupSnapshot(context.TODO(), rgs)
 			Expect(err).To(BeNil())
 			Eventually(func() []string {
-				volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
+				volumeGroupSnapshot := &vgsv1.VolumeGroupSnapshot{}
 
 				err := k8sClient.Get(
 					context.TODO(), types.NamespacedName{
@@ -308,7 +308,7 @@ func GenerateReplicationGroupSource(
 
 func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 	retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
+		volumeGroupSnapshot := &vgsv1.VolumeGroupSnapshot{}
 
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{
 			Name:      rgs.Name,
@@ -319,7 +319,7 @@ func UpdateVGS(rgs *v1alpha1.ReplicationGroupSource, vsName, pvcName string) {
 		}
 
 		ready := true
-		volumeGroupSnapshot.Status = &vgsv1beta1.VolumeGroupSnapshotStatus{
+		volumeGroupSnapshot.Status = &vgsv1.VolumeGroupSnapshotStatus{
 			ReadyToUse: &ready,
 		}
 
@@ -398,7 +398,7 @@ func CreateStorageClass() {
 }
 
 func CreateVS(name string, vgsname, vgsnamespace string) {
-	volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{}
+	volumeGroupSnapshot := &vgsv1.VolumeGroupSnapshot{}
 
 	ownerReferences := []metav1.OwnerReference{}
 
@@ -413,8 +413,8 @@ func CreateVS(name string, vgsname, vgsnamespace string) {
 			{
 				APIVersion: fmt.Sprintf(
 					"%s/%s",
-					vgsv1beta1.SchemeGroupVersion.Group,
-					vgsv1beta1.SchemeGroupVersion.Version,
+					vgsv1.SchemeGroupVersion.Group,
+					vgsv1.SchemeGroupVersion.Version,
 				),
 				Kind: "VolumeGroupSnapshot",
 				Name: volumeGroupSnapshot.Name,

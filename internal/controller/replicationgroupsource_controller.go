@@ -11,7 +11,7 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	vgsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -173,7 +173,7 @@ func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 		For(&ramendrv1alpha1.ReplicationGroupSource{})
 
 	if r.volumeGroupSnapshotCRsAreWatched {
-		builder.Owns(&vgsv1beta1.VolumeGroupSnapshot{})
+		builder.Owns(&vgsv1.VolumeGroupSnapshot{})
 	}
 
 	return builder.Complete(r)

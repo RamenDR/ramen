@@ -7,10 +7,10 @@ import (
 	"context"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -141,7 +141,7 @@ var _ = Describe("Cghandler", func() {
 				return client.IgnoreAlreadyExists(err)
 			}, timeout, interval).Should(BeNil())
 
-			vgsc := &groupsnapv1beta1.VolumeGroupSnapshotClass{
+			vgsc := &groupsnapv1.VolumeGroupSnapshotClass{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "vgsc",
 					Labels: map[string]string{"test": "test"},
@@ -178,7 +178,7 @@ var _ = Describe("Cghandler", func() {
 			}, timeout, interval).Should(BeNil())
 
 			Eventually(func() error {
-				err := k8sClient.Delete(context.TODO(), &groupsnapv1beta1.VolumeGroupSnapshotClass{
+				err := k8sClient.Delete(context.TODO(), &groupsnapv1.VolumeGroupSnapshotClass{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:   "vgsc",
 						Labels: map[string]string{"test": "test"},
