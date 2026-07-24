@@ -5,3 +5,7 @@
 ---
 resources:
   - https://raw.githubusercontent.com/rook/rook/release-1.19/deploy/examples/toolbox.yaml
+images:
+  - name: quay.io/ceph/ceph:v19
+    newName: ghcr.io/nikhil-ladha/rbd-group-mirroring
+    newTag: latest
