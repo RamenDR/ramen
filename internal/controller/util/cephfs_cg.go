@@ -10,11 +10,13 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramenutils "github.com/backube/volsync/controllers/utils"
 	"github.com/go-logr/logr"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -153,7 +155,7 @@ func GetVolumeGroupSnapshotClasses(
 	ctx context.Context,
 	k8sClient client.Client,
 	volumeGroupSnapshotClassSelector metav1.LabelSelector,
-) ([]groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
+) ([]groupsnapv1.VolumeGroupSnapshotClass, error) {
 	selector, err := metav1.LabelSelectorAsSelector(&volumeGroupSnapshotClassSelector)
 	if err != nil {
 		return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
@@ -165,7 +167,7 @@ func GetVolumeGroupSnapshotClasses(
 		},
 	}
 
-	vgscList := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
+	vgscList := &groupsnapv1.VolumeGroupSnapshotClassList{}
 	if err := k8sClient.List(ctx, vgscList, listOptions...); err != nil {
 		return nil, fmt.Errorf("error listing volumegroupsnapshotclasses (%w)", err)
 	}
@@ -174,7 +176,7 @@ func GetVolumeGroupSnapshotClasses(
 }
 
 func VolumeGroupSnapshotClassMatchStorageProviders(
-	volumeGroupSnapshotClass groupsnapv1beta1.VolumeGroupSnapshotClass, storageClassProviders []string,
+	volumeGroupSnapshotClass groupsnapv1.VolumeGroupSnapshotClass, storageClassProviders []string,
 ) bool {
 	for _, storageClassProvider := range storageClassProviders {
 		if storageClassProvider == volumeGroupSnapshotClass.Driver {
@@ -312,7 +314,7 @@ func CheckImagesReadyToUse(
 func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 	ctx context.Context,
 	k8sClient client.Client,
-	vgs *groupsnapv1beta1.VolumeGroupSnapshot,
+	vgs *groupsnapv1.VolumeGroupSnapshot,
 	logger logr.Logger,
 ) ([]vsv1.VolumeSnapshot, error) {
 	volumeSnapshotList := &vsv1.VolumeSnapshotList{}
@@ -349,6 +351,51 @@ func GetRSMoverConfig(name, namespace string, moverConfigArr []ramendrv1alpha1.M
 				mc.PVCNameSpace == namespace {
 				return &mc
 			}
+		}
+	}
+
+	return nil
+}
+
+// CleanupOwnedPrivateVGS deletes Ramen-owned private VolumeGroupSnapshot objects
+// (groupsnapshot.storage.openshift.io) for the given RGS. This is transitional cleanup
+// for upgrades from private-only to public VGS API: once public CRD is present, leftover
+// private VGS would otherwise become orphans.
+//
+// Safe to call when the private CRD is absent (returns nil).
+func CleanupOwnedPrivateVGS(
+	ctx context.Context, k8sClient client.Client, rgs client.Object, log logr.Logger,
+) error {
+	if rgs == nil {
+		return nil
+	}
+
+	vgsList := &groupsnapv1beta1.VolumeGroupSnapshotList{}
+	if err := k8sClient.List(ctx, vgsList,
+		client.InNamespace(rgs.GetNamespace()),
+		client.MatchingLabels{
+			RGSOwnerLabel:       rgs.GetName(),
+			CreatedByRamenLabel: "true",
+		},
+	); err != nil {
+		if meta.IsNoMatchError(err) || k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	for i := range vgsList.Items {
+		vgs := &vgsList.Items[i]
+		if !vgs.GetDeletionTimestamp().IsZero() {
+			continue
+		}
+
+		log.Info("Deleting owned private VolumeGroupSnapshot after public VGS API is available",
+			"vgs", vgs.GetName(), "namespace", vgs.GetNamespace())
+
+		if err := k8sClient.Delete(ctx, vgs); err != nil && !k8serrors.IsNotFound(err) {
+			return err
 		}
 	}
 

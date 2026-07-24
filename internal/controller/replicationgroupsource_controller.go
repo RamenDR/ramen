@@ -11,7 +11,7 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	vgsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -92,6 +92,10 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if err := r.cleanupPrivateVGSIfNeeded(ctx, rgs, logger); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	logger.Info("Get ramen config from configmap")
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
@@ -120,12 +124,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
 	)
 
-	var vgsHandler cephfscg.VolumeGroupSourceHandler
-	if util.IsDiffSyncEnabled(rgs.GetAnnotations()) {
-		vgsHandler = cephfscg.NewDiffVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
-	} else {
-		vgsHandler = cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
-	}
+	vgsHandler := newVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
 
 	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
 		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
@@ -156,11 +155,46 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 	return result, err
 }
 
+// cleanupPrivateVGSIfNeeded deletes Ramen-owned private VGS when both public and private
+// VGS CRDs are installed (transitional upgrade path from private-only to public API).
+func (r *ReplicationGroupSourceReconciler) cleanupPrivateVGSIfNeeded(
+	ctx context.Context, rgs *ramendrv1alpha1.ReplicationGroupSource, logger logr.Logger,
+) error {
+	if !util.IsCRDInstalled(ctx, r.APIReader, util.VGSCRDName) ||
+		!util.IsCRDInstalled(ctx, r.APIReader, util.VGSCRDPrivateName) {
+		return nil
+	}
+
+	if err := util.CleanupOwnedPrivateVGS(ctx, r.Client, rgs, logger); err != nil {
+		logger.Error(err, "Failed to cleanup owned private VolumeGroupSnapshots")
+
+		return err
+	}
+
+	return nil
+}
+
+func newVolumeGroupSourceHandler(
+	k8sClient client.Client,
+	rgs *ramendrv1alpha1.ReplicationGroupSource,
+	cephFSCSIDriverName string,
+	vsHandler *volsync.VSHandler,
+	logger logr.Logger,
+) cephfscg.VolumeGroupSourceHandler {
+	if util.IsDiffSyncEnabled(rgs.GetAnnotations()) {
+		return cephfscg.NewDiffVolumeGroupSourceHandler(
+			k8sClient, rgs, cephFSCSIDriverName, vsHandler, logger)
+	}
+
+	return cephfscg.NewVolumeGroupSourceHandler(
+		k8sClient, rgs, cephFSCSIDriverName, vsHandler, logger)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 	ramenConfig *ramendrv1alpha1.RamenConfig,
 ) error {
-	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDPrivateName) {
+	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDName) {
 		r.volumeGroupSnapshotCRsAreWatched = true
 	}
 
@@ -173,7 +207,7 @@ func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 		For(&ramendrv1alpha1.ReplicationGroupSource{})
 
 	if r.volumeGroupSnapshotCRsAreWatched {
-		builder.Owns(&vgsv1beta1.VolumeGroupSnapshot{})
+		builder.Owns(&vgsv1.VolumeGroupSnapshot{})
 	}
 
 	return builder.Complete(r)

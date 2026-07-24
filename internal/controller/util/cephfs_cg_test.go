@@ -8,10 +8,10 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	ramenutils "github.com/backube/volsync/controllers/utils"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -222,7 +222,7 @@ var _ = Describe("CephfsCg", func() {
 
 	Context("vgsc exists", func() {
 		BeforeEach(func() {
-			vgsc := &groupsnapv1beta1.VolumeGroupSnapshotClass{
+			vgsc := &groupsnapv1.VolumeGroupSnapshotClass{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "vgsc",
 					Labels: map[string]string{"test": "test"},
@@ -239,7 +239,7 @@ var _ = Describe("CephfsCg", func() {
 		})
 		AfterEach(func() {
 			Eventually(func() error {
-				err := k8sClient.Delete(context.TODO(), &groupsnapv1beta1.VolumeGroupSnapshotClass{
+				err := k8sClient.Delete(context.TODO(), &groupsnapv1.VolumeGroupSnapshotClass{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:   "vgsc",
 						Labels: map[string]string{"test": "test"},
@@ -307,7 +307,7 @@ var _ = Describe("CephfsCg", func() {
 	Describe("VolumeGroupSnapshotClassMatchStorageProviders", func() {
 		It("Should be false", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
+				groupsnapv1.VolumeGroupSnapshotClass{
 					Driver: "test",
 				}, nil,
 			)
@@ -315,7 +315,7 @@ var _ = Describe("CephfsCg", func() {
 		})
 		It("Should be false", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
+				groupsnapv1.VolumeGroupSnapshotClass{
 					Driver: "test",
 				}, []string{"test1"},
 			)
@@ -323,13 +323,13 @@ var _ = Describe("CephfsCg", func() {
 		})
 		It("Should be false", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{}, []string{"test1"},
+				groupsnapv1.VolumeGroupSnapshotClass{}, []string{"test1"},
 			)
 			Expect(match).To(BeFalse())
 		})
 		It("Should be true", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
+				groupsnapv1.VolumeGroupSnapshotClass{
 					Driver: "test",
 				}, []string{"test"},
 			)

@@ -9,8 +9,8 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 
@@ -26,7 +26,7 @@ type classLists struct {
 	vsClasses  []*snapv1.VolumeSnapshotClass
 	vrClasses  []*volrep.VolumeReplicationClass
 	vgrClasses []*volrep.VolumeGroupReplicationClass
-	vgsClasses []*groupsnapv1beta1.VolumeGroupSnapshotClass
+	vgsClasses []*groupsnapv1.VolumeGroupSnapshotClass
 }
 
 // peerInfo contains a single peer relationship between a PAIR of clusters for a common storageClassName across
@@ -708,8 +708,8 @@ func getVGSClassesFromCluster(
 	m util.ManagedClusterViewGetter,
 	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
-) ([]*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	vgsClasses := []*groupsnapv1beta1.VolumeGroupSnapshotClass{}
+) ([]*groupsnapv1.VolumeGroupSnapshotClass, error) {
+	vgsClasses := []*groupsnapv1.VolumeGroupSnapshotClass{}
 
 	vgsClassNames := drcConfig.Status.VolumeGroupSnapshotClasses
 	if len(vgsClassNames) == 0 {
@@ -722,7 +722,7 @@ func getVGSClassesFromCluster(
 	for _, vgscName := range vgsClassNames {
 		sClass, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
 		if err != nil {
-			return []*groupsnapv1beta1.VolumeGroupSnapshotClass{}, err
+			return []*groupsnapv1.VolumeGroupSnapshotClass{}, err
 		}
 
 		vgsClasses = append(vgsClasses, sClass)

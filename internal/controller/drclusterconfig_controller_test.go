@@ -12,10 +12,10 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -96,7 +96,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		baseVSC, vsc1, vsc2               *snapv1.VolumeSnapshotClass
 		baseVRC, vrc1, vrc2               *volrep.VolumeReplicationClass
 		baseVGRC, vgrc1, vgrc2            *volrep.VolumeGroupReplicationClass
-		baseVGSC, vgsc1, vgsc2            *groupsnapv1beta1.VolumeGroupSnapshotClass
+		baseVGSC, vgsc1, vgsc2            *groupsnapv1.VolumeGroupSnapshotClass
 		baseNFC, nfc1, nfc2               *csiaddonsv1alpha1.NetworkFenceClass
 		baseCSIAddonsNode, csiAddonsNode1 *csiaddonsv1alpha1.CSIAddonsNode
 		classes                           Classes
@@ -248,7 +248,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				Provisioner: "fake.ramen.com",
 			},
 		}
-		baseVGSC = &groupsnapv1beta1.VolumeGroupSnapshotClass{
+		baseVGSC = &groupsnapv1.VolumeGroupSnapshotClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "baseVGSC",
 				Labels: map[string]string{

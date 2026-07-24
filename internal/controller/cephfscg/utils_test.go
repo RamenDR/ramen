@@ -6,7 +6,7 @@ package cephfscg_test
 import (
 	"testing"
 
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	vgsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
 )
@@ -16,7 +16,7 @@ func TestIsVGSReady(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		vgs      *vgsv1beta1.VolumeGroupSnapshot
+		vgs      *vgsv1.VolumeGroupSnapshot
 		expected bool
 	}{
 		{
@@ -26,20 +26,20 @@ func TestIsVGSReady(t *testing.T) {
 		},
 		{
 			name:     "nil Status",
-			vgs:      &vgsv1beta1.VolumeGroupSnapshot{},
+			vgs:      &vgsv1.VolumeGroupSnapshot{},
 			expected: false,
 		},
 		{
 			name: "nil ReadyToUse",
-			vgs: &vgsv1beta1.VolumeGroupSnapshot{
-				Status: &vgsv1beta1.VolumeGroupSnapshotStatus{},
+			vgs: &vgsv1.VolumeGroupSnapshot{
+				Status: &vgsv1.VolumeGroupSnapshotStatus{},
 			},
 			expected: false,
 		},
 		{
 			name: "ReadyToUse false",
-			vgs: &vgsv1beta1.VolumeGroupSnapshot{
-				Status: &vgsv1beta1.VolumeGroupSnapshotStatus{
+			vgs: &vgsv1.VolumeGroupSnapshot{
+				Status: &vgsv1.VolumeGroupSnapshotStatus{
 					ReadyToUse: boolPtr(false),
 				},
 			},
@@ -47,8 +47,8 @@ func TestIsVGSReady(t *testing.T) {
 		},
 		{
 			name: "ReadyToUse true",
-			vgs: &vgsv1beta1.VolumeGroupSnapshot{
-				Status: &vgsv1beta1.VolumeGroupSnapshotStatus{
+			vgs: &vgsv1.VolumeGroupSnapshot{
+				Status: &vgsv1.VolumeGroupSnapshotStatus{
 					ReadyToUse: boolPtr(true),
 				},
 			},
