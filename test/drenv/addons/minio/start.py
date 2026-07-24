@@ -7,7 +7,7 @@ from drenv import kubectl
 from drenv import mc
 from drenv import minio
 
-from .config import BUCKET, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, PACKAGE_DIR
+from .config import BUCKET_PREFIX, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, PACKAGE_DIR
 
 
 def start(cluster):
@@ -63,5 +63,6 @@ def wait(cluster):
             print(f"Set mc alias in {elapsed:.2f} seconds")
             break
 
-    print(f"Creating bucket '{cluster}/{BUCKET}'")
-    mc.mb(f"{cluster}/{BUCKET}", ignore_existing=True)
+    bucket = f"{BUCKET_PREFIX}-{cluster}"
+    print(f"Creating bucket '{cluster}/{bucket}'")
+    mc.mb(f"{cluster}/{bucket}", ignore_existing=True)
