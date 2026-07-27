@@ -131,13 +131,17 @@ func DisableProtection(ctx types.TestContext) error {
 		return err
 	}
 
-	// If the cluster is not nil, the workload exists and its health is validated.
+	// If the cluster is not nil, the workload exists and its health and PVC state are validated.
 	if cluster != nil {
-		if err := ctx.Workload().Health(ctx, cluster); err != nil {
+		if err := deployers.WaitWorkloadHealth(ctx, cluster); err != nil {
 			return err
 		}
 
-		log.Debugf("Workload \"%s/%s\" is healthy in cluster %q",
+		if err := WaitPVCPreserved(ctx, cluster); err != nil {
+			return err
+		}
+
+		log.Debugf("Workload \"%s/%s\" is healthy with preserved PVCs in cluster %q",
 			appNamespace, ctx.Workload().GetAppName(), cluster.Name)
 	}
 

@@ -93,6 +93,9 @@ type Workload interface {
 	// GetOperations returns the exec hook to be executed based on workload and given namespace.
 	GetOperations(string) []*recipe.Operation
 	Health(ctx TestContext, cluster *Cluster) error
+	// AssertPVCPreserved verifies application PVCs survived Disable DR (Bound, not
+	// deleting, no DR-managed VolSync/VRG owner references).
+	AssertPVCPreserved(ctx TestContext, cluster *Cluster) error
 	Status(ctx TestContext) ([]WorkloadStatus, error)
 }
 

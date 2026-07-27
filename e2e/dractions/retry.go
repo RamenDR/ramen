@@ -215,3 +215,28 @@ func waitForDRPCAnnotationPropagation(ctx types.TestContext, drpcName string) er
 		}
 	}
 }
+
+func WaitPVCPreserved(ctx types.TestContext, cluster *types.Cluster) error {
+	log := ctx.Logger()
+	w := ctx.Workload()
+	start := time.Now()
+
+	log.Debugf("Waiting until workload \"%s/%s\" PVCs are preserved in cluster %q",
+		ctx.AppNamespace(), w.GetAppName(), cluster.Name)
+
+	for {
+		assertErr := w.AssertPVCPreserved(ctx, cluster)
+		if assertErr == nil {
+			elapsed := time.Since(start)
+			log.Debugf("Workload \"%s/%s\" PVCs are preserved in cluster %q in %.3f seconds",
+				ctx.AppNamespace(), w.GetAppName(), cluster.Name, elapsed.Seconds())
+
+			return nil
+		}
+
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return fmt.Errorf("workload \"%s/%s\" PVCs are not preserved in cluster %q: %w",
+				ctx.AppNamespace(), w.GetAppName(), cluster.Name, assertErr)
+		}
+	}
+}

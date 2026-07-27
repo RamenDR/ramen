@@ -183,6 +183,10 @@ func (w *NoHooks) Kustomize() string { return "" }
 
 func (w *NoHooks) Health(ctx types.TestContext, cluster *types.Cluster) error { return nil }
 
+func (w *NoHooks) AssertPVCPreserved(ctx types.TestContext, cluster *types.Cluster) error {
+	return nil
+}
+
 func (w *NoHooks) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) { return nil, nil }
 
 // Helpers
