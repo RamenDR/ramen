@@ -17,6 +17,8 @@ from drenv.addons import example
 # Avoid random timeouts in github.
 TIMEOUT = 30
 
+LAST_APPLIED_CONFIGURATION = "kubectl.kubernetes.io/last-applied-configuration"
+
 
 @pytest.mark.cluster
 def test_version(tmpenv):
@@ -58,38 +60,45 @@ def test_apply(tmpenv, capsys):
 
 
 @pytest.mark.cluster
-@pytest.mark.parametrize(
-    ("server_side", "has_last_applied"),
-    [(None, False), (True, False), (False, True)],
-)
-def test_apply_mode(tmpenv, tmp_path, server_side, has_last_applied):
-    name = f"test-apply-{secrets.token_hex(4)}"
+@pytest.mark.parametrize("server_side", [None, True])
+def test_apply_server_side(tmpenv, tmp_path, server_side):
+    name = f"test-apply-server-side-{server_side}".lower()
     resource = f"configmap/{name}"
     manifest = tmp_path / "configmap.yaml"
-    manifest.write_text(
-        f"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\n",
-        encoding="utf-8",
-    )
+    manifest.write_text(f"""\
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {name}
+""")
 
+    kwargs = {} if server_side is None else {"server_side": server_side}
+    kubectl.apply(f"--filename={manifest}", **kwargs, context=tmpenv.profile)
     try:
-        kwargs = {} if server_side is None else {"server_side": server_side}
-        kubectl.apply(
-            f"--filename={manifest}",
-            **kwargs,
-            context=tmpenv.profile,
-        )
-        out = kubectl.get(resource, "--output=json", context=tmpenv.profile)
-        metadata = json.loads(out)["metadata"]
-        annotations = metadata.get("annotations", {})
-        assert (
-            "kubectl.kubernetes.io/last-applied-configuration" in annotations
-        ) is has_last_applied
+        annotations = _get_annotations(resource, tmpenv.profile)
+        assert LAST_APPLIED_CONFIGURATION not in annotations
     finally:
-        kubectl.delete(
-            resource,
-            "--ignore-not-found=true",
-            context=tmpenv.profile,
-        )
+        kubectl.delete(resource, context=tmpenv.profile)
+
+
+@pytest.mark.cluster
+def test_apply_client_side(tmpenv, tmp_path):
+    name = "test-apply-client-side"
+    resource = f"configmap/{name}"
+    manifest = tmp_path / "configmap.yaml"
+    manifest.write_text(f"""\
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {name}
+""")
+
+    kubectl.apply(f"--filename={manifest}", server_side=False, context=tmpenv.profile)
+    try:
+        annotations = _get_annotations(resource, tmpenv.profile)
+        assert LAST_APPLIED_CONFIGURATION in annotations
+    finally:
+        kubectl.delete(resource, context=tmpenv.profile)
 
 
 @pytest.mark.parametrize(
@@ -111,6 +120,22 @@ def test_apply_rejects_raw_server_side_flags(args):
             *args,
             context="non-existing",
         )
+
+
+@pytest.mark.parametrize(
+    "args,expected",
+    [
+        (["--filename", "VALUE", "--all"], ["--filename", "--all"]),
+        (["-f", "VALUE", "--all"], ["-f", "--all"]),
+        (["-k", "VALUE", "--prune"], ["-k", "--prune"]),
+        (["--kustomize", "VALUE", "--prune"], ["--kustomize", "--prune"]),
+        (["--template", "VALUE", "--all"], ["--template", "--all"]),
+        (["--filename=VALUE", "--all"], ["--filename=VALUE", "--all"]),
+        (["--all", "--filename", "VALUE"], ["--all", "--filename"]),
+    ],
+)
+def test_apply_flags(args, expected):
+    assert list(kubectl._apply_flags(args)) == expected
 
 
 @pytest.mark.cluster
