@@ -817,6 +817,9 @@ func (v *VRGInstance) destinationInfoAvailableOrSkip(
 
 // applyDestinationVolumeHandleToPV sets destinationVolumeHandleAnnotation on pv when it differs
 // and persists the change. destinationVolumeHandle must be non-empty.
+// Clearing the archived annotation forces a re-upload to S3 in the same reconcile:
+// annotation-only PV updates do not bump Generation, so isArchivedAlready would otherwise
+// skip upload of the updated PV.
 func (v *VRGInstance) applyDestinationVolumeHandleToPV(
 	pv *corev1.PersistentVolume, destinationVolumeHandle string,
 ) error {
@@ -829,6 +832,7 @@ func (v *VRGInstance) applyDestinationVolumeHandleToPV(
 	}
 
 	pv.Annotations[destinationVolumeHandleAnnotation] = destinationVolumeHandle
+	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
 	v.log.Info(fmt.Sprintf("annotated PV %s with DestinationVolumeID %s", pv.Name, destinationVolumeHandle))
 
 	if err := v.reconciler.Update(v.ctx, pv); err != nil {
