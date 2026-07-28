@@ -1878,6 +1878,20 @@ spec:
                     required:
                     - number
                     type: object
+                  completedCaptureWorkflowSteps:
+                    description: |-
+                      CompletedCaptureWorkflowSteps tracks the names of all successfully completed steps
+                      in the current capture workflow. This list is reset when a new capture starts.
+                    items:
+                      type: string
+                    type: array
+                  completedRecoverWorkflowSteps:
+                    description: |-
+                      CompletedRecoverWorkflowSteps tracks the names of all successfully completed steps
+                      in the current recover workflow. This list is reset when a new recovery starts.
+                    items:
+                      type: string
+                    type: array
                 type: object
               lastGroupSyncBytes:
                 description: |-

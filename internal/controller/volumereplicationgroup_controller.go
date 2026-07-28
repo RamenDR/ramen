@@ -1614,6 +1614,10 @@ func (v *VRGInstance) shouldRestoreKubeObjects() bool {
 
 	KubeObjectsRestored := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
 	if KubeObjectsRestored == nil {
+		// Reset recover workflow step tracking when starting a new restore
+		// (e.g., when VRG transitions from Secondary to Primary)
+		v.instance.Status.KubeObjectProtection.CompletedRecoverWorkflowSteps = nil
+
 		return true
 	}
 
@@ -1643,6 +1647,10 @@ func (v *VRGInstance) shouldRestoreKubeObjects() bool {
 			return false
 		}
 	}
+
+	// Reset recover workflow step tracking when a new restore is needed
+	// (e.g., due to generation change or condition status change)
+	v.instance.Status.KubeObjectProtection.CompletedRecoverWorkflowSteps = nil
 
 	return true
 }
@@ -1840,6 +1848,13 @@ func (v *VRGInstance) resetInitialStatusAsSecondary() bool {
 		v.instance.Generation,
 		"k8s resource restore skipped as Secondary",
 	)
+
+	// Reset workflow steps tracking when transitioning from Primary to Secondary
+	// Capture doesn't happen on Secondary, reset capture tracking
+	if len(v.instance.Status.KubeObjectProtection.CompletedCaptureWorkflowSteps) > 0 {
+		v.instance.Status.KubeObjectProtection.CompletedCaptureWorkflowSteps = nil
+		update = true
+	}
 
 	if update {
 		v.updateVRGStatus(v.result)

@@ -396,6 +396,16 @@ type KubeObjectsCaptureIdentifier struct {
 type KubeObjectProtectionStatus struct {
 	//+optional
 	CaptureToRecoverFrom *KubeObjectsCaptureIdentifier `json:"captureToRecoverFrom,omitempty"`
+
+	// CompletedCaptureWorkflowSteps tracks the names of all successfully completed steps
+	// in the current capture workflow. This list is reset when a new capture starts.
+	//+optional
+	CompletedCaptureWorkflowSteps []string `json:"completedCaptureWorkflowSteps,omitempty"`
+
+	// CompletedRecoverWorkflowSteps tracks the names of all successfully completed steps
+	// in the current recover workflow. This list is reset when a new recovery starts.
+	//+optional
+	CompletedRecoverWorkflowSteps []string `json:"completedRecoverWorkflowSteps,omitempty"`
 }
 
 // VolSyncReplicationDestinationInfo defines the configuration details for a PVC
