@@ -428,6 +428,10 @@ type DiscoveredNetwork struct {
 }
 
 type ResourceReference struct {
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
+	// +optional
+	Kind      string `json:"kind,omitempty"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 }

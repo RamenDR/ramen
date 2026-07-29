@@ -1763,6 +1763,44 @@ spec:
                         description: Namespace is the namespace of the Kubernetes
                           resource.
                         type: string
+                      protectedStaticIPVMs:
+                        description: |-
+                          ProtectedStaticIPVMs holds the static IP discovery summary for VMs
+                          with OVN-K8s UDN/CUDN static IPs discovered on the primary cluster.
+                          Only populated when protected VMs have static IPs; omitted otherwise.
+                        items:
+                          properties:
+                            networks:
+                              items:
+                                properties:
+                                  addresses:
+                                    items:
+                                      type: string
+                                    type: array
+                                  networkName:
+                                    type: string
+                                required:
+                                - networkName
+                                type: object
+                              type: array
+                            resourceRef:
+                              properties:
+                                apiVersion:
+                                  type: string
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                                namespace:
+                                  type: string
+                              required:
+                              - name
+                              - namespace
+                              type: object
+                          required:
+                          - resourceRef
+                          type: object
+                        type: array
                       protectedpvcs:
                         description: List of PVCs that are protected by the VRG resource
                         items:

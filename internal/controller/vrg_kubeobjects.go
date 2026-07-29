@@ -683,11 +683,9 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 	// cluster.  Create-or-update it now and gate the restore on its presence.
 	if hasStaticIPTranslation(v.instance) {
 		if err := v.ensureResourceModifierCM(result); err != nil {
-			return err
-		}
+			result.Requeue = true
 
-		if result.Requeue {
-			return fmt.Errorf("waiting for ResourceModifier ConfigMap to be ready before restore")
+			return err
 		}
 	}
 

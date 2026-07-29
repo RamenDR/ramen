@@ -1566,6 +1566,11 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		ProtectedPVCs:   extractProtectedPVCNames(vrg),
 	}
 
+	// only populate if primary has static IP VMs
+	if vrg.Status.StaticIPDiscoveryStatus != nil {
+		drpc.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs = vrg.Status.StaticIPDiscoveryStatus.Resources
+	}
+
 	drpc.Status.ResourceConditions.Conditions = assignConditionsWithConflictCheck(
 		vrgs, vrg, VRGConditionTypeNoClusterDataConflict)
 

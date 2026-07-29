@@ -471,6 +471,10 @@ spec:
                           type: array
                         resourceRef:
                           properties:
+                            apiVersion:
+                              type: string
+                            kind:
+                              type: string
                             name:
                               type: string
                             namespace:
@@ -2381,6 +2385,10 @@ spec:
                           type: array
                         resourceRef:
                           properties:
+                            apiVersion:
+                              type: string
+                            kind:
+                              type: string
                             name:
                               type: string
                             namespace:
