@@ -1407,6 +1407,11 @@ func (d *DRPCInstance) ensureCleanupAndSecondaryReplicationSetup(srcCluster stri
 		return err
 	}
 
+	err = d.ResetVMStaticIPSpecOnPrimary(srcCluster)
+	if err != nil {
+		return err
+	}
+
 	// Check if the reset has already been applied. ResetVolSyncRDOnPrimary resets the VRG
 	// in the MW, but the VRGs in the vrgs slice are fetched using MCV.
 	vrg, ok := d.vrgs[srcCluster]
@@ -2271,6 +2276,7 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 //   - Spec.PrepareForFinalSync
 //   - Spec.RunFinalSync
 //   - Spec.VolSync.RDSpec
+//   - Spec.StaticIPTranslationSpec
 //
 // These fields are either set during the initial creation of the VRG (e.g., name and namespace)
 // or updated as needed, such as the PrepareForFinalSync and RunFinalSync fields.
@@ -2279,6 +2285,9 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 	d.setVRGSpecFields(vrg)
 	d.updateVRGDRTypeSpecIfNeeded(vrg, vrgFromView)
 	d.updateMoverConfigIfNeeded(vrg)
+	// Inject static IP translation spec for secondary VRG.
+	// Reads primary VRG's discovery status and maps to target IPs from DRPC spec.
+	d.updateVRGStaticIPTranslationSpec(vrg, homeCluster)
 }
 
 // setVRGAnnotations sets all VRG annotations from DRPC
@@ -3582,4 +3591,266 @@ func mapsEqual(a, b map[string]string) bool {
 	}
 
 	return reflect.DeepEqual(a, b)
+}
+
+// buildStaticIPTranslationSpec constructs the StaticIPTranslationSpec for the
+// secondary VRG using static IP information discovered from the primary cluster:
+//   - source IPs are read from the primary VRG's status.staticIPDiscovery,
+//     which is populated by validateAndRecordStaticIPDiscovery on the primary
+//     by reading the network.kubevirt.io/addresses annotation from each
+//     protected VM's spec.template.metadata
+//   - target IPs are derived by DRPC from a user-provided network mapping
+//     (not yet implemented; reserved for future extension)
+//
+// Entries are matched by (ResourceRef.Namespace, ResourceRef.Name, NetworkName).
+// VMs with no static IP annotation on the primary are silently skipped.
+// Returns nil when there are no static-IP VMs on the primary.
+func (d *DRPCInstance) buildStaticIPTranslationSpec(
+	primaryCluster string,
+	homeCluster string,
+) *rmn.StaticIPTranslationSpec {
+	primaryVRG := d.vrgs[primaryCluster]
+
+	if primaryVRG == nil {
+		return nil
+	}
+
+	if primaryVRG.Status.StaticIPDiscoveryStatus == nil ||
+		len(primaryVRG.Status.StaticIPDiscoveryStatus.Resources) == 0 {
+		d.log.Info("Discovered Static IP data from primary cluster is nil")
+
+		return nil
+	}
+
+	primaryDisc := primaryVRG.Status.StaticIPDiscoveryStatus
+	sameCluster := primaryCluster == homeCluster
+
+	var resources []rmn.IPTranslationSpec
+
+	for _, pRes := range primaryDisc.Resources {
+		var networks []rmn.NetworkTranslation
+
+		for _, pNet := range pRes.Networks {
+			var addrs []rmn.AddressTranslation
+
+			for _, srcIP := range pNet.Addresses {
+				d.log.Info("Source IP for translation", "ip", srcIP)
+
+				targetIP := srcIP
+				if !sameCluster {
+					d.log.Info("Clusters are not same, hence translation required", "primaryCluster:", primaryCluster,
+						"homeCluster:", homeCluster, "srcIP:", srcIP)
+					targetIP = translateSubnet(srcIP) // derived from network mapping — not yet implemented
+				}
+
+				d.log.Info("Updating Spec with IP", "targetIP:", targetIP)
+				addrs = append(addrs, rmn.AddressTranslation{
+					TargetIP: targetIP,
+				})
+			}
+
+			networks = append(networks, rmn.NetworkTranslation{
+				NetworkName: pNet.NetworkName,
+				Addresses:   addrs,
+			})
+		}
+
+		resources = append(resources, rmn.IPTranslationSpec{
+			ResourceRef: pRes.ResourceRef,
+			Networks:    networks,
+		})
+	}
+
+	return &rmn.StaticIPTranslationSpec{IPTranslations: resources}
+}
+
+// updateVRGStaticIPTranslationSpec sets spec.staticIPTranslationSpec on the VRG
+// being written to homeCluster. On the primary cluster the field is left nil —
+// the primary VRG only writes to status, never reads from spec for this feature.
+// On the secondary cluster, the field is populated from primary discovery + DRPC mapping.
+func (d *DRPCInstance) updateVRGStaticIPTranslationSpec(
+	vrg *rmn.VolumeReplicationGroup,
+	homeCluster string,
+) {
+	shouldInject, reason := d.shouldInjectStaticIPTranslationSpec(vrg)
+
+	if !shouldInject {
+		d.log.Info(
+			"Skipping static IP translation spec update",
+			"reason", reason,
+			"replicationState", vrg.Spec.ReplicationState,
+			"statusState", vrg.Status.State,
+			"current cluster", vrg.GetAnnotations()[DestinationClusterAnnotationKey],
+		)
+
+		return
+	}
+
+	primaryCluster := d.currentPrimaryCluster()
+
+	if primaryCluster == "" {
+		d.log.Info("No primary VRG found")
+
+		return
+	}
+
+	d.log.Info(
+		"Building StaticIPTranslationSpec from primary VRG status",
+		"sourceCluster", primaryCluster,
+		"targetCluster", homeCluster,
+	)
+
+	newSpec := d.buildStaticIPTranslationSpec(primaryCluster, homeCluster)
+	if newSpec == nil {
+		d.log.Info(
+			"No static IP discovery data available yet from primary cluster; skipping update",
+			"sourceCluster", primaryCluster,
+		)
+
+		return
+	}
+
+	if !d.setStaticIPTranslationSpec(vrg, newSpec) {
+		d.log.Info("StaticIPTranslationSpec unchanged")
+
+		return
+	}
+
+	d.log.Info(
+		"Applied StaticIPTranslationSpec to VRG",
+		"resourceCount", len(newSpec.IPTranslations),
+		"sourceCluster", primaryCluster,
+		"targetCluster", homeCluster,
+	)
+}
+
+// shouldInjectStaticIPTranslationSpec returns whether the VRG is eligible
+// for StaticIPTranslationSpec injection and, when not eligible, provides
+// the reason for skipping the update.
+func (d *DRPCInstance) shouldInjectStaticIPTranslationSpec(
+	vrg *rmn.VolumeReplicationGroup,
+) (bool, string) {
+	if !d.isVMRecipeInUse() {
+		return false, "VM recipe not in use"
+	}
+
+	if len(d.instance.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs) == 0 {
+		return false, "VMs are not configured with static IP."
+	}
+
+	if vrg.Spec.ReplicationState != rmn.Secondary {
+		return false, "VRG replication state is not Secondary"
+	}
+
+	return true, ""
+}
+
+// translateSubnet is a temporary stub that swaps the third octet between
+// 100 and 200 to simulate primary→secondary IP translation.
+// e.g. 192.168.100.51 → 192.168.200.51 and vice-versa.
+// TODO: replace with real network mapping logic.
+const ipv4OctetCount = 4
+
+func translateSubnet(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) != ipv4OctetCount {
+		return ip
+	}
+
+	switch parts[2] {
+	case "100":
+		parts[2] = "200"
+	case "200":
+		parts[2] = "100"
+	}
+
+	return strings.Join(parts, ".")
+}
+
+// ResetVMStaticIPSpecOnPrimary clears StaticIPTranslationSpec from the
+// primary VRG once recovery completes or translation injection is no longer
+// required. The translation spec is transient recovery metadata used during
+// restore on secondary clusters and should not remain configured on the
+// promoted primary after failover/relocation.
+func (d *DRPCInstance) ResetVMStaticIPSpecOnPrimary(clusterName string) error {
+	if !d.isVMRecipeInUse() {
+		return nil
+	}
+
+	if len(d.instance.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs) == 0 {
+		d.log.Info("VMs are not configured with static IPs.")
+
+		return nil
+	}
+
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		d.log.Error(err, "failed to find VRG ManifestWork", "cluster", clusterName)
+
+		return fmt.Errorf("failed to lookup VRG ManifestWork for cluster %s (%w)",
+			clusterName, err)
+	}
+
+	d.log.Info(fmt.Sprintf("Resetting staticIPTranslationSpec VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
+
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	if err != nil {
+		d.log.Error(err, "failed to extract VRG state")
+
+		return err
+	}
+
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		d.log.Info(fmt.Sprintf("VRG %s not primary on this cluster %s", vrg.Name, mw.Namespace))
+
+		return fmt.Errorf("vrg %s is not set as primary on this cluster, %s", vrg.Name, mw.Namespace)
+	}
+
+	if vrg.Spec.StaticIPTranslationSpec == nil {
+		d.log.Info(fmt.Sprintf("StaticIPTranslationSpec for %s has already been cleared on this cluster %s",
+			vrg.Name, mw.Namespace))
+
+		return nil
+	}
+
+	vrg.Spec.StaticIPTranslationSpec = nil
+
+	return d.mwu.UpdateVRGManifestWork(vrg, mw)
+}
+
+// currentPrimaryCluster returns the cluster that DRPC currently intends to
+// be primary. The value is derived from DRPC spec/action state rather than
+// VRG status to avoid nondeterministic selection when multiple VRGs
+// temporarily report Primary during failover or relocation transitions.
+func (d *DRPCInstance) currentPrimaryCluster() string {
+	switch d.instance.Spec.Action {
+	case rmn.ActionFailover:
+		return d.instance.Spec.FailoverCluster
+
+	case rmn.ActionRelocate:
+		return d.instance.Spec.PreferredCluster
+
+	default:
+		return d.instance.Spec.PreferredCluster
+	}
+}
+
+// setStaticIPTranslationSpec updates StaticIPTranslationSpec on the given
+// VRG only when the desired spec differs from the existing one. It returns
+// true if the VRG spec was modified, and false when no update was required.
+func (d *DRPCInstance) setStaticIPTranslationSpec(
+	vrg *rmn.VolumeReplicationGroup,
+	spec *rmn.StaticIPTranslationSpec,
+) bool {
+	if reflect.DeepEqual(vrg.Spec.StaticIPTranslationSpec, spec) {
+		return false
+	}
+
+	vrg.Spec.StaticIPTranslationSpec = spec
+
+	return true
 }

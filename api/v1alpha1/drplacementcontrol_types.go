@@ -220,6 +220,12 @@ type VRGResourceMeta struct {
 	// VRG resource object
 	//+optional
 	ResourceVersion string `json:"resourceVersion,omitempty"`
+
+	// ProtectedStaticIPVMs holds the static IP discovery summary for VMs
+	// with OVN-K8s UDN/CUDN static IPs discovered on the primary cluster.
+	// Only populated when protected VMs have static IPs; omitted otherwise.
+	// +optional
+	ProtectedStaticIPVMs []DiscoveredResource `json:"protectedStaticIPVMs,omitempty"`
 }
 
 // VRGConditions represents the conditions of the resources deployed on a
