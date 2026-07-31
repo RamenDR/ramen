@@ -74,6 +74,15 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, err
 	}
 
+	if util.ResourceIsDeleted(vrg) {
+		logger.Info("VRG is deleted, skipping RGD reconciliation", "vrg", types.NamespacedName{
+			Name:      vrg.GetName(),
+			Namespace: vrg.GetNamespace(),
+		})
+
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Get ramen config from configmap")
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
