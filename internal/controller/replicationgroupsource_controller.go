@@ -117,6 +117,15 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	if util.ResourceIsDeleted(vrg) {
+		logger.Info("VRG is deleted, skipping RGSreconciliation", "vrg", types.NamespacedName{
+			Name:      vrg.GetName(),
+			Namespace: vrg.GetNamespace(),
+		})
+
+		return ctrl.Result{}, nil
+	}
+
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 
 	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
