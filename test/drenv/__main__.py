@@ -219,9 +219,7 @@ def add_registry_cache_command(sp):
         help="remove cache containers",
         envfile=False,
         description="Remove cached registry containers.",
-        epilog=(
-            "Remove the cached registry containers managed by drenv."
-        ),
+        epilog=("Remove the cached registry containers managed by drenv."),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
