@@ -820,7 +820,19 @@ func (d *DRPCInstance) isGroupSyncLagging() bool {
 
 	lag := time.Since(d.instance.Status.LastGroupSyncTime.Time.UTC())
 
-	return lag > 3*time.Duration(intervalSecs)*time.Second
+	if lag <= 3*time.Duration(intervalSecs)*time.Second {
+		return false
+	}
+
+	const msg = "cannot start dry-run failover: lastGroupSyncTime is lagging behind," +
+		" check workload and cluster replication state"
+
+	d.log.Info("Dry-run failover blocked", "reason", msg)
+
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
+
+	return true
 }
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
