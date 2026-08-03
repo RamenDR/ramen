@@ -1648,9 +1648,13 @@ func (v *VRGInstance) shouldRestoreKubeObjects() bool {
 		}
 	}
 
-	// Reset recover workflow step tracking when a new restore is needed
-	// (e.g., due to generation change or condition status change)
-	v.instance.Status.KubeObjectProtection.CompletedRecoverWorkflowSteps = nil
+	// Clear completed recover steps when starting a new recovery cycle,
+	// but preserve them on same-generation retries so successfully
+	// completed steps are not re-executed
+	if !(KubeObjectsRestored.Status == metav1.ConditionFalse &&
+		KubeObjectsRestored.ObservedGeneration == v.instance.Generation) {
+		v.instance.Status.KubeObjectProtection.CompletedRecoverWorkflowSteps = nil
+	}
 
 	return true
 }
