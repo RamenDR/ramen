@@ -70,7 +70,7 @@ var _ = Describe("Replicationgroupsource", func() {
 		}
 
 		replicationGroupSourceMachine = cephfscg.NewRGSMachine(
-			k8sClient, rgs, vrg, volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
+			k8sClient, rgs, vrg, volsync.NewVSHandler(context.Background(), k8sClient, k8sClient, testLogger, rgs,
 				&ramendrv1alpha1.VRGAsyncSpec{}, controllers.DefaultCephFSCSIDriverName,
 				controllers.DefaultVolSyncCopyMethod, false,
 			), fakeVolumeGroupSourceHandler, testLogger,

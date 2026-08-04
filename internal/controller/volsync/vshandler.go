@@ -14,7 +14,6 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -79,6 +78,7 @@ const (
 type VSHandler struct {
 	ctx                         context.Context
 	client                      client.Client
+	apiReader                   client.Reader
 	log                         logr.Logger
 	owner                       metav1.Object
 	schedulingInterval          string
@@ -91,13 +91,15 @@ type VSHandler struct {
 	moverConfig                 []ramendrv1alpha1.MoverConfig
 }
 
-func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
+func NewVSHandler(
+	ctx context.Context, client client.Client, apiReader client.Reader, log logr.Logger, owner metav1.Object,
 	asyncSpec *ramendrv1alpha1.VRGAsyncSpec, defaultCephFSCSIDriverName string, copyMethod string,
 	adminNamespaceVRG bool,
 ) *VSHandler {
 	vsHandler := &VSHandler{
 		ctx:                        ctx,
 		client:                     client,
+		apiReader:                  apiReader,
 		log:                        log,
 		owner:                      owner,
 		defaultCephFSCSIDriverName: defaultCephFSCSIDriverName,
@@ -1234,10 +1236,11 @@ func (v *VSHandler) waitForVGSCompletion(rgsNamespacedName types.NamespacedName,
 }
 
 func (v *VSHandler) IsActiveVGSPresent(vgsNamespacedName types.NamespacedName) (bool, error) {
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
-	if err := v.client.Get(v.ctx, types.NamespacedName{
-		Name: vgsNamespacedName.Name, Namespace: vgsNamespacedName.Namespace,
-	}, vgs); err != nil {
+	vgs, err := util.GetVolumeGroupSnapshot(
+		v.ctx, v.client, v.apiReader,
+		vgsNamespacedName.Name, vgsNamespacedName.Namespace,
+	)
+	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
@@ -1247,7 +1250,9 @@ func (v *VSHandler) IsActiveVGSPresent(vgsNamespacedName types.NamespacedName) (
 		return false, err
 	}
 
-	v.log.V(1).Info("Found volume group snapshot", "vgsName", vgs.Name, "vgsNamespace", vgs.Namespace)
+	v.log.V(1).Info("Found volume group snapshot",
+		"vgsName", vgs.GetName(),
+		"vgsNamespace", vgs.GetNamespace())
 
 	return true, nil
 }

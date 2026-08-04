@@ -11,6 +11,8 @@ import (
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 // nolint:dupl
@@ -1424,8 +1426,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Provisioner: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
-						{
+					vgsClasses: util.NewPrivateVGSCWrappers(
+						&groupsnapv1beta1.VolumeGroupSnapshotClass{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
 								Labels: map[string]string{
@@ -1434,7 +1436,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							},
 							Driver: "sample.csi.com",
 						},
-					},
+					),
 				},
 				{
 					clusterID: "cl-2",
@@ -1449,8 +1451,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Provisioner: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
-						{
+					vgsClasses: util.NewPrivateVGSCWrappers(
+						&groupsnapv1beta1.VolumeGroupSnapshotClass{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
 								Labels: map[string]string{
@@ -1459,7 +1461,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							},
 							Driver: "sample.csi.com",
 						},
-					},
+					),
 				},
 			},
 			"1m",
@@ -1509,8 +1511,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Driver: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
-						{
+					vgsClasses: util.NewPrivateVGSCWrappers(
+						&groupsnapv1beta1.VolumeGroupSnapshotClass{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
 								Labels: map[string]string{
@@ -1519,7 +1521,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							},
 							Driver: "sample.csi.com",
 						},
-					},
+					),
 					vrClasses: []*volrep.VolumeReplicationClass{
 						{
 							ObjectMeta: metav1.ObjectMeta{
@@ -1588,8 +1590,8 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Driver: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
-						{
+					vgsClasses: util.NewPrivateVGSCWrappers(
+						&groupsnapv1beta1.VolumeGroupSnapshotClass{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
 								Labels: map[string]string{
@@ -1598,7 +1600,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							},
 							Driver: "sample.csi.com",
 						},
-					},
+					),
 					vrClasses: []*volrep.VolumeReplicationClass{
 						{
 							ObjectMeta: metav1.ObjectMeta{

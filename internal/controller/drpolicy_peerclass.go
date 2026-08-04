@@ -10,7 +10,6 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 
@@ -26,7 +25,7 @@ type classLists struct {
 	vsClasses  []*snapv1.VolumeSnapshotClass
 	vrClasses  []*volrep.VolumeReplicationClass
 	vgrClasses []*volrep.VolumeGroupReplicationClass
-	vgsClasses []*groupsnapv1beta1.VolumeGroupSnapshotClass
+	vgsClasses []util.VolumeGroupSnapshotClassWrapper
 }
 
 // peerInfo contains a single peer relationship between a PAIR of clusters for a common storageClassName across
@@ -206,7 +205,7 @@ func hasVGSClassMatchingSID(scName string, cl classLists, sID string) bool {
 			continue
 		}
 
-		if !provisionerMatchesSC(scName, cl, cl.vgsClasses[idx].Driver) {
+		if !provisionerMatchesSC(scName, cl, cl.vgsClasses[idx].GetDriver()) {
 			continue
 		}
 
@@ -708,8 +707,8 @@ func getVGSClassesFromCluster(
 	m util.ManagedClusterViewGetter,
 	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
-) ([]*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	vgsClasses := []*groupsnapv1beta1.VolumeGroupSnapshotClass{}
+) ([]util.VolumeGroupSnapshotClassWrapper, error) {
+	vgsClasses := []util.VolumeGroupSnapshotClassWrapper{}
 
 	vgsClassNames := drcConfig.Status.VolumeGroupSnapshotClasses
 	if len(vgsClassNames) == 0 {
@@ -720,12 +719,12 @@ func getVGSClassesFromCluster(
 	annotations[AllDRPolicyAnnotation] = clusterName
 
 	for _, vgscName := range vgsClassNames {
-		sClass, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
+		vgscWrapper, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
 		if err != nil {
-			return []*groupsnapv1beta1.VolumeGroupSnapshotClass{}, err
+			return []util.VolumeGroupSnapshotClassWrapper{}, err
 		}
 
-		vgsClasses = append(vgsClasses, sClass)
+		vgsClasses = append(vgsClasses, vgscWrapper)
 	}
 
 	return vgsClasses, pruneVGSClassViews(m, u.log, clusterName, vgsClassNames)
