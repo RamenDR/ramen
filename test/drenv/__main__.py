@@ -141,7 +141,23 @@ def parse_args():
         help="image to load into the cluster in tar format",
     )
 
-    add_command(sp, "delete", do_delete, help="delete an environment")
+    add_command(
+        sp,
+        "delete",
+        do_delete,
+        help="delete an environment",
+        description="Delete a DR environment.",
+        epilog=(
+            "Deletes all clusters and resources created from the specified\n"
+            "environment definition. This includes Minikube profiles,\n"
+            "temporary files, and resources managed by drenv.\n\n"
+            "Examples:\n"
+            "  drenv delete envs/regional-dr.yaml\n"
+            "  drenv delete envs/metro-dr.yaml\n"
+            "  drenv delete --name-prefix test- envs/regional-dr.yaml"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
     add_command(sp, "resume", do_resume, help="resume virtual machines")
     add_command(sp, "dump", do_dump, help="dump an environment yaml")
@@ -162,7 +178,18 @@ def parse_args():
 
 
 def add_registry_cache_command(sp):
-    p = sp.add_parser("registry-cache", help="manage registry cache")
+    p = sp.add_parser(
+        "registry-cache",
+        help="manage registry cache",
+        description="Manage the drenv registry cache.",
+        epilog=(
+            "Inspect or remove cached registry containers used by drenv.\n\n"
+            "Examples:\n"
+            "  drenv registry-cache stats\n"
+            "  drenv registry-cache remove"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sp = p.add_subparsers(dest="command", required=True)
 
     p = add_command(
@@ -171,6 +198,12 @@ def add_registry_cache_command(sp):
         registry.show_stats,
         help="show cache statistics",
         envfile=False,
+        description="Show registry cache statistics.",
+        epilog=(
+            "Display the current contents and usage statistics for the cached\n"
+            "registry containers managed by drenv."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "-o",
@@ -185,11 +218,26 @@ def add_registry_cache_command(sp):
         registry.remove_containers,
         help="remove cache containers",
         envfile=False,
+        description="Remove cached registry containers.",
+        epilog=("Remove the cached registry containers managed by drenv."),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
 
 def add_stress_test_command(sp):
-    p = sp.add_parser("stress-test", help="run drenv stress test")
+    p = sp.add_parser(
+        "stress-test",
+        help="run drenv stress test",
+        description="Run drenv stress tests.",
+        epilog=(
+            "Execute repeated stress-test runs and collect results for later\n"
+            "comparison and reporting.\n\n"
+            "Examples:\n"
+            "  drenv stress-test run\n"
+            "  drenv stress-test report out"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sp = p.add_subparsers(dest="command", required=True)
 
     p = add_command(
@@ -197,6 +245,12 @@ def add_stress_test_command(sp):
         "run",
         stress.run,
         help="run stress test",
+        description="Run a stress test.",
+        epilog=(
+            "Execute one or more stress-test runs and write the results to the\n"
+            "specified output directory."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "-r",
@@ -224,6 +278,12 @@ def add_stress_test_command(sp):
         stress.report,
         help="generate markdown report from stress test results",
         envfile=False,
+        description="Generate a markdown report from stress test results.",
+        epilog=(
+            "Generate a human-readable markdown report from the JSON results\n"
+            "produced by a stress-test run."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "directory",
@@ -236,6 +296,12 @@ def add_stress_test_command(sp):
         stress.compare,
         help="compare 2 stress tests",
         envfile=False,
+        description="Compare two stress test runs.",
+        epilog=(
+            "Compare the results of two stress-test output directories and\n"
+            "summarize the differences."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "before",
@@ -247,8 +313,23 @@ def add_stress_test_command(sp):
     )
 
 
-def add_command(sp, name, func, help=None, envfile=True):
-    parser = sp.add_parser(name, help=help)
+def add_command(
+    sp,
+    name,
+    func,
+    help=None,
+    envfile=True,
+    description=None,
+    epilog=None,
+    formatter_class=argparse.HelpFormatter,
+):
+    parser = sp.add_parser(
+        name,
+        help=help,
+        description=description,
+        epilog=epilog,
+        formatter_class=formatter_class,
+    )
     parser.add_argument(
         "--logfile",
         default=LOGFILE,
