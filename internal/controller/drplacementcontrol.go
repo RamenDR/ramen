@@ -813,6 +813,10 @@ func (d *DRPCInstance) dryRunReadyToFailover() bool {
 // meaning replication has fallen behind and a dry-run test failover would not reflect current data.
 // Returns false if the scheduling interval cannot be parsed.
 func (d *DRPCInstance) isGroupSyncLagging() bool {
+	if d.instance.Status.LastGroupSyncTime == nil {
+		return false
+	}
+
 	intervalSecs, err := rmnutil.GetSecondsFromSchedulingInterval(d.drPolicy)
 	if err != nil {
 		return false
