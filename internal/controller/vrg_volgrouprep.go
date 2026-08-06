@@ -24,6 +24,9 @@ import (
 const (
 	groupReplicationSecretName      = "replication.storage.openshift.io/group-replication-secret-name"
 	groupReplicationSecretNamespace = "replication.storage.openshift.io/group-replication-secret-namespace"
+
+	// clusterIDKey is the CSI parameter / volume-group attribute identifying the storage cluster.
+	clusterIDKey = "clusterID"
 )
 
 //nolint:gocognit,cyclop,funlen
@@ -1231,7 +1234,37 @@ func (v *VRGInstance) cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationC
 	vgrc.ResourceVersion = ""
 	vgrc.Spec.VolumeGroupReplicationRef = nil
 
+	if err := v.updateVGRCClusterIDForRestore(vgrc); err != nil {
+		return err
+	}
+
 	return v.processVGRCSecrets(vgrc)
+}
+
+// updateVGRCClusterIDForRestore sets volumeGroupAttributes.clusterID from the target
+// cluster's VolumeGroupReplicationClass parameters, when present.
+func (v *VRGInstance) updateVGRCClusterIDForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+	vgrclass := &volrep.VolumeGroupReplicationClass{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: vgrc.Spec.VolumeGroupReplicationClassName}, vgrclass)
+	if err != nil {
+		return err
+	}
+
+	clusterID, ok := vgrclass.Spec.Parameters[clusterIDKey]
+	if !ok || clusterID == "" {
+		return nil
+	}
+
+	if vgrc.Spec.VolumeGroupAttributes == nil {
+		vgrc.Spec.VolumeGroupAttributes = map[string]string{}
+	}
+
+	v.log.V(1).Info("Set VGRC clusterID for target cluster",
+		"VGRC", vgrc.Name, "clusterID", clusterID)
+	vgrc.Spec.VolumeGroupAttributes[clusterIDKey] = clusterID
+
+	return nil
 }
 
 func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) error {
