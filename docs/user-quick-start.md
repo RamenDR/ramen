@@ -168,7 +168,7 @@ clusters. *Ramen* makes this easy using minikube, but you need enough resources:
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0. Version v0.21.2 or later is required.
+   Version v0.24.0 or later is required.
 
 1. Install the `velero` tool
 
