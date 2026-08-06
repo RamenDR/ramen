@@ -2805,12 +2805,7 @@ func secretsFromSC(params map[string]string,
 	return &secretRef, exists
 }
 
-func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume) error {
-	sc, err := v.getStorageClassFromSCName(&pv.Spec.StorageClassName)
-	if err != nil {
-		return err
-	}
-
+func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume, sc *storagev1.StorageClass) error {
 	secFromSC, exists := secretsFromSC(sc.Parameters, nodeStageSecretName, nodeStageSecretNamespace)
 	if exists {
 		pv.Spec.CSI.NodeStageSecretRef = secFromSC
@@ -2871,7 +2866,40 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 		}
 	}
 
-	return v.processPVSecrets(pv)
+	sc, err := v.getStorageClassFromSCName(&pv.Spec.StorageClassName)
+	if err != nil {
+		return err
+	}
+
+	v.updatePVClusterIDForRestore(pv, sc)
+
+	return v.processPVSecrets(pv, sc)
+}
+
+// updatePVClusterIDForRestore sets CSI volumeAttributes.clusterID from the target
+// cluster's StorageClass parameters, when present. Skipped for sync/metro DR, where
+// updateExistingPVForSync reuses the same PV via cleanupPVForRestore.
+func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, sc *storagev1.StorageClass) {
+	if v.instance.Spec.Sync != nil {
+		return
+	}
+
+	if pv.Spec.CSI == nil {
+		return
+	}
+
+	clusterID, ok := sc.Parameters[clusterIDKey]
+	if !ok || clusterID == "" {
+		return
+	}
+
+	if pv.Spec.CSI.VolumeAttributes == nil {
+		pv.Spec.CSI.VolumeAttributes = map[string]string{}
+	}
+
+	v.log.V(1).Info("Set PV clusterID for target cluster",
+		"PV", pv.Name, "clusterID", clusterID)
+	pv.Spec.CSI.VolumeAttributes[clusterIDKey] = clusterID
 }
 
 func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
