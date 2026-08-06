@@ -78,16 +78,15 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 
 	defer logger.Info("Exiting reconcile loop")
 
-	logger.Info("Get ReplicationGroupSource")
-
 	rgs, vrg, ramenConfig, done, err := r.getRGSConfig(ctx, req, logger)
 	if done {
 		return ctrl.Result{}, err
 	}
 
-	vsHandler, vgsHandler := r.buildVGSHandler(ctx, logger, rgs, vrg, ramenConfig)
+	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+	vsHandler, vgsHandler := r.buildVGSHandler(ctx, logger, rgs, vrg, ramenConfig, defaultCephFSCSIDriverName)
 
-	return r.runRGSReconcile(ctx, logger, rgs, vrg, vsHandler, vgsHandler, ramenConfig)
+	return r.runRGSReconcile(ctx, logger, rgs, vrg, vsHandler, vgsHandler, defaultCephFSCSIDriverName)
 }
 
 // getRGSConfig fetches the RGS object, ramen config, and the owning VRG.
@@ -158,8 +157,8 @@ func (r *ReplicationGroupSourceReconciler) buildVGSHandler(
 	rgs *ramendrv1alpha1.ReplicationGroupSource,
 	vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	ramenConfig *ramendrv1alpha1.RamenConfig,
+	defaultCephFSCSIDriverName string,
 ) (*volsync.VSHandler, cephfscg.VolumeGroupSourceHandler) {
-	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 
 	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
@@ -183,7 +182,7 @@ func (r *ReplicationGroupSourceReconciler) runRGSReconcile(
 	vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	vsHandler *volsync.VSHandler,
 	vgsHandler cephfscg.VolumeGroupSourceHandler,
-	ramenConfig *ramendrv1alpha1.RamenConfig,
+	defaultCephFSCSIDriverName string,
 ) (ctrl.Result, error) {
 	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
 		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
@@ -192,8 +191,6 @@ func (r *ReplicationGroupSourceReconciler) runRGSReconcile(
 
 		return ctrl.Result{RequeueAfter: retryDelay}, vgsHandler.CleanVolumeGroupSnapshot(ctx)
 	}
-
-	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
 	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 
