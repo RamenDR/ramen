@@ -47,31 +47,52 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 
 	defer logger.Info("Exiting reconcile loop")
 
+	rgd, vrg, ramenConfig, done, err := r.getRGDConfig(ctx, req, logger)
+	if done {
+		return ctrl.Result{}, err
+	}
+
+	return r.runRGDReconcile(ctx, logger, rgd, vrg, ramenConfig)
+}
+
+// getRGDConfig fetches the RGD object, the owning VRG, and ramen config.
+// done=true means the caller should return ctrl.Result{}, err immediately.
+func (r *ReplicationGroupDestinationReconciler) getRGDConfig(
+	ctx context.Context,
+	req ctrl.Request,
+	logger logr.Logger,
+) (
+	rgd *ramendrv1alpha1.ReplicationGroupDestination,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+	done bool,
+	err error,
+) {
 	logger.Info("Get ReplicationGroupDestination")
 
-	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
-	if err := r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
+	rgd = &ramendrv1alpha1.ReplicationGroupDestination{}
+	if err = r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
 		if !k8serrors.IsNotFound(err) {
 			logger.Error(err, "Failed to get ReplicationGroupDestination")
 		}
 
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return nil, nil, nil, true, client.IgnoreNotFound(err)
 	}
 
 	if rgd.Spec.Paused {
 		logger.Info("ReplicationGroupDestination is paused, skipping reconciliation")
 
-		return ctrl.Result{}, nil
+		return nil, nil, nil, true, nil
 	}
 
 	logger.Info("Get vrg from ReplicationGroupDestination")
 
-	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	if err := r.Client.Get(ctx, types.NamespacedName{
+	vrg = &ramendrv1alpha1.VolumeReplicationGroup{}
+	if err = r.Client.Get(ctx, types.NamespacedName{
 		Name:      rgd.GetLabels()[util.VRGOwnerNameLabel],
 		Namespace: rgd.GetLabels()[util.VRGOwnerNamespaceLabel],
 	}, vrg); err != nil {
-		return ctrl.Result{}, err
+		return nil, nil, nil, true, err
 	}
 
 	if util.ResourceIsDeleted(vrg) {
@@ -80,22 +101,34 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 			Namespace: vrg.GetNamespace(),
 		})
 
-		return ctrl.Result{}, nil
+		return nil, nil, nil, true, nil
 	}
 
 	logger.Info("Get ramen config from configmap")
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
+	_, ramenConfig, err = ConfigMapGet(ctx, r.Client)
 	if err != nil {
 		logger.Error(err, "Failed to get ramen config")
 
-		return ctrl.Result{}, err
+		return nil, nil, nil, true, err
 	}
 
+	return rgd, vrg, ramenConfig, false, nil
+}
+
+// runRGDReconcile drives the RGD state machine and updates status.
+func (r *ReplicationGroupDestinationReconciler) runRGDReconcile(
+	ctx context.Context,
+	logger logr.Logger,
+	rgd *ramendrv1alpha1.ReplicationGroupDestination,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) (ctrl.Result, error) {
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
 	logger.Info("Run ReplicationGroupDestination state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
+
 	result, err := statemachine.Run(
 		ctx,
 		cephfscg.NewRGDMachine(r.Client, rgd,
