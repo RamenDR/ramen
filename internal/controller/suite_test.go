@@ -14,11 +14,11 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"go.uber.org/zap/zapcore"
@@ -234,7 +234,7 @@ var _ = BeforeSuite(func() {
 	err = apiextensions.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = groupsnapv1beta1.AddToScheme(scheme.Scheme)
+	err = groupsnapv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = virtv1.AddToScheme(scheme.Scheme)

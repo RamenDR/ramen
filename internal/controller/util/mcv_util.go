@@ -13,9 +13,9 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -81,7 +81,7 @@ type ManagedClusterViewGetter interface {
 
 	GetVGSClassFromManagedCluster(
 		resourceName, managedCluster string,
-		annotations map[string]string) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error)
+		annotations map[string]string) (*groupsnapv1.VolumeGroupSnapshotClass, error)
 
 	ListVGSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
@@ -337,8 +337,8 @@ func (m ManagedClusterViewGetterImpl) ListVSClassMCVs(cluster string) (*viewv1be
 
 func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName, managedCluster string,
 	annotations map[string]string,
-) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	vgsc := &groupsnapv1beta1.VolumeGroupSnapshotClass{}
+) (*groupsnapv1.VolumeGroupSnapshotClass, error) {
+	vgsc := &groupsnapv1.VolumeGroupSnapshotClass{}
 
 	err := m.getResourceFromManagedCluster(
 		resourceName,
@@ -348,8 +348,8 @@ func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName
 		map[string]string{VGSClassLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeVGSClass),
 		"VolumeGroupSnapshotClass",
-		groupsnapv1beta1.SchemeGroupVersion.Group,
-		groupsnapv1beta1.SchemeGroupVersion.Version,
+		groupsnapv1.SchemeGroupVersion.Group,
+		groupsnapv1.SchemeGroupVersion.Version,
 		vgsc,
 	)
 

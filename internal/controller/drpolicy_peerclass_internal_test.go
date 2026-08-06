@@ -5,10 +5,10 @@ package controllers
 
 import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -1424,7 +1424,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Provisioner: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+					vgsClasses: []*groupsnapv1.VolumeGroupSnapshotClass{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
@@ -1449,7 +1449,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Provisioner: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+					vgsClasses: []*groupsnapv1.VolumeGroupSnapshotClass{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
@@ -1509,7 +1509,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Driver: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+					vgsClasses: []*groupsnapv1.VolumeGroupSnapshotClass{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",
@@ -1588,7 +1588,7 @@ var _ = Describe("updatePeerClassesInternal", func() {
 							Driver: "sample.csi.com",
 						},
 					},
-					vgsClasses: []*groupsnapv1beta1.VolumeGroupSnapshotClass{
+					vgsClasses: []*groupsnapv1.VolumeGroupSnapshotClass{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "vgsc1",

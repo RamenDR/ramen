@@ -11,9 +11,9 @@ import (
 
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	groupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,7 +53,7 @@ func (f FakeMCVGetter) ListVSClassMCVs(managedCluster string) (*viewv1beta1.Mana
 }
 
 func (f FakeMCVGetter) GetVGSClassFromManagedCluster(resourceName, managedCluster string, annotations map[string]string,
-) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
+) (*groupsnapv1.VolumeGroupSnapshotClass, error) {
 	return nil, nil
 }
 
