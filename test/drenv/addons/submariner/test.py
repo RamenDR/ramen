@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import platform
 import time
 from pathlib import Path
 
@@ -43,11 +42,8 @@ def test(broker, *clusters):
     wait_for_service_export(clusters[1], NS2)
     wait_for_service_import(clusters[0], NS2)
 
-    if platform.system() == "Darwin":
-        print("Skipping connectivity test: broken with lima provider")
-    else:
-        test_connectivity(clusters[1], NS1)
-        test_connectivity(clusters[0], NS2)
+    test_connectivity(clusters[1], NS1)
+    test_connectivity(clusters[0], NS2)
 
     unexport_service(clusters[0], NS1)
     unexport_service(clusters[1], NS2)
