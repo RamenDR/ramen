@@ -7,7 +7,41 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
+
+func drPolicyWithPeerClasses(syncPeers, asyncPeers []rmn.PeerClass) *rmn.DRPolicy {
+	return &rmn.DRPolicy{
+		Status: rmn.DRPolicyStatus{
+			Sync:  rmn.Sync{PeerClasses: syncPeers},
+			Async: rmn.Async{PeerClasses: asyncPeers},
+		},
+	}
+}
+
+func drPolicyWithInterval(schedulingInterval string) *rmn.DRPolicy {
+	return &rmn.DRPolicy{
+		Spec: rmn.DRPolicySpec{SchedulingInterval: schedulingInterval},
+	}
+}
+
+var _ = Describe("DRTelemetryMetrics drPolicyDRType", func() {
+	peers := []rmn.PeerClass{{StorageID: []string{"storage-id-1"}}}
+
+	DescribeTable("classifies a DRPolicy",
+		func(drpolicy *rmn.DRPolicy, expected string) {
+			Expect(drPolicyDRType(drpolicy)).To(Equal(expected))
+		},
+		Entry("sync peerClasses populated", drPolicyWithPeerClasses(peers, nil), DRTypeMetro),
+		Entry("async peerClasses populated", drPolicyWithPeerClasses(nil, peers), DRTypeRegional),
+		Entry("both sync and async peerClasses populated", drPolicyWithPeerClasses(peers, peers), DRTypeMetro),
+		Entry("no peerClasses, no scheduling interval", drPolicyWithInterval(""), DRTypeMetro),
+		Entry("no peerClasses, zero scheduling interval", drPolicyWithInterval("0m"), DRTypeMetro),
+		Entry("no peerClasses, non-zero scheduling interval", drPolicyWithInterval("5m"), DRTypeRegional),
+		Entry("no peerClasses, malformed scheduling interval", drPolicyWithInterval("5x"), DRTypeUnknown),
+	)
+})
 
 var _ = Describe("DRTelemetryMetrics", func() {
 	BeforeEach(func() {
