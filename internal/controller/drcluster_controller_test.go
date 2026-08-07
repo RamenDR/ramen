@@ -580,6 +580,15 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated,
 					false,
 				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(ramen.ReasonInvalidCIDRsFormat),
+					Ignore(),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
 			})
 		})
 		When("provided CIDR value is changed to be correct", func() {
@@ -641,6 +650,15 @@ var _ = Describe("DRClusterController", func() {
 					Equal("ValidationFailed"),
 					Ignore(),
 					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(ramen.ReasonInvalidCIDRsFormat),
+					Ignore(),
+					ramen.DRClusterConditionTypeCIDRsValidated,
 					false,
 				)
 			})
@@ -1136,7 +1154,7 @@ var _ = Describe("DRClusterController", func() {
 			drcluster = drclusters[0].DeepCopy()
 		})
 
-		When("provided CIDRs include all expected CIDRs from StorageAccessDetails", func() {
+		When("provided CIDRs include all detected CIDRs from StorageAccessDetails", func() {
 			It("reports validated with reason Succeeded", func() {
 				NFClassCount = 1
 
@@ -1156,11 +1174,20 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated,
 					false,
 				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(ramen.ReasonCIDRsValidationSucceeded),
+					Ignore(),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
 			})
 		})
 
-		When("provided CIDRs include all expected CIDRs plus additional undetected CIDRs", func() {
-			It("reports validated with reason Succeeded", func() {
+		When("provided CIDRs include all detected CIDRs plus additional undetected CIDRs", func() {
+			It("reports validated with reason Succeeded and CIDRsValidated with reason UndetectedCIDRsFound", func() {
 				NFClassCount = 1
 
 				defer func() { NFClassCount = 0 }()
@@ -1180,30 +1207,49 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated,
 					false,
 				)
-			})
-		})
-
-		When("provided CIDRs do not include expected CIDRs from StorageAccessDetails", func() {
-			It("reports NOT validated with reason ValidationFailed", func() {
-				NFClassCount = 1
-
-				defer func() { NFClassCount = 0 }()
-
-				drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // missing expected CIDRs from StorageAccessDetails
-				drcluster = updateDRClusterParameters(drcluster)
-				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
-				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
-
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
-					metav1.ConditionFalse,
-					Equal(controllers.ReasonValidationFailed),
-					ContainSubstring("expected CIDRs not configured"),
-					ramen.DRClusterValidated,
+					metav1.ConditionTrue,
+					Equal(ramen.ReasonUndetectedCIDRsFound),
+					ContainSubstring("CIDRs not detected by storage provisioner"),
+					ramen.DRClusterConditionTypeCIDRsValidated,
 					false,
 				)
 			})
+		})
+
+		When("provided CIDRs do not include detected CIDRs from StorageAccessDetails", func() {
+			It("reports NOT validated with reason ValidationFailed and CIDRsValidated with reason DetectedCIDRsUnconfigured",
+				func() {
+					NFClassCount = 1
+
+					defer func() { NFClassCount = 0 }()
+
+					drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // missing detected CIDRs from StorageAccessDetails
+					drcluster = updateDRClusterParameters(drcluster)
+					updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+					updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+					objectConditionExpectEventually(
+						apiReader,
+						drcluster,
+						metav1.ConditionFalse,
+						Equal(controllers.ReasonValidationFailed),
+						ContainSubstring("CIDRs validation failed"),
+						ramen.DRClusterValidated,
+						false,
+					)
+					objectConditionExpectEventually(
+						apiReader,
+						drcluster,
+						metav1.ConditionFalse,
+						Equal(ramen.ReasonDetectedCIDRsUnconfigured),
+						ContainSubstring("detected CIDRs not configured"),
+						ramen.DRClusterConditionTypeCIDRsValidated,
+						false,
+					)
+				})
 		})
 
 		When("deleting a DRCluster", func() {
