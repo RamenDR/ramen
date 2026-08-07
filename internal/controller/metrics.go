@@ -33,6 +33,33 @@ const (
 	InvalidCIDRsDetected = "invalid_cidrs_detected"
 )
 
+// DR telemetry metrics, forwarded to Red Hat Telemetry via the
+// cluster-monitoring-operator allowlist. Label cardinality is bounded
+// (3 + 2 + 2 = 7 series) as required by telemetry.
+const (
+	DRPolicyTypeName    = "dr_policy_type"
+	DRProtectedAppsName = "dr_protected_apps"
+	DRActionsName       = "dr_actions"
+)
+
+const (
+	DRTypeLabel           = "dr_type"
+	ManagementMethodLabel = "management_method"
+	ActionLabel           = "action"
+)
+
+const (
+	DRTypeMetro    = "metro"
+	DRTypeRegional = "regional"
+	DRTypeUnknown  = "unknown"
+
+	ManagementMethodDiscovered = "discovered"
+	ManagementMethodManaged    = "managed"
+
+	ActionFailover = "failover"
+	ActionRelocate = "relocate"
+)
+
 type SyncTimeMetrics struct {
 	LastSyncTime prometheus.Gauge
 }
@@ -222,6 +249,33 @@ var (
 		},
 		drProgressionStateMetricsLabels,
 	)
+
+	drPolicyType = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRPolicyTypeName,
+			Namespace: metricNamespace,
+			Help:      "Count of DRPolicy resources by DR type",
+		},
+		[]string{DRTypeLabel},
+	)
+
+	drProtectedApps = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRProtectedAppsName,
+			Namespace: metricNamespace,
+			Help:      "Count of DR protected applications (DRPC resources) by management method",
+		},
+		[]string{ManagementMethodLabel},
+	)
+
+	drActions = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRActionsName,
+			Namespace: metricNamespace,
+			Help:      "Cumulative count of DR actions initiated by existing DRPC resources",
+		},
+		[]string{ActionLabel},
+	)
 )
 
 // lastSyncTime metrics reports value from lastGrpupSyncTime taken from DRPC status
@@ -395,6 +449,41 @@ func DeleteDRPCProgressionStateMetric(labels prometheus.Labels) bool {
 	return drpcProgressionState.Delete(labels)
 }
 
+// SetDRPolicyTypeMetric sets the count of DRPolicy resources for a DR type
+// (DRTypeMetro, DRTypeRegional or DRTypeUnknown)
+func SetDRPolicyTypeMetric(drType string, value float64) {
+	drPolicyType.WithLabelValues(drType).Set(value)
+}
+
+// SetDRProtectedAppsMetric sets the count of DRPC resources for a management
+// method (ManagementMethodDiscovered or ManagementMethodManaged)
+func SetDRProtectedAppsMetric(method string, value float64) {
+	drProtectedApps.WithLabelValues(method).Set(value)
+}
+
+// SetDRActionsMetric sets the cumulative count of DR actions for an action
+// (ActionFailover or ActionRelocate)
+func SetDRActionsMetric(action string, value float64) {
+	drActions.WithLabelValues(action).Set(value)
+}
+
+// InitDRTelemetryMetrics initializes all DR telemetry metric label
+// combinations to 0, so that a series being present with value 0 indicates
+// Ramen is installed with no DR resources, as opposed to an absent series
+func InitDRTelemetryMetrics() {
+	for _, drType := range []string{DRTypeMetro, DRTypeRegional, DRTypeUnknown} {
+		SetDRPolicyTypeMetric(drType, 0)
+	}
+
+	for _, method := range []string{ManagementMethodDiscovered, ManagementMethodManaged} {
+		SetDRProtectedAppsMetric(method, 0)
+	}
+
+	for _, action := range []string{ActionFailover, ActionRelocate} {
+		SetDRActionsMetric(action, 0)
+	}
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
@@ -406,4 +495,7 @@ func init() {
 	metrics.Registry.MustRegister(globalAction)
 	metrics.Registry.MustRegister(invalidCIDRsDetected)
 	metrics.Registry.MustRegister(drpcProgressionState)
+	metrics.Registry.MustRegister(drPolicyType)
+	metrics.Registry.MustRegister(drProtectedApps)
+	metrics.Registry.MustRegister(drActions)
 }

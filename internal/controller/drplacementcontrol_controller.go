@@ -87,6 +87,7 @@ type DRPlacementControlReconciler struct {
 	Callback                       ProgressCallback
 	eventRecorder                  *rmnutil.EventReporter
 	savedInstanceStatus            rmn.DRPlacementControlStatus
+	savedDRActionCount             string
 	ObjStoreGetter                 ObjectStoreGetter
 	RateLimiter                    *workqueue.TypedRateLimiter[reconcile.Request]
 	numClustersQueriedSuccessfully int
@@ -138,6 +139,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
 
+	// Recompute on every reconcile, including the not-found path after a
+	// DRPC deletion, so the metrics track the cluster state
+	defer func() {
+		if err := UpdateDRTelemetryMetrics(ctx, r.Client); err != nil {
+			logger.Info("Failed to update DR telemetry metrics", "error", err)
+		}
+	}()
+
 	drpc := &rmn.DRPlacementControl{}
 
 	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
@@ -153,6 +162,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
+	r.savedDRActionCount = drpc.GetAnnotations()[DRActionCountAnnotation]
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
@@ -1487,6 +1497,24 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	userPlacement client.Object, log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
 	log.Info("Updating DRPC status")
+
+	// Account any DR action phase transition and persist the action count
+	// annotation before the status update, so that a failed status update
+	// cannot lose an already observed transition
+	syncDRActionCountAnnotation(drpc)
+
+	if annotation := drpc.GetAnnotations()[DRActionCountAnnotation]; annotation != r.savedDRActionCount {
+		// Update refreshes drpc from the API response, which would discard
+		// the in-memory status updates that are not persisted yet
+		status := *drpc.Status.DeepCopy()
+
+		if err := r.Update(ctx, drpc); err != nil {
+			return fmt.Errorf("failed to update DRPC dr-action-count annotation: %w", err)
+		}
+
+		drpc.Status = status
+		r.savedDRActionCount = annotation
+	}
 
 	r.updateResourceCondition(ctx, drpc, userPlacement, log, vrgs)
 
