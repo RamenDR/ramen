@@ -179,14 +179,75 @@ must then again acknowledge the new VGR by setting `status.state=Secondary`
 before the recreating VRG can proceed to delete it. Keeping the VGR alive avoids
 this race.
 
-### 4.4 VGR Watcher
+### 4.4 Secondary Transition Gating
+
+Multiple VRGs share the same global VGR and their workload cleanup may complete
+at different times. Without coordination, the first VRG to finish cleanup would
+flip the shared VGR to secondary while other VRGs' workloads are still active on
+the same cluster.
+
+To prevent this, each VRG gates the VGR transition by advertising its own PVC
+readiness through a `GlobalSecondary` condition:
+
+- True / PVCsNotInUse: PVCs are not in use (or no PVCs to process).
+- False / PVCsInUse: PVCs are still in use by workloads.
+- True / Unused: not applicable (VRG is Primary).
+
+Before updating the global VGR to secondary, each VRG:
+
+1. Checks `isPVCReadyForSecondary` for its own PVCs and sets its
+   `GlobalSecondary` condition accordingly.
+1. Lists all sibling VRGs with the same `global-vgr` label.
+1. Verifies every sibling has `GlobalSecondary = True` with reason
+   `PVCsNotInUse`.
+1. Only when all siblings are ready does the VRG proceed to update the VGR.
+
+If any sibling is not ready, the VRG requeues and logs which siblings are
+pending.
+
+The readiness check differs by action:
+
+- **Failover**: PVC must not be in use by any pod (deployment deleted).
+- **Relocate**: PVC must be marked for deletion and not in use by any pod
+  (deployment and PVC deleted).
+
+Example (VRG-A ready, VRG-B still has workloads running):
+
+```yaml
+# VRG-A
+- type: GlobalSecondary
+  status: "True"
+  reason: PVCsNotInUse
+  message: PVCs are not in use
+
+# VRG-B
+- type: GlobalSecondary
+  status: "False"
+  reason: PVCsInUse
+  message: PVCs are still in use
+```
+
+Example (VRG is Primary, condition reset):
+
+```yaml
+- type: GlobalSecondary
+  status: "True"
+  reason: Unused
+  message: Not applicable when Primary
+```
+
+On steady-state secondary (destination cluster where no PVCs match the VRG
+selector), the condition is set to `True / PVCsNotInUse` so siblings do not wait
+on this VRG.
+
+### 4.5 VGR Watcher
 
 When the global VGR status changes (e.g., state transition by the external
 controller), all VRGs sharing that VGR need to react immediately. If a VGR
 change is detected in the operator namespace, all VRGs with the matching
 `global-vgr` label are enqueued for reconciliation.
 
-### 4.5 Status Handling
+### 4.6 Status Handling
 
 Some external storage providers manage replication at the LUN level and use
 `schedulingInterval: 0m` in the VolumeGroupReplicationClass. This signals that
@@ -260,14 +321,19 @@ status:
       message: Consensus reached for state secondary
 ```
 
-### 4.6 SchedulingInterval 0m
+For global VGR, the consensus gate (4.1) can delay PVC processing after a VRG
+generation change. If a per-PVC `DataReady` condition has an
+`ObservedGeneration` older than the current VRG generation, it is treated as
+Progressing to prevent stale conditions from being aggregated as Ready.
+
+### 4.7 SchedulingInterval 0m
 
 If the storage provider uses `schedulingInterval: 0m` in the
 VolumeGroupReplicationClass and the corresponding DRPolicy, this indicates that
 replication is managed entirely by the external storage provider and Ramen does
 not drive RPO-based scheduling. It has the following implications:
 
-1. **VGR status validation**: The simplified status path described in 4.5 only
+1. **VGR status validation**: The simplified status path described in 4.6 only
    applies when `schedulingInterval` is `0m`. For non-zero intervals, the normal
    `Completed`/`Degraded`/`Resyncing` validation path is used.
 
@@ -350,6 +416,8 @@ reconciliation, ensuring instant notification.
 - **Conditions**: `GlobalAction` (DRPC), whether all peer DRPCs agree on action
   and target cluster. `GlobalState` (VRG), whether all peer VRGs agree on
   replication state (checked on both primary and secondary paths).
+  `GlobalSecondary` (VRG), whether this VRG's PVCs are not in use, allowing the
+  shared VGR to transition to secondary.
 - **Progression**: `WaitOnGlobalAction`, set on DRPC when consensus is blocked.
   Apps remain running.
 - **Prometheus metric**: `ramen_global_action_consensus_status` gauge, 1 =
@@ -411,10 +479,13 @@ Scenario: cluster-1 is down, failover to cluster-2.
    Both VRGs see the state match, mark their PVCs as DataReady and
    DataProtected.
 1. **Cleanup on cluster-1** (if accessible): Both VRGs transition to Secondary.
-   The existing global VGR is updated to `replicationState=Secondary`. The
-   external storage provider transitions VGR `.status.state` accordingly. This
-   ensures cluster-1 is properly configured as a secondary and ready to serve as
-   a failover target in the future.
+   Each VRG checks `isPVCReadyForSecondary` for its own PVCs and sets its
+   `GlobalSecondary` condition. The VGR is only updated to
+   `replicationState=Secondary` once **all** VRGs on the cluster report
+   `GlobalSecondary = True / PVCsNotInUse` (see 4.4). The external storage
+   provider transitions VGR `.status.state` accordingly. This ensures cluster-1
+   is properly configured as a secondary and ready to serve as a failover target
+   in the future.
 
 **Result**:
 
@@ -433,11 +504,14 @@ Scenario: relocate from cluster-1 (current primary) to cluster-2.
    peers instantly.
 1. **Both clusters become Secondary**: Ramen first ensures all VRGs on both
    clusters are secondary. On cluster-1 (source), both VRGs transition to
-   Secondary. GlobalState consensus is checked — the VGR is only updated to
-   secondary once all VRGs on the cluster agree on the secondary state. Global
-   VGR on cluster-1 is updated to `replicationState=Secondary`. The external
-   storage provider transitions VGR `.status.state` accordingly. cluster-2 VRGs
-   are already secondary.
+   Secondary. GlobalState consensus is checked — all VRGs must agree on the
+   secondary state. Each VRG then checks `isPVCReadyForSecondary` for its own
+   PVCs (PVC must be marked for deletion and not in use) and sets its
+   `GlobalSecondary` condition. The global VGR is only updated to
+   `replicationState=Secondary` once **all** VRGs report
+   `GlobalSecondary = True / PVCsNotInUse` (see 4.4). The external storage
+   provider transitions VGR `.status.state` accordingly. cluster-2 VRGs are
+   already secondary.
 1. **cluster-2 promoted to Primary**: Once both clusters are confirmed
    secondary, Ramen promotes cluster-2. Both VRGs on cluster-2 transition to
    Primary. VRG-level consensus confirms both agree. If no VGR exists on
