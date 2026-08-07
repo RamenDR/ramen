@@ -35,6 +35,12 @@ def start(broker, *clusters):
     for cluster in clusters:
         wait_for_cluster(cluster)
 
+    for cluster in clusters:
+        restart_coredns(cluster)
+
+    for cluster in clusters:
+        wait_for_coredns(cluster)
+
 
 def deploy_broker(broker):
     print(f"Waiting until broker '{broker}' is ready")
@@ -104,6 +110,33 @@ def annotate_nodes(cluster):
 def wait_for_cluster(cluster):
     print(f"Waiting for submariner deployuments in cluster '{cluster}'")
     wait_for_deployments(cluster, CLUSTER_DEPLOYMENTS, NAMESPACE)
+
+
+def restart_coredns(cluster):
+    """
+    Reload cluster CoreDNS after lighthouse has patched the Corefile.
+
+    CoreDNS reload defaults to ~30s; until then clusterset.local queries miss
+    the lighthouse forward and NXDOMAIN is cached.
+    """
+    print(f"Restarting CoreDNS on cluster '{cluster}'")
+    kubectl.rollout(
+        "restart",
+        "deployment/coredns",
+        "--namespace=kube-system",
+        context=cluster,
+    )
+
+
+def wait_for_coredns(cluster):
+    print(f"Waiting for CoreDNS on cluster '{cluster}'")
+    kubectl.rollout(
+        "status",
+        "deployment/coredns",
+        "--namespace=kube-system",
+        timeout=60,
+        context=cluster,
+    )
 
 
 def wait_for_deployments(cluster, names, namespace):
