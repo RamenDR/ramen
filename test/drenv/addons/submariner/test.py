@@ -206,7 +206,8 @@ def wait_for_service_import(cluster, namespace):
 
 
 def service_address(namespace):
-    return f"{SERVICE}.{namespace}.svc.clusterset.local"
+    # Trailing dot: absolute name so the resolver skips search domains (ndots).
+    return f"{SERVICE}.{namespace}.svc.clusterset.local."
 
 
 def test_connectivity(cluster, namespace, timeout=300):
