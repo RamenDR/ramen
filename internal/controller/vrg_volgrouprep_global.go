@@ -154,6 +154,60 @@ func (v *VRGInstance) isGlobalStateInConsensus() bool {
 	return true
 }
 
+// areSiblingVRGsReadyForGlobalSecondary checks that all sibling VRGs sharing
+// the same global VGR label have signaled their PVCs are ready for the global
+// VGR to transition to secondary. This prevents one VRG from flipping the shared
+// VGR while another VRG's workloads are still active.
+func (v *VRGInstance) areSiblingVRGsReadyForGlobalSecondary(log logr.Logger) bool {
+	vgrLabel := v.globalVGRLabel()
+
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+	if err := v.reconciler.List(v.ctx, &vrgs,
+		client.MatchingLabels{GlobalVGRLabel: vgrLabel},
+	); err != nil {
+		log.Error(err, "Failed to list sibling VRGs for global VGR secondary readiness")
+
+		return false
+	}
+
+	var pending []string
+
+	for idx := range vrgs.Items {
+		sibling := &vrgs.Items[idx]
+		if sibling.Name == v.instance.Name && sibling.Namespace == v.instance.Namespace {
+			continue
+		}
+
+		if rmnutil.ResourceIsDeleted(sibling) {
+			continue // Sibling is being torn down; don't gate on it.
+		}
+
+		if !v.isSiblingReadyForGlobalSecondary(sibling) {
+			pending = append(pending, sibling.Namespace+"/"+sibling.Name)
+		}
+	}
+
+	if len(pending) > 0 {
+		log.Info("Waiting for sibling VRGs to release PVCs before flipping global VGR",
+			"pending", strings.Join(pending, ", "))
+
+		return false
+	}
+
+	log.Info("All sibling VRGs ready for global VGR secondary transition")
+
+	return true
+}
+
+func (v *VRGInstance) isSiblingReadyForGlobalSecondary(sibling *ramendrv1alpha1.VolumeReplicationGroup) bool {
+	cond := rmnutil.FindCondition(sibling.Status.Conditions, VRGConditionTypeGlobalSecondary)
+
+	return cond != nil &&
+		cond.Status == metav1.ConditionTrue &&
+		cond.Reason != VRGConditionReasonUnused &&
+		cond.ObservedGeneration == sibling.Generation
+}
+
 // isGlobalDeleteInConsensus checks that all VRGs sharing the same global VGR label
 // have a deletion timestamp. The global VGR is only deleted when all its VRGs are removed.
 func (v *VRGInstance) isGlobalDeleteInConsensus(log logr.Logger) bool {
@@ -203,6 +257,18 @@ func (v *VRGInstance) deleteGlobalVGR() bool {
 func (v *VRGInstance) setGlobalStateCondition(status metav1.ConditionStatus, reason, message string) {
 	rmnutil.SetStatusCondition(&v.instance.Status.Conditions, metav1.Condition{
 		Type:               VRGConditionTypeGlobalState,
+		Status:             status,
+		ObservedGeneration: v.instance.Generation,
+		Reason:             reason,
+		Message:            message,
+	})
+}
+
+// setGlobalSecondaryCondition updates the condition indicating whether
+// this VRG's PVCs are not in use, allowing the shared global VGR to transition to secondary.
+func (v *VRGInstance) setGlobalSecondaryCondition(status metav1.ConditionStatus, reason, message string) {
+	rmnutil.SetStatusCondition(&v.instance.Status.Conditions, metav1.Condition{
+		Type:               VRGConditionTypeGlobalSecondary,
 		Status:             status,
 		ObservedGeneration: v.instance.Generation,
 		Reason:             reason,

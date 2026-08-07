@@ -1483,6 +1483,12 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
+	// Reset global VGR secondary readiness condition; only meaningful when Secondary.
+	if v.hasGlobalVGRLabel() {
+		v.setGlobalSecondaryCondition(metav1.ConditionTrue,
+			VRGConditionReasonUnused, "Not applicable when Primary")
+	}
+
 	v.resetKubeObjectsCaptureStatusIfRequired()
 
 	if v.shouldRestoreClusterData() {
