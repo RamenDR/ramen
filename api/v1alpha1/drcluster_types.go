@@ -59,6 +59,29 @@ const (
 	// Fencing CR to fence off this cluster
 	// has been created
 	DRClusterConditionTypeFenced = "Fenced"
+
+	// CIDRsValidated indicates the validation state of CIDRs configured in the DRCluster
+	// against CIDRs detected by the storage provisioner in DRClusterConfig StorageAccessDetails.
+	DRClusterConditionTypeCIDRsValidated = "CIDRsValidated"
+)
+
+const (
+	// CIDRsValidated condition reasons
+
+	// All detected CIDRs are configured in DRCluster and no undetected CIDRs found
+	ReasonCIDRsValidationSucceeded = "Succeeded"
+
+	// CIDRs configured in DRCluster.Spec have an invalid format.
+	ReasonInvalidCIDRsFormat = "InvalidCIDRsFormat"
+
+	// Detected CIDRs from StorageAccessDetails are not configured in DRCluster.
+	// These are required for network fencing and their absence may leave storage
+	// access paths unfenced during failover.
+	ReasonDetectedCIDRsUnconfigured = "DetectedCIDRsUnconfigured"
+
+	// Additional CIDRs configured in DRCluster are not detected by the storage provisioner
+	// in StorageAccessDetails; additional CIDRs are allowed.
+	ReasonUndetectedCIDRsFound = "UndetectedCIDRsFound"
 )
 
 type DRClusterPhase string
