@@ -111,10 +111,21 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 func (v *VRGInstance) reconcileVolGroupRepsAsSecondary(requeue *bool,
 	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
-	if v.hasGlobalVGRLabel() && !v.isGlobalStateInConsensus() {
-		*requeue = true
+	if v.hasGlobalVGRLabel() {
+		// On steady-state secondary, no PVCs match the VRG selector.
+		// Signal readiness so siblings don't wait on this VRG.
+		if len(groupPVCs) == 0 {
+			v.setGlobalSecondaryCondition(metav1.ConditionTrue,
+				VRGConditionReasonPVCsNotInUse, "PVCs are not in use")
 
-		return
+			return
+		}
+
+		if !v.isGlobalStateInConsensus() {
+			*requeue = true
+
+			return
+		}
 	}
 
 	for vgrNamespacedName, pvcs := range groupPVCs {
@@ -152,8 +163,24 @@ func (v *VRGInstance) reconcileVGRAsSecondary(vrNamespacedName types.NamespacedN
 		skip    bool = true
 	)
 
+	isGlobal := v.hasGlobalVGRLabel()
+
 	for idx := range pvcs {
 		if !v.isPVCReadyForSecondary(pvcs[idx], log) {
+			if isGlobal {
+				v.setGlobalSecondaryCondition(metav1.ConditionFalse,
+					VRGConditionReasonPVCsInUse, "PVCs are still in use")
+			}
+
+			return requeue, false, skip
+		}
+	}
+
+	if isGlobal {
+		v.setGlobalSecondaryCondition(metav1.ConditionTrue,
+			VRGConditionReasonPVCsNotInUse, "PVCs are not in use")
+
+		if !v.areSiblingVRGsReadyForGlobalSecondary(log) {
 			return requeue, false, skip
 		}
 	}

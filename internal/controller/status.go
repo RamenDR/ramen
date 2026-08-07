@@ -60,6 +60,10 @@ const (
 	// reached the desired replication state.
 	VRGConditionTypeGlobalState = "GlobalState"
 
+	// Indicates whether this VRG's PVCs are not in use, allowing the shared
+	// global VGR to transition to secondary. Only applicable for global VGR VRGs.
+	VRGConditionTypeGlobalSecondary = "GlobalSecondary"
+
 	// Indicates the status of hook execution in recipes.
 	// This condition helps identify hook failures separately from other kube object protection issues.
 	VRGConditionTypeHooksReady = "HooksReady"
@@ -107,8 +111,13 @@ const (
 	VRGConditionReasonAutoCleanupNotFeasible = "NotFeasible"
 	VRGConditionReasonAutoCleanupCompleted   = "Completed"
 
+	// Global consensus reasons for GlobalState condition.
 	ConditionReasonConsensusReached    = "ConsensusReached"
 	ConditionReasonConsensusNotReached = "ConsensusNotReached"
+
+	// Global secondary transition reasons for GlobalSecondary condition.
+	VRGConditionReasonPVCsNotInUse = "PVCsNotInUse"
+	VRGConditionReasonPVCsInUse    = "PVCsInUse"
 
 	// Hook-specific condition reasons for better visibility of hook failures
 	VRGConditionReasonHookExecuted = "HookExecuted"
