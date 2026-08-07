@@ -244,11 +244,12 @@ The generation of the DRPC spec that was last processed.
 
 ### `actionStartTime` (metav1.Time)
 
-When the current DR action started.
+When the current DR action started (Deploy, Failover, Relocate, or Deletion).
 
 ### `actionDuration` (metav1.Duration)
 
-How long the current action has been running.
+How long the current action took to complete (set when the action finishes,
+cleared when a new action, including deletion, starts).
 
 ### `progression` (ProgressionStatus)
 

@@ -186,14 +186,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
+		// Capture deletion start time before cleanup so START TIME reflects when deletion began
+		if statusErr := r.setDeletionStatusAndUpdate(ctx, drpc); statusErr != nil {
+			logger.Info(fmt.Sprintf("Failed to update DRPC deletion status: (%v)", statusErr))
+		}
+
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
-
-			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
-			if statusErr != nil {
-				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
-			}
 
 			return ctrl.Result{}, err
 		}
@@ -266,6 +266,13 @@ func (r *DRPlacementControlReconciler) setDeletionStatusAndUpdate(
 	ctx context.Context, drpc *rmn.DRPlacementControl,
 ) error {
 	updated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	if updated {
+		// Reset action timing on first transition into Deleting for Deploy/Failover/Relocate
+		// so START TIME reflects when deletion began
+		drpc.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		drpc.Status.ActionDuration = nil
+	}
+
 	drpc.Status.Phase = rmn.Deleting
 	drpc.Status.ObservedGeneration = drpc.Generation
 
