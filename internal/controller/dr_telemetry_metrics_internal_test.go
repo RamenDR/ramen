@@ -4,9 +4,15 @@
 package controllers
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -149,6 +155,87 @@ var _ = Describe("DRTelemetryMetrics syncDRActionCountAnnotation", func() {
 		failover, relocate := drpcActionCounts(drpcWithPhase(rmn.Deployed, nil))
 		Expect(failover).To(BeZero())
 		Expect(relocate).To(BeZero())
+	})
+})
+
+var _ = Describe("DRTelemetryMetrics UpdateDRTelemetryMetrics", func() {
+	newFakeClient := func(objects ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		Expect(rmn.AddToScheme(scheme)).To(Succeed())
+
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	}
+
+	namedPolicy := func(name string, drpolicy *rmn.DRPolicy) *rmn.DRPolicy {
+		drpolicy.ObjectMeta = metav1.ObjectMeta{Name: name}
+
+		return drpolicy
+	}
+
+	newDRPC := func(name string, protectedNamespaces *[]string, annotations map[string]string) *rmn.DRPlacementControl {
+		return &rmn.DRPlacementControl{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   "test-ns",
+				Annotations: annotations,
+			},
+			Spec: rmn.DRPlacementControlSpec{ProtectedNamespaces: protectedNamespaces},
+		}
+	}
+
+	It("resets all series to zero when no resources exist", func() {
+		SetDRPolicyTypeMetric(DRTypeMetro, 4)
+		SetDRProtectedAppsMetric(ManagementMethodManaged, 4)
+		SetDRActionsMetric(ActionFailover, 4)
+
+		Expect(UpdateDRTelemetryMetrics(context.TODO(), newFakeClient())).To(Succeed())
+
+		for _, drType := range []string{DRTypeMetro, DRTypeRegional, DRTypeUnknown} {
+			Expect(testutil.ToFloat64(drPolicyType.WithLabelValues(drType))).To(BeZero())
+		}
+
+		for _, method := range []string{ManagementMethodDiscovered, ManagementMethodManaged} {
+			Expect(testutil.ToFloat64(drProtectedApps.WithLabelValues(method))).To(BeZero())
+		}
+
+		for _, action := range []string{ActionFailover, ActionRelocate} {
+			Expect(testutil.ToFloat64(drActions.WithLabelValues(action))).To(BeZero())
+		}
+	})
+
+	It("counts DRPolicy resources by DR type", func() {
+		peers := []rmn.PeerClass{{StorageID: []string{"storage-id-1"}}}
+		c := newFakeClient(
+			namedPolicy("metro-by-peers", drPolicyWithPeerClasses(peers, nil)),
+			namedPolicy("metro-by-interval", drPolicyWithInterval("")),
+			namedPolicy("regional", drPolicyWithInterval("5m")),
+			namedPolicy("unknown", drPolicyWithInterval("5x")),
+		)
+
+		Expect(UpdateDRTelemetryMetrics(context.TODO(), c)).To(Succeed())
+
+		Expect(testutil.ToFloat64(drPolicyType.WithLabelValues(DRTypeMetro))).To(Equal(2.0))
+		Expect(testutil.ToFloat64(drPolicyType.WithLabelValues(DRTypeRegional))).To(Equal(1.0))
+		Expect(testutil.ToFloat64(drPolicyType.WithLabelValues(DRTypeUnknown))).To(Equal(1.0))
+	})
+
+	It("counts DRPC resources by management method and sums action counts", func() {
+		c := newFakeClient(
+			newDRPC("discovered", &[]string{"app-ns"}, map[string]string{
+				DRActionCountAnnotation: `{"failover":2,"relocate":1,"lastPhase":"FailedOver"}`,
+			}),
+			newDRPC("managed-1", nil, map[string]string{
+				DRActionCountAnnotation: `{"failover":1,"relocate":0,"lastPhase":"FailingOver"}`,
+			}),
+			newDRPC("managed-2", &[]string{}, nil),
+		)
+
+		Expect(UpdateDRTelemetryMetrics(context.TODO(), c)).To(Succeed())
+
+		Expect(testutil.ToFloat64(drProtectedApps.WithLabelValues(ManagementMethodDiscovered))).To(Equal(1.0))
+		Expect(testutil.ToFloat64(drProtectedApps.WithLabelValues(ManagementMethodManaged))).To(Equal(2.0))
+		Expect(testutil.ToFloat64(drActions.WithLabelValues(ActionFailover))).To(Equal(3.0))
+		Expect(testutil.ToFloat64(drActions.WithLabelValues(ActionRelocate))).To(Equal(1.0))
 	})
 })
 
