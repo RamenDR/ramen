@@ -120,23 +120,7 @@ var _ = Describe("GlobalVGR deletion consensus", Ordered, func() {
 
 	BeforeAll(func() {
 		g = newGlobalVGRTest()
-		createGlobalSC(g.scName, g.replicationID)
-		createGlobalVGRC(g.vgrcName, g.replicationID)
-		g.peerClass = buildGlobalPeerClass(g.replicationID, g.scName)
-
-		namespaceCreate(g.vrgA.namespace)
-		createBoundPVCAndPV(g.vrgA.namespace, g.scName, g.vrgA.vrgName)
-		createGlobalVRG(g.vrgA.vrgName, g.vrgA.namespace, []ramendrv1alpha1.PeerClass{g.peerClass})
-
-		namespaceCreate(g.vrgB.namespace)
-		createBoundPVCAndPV(g.vrgB.namespace, g.scName, g.vrgB.vrgName)
-		createGlobalVRG(g.vrgB.vrgName, g.vrgB.namespace, []ramendrv1alpha1.PeerClass{g.peerClass})
-
-		g.waitForGlobalVGRLabel(g.vrgA)
-		g.waitForGlobalVGRLabel(g.vrgB)
-		g.updateGlobalVGRStatus(volrep.PrimaryState)
-		g.verifyVRGCondition(g.vrgA, vrgController.VRGConditionTypeDataReady, metav1.ConditionTrue, "")
-		g.verifyVRGCondition(g.vrgB, vrgController.VRGConditionTypeDataReady, metav1.ConditionTrue, "")
+		g.setupTwoVRGsAsPrimary()
 	})
 
 	It("keeps VGR when only one VRG is deleted", func() {
@@ -212,7 +196,120 @@ var _ = Describe("GlobalVGR mixed GroupReplicationID", Ordered, func() {
 	AfterAll(func() { g.cleanupAll() })
 })
 
+var _ = Describe("GlobalVGR secondary transition gating", Ordered, func() {
+	var g *globalVGRTest
+
+	var pod *corev1.Pod
+
+	BeforeAll(func() {
+		g = newGlobalVGRTest()
+		g.setupTwoVRGsAsPrimary()
+	})
+
+	It("sets GlobalSecondary to Unused when VRGs are Primary", func() {
+		g.verifyVRGCondition(g.vrgA, vrgController.VRGConditionTypeGlobalSecondary,
+			metav1.ConditionTrue, vrgController.VRGConditionReasonUnused)
+		g.verifyVRGCondition(g.vrgB, vrgController.VRGConditionTypeGlobalSecondary,
+			metav1.ConditionTrue, vrgController.VRGConditionReasonUnused)
+	})
+
+	It("blocks VGR flip when VRG-B PVC is in use by a pod", func() {
+		pvcName := fmt.Sprintf("pvc-%s", g.vrgB.vrgName)
+		pod = &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "test-blocking-pod-",
+				Namespace:    g.vrgB.namespace,
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Name: "c1", Image: "busybox"},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "vol1",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: pvcName,
+							},
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(context.TODO(), pod)).To(Succeed())
+
+		// Ensure pod is visible in the cache
+		Eventually(func() error {
+			return k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(pod), pod)
+		}, vrgtimeout, vrginterval).Should(Succeed())
+
+		g.updateVRGSpecWithAction(g.vrgA, ramendrv1alpha1.Secondary, ramendrv1alpha1.VRGActionFailover)
+		g.updateVRGSpecWithAction(g.vrgB, ramendrv1alpha1.Secondary, ramendrv1alpha1.VRGActionFailover)
+
+		// VRG-A PVCs are not in use
+		g.verifyVRGCondition(g.vrgA, vrgController.VRGConditionTypeGlobalSecondary,
+			metav1.ConditionTrue, vrgController.VRGConditionReasonPVCsNotInUse)
+
+		// VRG-B PVCs are in use by pod
+		g.verifyVRGCondition(g.vrgB, vrgController.VRGConditionTypeGlobalSecondary,
+			metav1.ConditionFalse, vrgController.VRGConditionReasonPVCsInUse)
+
+		// VGR should NOT have flipped to secondary
+		g.verifyGlobalVGRReplicationState(volrep.Primary)
+	})
+
+	It("allows VGR flip after pod is deleted", func() {
+		Expect(k8sClient.Delete(context.TODO(), pod)).To(Succeed())
+
+		// Wait for pod to disappear from cache
+		Eventually(func() bool {
+			err := k8sClient.Get(context.TODO(), client.ObjectKeyFromObject(pod), &corev1.Pod{})
+
+			return errors.IsNotFound(err)
+		}, vrgtimeout, vrginterval).Should(BeTrue())
+
+		// VRG-B should now report PVCsNotInUse
+		g.verifyVRGCondition(g.vrgB, vrgController.VRGConditionTypeGlobalSecondary,
+			metav1.ConditionTrue, vrgController.VRGConditionReasonPVCsNotInUse)
+
+		// VGR should transition to secondary
+		g.verifyGlobalVGRReplicationState(volrep.Secondary)
+	})
+
+	AfterAll(func() {
+		if pod != nil {
+			deleteIgnoreNotFound(pod)
+		}
+
+		g.deleteVRG(g.vrgA)
+		g.deleteVRG(g.vrgB)
+		g.verifyVRGDeleted(g.vrgA)
+		g.verifyVRGDeleted(g.vrgB)
+		g.cleanupAll()
+	})
+})
+
 // --- Test helpers ---
+
+func (g *globalVGRTest) setupTwoVRGsAsPrimary() {
+	createGlobalSC(g.scName, g.replicationID)
+	createGlobalVGRC(g.vgrcName, g.replicationID)
+	g.peerClass = buildGlobalPeerClass(g.replicationID, g.scName)
+
+	namespaceCreate(g.vrgA.namespace)
+	createBoundPVCAndPV(g.vrgA.namespace, g.scName, g.vrgA.vrgName)
+	createGlobalVRG(g.vrgA.vrgName, g.vrgA.namespace, []ramendrv1alpha1.PeerClass{g.peerClass})
+
+	namespaceCreate(g.vrgB.namespace)
+	createBoundPVCAndPV(g.vrgB.namespace, g.scName, g.vrgB.vrgName)
+	createGlobalVRG(g.vrgB.vrgName, g.vrgB.namespace, []ramendrv1alpha1.PeerClass{g.peerClass})
+
+	g.waitForGlobalVGRLabel(g.vrgA)
+	g.waitForGlobalVGRLabel(g.vrgB)
+	g.updateGlobalVGRStatus(volrep.PrimaryState)
+	g.verifyVRGCondition(g.vrgA, vrgController.VRGConditionTypeDataReady, metav1.ConditionTrue, "")
+	g.verifyVRGCondition(g.vrgB, vrgController.VRGConditionTypeDataReady, metav1.ConditionTrue, "")
+}
 
 func (g *globalVGRTest) globalVGRKey() types.NamespacedName {
 	return types.NamespacedName{
@@ -361,29 +458,28 @@ func (g *globalVGRTest) verifyVRGCondition(
 ) {
 	vrgKey := types.NamespacedName{Name: inst.vrgName, Namespace: inst.namespace}
 
-	Eventually(func() metav1.ConditionStatus {
+	Eventually(func() bool {
 		vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
 		if err := apiReader.Get(context.TODO(), vrgKey, vrg); err != nil {
-			return metav1.ConditionUnknown
+			return false
 		}
 
 		cond := meta.FindStatusCondition(vrg.Status.Conditions, condType)
 		if cond == nil {
-			return metav1.ConditionUnknown
+			return false
 		}
 
-		return cond.Status
-	}, vrgtimeout, vrginterval).Should(Equal(expectedStatus),
-		"waiting for VRG %s condition %s=%s", vrgKey, condType, expectedStatus)
+		if cond.Status != expectedStatus {
+			return false
+		}
 
-	if expectedReason != "" {
-		vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-		Expect(apiReader.Get(context.TODO(), vrgKey, vrg)).To(Succeed())
+		if expectedReason != "" && cond.Reason != expectedReason {
+			return false
+		}
 
-		cond := meta.FindStatusCondition(vrg.Status.Conditions, condType)
-		Expect(cond).NotTo(BeNil())
-		Expect(cond.Reason).To(Equal(expectedReason))
-	}
+		return true
+	}, vrgtimeout, vrginterval).Should(BeTrue(),
+		"waiting for VRG %s condition %s=%s reason=%s", vrgKey, condType, expectedStatus, expectedReason)
 }
 
 func (g *globalVGRTest) verifyVRGDeleted(inst *globalVRGInstance) {
@@ -507,4 +603,22 @@ func (g *globalVGRTest) cleanupAll() {
 	}
 
 	deleteIgnoreNotFound(&volrep.VolumeGroupReplicationClass{ObjectMeta: metav1.ObjectMeta{Name: g.vgrcName}})
+}
+
+func (g *globalVGRTest) updateVRGSpecWithAction(
+	inst *globalVRGInstance, state ramendrv1alpha1.ReplicationState, action ramendrv1alpha1.VRGAction,
+) {
+	vrgKey := types.NamespacedName{Name: inst.vrgName, Namespace: inst.namespace}
+
+	Expect(retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+		if err := k8sClient.Get(context.TODO(), vrgKey, vrg); err != nil {
+			return err
+		}
+
+		vrg.Spec.ReplicationState = state
+		vrg.Spec.Action = action
+
+		return k8sClient.Update(context.TODO(), vrg)
+	})).To(Succeed())
 }
