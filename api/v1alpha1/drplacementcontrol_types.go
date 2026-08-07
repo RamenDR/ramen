@@ -43,7 +43,7 @@ const (
 	Deploying = DRState("Deploying")
 
 	// Deployed, this is the state that will be recorded in the DRPC status
-	// when initial deplyment has been performed successfully
+	// when initial deployment has been performed successfully
 	Deployed = DRState("Deployed")
 
 	// FailingOver, state recorded in the DRPC status when the failover

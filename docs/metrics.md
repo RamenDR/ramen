@@ -5,10 +5,13 @@ SPDX-License-Identifier: Apache-2.0
 
 # Metrics
 
-Metrics are collected using Prometheus, and registered with its global metrics
-registry in each controller. There are two ways where you can look at the
-metrics in ramen. One way is use prometheus stack(recommended) and the other way
-is to use curl or postman. More details on each of these in the below sections.
+
+Metrics are collected using Prometheus, and registered with its global
+metrics registry in each controller. There are two ways where you can
+look at the metrics in ramen. One way is use Prometheus stack(recommended)
+and the other way is to use curl or postman. More details on
+each of these in the below sections.
+
 
 More information on metrics is
 [here](https://book.kubebuilder.io/reference/metrics.html)
@@ -32,7 +35,7 @@ Follow the next steps before configuring ramen.
 Quickstart instructions are
 [here](https://github.com/prometheus-operator/kube-prometheus#quickstart).
 
-#### Grant permission for prometheus to scrape metrics
+#### Grant permission for Prometheus to scrape metrics
 
 Go to `ramen/config/hub/default/k8s/kustomization.yaml` and uncomment
 `../../../prometheus` and `metrics_role_binding.yaml` under `Kustomization`
