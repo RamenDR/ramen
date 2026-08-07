@@ -16,6 +16,21 @@ JSONPATH_NEWLINE = '{"\\n"}'
 # distinguishable for rollout() (only "status" supports --timeout).
 _DEFAULT_TIMEOUT = sentinel.Duration(300)
 
+_APPLY_FLAGS_WITH_VALUE = frozenset(
+    ("-f", "--filename", "-k", "--kustomize", "--template")
+)
+
+
+def _apply_flags(args):
+    """Yield flags while skipping values consumed by preceding options."""
+    previous = None
+    for arg in args:
+        if previous in _APPLY_FLAGS_WITH_VALUE:
+            previous = None
+            continue
+        previous = arg
+        yield arg
+
 
 def version(context=None, output=None):
     """
@@ -76,10 +91,19 @@ def exec(*args, context=None):
     return _run("exec", *args, context=context)
 
 
-def apply(*args, input=None, context=None, log=print):
+def apply(*args, server_side=True, input=None, context=None, log=print):
     """
     Run kubectl apply ... logging progress messages.
+
+    Server-side apply is enabled by default to avoid the large
+    last-applied-configuration annotation created by client-side apply.
     """
+    args = list(args)
+    for flag in _apply_flags(args):
+        if flag == "--server-side" or flag.startswith("--server-side="):
+            raise ValueError("use server_side argument instead of --server-side flag")
+    if server_side:
+        args.append("--server-side=true")
     _watch("apply", *args, input=input, context=context, log=log)
 
 
