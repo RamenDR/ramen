@@ -4,7 +4,11 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
@@ -88,6 +92,78 @@ func drpcActionCounts(drpc *rmn.DRPlacementControl) (float64, float64) {
 	counts := parseDRActionCount(drpc)
 
 	return float64(counts.Failover), float64(counts.Relocate)
+}
+
+// UpdateDRTelemetryMetrics recomputes all DR telemetry metrics from the
+// DRPolicy and DRPC resources in the cluster. Every series is Set on every
+// call, so deletions and classification changes are reflected without any
+// per-resource increment/decrement bookkeeping.
+func UpdateDRTelemetryMetrics(ctx context.Context, c client.Client) error {
+	if err := updateDRPolicyTypeMetrics(ctx, c); err != nil {
+		return err
+	}
+
+	return updateDRPCTelemetryMetrics(ctx, c)
+}
+
+func updateDRPolicyTypeMetrics(ctx context.Context, c client.Client) error {
+	drpolicies := &rmn.DRPolicyList{}
+	if err := c.List(ctx, drpolicies); err != nil {
+		return fmt.Errorf("failed to list DRPolicy resources for telemetry metrics: %w", err)
+	}
+
+	policyCounts := map[string]float64{
+		DRTypeMetro:    0,
+		DRTypeRegional: 0,
+		DRTypeUnknown:  0,
+	}
+
+	for idx := range drpolicies.Items {
+		policyCounts[drPolicyDRType(&drpolicies.Items[idx])]++
+	}
+
+	for drType, count := range policyCounts {
+		SetDRPolicyTypeMetric(drType, count)
+	}
+
+	return nil
+}
+
+func updateDRPCTelemetryMetrics(ctx context.Context, c client.Client) error {
+	drpcs := &rmn.DRPlacementControlList{}
+	if err := c.List(ctx, drpcs); err != nil {
+		return fmt.Errorf("failed to list DRPC resources for telemetry metrics: %w", err)
+	}
+
+	appCounts := map[string]float64{
+		ManagementMethodDiscovered: 0,
+		ManagementMethodManaged:    0,
+	}
+
+	var failoverTotal, relocateTotal float64
+
+	for idx := range drpcs.Items {
+		drpc := &drpcs.Items[idx]
+
+		if isDiscoveredApp(drpc) {
+			appCounts[ManagementMethodDiscovered]++
+		} else {
+			appCounts[ManagementMethodManaged]++
+		}
+
+		failover, relocate := drpcActionCounts(drpc)
+		failoverTotal += failover
+		relocateTotal += relocate
+	}
+
+	for method, count := range appCounts {
+		SetDRProtectedAppsMetric(method, count)
+	}
+
+	SetDRActionsMetric(ActionFailover, failoverTotal)
+	SetDRActionsMetric(ActionRelocate, relocateTotal)
+
+	return nil
 }
 
 // drPolicyDRType classifies a DRPolicy as DRTypeMetro, DRTypeRegional or
