@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -404,7 +405,7 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // potentially unreachable. Fencing is to request fencing this cluster using another, hence this cluster may fail
 // other live validation checks, but we still need to process the fence request.
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
 	var requeue bool
 
@@ -447,9 +448,10 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		)
 	}
 
-	if err = u.validateCIDRs(drclusterMetrics.InvalidCIDRsDetectedMetrics, u.log); err != nil {
+	if err = u.validateCIDRs(drclusterMetrics.InvalidCIDRsDetectedMetrics, u.log,
+		&u.object.Status.Conditions, u.object.Generation); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
-			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
+			u.validatedSetFalseAndUpdate(ReasonValidationFailed, errors.New("CIDRs validation failed")))
 	}
 
 	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
@@ -523,8 +525,8 @@ func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics
 //
 // Validation is skipped if DRClusterConfig is not found or StorageAccessDetails is empty.
 // The watch on ManagedClusterView/ManifestWork will trigger reconciliation when these
-// become available. Returns an error if any detected CIDRs are not configured.
-func (u *drclusterInstance) validateCIDRsConfigured() error {
+// become available.
+func (u *drclusterInstance) validateCIDRsConfigured(conditions *[]metav1.Condition, observedGeneration int64) error {
 	drcConfig, err := u.getDRCCFromCluster(u.object)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -553,18 +555,36 @@ func (u *drclusterInstance) validateCIDRsConfigured() error {
 
 	cidrsFromDRCluster := sets.NewString(u.object.Spec.CIDRs...)
 
+	// CIDRsValidated=False: detected CIDRs missing from DRCluster.Spec
 	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
 	if len(unconfiguredCIDRs) > 0 {
-		return fmt.Errorf("expected CIDRs not configured %s", strings.Join(unconfiguredCIDRs, ", "))
+		msg := fmt.Sprintf("detected CIDRs not configured: %s", strings.Join(unconfiguredCIDRs, ", "))
+		setCIDRsValidatedConditionDetectedCIDRsUnconfigured(conditions, observedGeneration, msg)
+
+		return fmt.Errorf("%s", msg)
 	}
 
-	// TODO: raise an alert for undetectedCIDRs (cidrsFromDRCluster.Difference(cidrsFromDRCC))
-	// to surface additional CIDRs in DRCluster that are not present in StorageAccessDetails.
+	// CIDRsValidated=True: additional CIDRs in DRCluster not detected by the storage provisioner
+	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
+	if len(undetectedCIDRs) > 0 {
+		setCIDRsValidatedConditionUndetectedCIDRsFound(conditions, observedGeneration,
+			fmt.Sprintf("CIDRs not detected by storage provisioner: %s", strings.Join(undetectedCIDRs, ", ")))
+
+		return nil
+	}
+
+	// CIDRsValidated=True: all detected CIDRs are configured
+	setCIDRsValidatedConditionSucceeded(conditions, observedGeneration, "All detected CIDRs are configured")
 
 	return nil
 }
 
-func (u *drclusterInstance) validateCIDRs(metrics InvalidCIDRsDetectedMetrics, log logr.Logger) error {
+// validateCIDRs validates the CIDRs configured in DRCluster.Spec. Validation is skipped
+// if no CIDRs are configured, as non-MDR setups do not use network fencing.
+func (u *drclusterInstance) validateCIDRs(
+	metrics InvalidCIDRsDetectedMetrics, log logr.Logger,
+	conditions *[]metav1.Condition, observedGeneration int64,
+) error {
 	if len(u.object.Spec.CIDRs) == 0 {
 		return nil
 	}
@@ -572,13 +592,16 @@ func (u *drclusterInstance) validateCIDRs(metrics InvalidCIDRsDetectedMetrics, l
 	err := validateCIDRsFormat(u.object, log)
 	if err != nil {
 		metrics.InvalidCIDRsDetected.Set(1)
+		setCIDRsValidatedConditionInvalidFormat(conditions, observedGeneration, err.Error())
+		log.Error(err, "CIDRs format validation failed")
 
 		return err
 	}
 
-	err = u.validateCIDRsConfigured()
+	err = u.validateCIDRsConfigured(conditions, observedGeneration)
 	if err != nil {
 		metrics.InvalidCIDRsDetected.Set(1)
+		log.Error(err, "CIDRs validation failed")
 
 		return err
 	}
@@ -1588,6 +1611,50 @@ func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observe
 	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonCleanError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionSucceeded(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonCIDRsValidationSucceeded,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionUndetectedCIDRsFound(
+	conditions *[]metav1.Condition, observedGeneration int64, message string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonUndetectedCIDRsFound,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionDetectedCIDRsUnconfigured(
+	conditions *[]metav1.Condition, observedGeneration int64, message string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonDetectedCIDRsUnconfigured,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionInvalidFormat(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonInvalidCIDRsFormat,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,
