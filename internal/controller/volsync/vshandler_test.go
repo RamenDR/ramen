@@ -710,7 +710,7 @@ var _ = Describe("VolSync_Handler", func() {
 					// RD should NOT have VRG owner
 					Expect(ownerMatches(rd, owner.GetName(), "ConfigMap", true)).To(BeFalse())
 
-					// 4) PVC should have RD as controller owner (re-fetch PVC)
+					// 4) PVC should have RD as non-controlling owner (re-fetch PVC)
 					Eventually(func() bool {
 						pvcCheck := &corev1.PersistentVolumeClaim{}
 						if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvcCheck); err != nil {
@@ -718,7 +718,7 @@ var _ = Describe("VolSync_Handler", func() {
 						}
 
 						// fmt.Printf("PVC ownerRefs after RD creation: %+v\n", pvcCheck.GetOwnerReferences())
-						return ownerMatches(pvcCheck, rd.GetName(), "ReplicationDestination", true)
+						return ownerMatches(pvcCheck, rd.GetName(), "ReplicationDestination", false)
 					}, maxWait, interval).Should(BeTrue())
 
 					// PVC should still have VRG labels
@@ -742,7 +742,7 @@ var _ = Describe("VolSync_Handler", func() {
 						Namespace: testNamespace.GetName(),
 					}, pvcCheck)).To(Succeed())
 					// fmt.Printf("PVC ownerRefs after RD deletion: %+v\n", pvcCheck.GetOwnerReferences())
-					Expect(ownerMatches(pvcCheck, rd.GetName(), "ReplicationDestination", true)).To(BeTrue())
+					Expect(ownerMatches(pvcCheck, rd.GetName(), "ReplicationDestination", false)).To(BeTrue())
 				})
 			})
 		})
