@@ -43,6 +43,115 @@ var _ = Describe("DRTelemetryMetrics drPolicyDRType", func() {
 	)
 })
 
+var _ = Describe("DRTelemetryMetrics syncDRActionCountAnnotation", func() {
+	drpcWithPhase := func(phase rmn.DRState, annotations map[string]string) *rmn.DRPlacementControl {
+		drpc := &rmn.DRPlacementControl{}
+		drpc.SetAnnotations(annotations)
+		drpc.Status.Phase = phase
+
+		return drpc
+	}
+
+	syncThroughPhases := func(drpc *rmn.DRPlacementControl, phases ...rmn.DRState) {
+		for _, phase := range phases {
+			drpc.Status.Phase = phase
+			syncDRActionCountAnnotation(drpc)
+		}
+	}
+
+	It("does nothing for a DRPC that has not initiated an action", func() {
+		drpc := drpcWithPhase("", nil)
+		Expect(syncDRActionCountAnnotation(drpc)).To(BeFalse())
+		Expect(drpc.GetAnnotations()).To(BeEmpty())
+
+		drpc = drpcWithPhase(rmn.Deployed, nil)
+		Expect(syncDRActionCountAnnotation(drpc)).To(BeFalse())
+		Expect(drpc.GetAnnotations()).To(BeEmpty())
+	})
+
+	It("counts a failover when Initiating transitions into FailingOver", func() {
+		drpc := drpcWithPhase(rmn.Initiating, nil)
+		Expect(syncDRActionCountAnnotation(drpc)).To(BeTrue())
+
+		failover, relocate := drpcActionCounts(drpc)
+		Expect(failover).To(BeZero())
+		Expect(relocate).To(BeZero())
+
+		drpc.Status.Phase = rmn.FailingOver
+		Expect(syncDRActionCountAnnotation(drpc)).To(BeTrue())
+
+		failover, relocate = drpcActionCounts(drpc)
+		Expect(failover).To(Equal(1.0))
+		Expect(relocate).To(BeZero())
+	})
+
+	It("counts a relocate when Initiating transitions into Relocating", func() {
+		drpc := drpcWithPhase("", nil)
+		syncThroughPhases(drpc, rmn.Initiating, rmn.Relocating)
+
+		failover, relocate := drpcActionCounts(drpc)
+		Expect(failover).To(BeZero())
+		Expect(relocate).To(Equal(1.0))
+	})
+
+	It("does not double count while the phase is unchanged", func() {
+		drpc := drpcWithPhase("", nil)
+		syncThroughPhases(drpc, rmn.Initiating, rmn.FailingOver)
+
+		Expect(syncDRActionCountAnnotation(drpc)).To(BeFalse())
+
+		failover, _ := drpcActionCounts(drpc)
+		Expect(failover).To(Equal(1.0))
+	})
+
+	It("does not count action phase re-entry without a new initiation", func() {
+		drpc := drpcWithPhase("", nil)
+		// Post-action cleanup can flap between the action phase and its
+		// completed phase; such re-entries are not new actions
+		syncThroughPhases(drpc, rmn.Initiating, rmn.Relocating, rmn.Relocated, rmn.Relocating, rmn.Relocated)
+
+		_, relocate := drpcActionCounts(drpc)
+		Expect(relocate).To(Equal(1.0))
+	})
+
+	It("counts each newly initiated action", func() {
+		drpc := drpcWithPhase("", nil)
+		syncThroughPhases(drpc, rmn.Initiating, rmn.FailingOver, rmn.FailedOver,
+			rmn.Initiating, rmn.Relocating, rmn.Relocated,
+			rmn.Initiating, rmn.FailingOver)
+
+		failover, relocate := drpcActionCounts(drpc)
+		Expect(failover).To(Equal(2.0))
+		Expect(relocate).To(Equal(1.0))
+	})
+
+	It("disarms when Initiating leads to a non-action phase and rearms on the next initiation", func() {
+		drpc := drpcWithPhase("", nil)
+		syncThroughPhases(drpc, rmn.Initiating, rmn.WaitForUser, rmn.Initiating, rmn.Relocating)
+
+		failover, relocate := drpcActionCounts(drpc)
+		Expect(failover).To(BeZero())
+		Expect(relocate).To(Equal(1.0))
+	})
+
+	It("recovers from a malformed annotation", func() {
+		drpc := drpcWithPhase("", map[string]string{
+			DRActionCountAnnotation: "not-json",
+		})
+		syncThroughPhases(drpc, rmn.Initiating, rmn.FailingOver)
+
+		failover, relocate := drpcActionCounts(drpc)
+		Expect(failover).To(Equal(1.0))
+		Expect(relocate).To(BeZero())
+	})
+
+	It("reports zero counts for a DRPC without the annotation", func() {
+		failover, relocate := drpcActionCounts(drpcWithPhase(rmn.Deployed, nil))
+		Expect(failover).To(BeZero())
+		Expect(relocate).To(BeZero())
+	})
+})
+
 var _ = Describe("DRTelemetryMetrics", func() {
 	BeforeEach(func() {
 		InitDRTelemetryMetrics()
