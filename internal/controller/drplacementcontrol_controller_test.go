@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -1367,10 +1368,42 @@ func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 	return -1, nil
 }
 
+type drActionCounts struct {
+	Failover  float64     `json:"failover"`
+	Relocate  float64     `json:"relocate"`
+	LastPhase rmn.DRState `json:"lastPhase"`
+}
+
+// getDRActionCounts returns the failover and relocate counts and the last
+// accounted phase persisted in the dr-action-count annotation of the DRPC in
+// the given namespace
+func getDRActionCounts(namespace string) drActionCounts {
+	drpc := getLatestDRPC(namespace)
+
+	counts := drActionCounts{}
+
+	value, ok := drpc.GetAnnotations()[controllers.DRActionCountAnnotation]
+	if !ok {
+		return counts
+	}
+
+	Expect(json.Unmarshal([]byte(value), &counts)).To(Succeed())
+
+	return counts
+}
+
 //nolint:unparam
 func runFailoverAction(placementObj client.Object, fromCluster, toCluster string, isSyncDR bool,
 	manualFence bool,
 ) {
+	countsBefore := getDRActionCounts(placementObj.GetNamespace())
+
+	expectedFailoverCount := countsBefore.Failover + 1
+	if countsBefore.LastPhase == rmn.FailingOver {
+		// The failover was already initiated, and counted, by an earlier step
+		expectedFailoverCount = countsBefore.Failover
+	}
+
 	if isSyncDR {
 		fenceCluster(fromCluster, manualFence)
 	}
@@ -1402,12 +1435,23 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 	Expect(drpc.Status.ActionStartTime).ShouldNot(BeNil())
 
+	Expect(getDRActionCounts(placementObj.GetNamespace()).Failover).To(Equal(expectedFailoverCount),
+		"dr-action-count annotation should count the failover")
+
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster))
 }
 
 func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR bool, manualUnfence bool) {
 	toCluster1 := "east1-cluster"
+
+	countsBefore := getDRActionCounts(placementObj.GetNamespace())
+
+	expectedRelocateCount := countsBefore.Relocate + 1
+	if countsBefore.LastPhase == rmn.Relocating {
+		// The relocate was already initiated, and counted, by an earlier step
+		expectedRelocateCount = countsBefore.Relocate
+	}
 
 	if isSyncDR {
 		unfenceCluster(toCluster1, manualUnfence)
@@ -1453,6 +1497,9 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 	Expect(len(drpc.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+
+	Expect(getDRActionCounts(placementObj.GetNamespace()).Relocate).To(Equal(expectedRelocateCount),
+		"dr-action-count annotation should count the relocate")
 
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster1))
