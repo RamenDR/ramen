@@ -127,6 +127,11 @@ func (w *VM) Health(ctx types.TestContext, cluster *types.Cluster) error {
 	return nil
 }
 
+// AssertPVCPreserved verifies the VM PVC survived Disable DR.
+func (w *VM) AssertPVCPreserved(ctx types.TestContext, cluster *types.Cluster) error {
+	return validatePVCPreserved(ctx, cluster, ctx.AppNamespace(), vmPVCName)
+}
+
 // Status returns the VM workload deployment status across managed clusters.
 func (w *VM) Status(ctx types.TestContext) ([]types.WorkloadStatus, error) {
 	var statuses []types.WorkloadStatus
