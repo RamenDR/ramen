@@ -1358,11 +1358,44 @@ func (v *VRGInstance) cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationC
 		}
 	}
 
+	if err := v.updateVGRCVolumeHandlesForRestore(vgrc); err != nil {
+		return err
+	}
+
 	if err := v.updateVGRCClusterIDForRestore(vgrc); err != nil {
 		return err
 	}
 
 	return v.processVGRCSecrets(vgrc)
+}
+
+// updateVGRCVolumeHandlesForRestore replaces Spec.Source.VolumeHandles with
+// destination volume handles from Status.PersistentVolumeMappingList when present.
+// Mirrors cleanupPVForRestore rewriting PV Spec.CSI.VolumeHandle from the
+// destination-volume-handle annotation. No-op when mappings are missing
+// (e.g. destination info was not available at archive time).
+func (v *VRGInstance) updateVGRCVolumeHandlesForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+	for i, handle := range vgrc.Spec.Source.VolumeHandles {
+		for _, pvMapping := range vgrc.Status.PersistentVolumeMappingList {
+			if pvMapping.VolumeHandle != handle {
+				continue
+			}
+
+			if pvMapping.DestinationVolumeHandle == "" {
+				return fmt.Errorf("destination volume ID is empty for VGRC %s, PV %s, volumeHandle %s",
+					vgrc.Name, pvMapping.Name, handle)
+			}
+
+			v.log.V(1).Info("Set VGRC volume handle from destination handle",
+				"VGRC", vgrc.Name, "handle", pvMapping.DestinationVolumeHandle)
+
+			vgrc.Spec.Source.VolumeHandles[i] = pvMapping.DestinationVolumeHandle
+
+			break
+		}
+	}
+
+	return nil
 }
 
 // updateVGRCClusterIDForRestore sets volumeGroupAttributes.clusterID from the target
