@@ -216,6 +216,10 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 }
 
 func setupReconcilersHub(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
+	// Initialize all DR telemetry series to 0, so that a present-but-zero
+	// series distinguishes an idle hub from an absent operator
+	controllers.InitDRTelemetryMetrics()
+
 	if err := (&controllers.DRPolicyReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),

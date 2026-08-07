@@ -100,6 +100,14 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	defer log.Info("Exiting reconcile loop")
 
+	// Recompute on every reconcile, including the not-found path after a
+	// DRPolicy deletion, so the metrics track the cluster state
+	defer func() {
+		if err := UpdateDRTelemetryMetrics(ctx, r.Client); err != nil {
+			log.Info("Failed to update DR telemetry metrics", "error", err)
+		}
+	}()
+
 	drpolicy := &ramen.DRPolicy{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drpolicy); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))

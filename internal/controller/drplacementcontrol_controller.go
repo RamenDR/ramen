@@ -139,6 +139,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
 
+	// Recompute on every reconcile, including the not-found path after a
+	// DRPC deletion, so the metrics track the cluster state
+	defer func() {
+		if err := UpdateDRTelemetryMetrics(ctx, r.Client); err != nil {
+			logger.Info("Failed to update DR telemetry metrics", "error", err)
+		}
+	}()
+
 	drpc := &rmn.DRPlacementControl{}
 
 	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
