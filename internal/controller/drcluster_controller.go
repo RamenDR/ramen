@@ -568,7 +568,7 @@ func (u *drclusterInstance) validateCIDRsConfigured(conditions *[]metav1.Conditi
 	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
 	if len(undetectedCIDRs) > 0 {
 		setCIDRsValidatedConditionUndetectedCIDRsFound(conditions, observedGeneration,
-			fmt.Sprintf("CIDRs not detected by storage provisioner: %s", strings.Join(undetectedCIDRs, ", ")))
+			fmt.Sprintf("warning: CIDRs not detected by storage provisioner: %s", strings.Join(undetectedCIDRs, ", ")))
 
 		return nil
 	}
@@ -586,6 +586,8 @@ func (u *drclusterInstance) validateCIDRs(
 	conditions *[]metav1.Condition, observedGeneration int64,
 ) error {
 	if len(u.object.Spec.CIDRs) == 0 {
+		meta.RemoveStatusCondition(conditions, ramen.DRClusterConditionTypeCIDRsValidated)
+
 		return nil
 	}
 
