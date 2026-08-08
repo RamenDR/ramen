@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+---
+name: Codespell Check
+
+on:
+  pull_request:
+
+jobs:
+  codespell:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required to compare commits
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install codespell
+        run: pip3 install codespell
+
+      - name: Get changed files
+        id: changed_files
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            | grep -vE '\.(svg)$' > changed-files.txt
+          cat changed-files.txt
+
+      - name: Run codespell on changed files
+        run: |
+          if [ -s changed-files.txt ]; then
+            xargs codespell --config .codespellrc < changed-files.txt
+          else
+            echo "No relevant files changed."
+          fi
