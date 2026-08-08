@@ -28,6 +28,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 	virtv1 "kubevirt.io/api/core/v1"
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -37,6 +38,7 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -49,9 +51,8 @@ import (
 )
 
 var (
-	scheme     = runtime.NewScheme()
-	setupLog   = ctrl.Log.WithName("setup")
-	configFile string
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func init() {
@@ -77,26 +78,36 @@ func configureLogOptions() *zap.Options {
 // bindFlags takes a list of functions that bind flags to variables.
 // In addition, any ramen specific flags are bound here.
 func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
-
 	for _, f := range bindfuncs {
 		f(flag.CommandLine)
 	}
 }
 
-func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
-	ctrlOptions := ctrl.Options{Scheme: scheme}
+func syncConfig(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig) *ramendrv1alpha1.RamenConfig {
+	c, err := client.New(restCfg, client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create client for reading config")
+		os.Exit(1)
+	}
 
-	ramenConfig := controllers.LoadControllerConfig(configFile, setupLog)
-	controllers.LoadControllerOptions(&ctrlOptions, ramenConfig)
+	ramenConfig, err = controllers.CreateOrUpdateConfigMap(
+		context.Background(), c, c, ramenConfig, setupLog)
+	if err != nil {
+		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
+		os.Exit(1)
+	}
 
-	return &ctrlOptions, ramenConfig
+	return ramenConfig
 }
 
-func configureController() error {
+func buildManagerOptions(ramenConfig *ramendrv1alpha1.RamenConfig) *ctrl.Options {
+	options := ctrl.Options{Scheme: scheme}
+	controllers.LoadControllerOptions(&options, ramenConfig)
+
+	return &options
+}
+
+func registerSchemes() error {
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
 		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
@@ -130,15 +141,6 @@ func configureController() error {
 	}
 
 	return nil
-}
-
-func newManager(options *ctrl.Options) (ctrl.Manager, error) {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), *options)
-	if err != nil {
-		return mgr, fmt.Errorf("starting new manager failed %w", err)
-	}
-
-	return mgr, nil
 }
 
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
@@ -273,23 +275,22 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	ctrlOptions, ramenConfig := buildOptions()
+	ramenConfig := controllers.InitControllerDefaults(setupLog)
 
-	if err := configureController(); err != nil {
-		setupLog.Error(err, "unable to configure controller")
+	restCfg := ctrl.GetConfigOrDie()
+
+	ramenConfig = syncConfig(restCfg, ramenConfig)
+
+	ctrlOptions := buildManagerOptions(ramenConfig)
+
+	mgr, err := ctrl.NewManager(restCfg, *ctrlOptions)
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	mgr, err := newManager(ctrlOptions)
-	if err != nil {
-		setupLog.Error(err, "unable to Get new manager")
-		os.Exit(1)
-	}
-
-	ramenConfig, err = controllers.CreateOrUpdateConfigMap(context.Background(), mgr.GetClient(),
-		mgr.GetAPIReader(), ramenConfig, setupLog)
-	if err != nil {
-		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
+	if err := registerSchemes(); err != nil {
+		setupLog.Error(err, "unable to register schemes")
 		os.Exit(1)
 	}
 
