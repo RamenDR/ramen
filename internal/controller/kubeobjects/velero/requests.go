@@ -148,11 +148,14 @@ func (RequestsManager) ProtectRequestsDelete(
 		client.MatchingLabels(labels),
 	}
 
+	// BSLs are intentionally not deleted here, they are kept alive across capture cycles
+	// so Velero does not need to re-validate from scratch every interval.  BSLs are
+	// cleaned up only via ProtectBSLsDelete on VRG deletion.
 	if err := writer.DeleteAllOf(ctx, &velero.Backup{}, options...); err != nil {
 		return fmt.Errorf("backup requests delete: %w", err)
 	}
 
-	return writer.DeleteAllOf(ctx, &velero.BackupStorageLocation{}, options...)
+	return nil
 }
 
 func (r RequestsManager) RecoverRequestsDelete(
@@ -169,6 +172,20 @@ func (r RequestsManager) RecoverRequestsDelete(
 	}
 
 	return r.ProtectRequestsDelete(ctx, writer, requestNamespaceName, labels)
+}
+
+func (RequestsManager) ProtectBSLsDelete(
+	ctx context.Context,
+	writer client.Writer,
+	requestNamespaceName string,
+	labels map[string]string,
+) error {
+	options := []client.DeleteAllOfOption{
+		client.InNamespace(requestNamespaceName),
+		client.MatchingLabels(labels),
+	}
+
+	return writer.DeleteAllOf(ctx, &velero.BackupStorageLocation{}, options...)
 }
 
 func (RequestsManager) RecoverRequestCreate(
@@ -485,10 +502,8 @@ func (r BackupRequest) Deallocate(
 	k8sclient client.Client,
 	log logr.Logger,
 ) error {
-	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.backupObjectsDelete(
-		&velero.BackupStorageLocation{ObjectMeta: metav1.ObjectMeta{Namespace: r.backup.Namespace, Name: r.backup.Name}},
-		r.backup,
-	)
+	// BSL is kept alive for reuse; only the Backup CR is removed.
+	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.backupRequestDelete(r.backup)
 }
 
 func (r RestoreRequest) Deallocate(
@@ -498,8 +513,8 @@ func (r RestoreRequest) Deallocate(
 ) error {
 	backupObjectMeta := metav1.ObjectMeta{Namespace: r.restore.Namespace, Name: r.restore.Spec.BackupName}
 
-	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.restoreObjectsDelete(
-		&velero.BackupStorageLocation{ObjectMeta: backupObjectMeta},
+	// BSL is kept alive for reuse; only the Restore and Backup CRs are removed.
+	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.restoreRequestDelete(
 		&velero.Backup{ObjectMeta: backupObjectMeta},
 		r.restore,
 	)
@@ -558,27 +573,20 @@ func backupRequestCreate(
 	return backupLocation, backupRequest, w.Create(w.ctx, backupRequest)
 }
 
-func (w objectWriter) backupObjectsDelete(
-	backupLocation *velero.BackupStorageLocation,
-	backup *velero.Backup,
-) error {
-	if err := w.objectDelete(backup); err != nil {
-		return err
-	}
-
-	return w.objectDelete(backupLocation)
+// backupRequestDelete deletes only the Backup CR, leaving the BSL alive for reuse
+// across capture cycles. BSLs are cleaned up via ProtectBSLsDelete on VRG deletion.
+func (w objectWriter) backupRequestDelete(backup *velero.Backup) error {
+	return w.objectDelete(backup)
 }
 
-func (w objectWriter) restoreObjectsDelete(
-	backupLocation *velero.BackupStorageLocation,
-	backup *velero.Backup,
-	restore *velero.Restore,
-) error {
+// restoreRequestDelete deletes the Restore and its Backup CR, leaving the BSL alive
+// for reuse. BSLs are cleaned up via ProtectBSLsDelete on VRG deletion.
+func (w objectWriter) restoreRequestDelete(backup *velero.Backup, restore *velero.Restore) error {
 	if err := w.objectDelete(restore); err != nil {
 		return err
 	}
 
-	return w.backupObjectsDelete(backupLocation, backup)
+	return w.backupRequestDelete(backup)
 }
 
 func (w objectWriter) objectCreate(o client.Object) error {
@@ -623,6 +631,11 @@ func (w objectWriter) bslCreateOrUpdate(s3Url string,
 				"checksumAlgorithm": "",
 			},
 			Credential: secretKeyRef,
+			// Disable Velero's backup-sync for this BSL.  Ramen explicitly manages the
+			// Backup CR lifecycle (delete after each cycle); if sync were enabled Velero
+			// would re-create deleted Backup CRs from S3, confusing the capture-resume logic
+			// and inflating the recipeRetries counter.
+			BackupSyncPeriod: &metav1.Duration{},
 		}
 		util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
 

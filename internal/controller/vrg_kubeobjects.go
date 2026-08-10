@@ -1008,12 +1008,23 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	}
 
 	vrg := v.instance
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(vrg)
 
-	return v.kubeObjectsRecoverRequestsDelete(
-		result,
-		v.veleroNamespaceName(),
-		util.OwnerLabels(vrg),
-	)
+	if err := v.kubeObjectsRecoverRequestsDelete(result, veleroNS, labels); err != nil {
+		return err
+	}
+
+	// BSLs are kept alive across capture cycles and must be deleted explicitly here.
+	if err := v.reconciler.kubeObjects.ProtectBSLsDelete(v.ctx, v.reconciler.Client, veleroNS, labels); err != nil {
+		v.log.Error(err, "Kube objects BSLs delete error")
+
+		result.Requeue = true
+
+		return err
+	}
+
+	return nil
 }
 
 // mergeExcludedResources merges ConfigMap default exclusions with recipe-level exclusions.

@@ -179,6 +179,7 @@ func (RequestProcessingError) Is(target error) bool {
 	return ok
 }
 
+//nolint:interfacebloat
 type RequestsManager interface {
 	ProtectsPath() string
 	RecoversPath() string
@@ -220,6 +221,10 @@ type RequestsManager interface {
 	RecoverRequestsGet(
 		c context.Context, r client.Reader, requestNamespaceName string, labels map[string]string,
 	) (Requests, error)
+	// ProtectRequestsDelete deletes Backup objects only; BSLs are kept alive for reuse
+	// across capture cycles and cleaned up only via ProtectBSLsDelete on VRG deletion.
 	ProtectRequestsDelete(c context.Context, w client.Writer, requestNamespaceName string, labels map[string]string) error
 	RecoverRequestsDelete(c context.Context, w client.Writer, requestNamespaceName string, labels map[string]string) error
+	// ProtectBSLsDelete deletes all BSLs owned by the VRG, called only on VRG deletion.
+	ProtectBSLsDelete(c context.Context, w client.Writer, requestNamespaceName string, labels map[string]string) error
 }
