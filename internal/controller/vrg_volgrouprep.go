@@ -253,7 +253,8 @@ func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.Namespac
 
 	vgr := &volrep.VolumeGroupReplication{}
 
-	err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr)
+	// APIReader: avoid stale informer cache after destination-handle annotation Update.
+	err := v.reconciler.APIReader.Get(v.ctx, vrNamespacedName, vgr)
 	if err != nil {
 		return fmt.Errorf("failed to get VGR (%w)", err)
 	}
@@ -307,7 +308,9 @@ func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.Namespac
 	return nil
 }
 
-func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volrep.VolumeGroupReplication) error {
+func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volrep.VolumeGroupReplication,
+	vgrc *volrep.VolumeGroupReplicationContent,
+) error {
 	if s3ProfileName == "" {
 		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for VGR %s", vgr.Name)
 	}
@@ -317,13 +320,7 @@ func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volre
 		return fmt.Errorf("error getting object store, failed to protect cluster data for VGR %s, %w", vgr.Name, err)
 	}
 
-	vgrc, err := v.getVGRCFromVGR(vgr)
-	if err != nil {
-		return fmt.Errorf("error getting VGRC for VGR, failed to protect cluster data for VGRC %s to s3Profile %s, %w",
-			vgrc.Name, s3ProfileName, err)
-	}
-
-	return v.UploadVGRAndVGRCtoS3(s3ProfileName, objectStore, vgr, &vgrc)
+	return v.UploadVGRAndVGRCtoS3(s3ProfileName, objectStore, vgr, vgrc)
 }
 
 func (v *VRGInstance) UploadVGRAndVGRCtoS3(s3ProfileName string, objectStore ObjectStorer,
@@ -359,10 +356,18 @@ func (v *VRGInstance) UploadVGRAndVGRCtoS3(s3ProfileName string, objectStore Obj
 func (v *VRGInstance) UploadVGRandVGRCtoS3Stores(vgr *volrep.VolumeGroupReplication,
 	log logr.Logger,
 ) ([]string, error) {
+	// Fetch VGRC once and upload the same object to every profile so buckets cannot
+	// diverge.
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		return nil, fmt.Errorf("error getting VGRC for VGR, failed to protect cluster data for VGR %s, %w",
+			vgr.Name, err)
+	}
+
 	succeededProfiles := []string{}
 	// Upload the VGR and VGRC to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		err := v.UploadVGRandVGRCtoS3Store(s3ProfileName, vgr)
+		err := v.UploadVGRandVGRCtoS3Store(s3ProfileName, vgr, &vgrc)
 		if err != nil {
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonUploadFailed, err.Error())
@@ -384,7 +389,10 @@ func (v *VRGInstance) getVGRCFromVGR(vgr *volrep.VolumeGroupReplication) (volrep
 		Name: vgrcName,
 	}
 
-	if err := v.reconciler.Get(v.ctx, vgrcObjectKey, &vgrc); err != nil {
+	// Use APIReader, not the informer cache. Destination volume-group-handle annotation is
+	// applied via Update immediately before S3 upload; a cached Get can return the
+	// pre-Update VGRC and upload an object missing destination-volume-group-handle.
+	if err := v.reconciler.APIReader.Get(v.ctx, vgrcObjectKey, &vgrc); err != nil {
 		return vgrc, fmt.Errorf("failed to get VGRC %v from VGR %v, %w",
 			vgrcObjectKey, client.ObjectKeyFromObject(vgr), err)
 	}

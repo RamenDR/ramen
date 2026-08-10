@@ -875,7 +875,9 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.P
 	return v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID)
 }
 
-func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim,
+	pv *corev1.PersistentVolume,
+) error {
 	if s3ProfileName == "" {
 		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for PVC %s", pvc.Name)
 	}
@@ -885,13 +887,7 @@ func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.
 		return fmt.Errorf("error getting object store, failed to protect cluster data for PVC %s, %w", pvc.Name, err)
 	}
 
-	pv, err := v.getPVFromPVC(pvc)
-	if err != nil {
-		return fmt.Errorf("error getting PV for PVC, failed to protect cluster data for PVC %s to s3Profile %s, %w",
-			pvc.Name, s3ProfileName, err)
-	}
-
-	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, &pv, pvc)
+	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, pv, pvc)
 }
 
 func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore ObjectStorer,
@@ -927,10 +923,18 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) ([]string, error) {
+	// Fetch PV once and upload the same object to every profile so buckets cannot
+	// diverge.
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		return nil, fmt.Errorf("error getting PV for PVC, failed to protect cluster data for PVC %s, %w",
+			pvc.Name, err)
+	}
+
 	succeededProfiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		err := v.UploadPVandPVCtoS3Store(s3ProfileName, pvc)
+		err := v.UploadPVandPVCtoS3Store(s3ProfileName, pvc, &pv)
 		if err != nil {
 			v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonUploadError, err.Error())
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
@@ -950,8 +954,10 @@ func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.Pe
 	volumeName := pvc.Spec.VolumeName
 	pvObjectKey := client.ObjectKey{Name: volumeName}
 
-	// Get PV from k8s
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
+	// Use APIReader, not the informer cache. Destination-handle annotation is applied via
+	// Update immediately before S3 upload; a cached Get can return the pre-Update PV and
+	// upload an object missing ramendr.openshift.io/destination-volume-handle.
+	if err := v.reconciler.APIReader.Get(v.ctx, pvObjectKey, &pv); err != nil {
 		return pv, fmt.Errorf("failed to get PV %v from PVC %v, %w",
 			pvObjectKey, client.ObjectKeyFromObject(pvc), err)
 	}
