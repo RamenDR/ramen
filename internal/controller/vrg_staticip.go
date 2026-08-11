@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -96,6 +97,7 @@ func buildDiscoveredResources(infos []util.VMStaticIPInfo) []ramen.DiscoveredRes
 
 	for i := range infos {
 		info := &infos[i]
+
 		if !info.HasStaticIP {
 			continue
 		}
@@ -403,4 +405,19 @@ func (v *VRGInstance) deleteResourceModifierCM(ctx context.Context, namespace st
 	v.log.Info("ResourceModifier ConfigMap deleted", "namespace", namespace, "name", cmName)
 
 	return nil
+}
+
+func ParseNetworkName(networkName string, vmNamespace string) (nadNamespace, nadName string) {
+	parts := strings.Split(networkName, "/")
+
+	if len(parts) == 1 {
+		// namespace omitted
+		return vmNamespace, parts[0]
+	}
+
+	if len(parts) == MaxDRClusterCount {
+		return parts[0], parts[1]
+	}
+
+	return "", ""
 }

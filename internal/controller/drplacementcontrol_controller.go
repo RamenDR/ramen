@@ -470,6 +470,8 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 
 	r.numClustersQueriedSuccessfully = cqs
 
+	networkMappingRules := r.loadNetworkMapping(ctx, drpc, drPolicy, log)
+
 	d := &DRPCInstance{
 		reconciler:      r,
 		ctx:             ctx,
@@ -490,6 +492,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 			InstName:        drpc.Name,
 			TargetNamespace: vrgNamespace,
 		},
+		networkMappingRules: networkMappingRules,
 	}
 
 	d.drType = DRTypeAsync
@@ -514,6 +517,46 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
 
 	return d, nil
+}
+
+func (r *DRPlacementControlReconciler) loadNetworkMapping(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+	log logr.Logger,
+) *NetworkMappingRules {
+	nmMgr := NewDRPCNetworkMappingManager(r.Client, log)
+
+	networkMappingRules, err := nmMgr.LoadNetworkMapping(ctx, drpc, drPolicy)
+	if err != nil {
+		log.Error(err,
+			"Failed to load network-mapping ConfigMap; IP translation disabled",
+			"drpc", drpc.Name)
+
+		addOrUpdateCondition(
+			&drpc.Status.Conditions,
+			rmn.ConditionNetworkMappingLoaded,
+			drpc.Generation,
+			metav1.ConditionFalse,
+			"NetworkMappingLoadFailed",
+			err.Error(),
+		)
+
+		return nil
+	}
+
+	if networkMappingRules != nil {
+		addOrUpdateCondition(
+			&drpc.Status.Conditions,
+			rmn.ConditionNetworkMappingLoaded,
+			drpc.Generation,
+			metav1.ConditionTrue,
+			"NetworkMappingLoaded",
+			"Network mapping loaded successfully",
+		)
+	}
+
+	return networkMappingRules
 }
 
 func (r *DRPlacementControlReconciler) createSyncMetricsInstance(
