@@ -80,6 +80,11 @@ const (
 	// GlobalActionConsensus condition indicates whether all DRPCs sharing the same global VGR label
 	// agree on the DR action and target cluster.
 	ConditionGlobalAction = "GlobalAction"
+
+	// NetworkMappingLoaded condition indicates whether the network-mapping ConfigMap referenced
+	// by the drplacementcontrol.ramendr.openshift.io/network-mapping annotation was successfully
+	// loaded. False means IP translation is disabled for this DRPC; DR orchestration continues.
+	ConditionNetworkMappingLoaded = "NetworkMappingLoaded"
 )
 
 const (
