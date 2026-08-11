@@ -12,7 +12,6 @@ import (
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,21 +92,19 @@ func (h *diffVolumeGroupSourceHandler) resolveRDService(
 // findVGSWithStatus finds a VolumeGroupSnapshot with specific status label owned by this handler
 func (h *diffVolumeGroupSourceHandler) findVGSWithStatus(
 	ctx context.Context, status string,
-) (*vgsv1beta1.VolumeGroupSnapshot, error) {
+) (client.Object, error) {
 	vgsList, err := h.listVGSWithStatus(ctx, status)
 	if err != nil || len(vgsList) == 0 {
 		return nil, err
 	}
 
-	return &vgsList[0], nil
+	return vgsList[0], nil
 }
 
 // listVGSWithStatus lists all VolumeGroupSnapshots with specific status label owned by this handler
 func (h *diffVolumeGroupSourceHandler) listVGSWithStatus(
 	ctx context.Context, status string,
-) ([]vgsv1beta1.VolumeGroupSnapshot, error) {
-	vgsList := &vgsv1beta1.VolumeGroupSnapshotList{}
-
+) ([]client.Object, error) {
 	listOptions := []client.ListOption{
 		client.InNamespace(h.VolumeGroupSnapshotNamespace),
 		client.MatchingLabels{
@@ -116,16 +113,12 @@ func (h *diffVolumeGroupSourceHandler) listVGSWithStatus(
 		},
 	}
 
-	if err := h.Client.List(ctx, vgsList, listOptions...); err != nil {
-		return nil, err
-	}
-
-	return vgsList.Items, nil
+	return util.ListVolumeGroupSnapshots(ctx, h.Client, listOptions...)
 }
 
 // setVGSStatus updates the VolumeGroupSnapshot status label
 func (h *diffVolumeGroupSourceHandler) setVGSStatus(
-	ctx context.Context, vgs *vgsv1beta1.VolumeGroupSnapshot, status string,
+	ctx context.Context, vgs client.Object, status string,
 ) error {
 	if vgs == nil {
 		return nil
@@ -167,12 +160,12 @@ func (h *diffVolumeGroupSourceHandler) getPreviousSnapshotMap(
 
 // deleteRestoredPVCsForVGS deletes all restored PVCs for a given VolumeGroupSnapshot
 func (h *diffVolumeGroupSourceHandler) deleteRestoredPVCsForVGS(
-	ctx context.Context, vgs *vgsv1beta1.VolumeGroupSnapshot,
+	ctx context.Context, vgs client.Object,
 ) error {
 	logger := h.Logger.WithName("deleteRestoredPVCsForVGS").
-		WithValues("VGSName", vgs.Name)
+		WithValues("VGSName", vgs.GetName())
 
-	if vgs.Status == nil {
+	if !util.HasStatus(vgs) {
 		return nil
 	}
 
@@ -193,9 +186,9 @@ func (h *diffVolumeGroupSourceHandler) deleteRestoredPVCsForVGS(
 
 // populateVolumeGroupSnapshot sets labels, annotations, and spec on a VGS for diff sync.
 func (h *diffVolumeGroupSourceHandler) populateVolumeGroupSnapshot(
-	owner metav1.Object, vgs *vgsv1beta1.VolumeGroupSnapshot,
+	owner metav1.Object, vgs client.Object,
 ) error {
-	if !vgs.DeletionTimestamp.IsZero() {
+	if !vgs.GetDeletionTimestamp().IsZero() {
 		return fmt.Errorf("the volume group snapshot is being deleted, need to wait")
 	}
 
@@ -210,8 +203,8 @@ func (h *diffVolumeGroupSourceHandler) populateVolumeGroupSnapshot(
 	util.AddAnnotation(vgs, volsync.OwnerNameAnnotation, owner.GetName())
 	util.AddAnnotation(vgs, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
 
-	vgs.Spec.VolumeGroupSnapshotClassName = &h.VolumeGroupSnapshotClassName
-	vgs.Spec.Source.Selector = h.VolumeGroupLabel
+	util.SetVolumeGroupSnapshotClassName(vgs, &h.VolumeGroupSnapshotClassName)
+	util.SetVolumeGroupSnapshotSourceSelector(vgs, h.VolumeGroupLabel)
 
 	return nil
 }
@@ -236,22 +229,21 @@ func (h *diffVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	}
 
 	if currentVGS != nil {
-		// Check if it's being deleted
-		if !currentVGS.DeletionTimestamp.IsZero() {
-			logger.Info("Current VGS is being deleted, need to wait", "name", currentVGS.Name)
+		if !currentVGS.GetDeletionTimestamp().IsZero() {
+			logger.Info("Current VGS is being deleted, need to wait", "name", currentVGS.GetName())
 
 			return true, nil
 		}
 
 		// Check if ready
 		if IsVGSReady(currentVGS) {
-			logger.Info("Reusing existing ready current VGS", "name", currentVGS.Name)
+			logger.Info("Reusing existing ready current VGS", "name", currentVGS.GetName())
 
 			return false, nil
 		}
 
 		// Wait for it to become ready
-		logger.Info("Current VGS exists but not ready yet, waiting", "name", currentVGS.Name)
+		logger.Info("Current VGS exists but not ready yet, waiting", "name", currentVGS.GetName())
 
 		return true, nil
 	}
@@ -268,12 +260,7 @@ func (h *diffVolumeGroupSourceHandler) createNewVGS(
 
 	logger.Info("Creating new VGS with status=current", "name", vgsName)
 
-	volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: h.VolumeGroupSnapshotNamespace,
-			Name:      vgsName,
-		},
-	}
+	volumeGroupSnapshot := util.NewVolumeGroupSnapshot(vgsName, h.VolumeGroupSnapshotNamespace)
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, volumeGroupSnapshot, func() error {
 		return h.populateVolumeGroupSnapshot(owner, volumeGroupSnapshot)
@@ -285,7 +272,7 @@ func (h *diffVolumeGroupSourceHandler) createNewVGS(
 	}
 
 	logger.Info("VolumeGroupSnapshot successfully created or updated", "operation", op,
-		"name", vgsName, "VGSUid", volumeGroupSnapshot.UID)
+		"name", vgsName, "VGSUid", volumeGroupSnapshot.GetUID())
 
 	return op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated, nil
 }
@@ -307,12 +294,12 @@ func (h *diffVolumeGroupSourceHandler) cleanOlderPreviousVGS(
 
 	// Find the newest previous VGS by CreationTimestamp
 	latestIdx := 0
-	latestTime := previousVGSList[0].CreationTimestamp
+	latestTime := previousVGSList[0].GetCreationTimestamp()
 
 	for i := 1; i < len(previousVGSList); i++ {
-		if previousVGSList[i].CreationTimestamp.After(latestTime.Time) {
+		if previousVGSList[i].GetCreationTimestamp().After(latestTime.Time) {
 			latestIdx = i
-			latestTime = previousVGSList[i].CreationTimestamp
+			latestTime = previousVGSList[i].GetCreationTimestamp()
 		}
 	}
 
@@ -321,8 +308,8 @@ func (h *diffVolumeGroupSourceHandler) cleanOlderPreviousVGS(
 			continue
 		}
 
-		vgs := &previousVGSList[i]
-		logger.Info("Deleting older previous VGS", "name", vgs.Name)
+		vgs := previousVGSList[i]
+		logger.Info("Deleting older previous VGS", "name", vgs.GetName())
 
 		if err := h.deleteRestoredPVCsForVGS(ctx, vgs); err != nil {
 			return err
@@ -366,7 +353,7 @@ func (h *diffVolumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		return nil
 	}
 
-	logger.Info("Processing current VGS", "name", currentVGS.Name)
+	logger.Info("Processing current VGS", "name", currentVGS.GetName())
 
 	// Delete restored PVCs for current VGS (they're temporary for sync)
 	if err := h.deleteRestoredPVCsForVGS(ctx, currentVGS); err != nil {
@@ -378,7 +365,7 @@ func (h *diffVolumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		return err
 	}
 
-	logger.Info("Successfully transitioned current VGS to previous", "name", currentVGS.Name)
+	logger.Info("Successfully transitioned current VGS to previous", "name", currentVGS.GetName())
 
 	return nil
 }
@@ -407,14 +394,14 @@ func (h *diffVolumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
 
-	logger.Info("Found current VGS", "name", vgs.Name)
+	logger.Info("Found current VGS", "name", vgs.GetName())
 
 	volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.GetName())
 
 	return h.restorePVCsFromSnapshots(ctx, vgs, volumeSnapshots, owner, logger)
 }

@@ -10,6 +10,7 @@ import (
 	publicgroupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -238,6 +239,75 @@ func SetVolumeGroupSnapshotSourceSelector(vgs client.Object, selector *metav1.La
 	case *groupsnapv1beta1.VolumeGroupSnapshot:
 		obj.Spec.Source.Selector = selector
 	}
+}
+
+// GetVolumeGroupSnapshotClasses returns VGS classes using the appropriate API.
+// Requires a prior successful EnsureLocalVGSAPI (or ForcePrivateVGSAPIForTesting).
+func GetVolumeGroupSnapshotClasses(
+	ctx context.Context,
+	k8sClient client.Client,
+	volumeGroupSnapshotClassSelector metav1.LabelSelector,
+) ([]VolumeGroupSnapshotClassWrapper, error) {
+	selector, err := metav1.LabelSelectorAsSelector(&volumeGroupSnapshotClassSelector)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use volume snapshot label selector (%w)", err)
+	}
+
+	if UsePublicVGSAPI() {
+		return listVolumeGroupSnapshotClasses(
+			ctx, k8sClient, selector,
+			&publicgroupsnapv1.VolumeGroupSnapshotClassList{},
+			func(list *publicgroupsnapv1.VolumeGroupSnapshotClassList) []VolumeGroupSnapshotClassWrapper {
+				wrappers := make([]VolumeGroupSnapshotClassWrapper, 0, len(list.Items))
+				for i := range list.Items {
+					wrappers = append(wrappers, &publicVGSCWrapper{vgsc: &list.Items[i]})
+				}
+
+				return wrappers
+			},
+		)
+	}
+
+	return listVolumeGroupSnapshotClasses(
+		ctx, k8sClient, selector,
+		&groupsnapv1beta1.VolumeGroupSnapshotClassList{},
+		func(list *groupsnapv1beta1.VolumeGroupSnapshotClassList) []VolumeGroupSnapshotClassWrapper {
+			wrappers := make([]VolumeGroupSnapshotClassWrapper, 0, len(list.Items))
+			for i := range list.Items {
+				wrappers = append(wrappers, &privateVGSCWrapper{vgsc: &list.Items[i]})
+			}
+
+			return wrappers
+		},
+	)
+}
+
+func listVolumeGroupSnapshotClasses[L client.ObjectList](
+	ctx context.Context,
+	k8sClient client.Client,
+	selector labels.Selector,
+	list L,
+	wrap func(L) []VolumeGroupSnapshotClassWrapper,
+) ([]VolumeGroupSnapshotClassWrapper, error) {
+	if err := k8sClient.List(ctx, list, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, fmt.Errorf("error listing volumegroupsnapshotclasses (%w)", err)
+	}
+
+	return wrap(list), nil
+}
+
+// VolumeGroupSnapshotClassMatchStorageProviders checks if a VGS class matches any storage provider.
+func VolumeGroupSnapshotClassMatchStorageProviders(
+	volumeGroupSnapshotClass VolumeGroupSnapshotClassWrapper,
+	storageClassProviders []string,
+) bool {
+	for _, storageClassProvider := range storageClassProviders {
+		if storageClassProvider == volumeGroupSnapshotClass.GetDriver() {
+			return true
+		}
+	}
+
+	return false
 }
 
 // NewVolumeGroupSnapshotClassForGV returns an empty VGSC object and a wrapper over the same
