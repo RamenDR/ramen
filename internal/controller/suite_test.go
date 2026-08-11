@@ -245,6 +245,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	// Keep unit tests on the private VGS API even though hack/test also ships public CRDs.
+	util.ForcePrivateVGSAPIForTesting()
+
 	namespaceCreate(ramencontrollers.VeleroNamespaceNameDefault)
 	createOperatorNamespace(ramenNamespace)
 

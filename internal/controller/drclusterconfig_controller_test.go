@@ -33,6 +33,7 @@ import (
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 type Classes struct {
@@ -171,6 +172,10 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				10*time.Millisecond,
 				100*time.Millisecond),
 		)
+
+		// Keep this envtest on the private VGS API: hack/test ships both public and
+		// private CRDs, and this suite creates private-typed VolumeGroupSnapshotClasses.
+		util.ForcePrivateVGSAPIForTesting()
 
 		Expect((&ramencontrollers.DRClusterConfigReconciler{
 			Client:      k8sManager.GetClient(),
