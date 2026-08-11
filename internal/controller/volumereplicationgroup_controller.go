@@ -117,6 +117,11 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	if !ramenConfig.VolSync.Disabled {
 		r.Log.Info("VolSync enabled; adding owns and watches")
+
+		if err := util.EnsureLocalVGSAPI(context.TODO(), r.APIReader); err != nil {
+			return fmt.Errorf("VolSync is enabled but VolumeGroupSnapshot API is unavailable: %w", err)
+		}
+
 		ctrlBuilder = r.addVolsyncOwnsAndWatches(ctrlBuilder)
 	} else {
 		r.Log.Info("VolSync disabled; don't own volsync resources")

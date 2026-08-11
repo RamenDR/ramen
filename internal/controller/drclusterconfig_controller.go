@@ -427,17 +427,19 @@ func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([
 func (r *DRClusterConfigReconciler) listDRSupportedVGSCs(ctx context.Context) ([]string, error) {
 	vgscs := []string{}
 
-	vgsClasses := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
-	if err := r.Client.List(ctx, vgsClasses); err != nil {
+	vgsClassWrappers, err := util.GetVolumeGroupSnapshotClasses(
+		ctx, r.Client, metav1.LabelSelector{},
+	)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list VolumeGroupSnapshotClasses, %w", err)
 	}
 
-	for i := range vgsClasses.Items {
-		if !util.HasLabel(&vgsClasses.Items[i], StorageIDLabel) {
+	for _, vgscWrapper := range vgsClassWrappers {
+		if _, ok := vgscWrapper.GetLabels()[StorageIDLabel]; !ok {
 			continue
 		}
 
-		vgscs = append(vgscs, vgsClasses.Items[i].Name)
+		vgscs = append(vgscs, vgscWrapper.GetName())
 	}
 
 	return vgscs, nil
