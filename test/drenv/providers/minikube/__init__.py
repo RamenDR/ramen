@@ -33,7 +33,14 @@ EXTRA_CONFIG = [
     # < 1.9 or an Aufs storage backend.
     # https://github.com/kubernetes/kubernetes/issues/10959
     # Speeds up regional-dr start by 20%.
-    "kubelet.serialize-image-pulls=false"
+    "kubelet.serialize-image-pulls=false",
+    # Keep ~30 minutes of container logs available via kubectl logs / gather.
+    # Default max size (10Mi) rotates away hub Ramen operator logs before a
+    # typical e2e run finishes, so failure diagnosis loses the protect window.
+    # Keep only 2 files (kubelet minimum) to limit minikube VM disk use; gather
+    # only collects the active file anyway.
+    "kubelet.container-log-max-size=20Mi",
+    "kubelet.container-log-max-files=2",
 ]
 
 LOCAL_REGISTRY = "host.minikube.internal:5050"
