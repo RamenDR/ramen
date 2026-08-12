@@ -158,15 +158,15 @@ jobs:
         drenv gather --directory gather.rdr envs/regional-dr.yaml
 
     # Tar manually to work around github limitations with special characters (:)
-    # in file names, and getting much smaller archives compared with zip (6m vs
-    # 12m). This is also useful to collect all files in one archive.
+    # in file names, and to collect all files in one archive. Leave the tar
+    # uncompressed so upload-artifact's zip can compress the stream (similar
+    # size to gzip, better macOS Finder extract than nested zip+tar.gz).
     # https://github.com/actions/upload-artifact/issues/546
     - name: Archive artifacts
       if: always()
       run: |
         tar --create \
-            --gzip \
-            --file e2e.${{ env.BUILD_ID }}.tar.gz \
+            --file e2e.${{ env.BUILD_ID }}.tar \
             --transform "s|^|e2e.${{ env.BUILD_ID }}/|" \
             --files-from artifacts.txt
 
@@ -175,8 +175,8 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: e2e.${{ env.BUILD_ID }}
-        path: e2e.${{ env.BUILD_ID }}.tar.gz
-        compression-level: 0
+        path: e2e.${{ env.BUILD_ID }}.tar
+        compression-level: 9
         retention-days: 15
 
     - name: Delete clusters
