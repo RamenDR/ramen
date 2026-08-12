@@ -50,6 +50,25 @@ spec:
                   rule: size(self) == 2
                 - message: drClusters is immutable
                   rule: self == oldSelf
+              networkMappingRef:
+                description: |-
+                  NetworkMappingRef references the ConfigMap containing bidirectional
+                  network subnet mappings for VM static-IP translation during DR.
+                  Created by the network admin; referenced here by the DR admin.
+                  The ConfigMap must be in the same namespace as the DRPCs governed
+                  by this policy.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               replicationClassSelector:
                 default: {}
                 description: |-
@@ -348,6 +367,42 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              networkPeers:
+                description: |-
+                  NetworkPeers lists the discovered NetworkAttachmentDefinition pairs that
+                  are common across both clusters in this policy and carry the
+                  ramendr.openshift.io/dr-network label.  Each entry represents one
+                  logical network that Ramen can translate static IPs across during DR.
+                  Populated by the DRPolicy controller; only present when
+                  Spec.NetworkMappingRef is set.
+                items:
+                  description: |-
+                    NetworkPeer describes a NetworkAttachmentDefinition that is present on both
+                    clusters in a DRPolicy and is eligible for static-IP translation during DR.
+                  properties:
+                    clusterCNITypes:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        ClusterCNITypes maps each cluster name to the CNI plugin type reported
+                        by that cluster's DRClusterConfig (e.g. "macvlan", "bridge").
+                        Allows operators to verify the CNI configuration is consistent across peers.
+                      type: object
+                    nadName:
+                      description: |-
+                        NADName is the name of the NetworkAttachmentDefinition.
+                        The name is expected to be identical on both clusters.
+                      type: string
+                    nadNamespace:
+                      description: |-
+                        NADNamespace is the namespace of the NetworkAttachmentDefinition.
+                        The namespace is expected to be identical on both clusters.
+                      type: string
+                  required:
+                  - nadName
+                  - nadNamespace
                   type: object
                 type: array
               sync:

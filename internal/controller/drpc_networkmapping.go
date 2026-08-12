@@ -108,7 +108,7 @@ const (
 	RuleTypeRegex    RuleType = "Regex"
 )
 
-const MaxDRClusterCount = 2
+const DRClusterPairCount = 2
 
 // ---------------------------------------------------------------------------
 // Version constants
@@ -268,8 +268,15 @@ func (m *DRPCNetworkMappingManager) LoadNetworkMapping(
 	drpc *rmn.DRPlacementControl,
 	drPolicy *rmn.DRPolicy,
 ) (*NetworkMappingRules, error) {
-	cmName, ok := drpc.GetAnnotations()[DRPCNetworkMappingAnnotation]
-	if !ok || cmName == "" {
+	var cmName string
+	// 1. DRPolicy.Spec.NetworkMappingRef, set by cluster admin once
+	if isNetworkMappingEnabled(drPolicy) {
+		cmName = drPolicy.Spec.NetworkMappingRef.Name
+
+		m.log.Info("Using network-mapping ConfigMap from DRPolicy")
+	}
+
+	if len(cmName) == 0 {
 		m.log.V(1).Info("DRPC has no network-mapping annotation; skipping",
 			"drpc", drpc.Name)
 
@@ -288,7 +295,7 @@ func (m *DRPCNetworkMappingManager) LoadNetworkMapping(
 		return nil, fmt.Errorf("failed to get network-mapping ConfigMap %q: %w", cmName, err)
 	}
 
-	if len(drPolicy.Spec.DRClusters) != MaxDRClusterCount {
+	if len(drPolicy.Spec.DRClusters) != DRClusterPairCount {
 		return nil, fmt.Errorf("DRPolicy %q must have exactly 2 drClusters, got %d",
 			drPolicy.Name, len(drPolicy.Spec.DRClusters))
 	}
@@ -318,12 +325,10 @@ func (m *DRPCNetworkMappingManager) LoadNetworkMapping(
 //
 // dr1 = drpolicy.spec.drClusters[0], dr2 = drpolicy.spec.drClusters[1].
 func ParseNetworkMappingConfigMap(cm *corev1.ConfigMap, dr1, dr2 string) (*NetworkMappingRules, error) {
-	const dataKey = "mappings.yaml"
-
-	raw, ok := cm.Data[dataKey]
+	raw, ok := cm.Data[networkMappingDataKey]
 	if !ok {
 		return nil, fmt.Errorf("ConfigMap %q/%q has no %q data key",
-			cm.Namespace, cm.Name, dataKey)
+			cm.Namespace, cm.Name, networkMappingDataKey)
 	}
 
 	if dr1 == "" || dr2 == "" {
@@ -337,12 +342,12 @@ func ParseNetworkMappingConfigMap(cm *corev1.ConfigMap, dr1, dr2 string) (*Netwo
 	rawCfg := &rawNetworkMappingConfig{}
 	if err := sigsyaml.Unmarshal([]byte(raw), rawCfg); err != nil {
 		return nil, fmt.Errorf("failed to parse %q in ConfigMap %q: %w",
-			dataKey, cm.Name, err)
+			networkMappingDataKey, cm.Name, err)
 	}
 
 	if rawCfg.Version == "" {
 		return nil, fmt.Errorf("ConfigMap %q: %q is missing required field \"version\" (expected %q)",
-			cm.Name, dataKey, networkMappingSchemaV1)
+			cm.Name, networkMappingDataKey, networkMappingSchemaV1)
 	}
 
 	if rawCfg.Version != networkMappingSchemaV1 {

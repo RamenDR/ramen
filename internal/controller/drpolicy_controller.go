@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -53,8 +55,17 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // ReasonDRPolicyConflictFound is set when the DRPolicy has overlapping metro clusters with another DRPolicy
 const ReasonDRPolicyConflictFound = "DRPolicyConflictFound"
 
+// ReasonSucceeded is set when the DRPolicy validation completes successfully
+const ReasonSucceeded = "Succeeded"
+
 // AllDRPolicyAnnotation is added to related resources that can be watched to reconcile all related DRPolicy resources
 const AllDRPolicyAnnotation = "drpolicy.ramendr.openshift.io"
+
+// ConditionNetworkAttachmentsValidated is set on DRPolicy.Status.Conditions when NAD-pair
+// validation has run.
+//   - True:  all NADs used by static-IP VMs are present on both clusters.
+//   - False: one or more NADs are missing; the message lists them.
+const ConditionNetworkAttachmentsValidated = "NetworkAttachmentsValidated"
 
 //nolint:lll
 //+kubebuilder:rbac:groups=ramendr.openshift.io,resources=drpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -148,10 +159,10 @@ func (r *DRPolicyReconciler) reconcile(
 	ramenConfig *ramen.RamenConfig,
 	drClusterIDsToNames map[string]string,
 ) (ctrl.Result, error) {
-	if !u.isConflictFound() {
-		if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
-		}
+	if err := setValidationSucceeded(u); err != nil {
+		return ctrl.Result{}, fmt.Errorf(
+			"unable to set drpolicy validation: %w", err,
+		)
 	}
 
 	if err := updatePeerClasses(u, r.MCVGetter); err != nil {
@@ -168,7 +179,12 @@ func (r *DRPolicyReconciler) reconcile(
 		return ctrl.Result{}, u.validatedSetFalse(ReasonDRPolicyConflictFound, err)
 	}
 
-	if err := u.validatedSetTrue("Succeeded", "drpolicy validated"); err != nil {
+	result, err := r.validateNADs(u)
+	if err != nil || !result.IsZero() {
+		return result, err
+	}
+
+	if err := u.validatedSetTrue(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to set drpolicy validation: %w", err)
 	}
 
@@ -177,6 +193,80 @@ func (r *DRPolicyReconciler) reconcile(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func setValidationSucceeded(u *drpolicyUpdater) error {
+	if !isNetworkMappingEnabled(u.object) {
+		if util.FindCondition(u.object.Status.Conditions, ConditionNetworkAttachmentsValidated) != nil {
+			return clearNADStatus(u)
+		}
+
+		if !u.isConflictFound() {
+			return u.validatedSetTrue()
+		}
+
+		return nil
+	}
+
+	if u.isConflictFound() || u.isNADsMissing() {
+		return nil
+	}
+
+	return u.validatedSetTrue()
+}
+
+func isNetworkMappingEnabled(drPolicy *ramen.DRPolicy) bool {
+	if drPolicy.Spec.NetworkMappingRef == nil || len(drPolicy.Spec.NetworkMappingRef.Name) == 0 {
+		return false
+	}
+
+	return true
+}
+
+func (r *DRPolicyReconciler) validateNADs(
+	u *drpolicyUpdater,
+) (ctrl.Result, error) {
+	if !isNetworkMappingEnabled(u.object) {
+		return ctrl.Result{}, nil
+	}
+
+	// NAD validation: ensure that NADs referenced by the network mapping
+	// configuration are present on all clusters in the DRPolicy. Missing NADs
+	// are surfaced through a DRPolicy condition to help users identify and
+	// correct configuration gaps before protecting applications.
+	nadValidator := NewNetworkMappingValidator(r.Client, r.MCVGetter, u.log)
+
+	nadsValid, err := nadValidator.UpdateNADValidationCondition(u)
+	if err != nil {
+		return ctrl.Result{Requeue: true}, err
+	}
+
+	if !nadsValid {
+		return ctrl.Result{}, u.validatedSetFalse(
+			"NADsMissing",
+			fmt.Errorf(
+				"one or more NADs are absent on a peer cluster; see NetworkAttachmentsValidated condition",
+			),
+		)
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// isNADsMissing returns true when the Validated condition was last set to False
+// by NAD validation.  This prevents the unconditional validatedSetTrue calls at
+// the top of reconcile from overwriting a False written by UpdateNADValidationCondition,
+// which would cause Validated to oscillate True/False on every reconcile cycle.
+func (u *drpolicyUpdater) isNADsMissing() bool {
+	for _, condition := range u.object.Status.Conditions {
+		if condition.Type == ramen.DRPolicyValidated &&
+			condition.Status == metav1.ConditionFalse &&
+			condition.Reason == "NADsMissing" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r *DRPolicyReconciler) initiateDRPolicyMetrics(drpolicy *ramen.DRPolicy) error {
@@ -449,8 +539,8 @@ func (u *drpolicyUpdater) isConflictFound() bool {
 	return false
 }
 
-func (u *drpolicyUpdater) validatedSetTrue(reason, message string) error {
-	return u.statusConditionSet(ramen.DRPolicyValidated, metav1.ConditionTrue, reason, message)
+func (u *drpolicyUpdater) validatedSetTrue() error {
+	return u.statusConditionSet(ramen.DRPolicyValidated, metav1.ConditionTrue, ReasonSucceeded, "drpolicy validated")
 }
 
 func (u *drpolicyUpdater) validatedSetFalse(reason string, err error) error {
@@ -621,4 +711,294 @@ func (r *DRPolicyReconciler) getDRPoliciesForCluster(clusterName string) []recon
 	}
 
 	return requests
+}
+
+// NetworkMappingValidator handles network-mapping validation for DRPolicy.
+// Its sole responsibility is NAD-pair validation: verifying that every NAD
+// used by static-IP VMs under a policy is present on both clusters.
+//
+// IP translation rules live in the per-DRPC network-mapping ConfigMap
+// (drpc_networkmapping.go) and are never touched here.
+type NetworkMappingValidator struct {
+	client    client.Client
+	mcvGetter util.ManagedClusterViewGetter
+	log       logr.Logger
+}
+
+// NADMissingEntry describes a NAD that is present on one cluster but absent from the other.
+type NADMissingEntry struct {
+	NADName      string
+	NADNamespace string
+	MissingOnA   bool
+	ClusterA     string
+	MissingOnB   bool
+	ClusterB     string
+}
+
+// NewNetworkMappingValidator creates a new network mapping validator.
+func NewNetworkMappingValidator(c client.Client, mcvGetter util.ManagedClusterViewGetter,
+	log logr.Logger,
+) *NetworkMappingValidator {
+	return &NetworkMappingValidator{client: c, mcvGetter: mcvGetter, log: log}
+}
+
+// UpdateNADValidationCondition runs NAD validation and writes the result as a standard
+// Kubernetes condition on DRPolicy.Status.Conditions (type NetworkAttachmentsValidated).
+//
+//   - True  — all NADs used by static-IP VMs are present on both clusters.
+//   - False — one or more NADs are missing; message lists each one.
+//
+// Transient errors (for example, DRClusterConfig or ManagedClusterView
+// not yet available) are logged and returned without modifying the
+// existing NetworkAttachmentsValidated condition.
+func (v *NetworkMappingValidator) UpdateNADValidationCondition(u *drpolicyUpdater,
+) (nadsValid bool, err error) {
+	drPolicy := u.object
+	// Nothing to validate when network mapping is not configured for this policy.
+	if !isNetworkMappingEnabled(drPolicy) {
+		return false, clearNADStatus(u)
+	}
+
+	missing, err := v.validateNADsAcrossClusters(drPolicy)
+	if err != nil {
+		v.log.Error(err, "NAD validation transient error",
+			"drpolicy", drPolicy.Name)
+
+		// Preserve the existing condition state and retry later. Transient
+		// failures (for example, DRClusterConfig/MCV not yet available)
+		// should not overwrite a previously successful validation result.
+		return false, err
+	}
+
+	if len(missing) == 0 {
+		util.GenericStatusConditionSet(drPolicy, &drPolicy.Status.Conditions,
+			ConditionNetworkAttachmentsValidated,
+			metav1.ConditionTrue, "Validated",
+			"NADs are symmetric across both clusters",
+			v.log)
+	} else {
+		util.GenericStatusConditionSet(drPolicy, &drPolicy.Status.Conditions,
+			ConditionNetworkAttachmentsValidated,
+			metav1.ConditionFalse, "NADsMissing",
+			buildMissingNADsMessage(missing),
+			v.log)
+
+		util.GenericStatusConditionSet(drPolicy, &drPolicy.Status.Conditions,
+			ramen.DRPolicyValidated,
+			metav1.ConditionFalse, "NADsMissing",
+			"one or more NADs are absent on a peer cluster; see NetworkAttachmentsValidated condition",
+			v.log)
+	}
+
+	// Always persist: NetworkPeers (populated by validateNADsAcrossClusters) must
+	// be written back even when the condition itself did not change, because
+	// GenericStatusConditionSet only writes when the condition transitions.
+	if err := v.client.Status().Update(u.ctx, drPolicy); err != nil {
+		return false, fmt.Errorf("status update for NAD validation: %w", err)
+	}
+
+	return len(missing) == 0, nil
+}
+
+func (v *NetworkMappingValidator) validateNADsAcrossClusters(
+	drPolicy *ramen.DRPolicy,
+) ([]NADMissingEntry, error) {
+	if len(drPolicy.Spec.DRClusters) < DRClusterPairCount {
+		return nil, fmt.Errorf(
+			"drpolicy %s has %d clusters, expected at least %d",
+			drPolicy.Name,
+			len(drPolicy.Spec.DRClusters),
+			DRClusterPairCount,
+		)
+	}
+
+	clusterA, clusterB := drPolicy.Spec.DRClusters[0], drPolicy.Spec.DRClusters[1]
+
+	infoA, err := v.clusterNADInfo(clusterA)
+	if err != nil {
+		return nil, fmt.Errorf("reading DRClusterConfig for %s: %w", clusterA, err)
+	}
+
+	infoB, err := v.clusterNADInfo(clusterB)
+	if err != nil {
+		return nil, fmt.Errorf("reading DRClusterConfig for %s: %w", clusterB, err)
+	}
+
+	// Populate Status.NetworkPeers — NADs symmetric across both clusters.
+	v.updateNetworkPeers(drPolicy, clusterA, clusterB, infoA, infoB)
+
+	// Check: every NAD on A must be on B, and vice versa.
+	var missing []NADMissingEntry
+
+	for key, naA := range infoA {
+		if _, onB := infoB[key]; !onB {
+			missing = append(missing, NADMissingEntry{
+				NADName:      naA.Name,
+				NADNamespace: naA.Namespace,
+				MissingOnB:   true,
+				ClusterB:     clusterB,
+			})
+		}
+	}
+
+	for key, naB := range infoB {
+		if _, onA := infoA[key]; !onA {
+			missing = append(missing, NADMissingEntry{
+				NADName:      naB.Name,
+				NADNamespace: naB.Namespace,
+				MissingOnA:   true,
+				ClusterA:     clusterA,
+			})
+		}
+	}
+
+	sort.Slice(missing, func(i, j int) bool {
+		if missing[i].NADNamespace != missing[j].NADNamespace {
+			return missing[i].NADNamespace < missing[j].NADNamespace
+		}
+
+		return missing[i].NADName < missing[j].NADName
+	})
+
+	return missing, nil
+}
+
+// clusterNADInfo returns the full NetworkAttachment inventory for the given
+// cluster, keyed by "namespace/name".
+//
+// DRClusterConfig is a cluster-scoped resource that lives on the managed cluster.
+// The hub reads it via a ManagedClusterView (created by the DRCluster controller);
+// a direct hub-local client.Get would not reach the managed-cluster copy.
+func (v *NetworkMappingValidator) clusterNADInfo(clusterName string) (map[string]ramen.NetworkAttachment, error) {
+	// AllDRPolicyAnnotation is used by the MCV watch to re-trigger DRPolicy reconciliation
+	// when the MCV result changes — consistent with how peerclass discovery uses MCVs.
+	annotations := map[string]string{AllDRPolicyAnnotation: clusterName}
+
+	drcc, err := v.mcvGetter.GetDRClusterConfigFromManagedCluster(clusterName, annotations)
+	if err != nil {
+		return nil, fmt.Errorf("ManagedClusterView for DRClusterConfig %q: %w", clusterName, err)
+	}
+
+	nads := make(map[string]ramen.NetworkAttachment, len(drcc.Status.NetworkAttachments))
+	for _, na := range drcc.Status.NetworkAttachments {
+		nads[na.Namespace+"/"+na.Name] = na
+	}
+
+	return nads, nil
+}
+
+// updateNetworkPeers rebuilds DRPolicy.Status.NetworkPeers from the NAD inventory
+// on both clusters.  It follows the same pattern as PeerClass population for
+// StorageClasses: intersect the two cluster inventories and record each common entry.
+//
+// An entry appears in NetworkPeers when the NAD is present on BOTH clusters.
+// NADs present on only one cluster are captured by the NetworkAttachmentsValidated
+// condition (NADsMissing) but are not listed here.
+func (v *NetworkMappingValidator) updateNetworkPeers(
+	drPolicy *ramen.DRPolicy,
+	clusterA, clusterB string,
+	nadsA, nadsB map[string]ramen.NetworkAttachment,
+) {
+	var peers []ramen.NetworkPeer
+
+	for key, naA := range nadsA {
+		naB, onB := nadsB[key]
+		if !onB {
+			continue // missing on clusterB — surfaced via condition, not NetworkPeers
+		}
+
+		peer := ramen.NetworkPeer{
+			NADName:      naA.Name,
+			NADNamespace: naA.Namespace,
+			ClusterCNITypes: map[string]string{
+				clusterA: naA.CNIType,
+				clusterB: naB.CNIType,
+			},
+		}
+
+		peers = append(peers, peer)
+	}
+
+	sort.Slice(peers, func(i, j int) bool {
+		if peers[i].NADNamespace != peers[j].NADNamespace {
+			return peers[i].NADNamespace < peers[j].NADNamespace
+		}
+
+		return peers[i].NADName < peers[j].NADName
+	})
+
+	drPolicy.Status.NetworkPeers = peers
+}
+
+// buildMissingNADsMessage formats a human-readable condition message listing each missing NAD.
+func buildMissingNADsMessage(missing []NADMissingEntry) string {
+	var sb strings.Builder
+
+	sb.WriteString("NADs missing on one or more clusters: ")
+
+	for i, m := range missing {
+		if i > 0 {
+			sb.WriteString("; ")
+		}
+
+		nadID := m.NADName
+		if len(m.NADNamespace) == 0 {
+			nadID = m.NADNamespace + "/" + m.NADName
+		}
+
+		sb.WriteString(nadID)
+
+		if m.MissingOnA {
+			sb.WriteString(" missing on " + m.ClusterA)
+		}
+
+		if m.MissingOnB {
+			if m.MissingOnA {
+				sb.WriteString(" and")
+			}
+
+			sb.WriteString(" missing on " + m.ClusterB)
+		}
+	}
+
+	return sb.String()
+}
+
+// clearNADStatus removes the NetworkAttachmentsValidated condition and clears
+// NetworkPeers when NetworkMappingRef is absent.  It is a no-op (no API call)
+// when neither field is set, so it does not cause unnecessary reconcile loops.
+// func (v *NetworkMappingValidator) clearNADStatus(ctx context.Context, drPolicy *ramen.DRPolicy) error {
+func clearNADStatus(u *drpolicyUpdater) error {
+	drPolicy := u.object
+	nadConditionIdx := -1
+
+	for i, c := range u.object.Status.Conditions {
+		if c.Type == ConditionNetworkAttachmentsValidated {
+			nadConditionIdx = i
+
+			break
+		}
+	}
+
+	hasCondition := nadConditionIdx != -1
+	hasPeers := len(drPolicy.Status.NetworkPeers) > 0
+
+	if !hasCondition && !hasPeers {
+		return nil // nothing stale — skip the API call
+	}
+
+	if hasCondition {
+		drPolicy.Status.Conditions = append(
+			drPolicy.Status.Conditions[:nadConditionIdx],
+			drPolicy.Status.Conditions[nadConditionIdx+1:]...,
+		)
+	}
+
+	u.object.Status.NetworkPeers = nil
+
+	if err := u.client.Status().Update(u.ctx, drPolicy); err != nil {
+		return fmt.Errorf("clearing stale NAD status for %s: %w", u.object.Name, err)
+	}
+
+	return nil
 }

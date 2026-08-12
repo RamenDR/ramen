@@ -126,6 +126,27 @@ spec:
                   - type
                   type: object
                 type: array
+              networkAttachments:
+                description: NetworkAttachments lists the discovered NetworkAttachmentDefinitions
+                  on the cluster
+                items:
+                  description: NetworkAttachment represents a discovered NetworkAttachmentDefinition
+                  properties:
+                    cniType:
+                      description: CNIType is the type of CNI plugin (e.g., bridge,
+                        macvlan, ovn-k8s-cni-overlay)
+                      type: string
+                    name:
+                      description: Name of the NAD
+                      type: string
+                    namespace:
+                      description: Namespace of the NAD
+                      type: string
+                  required:
+                  - name
+                  - namespace
+                  type: object
+                type: array
               networkFenceClasses:
                 description: |-
                   NetworkFenceClass lists all the classes that match the provisioner on the cluster that can be used for fencing

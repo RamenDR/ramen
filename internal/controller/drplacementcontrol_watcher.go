@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,6 +29,10 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
+
+// networkMappingDataKey is the data key in a network-mapping ConfigMap that holds the YAML translation rules.
+// A ConfigMap is only watched if it contains this key.
+const networkMappingDataKey = "mappings.yaml"
 
 func ManifestWorkPredicateFunc() predicate.Funcs {
 	mwPredicate := predicate.Funcs{
@@ -363,6 +368,44 @@ func (r *DRPlacementControlReconciler) FilterGlobalPeerDRPCs(
 	return req
 }
 
+// filterDRPCsForNetworkMappingConfigMap maps a network-mapping ConfigMap
+// event to all DRPCs that reference a DRPolicy whose
+// Spec.NetworkMappingRef points to that ConfigMap. This ensures DRPCs are
+// reconciled whenever the network mapping configuration changes.
+func (r *DRPlacementControlReconciler) filterDRPCsForNetworkMappingConfigMap(
+	ctx context.Context, cm *corev1.ConfigMap,
+) []reconcile.Request {
+	drpcList := &rmn.DRPlacementControlList{}
+	if err := r.List(ctx, drpcList, client.InNamespace(cm.Namespace)); err != nil {
+		ctrl.Log.Error(err, "failed to list DRPCs for ConfigMap watch",
+			"configmap", cm.Name, "namespace", cm.Namespace)
+
+		return nil
+	}
+
+	var requests []reconcile.Request
+
+	for i := range drpcList.Items {
+		drpc := &drpcList.Items[i]
+
+		drPolicy := &rmn.DRPolicy{}
+		if err := r.Get(ctx, types.NamespacedName{Name: drpc.Spec.DRPolicyRef.Name}, drPolicy); err != nil {
+			continue
+		}
+
+		if drPolicy.Spec.NetworkMappingRef != nil &&
+			drPolicy.Spec.NetworkMappingRef.Name == cm.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name: drpc.Name, Namespace: drpc.Namespace,
+				},
+			})
+		}
+	}
+
+	return requests
+}
+
 // DRClusterUpdateOfInterest checks if the new DRCluster resource as compared to the older version
 // requires any attention, it checks for the following updates:
 //   - If any maintenance mode is reported as activated
@@ -684,27 +727,25 @@ func (r *DRPlacementControlReconciler) FilterDRPCsForDRPolicyUpdate(drpolicy *rm
 	return requests
 }
 
-//nolint:funlen
-func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.Manager,
-	ramenConfig *rmn.RamenConfig,
-) error {
-	mwPred := ManifestWorkPredicateFunc()
-
-	mwMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func manifestWorkMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			mw, ok := obj.(*ocmworkv1.ManifestWork)
 			if !ok {
-				return []reconcile.Request{}
+				return nil
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
+			ctrl.Log.Info(
+				fmt.Sprintf("DRPC: Filtering ManifestWork (%s/%s)",
+					mw.Name, mw.Namespace))
 
 			return filterMW(mw)
-		}))
+		},
+	)
+}
 
-	mcvPred := ManagedClusterViewPredicateFunc()
-
-	mcvMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func managedClusterViewMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			mcv, ok := obj.(*viewv1beta1.ManagedClusterView)
 			if !ok {
@@ -715,10 +756,10 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 
 			return filterMCV(mcv)
 		}))
+}
 
-	usrPlRulePred := PlacementRulePredicateFunc()
-
-	usrPlRuleMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func placementRuleMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			usrPlRule, ok := obj.(*plrv1.PlacementRule)
 			if !ok {
@@ -729,10 +770,10 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 
 			return filterUsrPlRule(usrPlRule)
 		}))
+}
 
-	usrPlmntPred := PlacementPredicateFunc()
-
-	usrPlmntMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func placementMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			usrPlmnt, ok := obj.(*clrapiv1beta1.Placement)
 			if !ok {
@@ -743,10 +784,10 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 
 			return filterUsrPlmnt(usrPlmnt)
 		}))
+}
 
-	drClusterPred := DRClusterPredicateFunc()
-
-	drClusterMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func (r *DRPlacementControlReconciler) drClusterMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			drCluster, ok := obj.(*rmn.DRCluster)
 			if !ok {
@@ -757,10 +798,10 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 
 			return r.FilterDRCluster(drCluster)
 		}))
+}
 
-	drPolicyPred := DRPolicyPredicateFunc()
-
-	drPolicyMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func (r *DRPlacementControlReconciler) drPolicyMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			drPolicy, ok := obj.(*rmn.DRPolicy)
 			if !ok {
@@ -771,10 +812,10 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 
 			return r.FilterDRPCsForDRPolicyUpdate(drPolicy)
 		}))
+}
 
-	globalVGRDRPCPred := GlobalVGRDRPCPredicateFunc()
-
-	globalVGRDRPCMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+func (r *DRPlacementControlReconciler) globalPeerDRPCMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			drpc, ok := obj.(*rmn.DRPlacementControl)
 			if !ok {
@@ -783,12 +824,48 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 
 			return r.FilterGlobalPeerDRPCs(drpc)
 		}))
+}
 
-	r.eventRecorder = rmnutil.NewEventReporter(mgr.GetEventRecorderFor("controller_DRPlacementControl"))
+func (r *DRPlacementControlReconciler) networkMappingConfigMapFunc() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
+		func(ctx context.Context, obj client.Object) []reconcile.Request {
+			cm, ok := obj.(*corev1.ConfigMap)
+			if !ok {
+				return nil
+			}
+
+			return r.filterDRPCsForNetworkMappingConfigMap(ctx, cm)
+		}))
+}
+
+// nmCMPred only fires when the mappings.yaml data key is present — i.e., this ConfigMap
+// is a network-mapping ConfigMap (not any random CM in the cluster).
+// Using NewPredicateFuncs means all Create/Update/Delete events pass through the same filter.
+func networkMappingConfigMapPredicate() predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		cm, ok := obj.(*corev1.ConfigMap)
+		if !ok {
+			return false
+		}
+
+		_, hasKey := cm.Data[networkMappingDataKey]
+
+		return hasKey
+	})
+}
+
+func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(
+	mgr ctrl.Manager,
+	ramenConfig *rmn.RamenConfig,
+) error {
+	r.eventRecorder = rmnutil.NewEventReporter(
+		mgr.GetEventRecorderFor("controller_DRPlacementControl"),
+	)
 
 	options := ctrlcontroller.Options{
 		MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 	}
+
 	if r.RateLimiter != nil {
 		options.RateLimiter = *r.RateLimiter
 	}
@@ -796,12 +873,45 @@ func (r *DRPlacementControlReconciler) setupWithManagerAndAddWatchers(mgr ctrl.M
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(options).
 		For(&rmn.DRPlacementControl{}).
-		Watches(&ocmworkv1.ManifestWork{}, mwMapFun, builder.WithPredicates(mwPred)).
-		Watches(&viewv1beta1.ManagedClusterView{}, mcvMapFun, builder.WithPredicates(mcvPred)).
-		Watches(&plrv1.PlacementRule{}, usrPlRuleMapFun, builder.WithPredicates(usrPlRulePred)).
-		Watches(&clrapiv1beta1.Placement{}, usrPlmntMapFun, builder.WithPredicates(usrPlmntPred)).
-		Watches(&rmn.DRCluster{}, drClusterMapFun, builder.WithPredicates(drClusterPred)).
-		Watches(&rmn.DRPolicy{}, drPolicyMapFun, builder.WithPredicates(drPolicyPred)).
-		Watches(&rmn.DRPlacementControl{}, globalVGRDRPCMapFun, builder.WithPredicates(globalVGRDRPCPred)).
+		Watches(
+			&ocmworkv1.ManifestWork{},
+			manifestWorkMapFunc(),
+			builder.WithPredicates(ManifestWorkPredicateFunc()),
+		).
+		Watches(
+			&viewv1beta1.ManagedClusterView{},
+			managedClusterViewMapFunc(),
+			builder.WithPredicates(ManagedClusterViewPredicateFunc()),
+		).
+		Watches(
+			&plrv1.PlacementRule{},
+			placementRuleMapFunc(),
+			builder.WithPredicates(PlacementRulePredicateFunc()),
+		).
+		Watches(
+			&clrapiv1beta1.Placement{},
+			placementMapFunc(),
+			builder.WithPredicates(PlacementPredicateFunc()),
+		).
+		Watches(
+			&rmn.DRCluster{},
+			r.drClusterMapFunc(),
+			builder.WithPredicates(DRClusterPredicateFunc()),
+		).
+		Watches(
+			&rmn.DRPolicy{},
+			r.drPolicyMapFunc(),
+			builder.WithPredicates(DRPolicyPredicateFunc()),
+		).
+		Watches(
+			&rmn.DRPlacementControl{},
+			r.globalPeerDRPCMapFunc(),
+			builder.WithPredicates(GlobalVGRDRPCPredicateFunc()),
+		).
+		Watches(
+			&corev1.ConfigMap{},
+			r.networkMappingConfigMapFunc(),
+			builder.WithPredicates(networkMappingConfigMapPredicate()),
+		).
 		Complete(r)
 }

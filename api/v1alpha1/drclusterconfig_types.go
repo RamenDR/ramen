@@ -65,6 +65,23 @@ type DRClusterConfigStatus struct {
 
 	// StorageAccessDetails lists the storage access information for each storage provisioner detected on the cluster.
 	StorageAccessDetails []StorageAccessDetail `json:"storageAccessDetails,omitempty"`
+
+	// NetworkAttachments lists the discovered NetworkAttachmentDefinitions on the cluster
+	// +optional
+	NetworkAttachments []NetworkAttachment `json:"networkAttachments,omitempty"`
+}
+
+// NetworkAttachment represents a discovered NetworkAttachmentDefinition
+type NetworkAttachment struct {
+	// Name of the NAD
+	Name string `json:"name"`
+
+	// Namespace of the NAD
+	Namespace string `json:"namespace"`
+
+	// CNIType is the type of CNI plugin (e.g., bridge, macvlan, ovn-k8s-cni-overlay)
+	// +optional
+	CNIType string `json:"cniType,omitempty"`
 }
 
 // StorageAccessDetail contains storage access information for a specific storage provisioner.

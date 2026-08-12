@@ -4,6 +4,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -49,6 +50,14 @@ type DRPolicySpec struct {
 	// +kubebuilder:validation:XValidation:rule="size(self) == 2", message="drClusters requires a list of 2 clusters"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="drClusters is immutable"
 	DRClusters []string `json:"drClusters"`
+
+	// NetworkMappingRef references the ConfigMap containing bidirectional
+	// network subnet mappings for VM static-IP translation during DR.
+	// Created by the network admin; referenced here by the DR admin.
+	// The ConfigMap must be in the same namespace as the DRPCs governed
+	// by this policy.
+	// +optional
+	NetworkMappingRef *corev1.LocalObjectReference `json:"networkMappingRef,omitempty"`
 }
 
 // DRPolicyStatus defines the observed state of DRPolicy
@@ -64,6 +73,33 @@ type DRPolicyStatus struct {
 	// sync replication details between the clusters in the policy
 	//+optional
 	Sync Sync `json:"sync,omitempty"`
+
+	// NetworkPeers lists the discovered NetworkAttachmentDefinition pairs that
+	// are common across both clusters in this policy and carry the
+	// ramendr.openshift.io/dr-network label.  Each entry represents one
+	// logical network that Ramen can translate static IPs across during DR.
+	// Populated by the DRPolicy controller; only present when
+	// Spec.NetworkMappingRef is set.
+	// +optional
+	NetworkPeers []NetworkPeer `json:"networkPeers,omitempty"`
+}
+
+// NetworkPeer describes a NetworkAttachmentDefinition that is present on both
+// clusters in a DRPolicy and is eligible for static-IP translation during DR.
+type NetworkPeer struct {
+	// NADName is the name of the NetworkAttachmentDefinition.
+	// The name is expected to be identical on both clusters.
+	NADName string `json:"nadName"`
+
+	// NADNamespace is the namespace of the NetworkAttachmentDefinition.
+	// The namespace is expected to be identical on both clusters.
+	NADNamespace string `json:"nadNamespace"`
+
+	// ClusterCNITypes maps each cluster name to the CNI plugin type reported
+	// by that cluster's DRClusterConfig (e.g. "macvlan", "bridge").
+	// Allows operators to verify the CNI configuration is consistent across peers.
+	// +optional
+	ClusterCNITypes map[string]string `json:"clusterCNITypes,omitempty"`
 }
 
 // for RDR
