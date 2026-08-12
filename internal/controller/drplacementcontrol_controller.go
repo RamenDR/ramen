@@ -263,6 +263,13 @@ func (r *DRPlacementControlReconciler) setDeletionStatusAndUpdate(
 	progressionUpdated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
 	phaseUpdated := drpc.Status.Phase != rmn.Deleting
 
+	if progressionUpdated {
+		// Reset action timing on first transition into Deleting so START TIME reflects
+		// when deletion began.
+		drpc.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		drpc.Status.ActionDuration = nil
+	}
+
 	drpc.Status.Phase = rmn.Deleting
 	drpc.Status.ObservedGeneration = drpc.Generation
 
