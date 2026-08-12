@@ -200,11 +200,6 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
 
-			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
-			if statusErr != nil {
-				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
-			}
-
 			return ctrl.Result{}, err
 		}
 
@@ -275,11 +270,13 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *DRPlacementControlReconciler) setDeletionStatusAndUpdate(
 	ctx context.Context, drpc *rmn.DRPlacementControl,
 ) error {
-	updated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	progressionUpdated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	phaseUpdated := drpc.Status.Phase != rmn.Deleting
+
 	drpc.Status.Phase = rmn.Deleting
 	drpc.Status.ObservedGeneration = drpc.Generation
 
-	if updated {
+	if progressionUpdated || phaseUpdated {
 		if err := r.Status().Update(ctx, drpc); err != nil {
 			return fmt.Errorf("failed to update DRPC status: (%w)", err)
 		}
@@ -797,6 +794,11 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 
 	if !controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		return nil
+	}
+
+	// Set Deleting status when cleanup starts, not only after a cleanup failure.
+	if err := r.setDeletionStatusAndUpdate(ctx, drpc); err != nil {
+		return err
 	}
 
 	// Run finalization logic for dprc.
