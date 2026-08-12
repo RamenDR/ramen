@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -17,7 +18,9 @@ import (
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -60,6 +63,25 @@ type DRClusterConfigReconciler struct {
 	RateLimiter *workqueue.TypedRateLimiter[reconcile.Request]
 }
 
+// NADDRNetworkLabel is an opt-in marker for Ramen's static-IP disaster
+// recovery workflow.
+//
+// NADs labeled with:
+//
+//	ramendr.openshift.io/dr-network: "true"
+//
+// are included in DR network discovery and validation. NADs labeled
+// "false", or NADs that do not carry this label, are ignored.
+const NADDRNetworkLabel = "ramendr.openshift.io/dr-network"
+
+// nadGVK is the GroupVersionKind used when listing NADs via the unstructured client.
+// NAD is not a first-class Go type in this module, so we use dynamic listing.
+var nadGVK = schema.GroupVersionKind{
+	Group:   "k8s.cni.cncf.io",
+	Version: "v1",
+	Kind:    "NetworkAttachmentDefinitionList",
+}
+
 //nolint:lll
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusterconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=drclusterconfigs/status,verbs=get;update;patch
@@ -70,6 +92,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=csiaddonsnodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="k8s.cni.cncf.io",resources=network-attachment-definitions,verbs=get;list;watch
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
@@ -284,60 +307,94 @@ func (r *DRClusterConfigReconciler) UpdateStatus(
 	ctx context.Context,
 	drCConfig *ramen.DRClusterConfig,
 ) error {
-	sClasses, err := r.listDRSupportedSCs(ctx)
-	if err != nil {
+	if err := r.updateStorageClassesStatus(ctx, drCConfig); err != nil {
 		return err
 	}
 
-	drCConfig.Status.StorageClasses = sClasses
+	if err := r.updateStorageAccessDetailsStatus(ctx, drCConfig); err != nil {
+		return err
+	}
+
+	if err := r.updateNetworkAttachmentsStatus(ctx, drCConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *DRClusterConfigReconciler) updateStorageClassesStatus(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	var err error
+
+	if drCConfig.Status.StorageClasses, err = r.listDRSupportedSCs(ctx); err != nil {
+		return err
+	}
+
 	slices.Sort(drCConfig.Status.StorageClasses)
 
-	vsClasses, err := r.listDRSupportedVSCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeSnapshotClasses, err = r.listDRSupportedVSCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeSnapshotClasses = vsClasses
 	slices.Sort(drCConfig.Status.VolumeSnapshotClasses)
 
-	vrClasses, err := r.listDRSupportedVRCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeReplicationClasses, err = r.listDRSupportedVRCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeReplicationClasses = vrClasses
 	slices.Sort(drCConfig.Status.VolumeReplicationClasses)
 
-	vgrClasses, err := r.listDRSupportedVGRCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeGroupReplicationClasses, err = r.listDRSupportedVGRCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeGroupReplicationClasses = vgrClasses
 	slices.Sort(drCConfig.Status.VolumeGroupReplicationClasses)
 
-	vgsClasses, err := r.listDRSupportedVGSCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeGroupSnapshotClasses, err = r.listDRSupportedVGSCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeGroupSnapshotClasses = vgsClasses
 	slices.Sort(drCConfig.Status.VolumeGroupSnapshotClasses)
 
-	nfClases, err := r.listDRSupportedNFCs(ctx)
-	if err != nil {
+	if drCConfig.Status.NetworkFenceClasses, err = r.listDRSupportedNFCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.NetworkFenceClasses = nfClases
 	slices.Sort(drCConfig.Status.NetworkFenceClasses)
 
+	return nil
+}
+
+func (r *DRClusterConfigReconciler) updateStorageAccessDetailsStatus(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
 	storageAccessDetails, err := r.listStorageAccessDetails(ctx)
 	if err != nil {
 		return err
 	}
 
 	drCConfig.Status.StorageAccessDetails = storageAccessDetails
+
+	return nil
+}
+
+func (r *DRClusterConfigReconciler) updateNetworkAttachmentsStatus(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	nads, err := r.listDRSupportedNADs(ctx)
+	if err != nil {
+		return err
+	}
+
+	drCConfig.Status.NetworkAttachments = nads
+
+	r.Log.Info("NAD discovery completed",
+		"drclusterconfig", drCConfig.Name,
+		"count", len(nads))
 
 	return nil
 }
@@ -580,7 +637,8 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
-		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn)
+		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn).
+		Watches(nadObject(), drccMapFn, drccPredFn)
 
 	if err := util.EnsureLocalVGSAPI(context.TODO(), mgr.GetAPIReader()); err != nil {
 		r.Log.Info("VolumeGroupSnapshotClass API not available, skipping watch", "reason", err.Error())
@@ -589,4 +647,107 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return controllerBuilder.Complete(r)
+}
+
+// listDRSupportedNADs returns all NetworkAttachmentDefinitions across all
+// namespaces that carry the label ramendr.openshift.io/dr-network.
+//
+// The result is a []NetworkAttachment slice sorted by "namespace/name" so that
+// status comparisons are stable and do not produce spurious updates.
+func (r *DRClusterConfigReconciler) listDRSupportedNADs(ctx context.Context) ([]ramen.NetworkAttachment, error) {
+	nadList := &unstructured.UnstructuredList{}
+	nadList.SetGroupVersionKind(nadGVK)
+
+	if err := r.Client.List(ctx, nadList,
+		client.MatchingLabels{NADDRNetworkLabel: "true"},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list NADs with label %s=true: %w", NADDRNetworkLabel, err)
+	}
+
+	nads := make([]ramen.NetworkAttachment, 0, len(nadList.Items))
+
+	for i := range nadList.Items {
+		item := &nadList.Items[i]
+
+		cniType, err := parseCNIType(item)
+		if err != nil {
+			// Non-fatal: record as unknown so the NAD still appears in status.
+			r.Log.Error(err, "Failed to parse CNI type; using 'unknown'",
+				"nad", item.GetName(), "namespace", item.GetNamespace())
+
+			cniType = "unknown"
+		}
+
+		nads = append(nads, ramen.NetworkAttachment{
+			Name:      item.GetName(),
+			Namespace: item.GetNamespace(),
+			CNIType:   cniType,
+		})
+	}
+
+	// Sort for stable comparison — matches the slices.Sort pattern used for
+	// StorageClasses and VolumeReplicationClasses in the same reconciler.
+	slices.SortFunc(nads, func(a, b ramen.NetworkAttachment) int {
+		nsNameA := a.Namespace + "/" + a.Name
+		nsNameB := b.Namespace + "/" + b.Name
+
+		switch {
+		case nsNameA < nsNameB:
+			return -1
+		case nsNameA > nsNameB:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	return nads, nil
+}
+
+// parseCNIType extracts the CNI plugin type from spec.config (a JSON string)
+// of a NetworkAttachmentDefinition.
+// Returns "unknown" when config is absent or the type field is not set.
+func parseCNIType(nad *unstructured.Unstructured) (string, error) {
+	raw, found, err := unstructured.NestedString(nad.Object, "spec", "config")
+	if err != nil || !found || len(raw) == 0 {
+		return "unknown", fmt.Errorf("spec.config is not a string: %w", err)
+	}
+
+	// spec.config is a JSON string (the CNI config JSON blob).
+	var cfg struct {
+		Type    string `json:"type"`
+		Plugins []struct {
+			Type string `json:"type"`
+		} `json:"plugins"`
+	}
+
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return "unknown", fmt.Errorf("spec.config is not valid JSON: %w", err)
+	}
+
+	if cfg.Type != "" {
+		return cfg.Type, nil
+	}
+
+	// Multus conflist format — first plugin type is the primary one.
+	if len(cfg.Plugins) > 0 && cfg.Plugins[0].Type != "" {
+		return cfg.Plugins[0].Type, nil
+	}
+
+	return "unknown", nil
+}
+
+// nadObject returns an unstructured NAD object with the GVK set so that the
+// controller-runtime watcher can register an informer for the NAD resource.
+// NAD has no typed Go struct in this module, so we use the dynamic client
+// approach consistent with listDRSupportedNADs in drclusterconfig_nad_discovery.go.
+func nadObject() *unstructured.Unstructured {
+	nad := &unstructured.Unstructured{}
+	nad.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "k8s.cni.cncf.io",
+		Version: "v1",
+		Kind:    "NetworkAttachmentDefinition",
+	})
+
+	return nad
 }

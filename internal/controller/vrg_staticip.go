@@ -415,7 +415,7 @@ func ParseNetworkName(networkName string, vmNamespace string) (nadNamespace, nad
 		return vmNamespace, parts[0]
 	}
 
-	if len(parts) == MaxDRClusterCount {
+	if len(parts) == DRClusterPairCount {
 		return parts[0], parts[1]
 	}
 
