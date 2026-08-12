@@ -570,7 +570,7 @@ func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Ob
 		return []reconcile.Request{}
 	}
 
-	// TODO: Add optimzation to only reconcile policies that refer to the changed secret
+	// TODO: Add optimization to only reconcile policies that refer to the changed secret
 	requests := make([]reconcile.Request, len(drpolicies.Items))
 	for i, drpolicy := range drpolicies.Items {
 		requests[i].Name = drpolicy.GetName()

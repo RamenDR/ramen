@@ -429,10 +429,8 @@ test/basic-test/deploy $env
 test/basic-test/enable-dr $env
 ```
 
-
 At this point you can manually failover, relocate one or more
 times as needed.
-
 
 To clean up the basic-test for regional-dr.yaml run this command:
 

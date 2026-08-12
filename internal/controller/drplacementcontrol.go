@@ -2258,7 +2258,7 @@ func (d *DRPCInstance) updateVRGSyncSpec(vrgFromView, vrg *rmn.VolumeReplication
 
 // updateVRGDRTypeSpec updates VRG Sync/Async spec based on the DR type.
 // Update works to ensure VRG is updated with peerClasses that it requires, based on reported PVCs that the VRG is
-// attempting to protect. If a VRG is attempting to protect a PVC for which is is lacking a peerClass and that is
+// attempting to protect. If a VRG is attempting to protect a PVC for which it is lacking a peerClass and that is
 // available as part of the DRPolicy its peerClasses are updated. For existing peerClasses the VRG information is
 // updated conditionally (see updatePeerClass), this is done to avoid any protection mechanism conflicts.
 // For example, if a VRG carried a peerClass without the replicationID (ie it would choose to protect the PVC using

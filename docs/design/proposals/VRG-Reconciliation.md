@@ -253,7 +253,7 @@ taken to ensure the same:
 1. We need to only deal with objects that we manage (IOW, created) and not other
    user created objects
 1. As we watch VR resources, we need not requeue for reconcile, rather we can
-   let the the API server trickle requeue of VRG as VR status/metadata changes
+   let the API server trickle requeue of VRG as VR status/metadata changes
    - Along the same lines, we can improve the PVC predicate filter to trigger
      VRG reconciles on phase change, annotations and finalizers
    - This would ensure we are not reconciling rapidly, but are triggered when

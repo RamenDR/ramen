@@ -102,7 +102,7 @@ test/basic-test/deploy $env
 test/basic-test/enable-dr $env
 ```
 
-At this point you can run run manually failover, relocate one or more times as
+At this point you can run manually failover, relocate one or more times as
 needed:
 
 ```sh
