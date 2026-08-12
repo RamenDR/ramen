@@ -2019,6 +2019,47 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 			}
 		}, SpecTimeout(time.Second*10))
 	})
+
+	When("a Deployed DRPC is deleted", func() {
+		AfterEach(func() {
+			err := forceCleanupClusterAfterAErrorTest()
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("Should reset actionStartTime and clear actionDuration for deletion", func(ctx SpecContext) {
+			_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
+				UsePlacementRule)
+
+			waitForCompletion(string(rmn.Deployed))
+			waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)
+
+			previousStartTime := metav1.NewTime(time.Now().Add(-time.Hour))
+			previousDuration := metav1.Duration{Duration: time.Minute}
+
+			err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				drpc := getLatestDRPC(DefaultDRPCNamespace)
+				drpc.Status.ActionStartTime = previousStartTime.DeepCopy()
+				drpc.Status.ActionDuration = &previousDuration
+
+				return k8sClient.Status().Update(context.TODO(), drpc)
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRClusters)
+			Expect(err).ToNot(HaveOccurred())
+
+			deleteDRPC()
+
+			_, err = drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
+			Expect(err).To(HaveOccurred())
+
+			deletingDRPC := getLatestDRPC(DefaultDRPCNamespace)
+			Expect(deletingDRPC.Status.Phase).To(Equal(rmn.Deleting))
+			Expect(deletingDRPC.Status.Progression).To(Equal(rmn.ProgressionDeleting))
+			Expect(deletingDRPC.Status.ActionStartTime).NotTo(BeNil())
+			Expect(deletingDRPC.Status.ActionStartTime.Time.After(previousStartTime.Time)).To(BeTrue())
+			Expect(deletingDRPC.Status.ActionDuration).To(BeNil())
+		}, SpecTimeout(time.Second*10))
+	})
 })
 
 // +kubebuilder:docs-gen:collapse=Imports
