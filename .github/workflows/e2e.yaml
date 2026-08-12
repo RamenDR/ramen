@@ -160,12 +160,14 @@ jobs:
     # Tar manually to work around github limitations with special characters (:)
     # in file names, and getting much smaller archives compared with zip (6m vs
     # 12m). This is also useful to collect all files in one archive.
+    # Upload as a single unzipped file (archive: false) so the download is the
+    # .tar.gz itself — no outer zip wrapper.
     # https://github.com/actions/upload-artifact/issues/546
     - name: Archive artifacts
       if: always()
       run: |
         tar --create \
-            --gzip \
+            --use-compress-program='gzip -9' \
             --file e2e.${{ env.BUILD_ID }}.tar.gz \
             --transform "s|^|e2e.${{ env.BUILD_ID }}/|" \
             --files-from artifacts.txt
@@ -174,9 +176,8 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: e2e.${{ env.BUILD_ID }}
         path: e2e.${{ env.BUILD_ID }}.tar.gz
-        compression-level: 0
+        archive: false
         retention-days: 15
 
     - name: Delete clusters
