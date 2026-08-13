@@ -441,8 +441,8 @@ drenv clear
 
 ## Caching container images
 
-We use local registry cache to cache container images. To check the cache
-stats you can use:
+We use local registry cache to cache container images. To check the cache stats
+you can use:
 
 ```
 drenv registry-cache stats

@@ -48,7 +48,6 @@ csi-addons
 
 [fencing specification](https://github.com/csi-addons/spec/tree/main/fence)
 
-
 [NetworkFence](https://github.com/csi-addons/kubernetes-csi-addons/blob/main/docs/networkfence.md)
 APIs.
 
