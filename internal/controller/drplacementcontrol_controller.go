@@ -2300,6 +2300,41 @@ func (r *DRPlacementControlReconciler) retainPlacementClusterDecisionAsFailover(
 	return nil
 }
 
+// nestedGeneratorsMatchPlacement returns true when any generator in the slice
+// carries a clusterDecisionResource whose PlacementLabel matches placementName.
+func nestedGeneratorsMatchPlacement(
+	generators []argocdv1alpha1hack.ApplicationSetNestedGenerator, placementName string,
+) bool {
+	for i := range generators {
+		cdr := generators[i].ClusterDecisionResource
+		if cdr != nil && cdr.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel] == placementName {
+			return true
+		}
+	}
+
+	return false
+}
+
+// appSetGeneratorMatchesPlacement returns true when the given top-level ApplicationSet generator
+// references the supplied Placement name, either directly via a clusterDecisionResource generator
+// or nested one level deep inside a matrix or merge combinator generator.
+func appSetGeneratorMatchesPlacement(gen *argocdv1alpha1hack.ApplicationSetGenerator, placementName string) bool {
+	if gen.ClusterDecisionResource != nil &&
+		gen.ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel] == placementName {
+		return true
+	}
+
+	if gen.Matrix != nil && nestedGeneratorsMatchPlacement(gen.Matrix.Generators, placementName) {
+		return true
+	}
+
+	if gen.Merge != nil && nestedGeneratorsMatchPlacement(gen.Merge.Generators, placementName) {
+		return true
+	}
+
+	return false
+}
+
 func getApplicationDestinationNamespace(
 	client client.Client,
 	log logr.Logger,
@@ -2322,10 +2357,9 @@ func getApplicationDestinationNamespace(
 	//
 	for i := range appSetList.Items {
 		appSet := &appSetList.Items[i]
-		if len(appSet.Spec.Generators) > 0 &&
-			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
-			name := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
-			if name == placement.GetName() {
+
+		for j := range appSet.Spec.Generators {
+			if appSetGeneratorMatchesPlacement(&appSet.Spec.Generators[j], placement.GetName()) {
 				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
 				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
