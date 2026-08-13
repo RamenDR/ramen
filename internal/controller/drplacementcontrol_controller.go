@@ -469,7 +469,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +786,7 @@ func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	update = rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
 	update = rmnutil.AddFinalizer(drpc, DRPCFinalizer) || update
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return err
 	}
@@ -868,7 +868,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		}
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return err
 	}
@@ -1627,7 +1627,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
 	log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) {
-	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, userPlacement)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, log, drpc, userPlacement)
 	if err != nil {
 		log.Info("Failed to select VRG namespace", "error", err)
 
@@ -2393,7 +2393,7 @@ func getApplicationDestinationNamespace(
 	return placement.GetNamespace(), nil
 }
 
-func selectVRGNamespace(
+func SelectVRGNamespace(
 	client client.Client,
 	log logr.Logger,
 	drpc *rmn.DRPlacementControl,
@@ -2615,7 +2615,7 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 ) (Progress, string, error) {
 	log.Info("Rebuild DRPC state")
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, log, drpc, placementObj)
 	if err != nil {
 		log.Info("Failed to select VRG namespace")
 
@@ -3043,7 +3043,7 @@ func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacem
 		}
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, log, drpc, placementObj)
 	if err != nil {
 		return []string{}, err
 	}
