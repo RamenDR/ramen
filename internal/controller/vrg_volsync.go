@@ -377,7 +377,53 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	v.instance.Status.PrepareForFinalSyncComplete = false
 	v.instance.Status.FinalSyncComplete = false
 
+	if requeue := v.handleDeletingVolSyncPVCsAsSecondary(); requeue {
+		return true
+	}
+
 	return v.reconcileRDSpecForDeletionOrReplication()
+}
+
+// handleDeletingVolSyncPVCsAsSecondary handles PVCs that are being deleted on the old primary
+// (now secondary) during failover/relocate. For each PVC marked for deletion, it clears the
+// PV claimRef so the PV goes to Available (not Released), then removes the VolSync finalizer
+// to allow the PVC deletion to complete.
+func (v *VRGInstance) handleDeletingVolSyncPVCsAsSecondary() bool {
+	requeue := false
+
+	for idx := range v.volSyncPVCs {
+		pvc := &v.volSyncPVCs[idx]
+
+		if !util.ResourceIsDeleted(pvc) {
+			continue
+		}
+
+		v.log.Info("VolSync PVC is being deleted on secondary, preparing PV for rebinding",
+			"pvcName", pvc.Name, "namespace", pvc.Namespace)
+
+		if err := v.volSyncHandler.CleanupPVClaimRefForPVCDeletion(*pvc); err != nil {
+			v.log.Error(err, "Failed to cleanup PV claimRef for PVC deletion", "pvcName", pvc.Name)
+
+			requeue = true
+
+			continue
+		}
+
+		err := util.NewResourceUpdater(pvc).
+			RemoveFinalizer(volsync.PVCFinalizerProtected).
+			Update(v.ctx, v.reconciler.Client)
+		if err != nil {
+			v.log.Error(err, "Failed to remove finalizer from deleting PVC", "pvcName", pvc.Name)
+
+			requeue = true
+
+			continue
+		}
+
+		v.log.Info("PVC finalizer removed, PV ready for rebinding", "pvcName", pvc.Name)
+	}
+
+	return requeue
 }
 
 // updateWorkloadActivityAsSecondary updates workload status of volsync PVCs if still in use by the workload. This is

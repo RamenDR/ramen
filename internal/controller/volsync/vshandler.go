@@ -3813,3 +3813,37 @@ func (v *VSHandler) UndoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim) erro
 
 	return v.client.Update(v.ctx, pv)
 }
+
+// CleanupPVClaimRefForPVCDeletion prepares the PV for rebinding before the PVC is deleted.
+// Clears claimRef.UID, ResourceVersion, APIVersion while keeping Kind, Name, Namespace
+// so the PV transitions to Available (not Released) and can rebind to a new PVC with the same name.
+func (v *VSHandler) CleanupPVClaimRefForPVCDeletion(pvc corev1.PersistentVolumeClaim) error {
+	if pvc.Spec.VolumeName == "" {
+		return nil
+	}
+
+	pv := &corev1.PersistentVolume{}
+
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
+	}
+
+	if pv.Spec.ClaimRef == nil {
+		return nil
+	}
+
+	pv.Spec.ClaimRef.UID = ""
+	pv.Spec.ClaimRef.ResourceVersion = ""
+	pv.Spec.ClaimRef.APIVersion = ""
+
+	v.log.Info("Clearing PV claimRef for PVC deletion",
+		"pvName", pv.Name, "pvcName", pvc.Name,
+		"claimRefName", pv.Spec.ClaimRef.Name, "claimRefNamespace", pv.Spec.ClaimRef.Namespace)
+
+	return v.client.Update(v.ctx, pv)
+}
