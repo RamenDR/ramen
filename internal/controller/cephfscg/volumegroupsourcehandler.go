@@ -545,11 +545,6 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		createdOrUpdated = createdOrUpdated ||
 			(op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated)
 
-		if err := h.assignRSOwnershipToPVC(replicationSource, originalPVCName,
-			replicationSourceNamespace, logger); err != nil {
-			return nil, createdOrUpdated, err
-		}
-
 		replicationSources = append(replicationSources, &corev1.ObjectReference{
 			APIVersion: replicationSource.APIVersion,
 			Kind:       replicationSource.Kind,
@@ -563,27 +558,6 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 	logger.Info("Replication sources are successfully created for all restored PVCs")
 
 	return replicationSources, createdOrUpdated, nil
-}
-
-func (h *volumeGroupSourceHandler) assignRSOwnershipToPVC(
-	rs client.Object, pvcName, pvcNamespace string, logger logr.Logger,
-) error {
-	if h.VSHandler == nil {
-		return nil
-	}
-
-	protectedPVC := ramendrv1alpha1.ProtectedPVC{
-		Name:      pvcName,
-		Namespace: pvcNamespace,
-	}
-
-	if err := h.VSHandler.AssignRDAndRSAsOwnerToProtectedPVC(rs, protectedPVC); err != nil {
-		logger.Error(err, "Failed to assign RS ownership to PVC", "RS", rs.GetName(), "PVC", pvcName)
-
-		return err
-	}
-
-	return nil
 }
 
 func (h *volumeGroupSourceHandler) resolveRDService(
