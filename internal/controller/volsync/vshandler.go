@@ -185,7 +185,7 @@ func (v *VSHandler) ReconcileRD(
 	// Check if a ReplicationSource is still here (Can happen if transitioning from primary to secondary)
 	// Before creating a new RD for this PVC, make sure any ReplicationSource for this PVC is cleaned up first
 	// This avoids a scenario where we create an RD that immediately syncs with an RS that still exists locally
-	err = v.DeleteRS(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace, false)
+	err = v.DeleteRS(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -523,7 +523,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	// Before creating a new RS for this PVC, make sure any ReplicationDestination for this PVC is cleaned up first
 	// This avoids a scenario where we create an RS that immediately connects back to an RD that still exists locally
 	// Need to be sure ReconcileRS is never called prior to restoring any PVC that need to be restored from RDs first
-	err = v.DeleteRD(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace, false)
+	err = v.DeleteRD(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1455,8 +1455,7 @@ func (v *VSHandler) getRS(name, namespace string) (*volsyncv1alpha1.ReplicationS
 	return rs, nil
 }
 
-func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string, skipPVCDisownership bool) error {
-	// Remove a ReplicationSource by name that is owned (by parent vrg owner)
+func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 	currentRSListByOwner, err := v.listRSByOwner(pvcNamespace)
 	if err != nil {
 		return err
@@ -1466,7 +1465,7 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string, skipPVCDisowne
 		rs := currentRSListByOwner.Items[i]
 
 		if rs.GetName() == getReplicationSourceName(pvcName) {
-			if err := v.cleanupRS(&rs, pvcName, pvcNamespace, skipPVCDisownership); err != nil {
+			if err := v.cleanupRS(&rs, pvcName, pvcNamespace); err != nil {
 				return err
 			}
 		}
@@ -1541,17 +1540,7 @@ func pruneOnerReferences(ownerRefs []metav1.OwnerReference, objKind, objName str
 	return newRefs
 }
 
-func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pvcNamespace string,
-	skipPVCDisownership bool,
-) error {
-	if !skipPVCDisownership {
-		if err := v.RemoveOwnerFromPVC(rs, pvcName, pvcNamespace); err != nil {
-			v.log.Error(err, "Failed to disown PVC before deleting RS", "rs", rs.GetName(), "error", err)
-
-			return err
-		}
-	}
-	// Delete the ReplicationSource, log errors with cleanup but continue on
+func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pvcNamespace string) error {
 	if err := v.client.Delete(v.ctx, rs); err != nil {
 		v.log.Error(err, "Error cleaning up ReplicationSource", "name", rs.GetName())
 	} else {
@@ -1561,19 +1550,8 @@ func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pv
 	return nil
 }
 
-func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcName, pvcNamespace string,
-	skipPVCDisownership bool,
-) error {
-	// Step 1: Disown PVC, unless skipped
-	if !skipPVCDisownership {
-		if err := v.RemoveOwnerFromPVC(rd, pvcName, pvcNamespace); err != nil {
-			v.log.Error(err, "Failed to disown PVC before deleting RD", "rd", rd.GetName(), "error", err)
-
-			return err
-		}
-	}
-
-	// Step 2: Delete local RS if needed
+func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcName, pvcNamespace string) error {
+	// Delete local RS if needed
 	if v.IsCopyMethodDirect() {
 		if err := v.deleteLocalRDAndRS(rd); err != nil {
 			return err
@@ -1592,7 +1570,7 @@ func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcNam
 	return nil
 }
 
-func (v *VSHandler) DeleteRD(pvcName, pvcNamespace string, skipPVCDisownership bool) error {
+func (v *VSHandler) DeleteRD(pvcName, pvcNamespace string) error {
 	currentRDListByOwner, err := v.listRDByOwner(pvcNamespace)
 	if err != nil {
 		return err
@@ -1603,7 +1581,7 @@ func (v *VSHandler) DeleteRD(pvcName, pvcNamespace string, skipPVCDisownership b
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
 		if rd.GetName() == expectedRDName {
-			if err := v.cleanupRD(&rd, pvcName, pvcNamespace, skipPVCDisownership); err != nil {
+			if err := v.cleanupRD(&rd, pvcName, pvcNamespace); err != nil {
 				return err
 			}
 		}
@@ -1756,7 +1734,7 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 			}
 
 			// Delete the ReplicationDestination, log errors with cleanup but continue on
-			if err := v.DeleteRD(rd.GetName(), rd.GetNamespace(), true); err != nil {
+			if err := v.DeleteRD(rd.GetName(), rd.GetNamespace()); err != nil {
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
 			} else {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
@@ -3331,11 +3309,10 @@ func (v *VSHandler) IsVRGInAdminNamespace() bool {
 	return v.vrgInAdminNamespace
 }
 
-func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim, skipPVCDisownership bool) error {
-	v.log.Info("Unprotecting VolSync PVC", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace(),
-		"skipPVCDisownership", skipPVCDisownership)
+func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error {
+	v.log.Info("Unprotecting VolSync PVC", "pvcName", pvc.GetName(), "pvcNamespace", pvc.GetNamespace())
 
-	err := v.DeleteRS(pvc.GetName(), pvc.GetNamespace(), skipPVCDisownership)
+	err := v.DeleteRS(pvc.GetName(), pvc.GetNamespace())
 	if err != nil {
 		v.log.Info("Failed to delete RS", "rs name", pvc.GetName(), "error", err)
 
@@ -3352,7 +3329,6 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim, skipP
 		DeleteLabel(util.ConsistencyGroupLabel).
 		DeleteLabel(util.CreatedByRamenLabel).
 		RemoveFinalizer(PVCFinalizerProtected).
-		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 

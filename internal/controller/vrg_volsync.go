@@ -953,12 +953,9 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		log.Error(err, "Failed to undo PV retention for deselected PVC", "PVC", pvc.Name)
 	}
 
-	// Determine if VRG is being deleted to decide whether to skip PVC disownership
-	vrgBeingDeleted := util.ResourceIsDeleted(v.instance)
+	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
 
-	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name, "vrgBeingDeleted", vrgBeingDeleted)
-	// This call is only from Primary cluster. delete ReplicationSource/CG and related resources.
-	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc, vrgBeingDeleted); err != nil {
+	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
 
 		return
@@ -1042,14 +1039,11 @@ func (v *VRGInstance) deleteDestinationPVC(name, namespace string) error {
 }
 
 func (v *VRGInstance) doCleanupResources(name, namespace string) error {
-	if err := v.volSyncHandler.DeleteRS(name, namespace, true); err != nil {
+	if err := v.volSyncHandler.DeleteRS(name, namespace); err != nil {
 		return err
 	}
 
-	// Here, we don't remove the RD as an owner of the PVC as the RD is being deleted because the workload is being
-	// deleted. Instead, we want garbage collection to clean up the PVC as part of that RD deletion (because it is on
-	// the secondary.)
-	if err := v.volSyncHandler.DeleteRD(name, namespace, true); err != nil {
+	if err := v.volSyncHandler.DeleteRD(name, namespace); err != nil {
 		return err
 	}
 
