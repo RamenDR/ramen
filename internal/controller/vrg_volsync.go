@@ -949,6 +949,10 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 		}
 	}
 
+	if err := v.volSyncHandler.UndoPVRetentionForPVC(pvc); err != nil {
+		log.Error(err, "Failed to undo PV retention for deselected PVC", "PVC", pvc.Name)
+	}
+
 	// Determine if VRG is being deleted to decide whether to skip PVC disownership
 	vrgBeingDeleted := util.ResourceIsDeleted(v.instance)
 
