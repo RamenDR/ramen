@@ -202,10 +202,6 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
-	if err = v.AssignRDAndRSAsOwnerToProtectedPVC(rd, rdSpec.ProtectedPVC); err != nil {
-		return nil, nil, err
-	}
-
 	if err = v.ReconcileServiceExportForRD(rd); err != nil {
 		return nil, nil, err
 	}
@@ -556,10 +552,6 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 
 	if replicationSource == nil {
 		return false, nil, nil // Requeue
-	}
-
-	if err = v.AssignRDAndRSAsOwnerToProtectedPVC(replicationSource, rsSpec.ProtectedPVC); err != nil {
-		return false, replicationSource, err
 	}
 
 	//
