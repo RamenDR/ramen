@@ -3753,3 +3753,63 @@ func (v *VSHandler) getRamenImage() string {
 
 	return ""
 }
+
+func (v *VSHandler) RetainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
+	if pvc.Spec.VolumeName == "" {
+		return nil
+	}
+
+	pv := &corev1.PersistentVolume{}
+
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
+	}
+
+	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+		return nil
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
+
+	annotations := pv.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	annotations[PVAnnotationRetentionKey] = PVAnnotationRetentionValue
+	pv.SetAnnotations(annotations)
+
+	v.log.Info("Retaining PV for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
+
+	return v.client.Update(v.ctx, pv)
+}
+
+func (v *VSHandler) UndoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim) error {
+	if pvc.Spec.VolumeName == "" {
+		return nil
+	}
+
+	pv := &corev1.PersistentVolume{}
+
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
+	}
+
+	val, ok := pv.ObjectMeta.Annotations[PVAnnotationRetentionKey]
+	if !ok || val != PVAnnotationRetentionValue {
+		return nil
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
+	delete(pv.ObjectMeta.Annotations, PVAnnotationRetentionKey)
+
+	v.log.Info("Undoing PV retention for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
+
+	return v.client.Update(v.ctx, pv)
+}
