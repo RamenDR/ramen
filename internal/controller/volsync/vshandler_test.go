@@ -664,8 +664,7 @@ var _ = Describe("VolSync_Handler", func() {
 					vsHandlerDirect = volsync.NewVSHandler(ctx, k8sClient, logger, owner, asyncSpec, "none", "Direct", false)
 				})
 
-				It("keeps RD as PVC owner when DeleteRD() is invoked by cleanupResources (workload deletion)", func() {
-					// 1) Precreate PVC for Direct copy method
+				It("PVC survives RD deletion without ownerReferences", func() {
 					dstPVCName, err := vsHandlerDirect.PrecreateDestPVCIfEnabled(rdSpec)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(*dstPVCName).To(Equal(rdSpec.ProtectedPVC.Name))
@@ -679,10 +678,6 @@ var _ = Describe("VolSync_Handler", func() {
 						}, pvc)
 					}, maxWait, interval).Should(Succeed())
 
-					// Debug: Print PVC ownerRefs before RD creation
-					// fmt.Printf("PVC ownerRefs before RD creation: %+v\n", pvc.GetOwnerReferences())
-
-					// 2) Create PSK secret so RD reconcile can proceed
 					dummyPSKSecret := &corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      volsync.GetVolSyncPSKSecretNameFromVRGName(owner.GetName()),
@@ -694,7 +689,6 @@ var _ = Describe("VolSync_Handler", func() {
 						return k8sClient.Get(ctx, client.ObjectKeyFromObject(dummyPSKSecret), dummyPSKSecret)
 					}, maxWait, interval).Should(Succeed())
 
-					// 3) Reconcile RD
 					_, _, err = vsHandlerDirect.ReconcileRD(rdSpec, nil)
 					Expect(err).NotTo(HaveOccurred())
 
@@ -707,42 +701,22 @@ var _ = Describe("VolSync_Handler", func() {
 						}, rd)
 					}, maxWait, interval).Should(Succeed())
 
-					// RD should NOT have VRG owner
-					Expect(ownerMatches(rd, owner.GetName(), "ConfigMap", true)).To(BeFalse())
+					// PVC should NOT have RD as owner (no ownerReferences set)
+					pvcCheck := &corev1.PersistentVolumeClaim{}
+					Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvcCheck)).To(Succeed())
+					Expect(pvcCheck.GetOwnerReferences()).To(BeEmpty())
 
-					// 4) PVC should have RD as controller owner (re-fetch PVC)
-					Eventually(func() bool {
-						pvcCheck := &corev1.PersistentVolumeClaim{}
-						if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvcCheck); err != nil {
-							return false
-						}
+					Expect(vsHandlerDirect.DeleteRD(rd.GetName(), rd.GetNamespace())).To(Succeed())
 
-						// fmt.Printf("PVC ownerRefs after RD creation: %+v\n", pvcCheck.GetOwnerReferences())
-						return ownerMatches(pvcCheck, rd.GetName(), "ReplicationDestination", true)
-					}, maxWait, interval).Should(BeTrue())
-
-					// PVC should still have VRG labels
-					// Expect(pvc.Labels).To(HaveKeyWithValue(util.VRGOwnerNameLabel, owner.GetName()))
-					// Expect(pvc.Labels).To(HaveKeyWithValue(util.VRGOwnerNamespaceLabel, owner.GetNamespace()))
-
-					// 5) Delete RD via workload cleanup path
-					Expect(vsHandlerDirect.DeleteRD(rd.GetName(), rd.GetNamespace(), true)).To(Succeed())
-
-					// RD should be deleted
 					Eventually(func() bool {
 						err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rd), rd)
 
 						return kerrors.IsNotFound(err)
 					}, maxWait, interval).Should(BeTrue())
 
-					// PVC should still reference RD as owner (GC would delete PVC in real cluster)
-					pvcCheck := &corev1.PersistentVolumeClaim{}
-					Expect(k8sClient.Get(ctx, types.NamespacedName{
-						Name:      rdSpec.ProtectedPVC.Name,
-						Namespace: testNamespace.GetName(),
-					}, pvcCheck)).To(Succeed())
-					// fmt.Printf("PVC ownerRefs after RD deletion: %+v\n", pvcCheck.GetOwnerReferences())
-					Expect(ownerMatches(pvcCheck, rd.GetName(), "ReplicationDestination", true)).To(BeTrue())
+					// PVC should still exist after RD deletion (no GC)
+					Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pvc), pvcCheck)).To(Succeed())
+					Expect(pvcCheck.GetOwnerReferences()).To(BeEmpty())
 				})
 			})
 		})
@@ -1699,11 +1673,11 @@ var _ = Describe("VolSync_Handler", func() {
 		It("Should delete an RD when it belongs to the VRG", func() {
 			rdToDelete1 := rdSpecList[3].ProtectedPVC.Name        // rd name should == pvc name
 			rdToDeleteNs1 := rdSpecList[3].ProtectedPVC.Namespace // rd namespace should == pvc namespace
-			Expect(vsHandler.DeleteRD(rdToDelete1, rdToDeleteNs1, true)).To(Succeed())
+			Expect(vsHandler.DeleteRD(rdToDelete1, rdToDeleteNs1)).To(Succeed())
 
 			rdToDelete2 := rdSpecList[5].ProtectedPVC.Name        // rd name should == pvc name
 			rdToDeleteNS2 := rdSpecList[5].ProtectedPVC.Namespace // rd namespace should == pvc namespace
-			Expect(vsHandler.DeleteRD(rdToDelete2, rdToDeleteNS2, true)).To(Succeed())
+			Expect(vsHandler.DeleteRD(rdToDelete2, rdToDeleteNS2)).To(Succeed())
 
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
 
@@ -1722,7 +1696,7 @@ var _ = Describe("VolSync_Handler", func() {
 		It("Should not delete an RD when it does not belong to the VRG", func() {
 			rdToDelete := rdSpecListOtherOwner[1].ProtectedPVC.Name                   // rd name should == pvc name
 			rdToDeleteNs := rdSpecListOtherOwner[1].ProtectedPVC.Namespace            // rd namespace should == pvc namespace
-			Expect(vsHandler.DeleteRD(rdToDelete, rdToDeleteNs, false)).To(Succeed()) // Should not return err
+			Expect(vsHandler.DeleteRD(rdToDelete, rdToDeleteNs)).To(Succeed()) // Should not return err
 
 			// No RDs should have been deleted
 			remainingRDs := &volsyncv1alpha1.ReplicationDestinationList{}
@@ -1860,11 +1834,11 @@ var _ = Describe("VolSync_Handler", func() {
 		It("Should delete an RS when it belongs to the VRG", func() {
 			rsToDelete1 := rsSpecList[3].ProtectedPVC.Name        // rs name should == pvc name
 			rsToDeleteNs1 := rsSpecList[3].ProtectedPVC.Namespace // rs namespace should == pvc namespace
-			Expect(vsHandler.DeleteRS(rsToDelete1, rsToDeleteNs1, false)).To(Succeed())
+			Expect(vsHandler.DeleteRS(rsToDelete1, rsToDeleteNs1)).To(Succeed())
 
 			rsToDelete2 := rsSpecList[5].ProtectedPVC.Name        // rs name should == pvc name
 			rsToDeleteNs2 := rsSpecList[5].ProtectedPVC.Namespace // rs namespace should == pvc namespace
-			Expect(vsHandler.DeleteRS(rsToDelete2, rsToDeleteNs2, false)).To(Succeed())
+			Expect(vsHandler.DeleteRS(rsToDelete2, rsToDeleteNs2)).To(Succeed())
 
 			remainingRSs := &volsyncv1alpha1.ReplicationSourceList{}
 
@@ -1878,7 +1852,7 @@ var _ = Describe("VolSync_Handler", func() {
 		It("Should not delete an RS when it does not belong to the VRG", func() {
 			rsToDelete := rsSpecListOtherOwner[1].ProtectedPVC.Name                   // rs name should == pvc name
 			rsToDeleteNs := rsSpecListOtherOwner[1].ProtectedPVC.Namespace            // rs namespace should == pvc namespace
-			Expect(vsHandler.DeleteRS(rsToDelete, rsToDeleteNs, false)).To(Succeed()) // Should not return err
+			Expect(vsHandler.DeleteRS(rsToDelete, rsToDeleteNs)).To(Succeed()) // Should not return err
 
 			// No RSs should have been deleted
 			remainingRSs := &volsyncv1alpha1.ReplicationSourceList{}
@@ -1947,15 +1921,9 @@ var _ = Describe("VolSync_Handler", func() {
 				}, maxWait, interval).Should(BeFalse())
 			})
 
-			It("Should complete successfully, return true and remove ACM annotations", func() {
+			It("Should complete successfully and return true", func() {
 				Expect(pvcPreparationErr).ToNot(HaveOccurred())
 				Expect(pvcPreparationComplete).To(BeTrue())
-
-				// ACM do-not-delete annotation should be added to the PVC
-				pvcAnnotations := testPVC.GetAnnotations()
-				val, ok := pvcAnnotations[volsync.ACMAppSubDoNotDeleteAnnotation]
-				Expect(ok).To(BeTrue())
-				Expect(val).To(Equal(volsync.ACMAppSubDoNotDeleteAnnotationVal))
 			})
 		})
 	})
