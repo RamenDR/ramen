@@ -963,17 +963,11 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 	v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
 }
 
-// disownPVCs this function is disassociating all PVCs (targeted for VolSync replication) from its owner (VRG)
-func (v *VRGInstance) disownPVCs() error {
-	if v.instance.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		return nil
-	}
-
+func (v *VRGInstance) undoPVRetentionForVolSyncPVCs() error {
 	for idx := range v.volSyncPVCs {
 		pvc := &v.volSyncPVCs[idx]
 
-		err := v.volSyncHandler.DisownVolSyncManagedPVC(pvc)
-		if err != nil {
+		if err := v.volSyncHandler.UndoPVRetentionForPVC(*pvc); err != nil {
 			return err
 		}
 	}
@@ -1006,9 +1000,41 @@ func (v *VRGInstance) cleanupResources() error {
 		if err := v.doCleanupResources(protectedPVC.Name, protectedPVC.Namespace); err != nil {
 			return err
 		}
+
+		if err := v.deleteDestinationPVC(protectedPVC.Name, protectedPVC.Namespace); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func (v *VRGInstance) deleteDestinationPVC(name, namespace string) error {
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: name, Namespace: namespace}, pvc)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get destination PVC %s/%s: %w", namespace, name, err)
+	}
+
+	if err := v.volSyncHandler.UndoPVRetentionForPVC(*pvc); err != nil {
+		return fmt.Errorf("failed to undo PV retention for destination PVC %s/%s: %w", namespace, name, err)
+	}
+
+	err = util.NewResourceUpdater(pvc).
+		RemoveFinalizer(volsync.PVCFinalizerProtected).
+		Update(v.ctx, v.reconciler.Client)
+	if err != nil {
+		return fmt.Errorf("failed to remove finalizer from destination PVC %s/%s: %w", namespace, name, err)
+	}
+
+	v.log.Info("Deleting destination PVC", "pvcName", name, "namespace", namespace)
+
+	return v.reconciler.Delete(v.ctx, pvc)
 }
 
 func (v *VRGInstance) doCleanupResources(name, namespace string) error {
