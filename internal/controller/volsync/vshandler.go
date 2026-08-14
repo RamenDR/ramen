@@ -1131,26 +1131,16 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 	return v.prepareForFinalSync(pvcNamespacedName)
 }
 
-// TakePVCOwnership adds do-not-delete annotation to indicate that ACM should not delete/cleanup this pvc
-// when the appsub is removed.
 func (v *VSHandler) TakePVCOwnership(pvcNamespacedName types.NamespacedName) (bool, error) {
 	l := v.log.WithValues("pvc", pvcNamespacedName)
 
 	l.V(1).Info("Take PVC ownership")
 
-	// Confirm PVC exists
-	pvc, err := v.validatePVC(pvcNamespacedName)
+	_, err := v.validatePVC(pvcNamespacedName)
 	if err != nil {
-		l.Error(err, "unable to validate PVC or add ownership")
+		l.Error(err, "unable to validate PVC")
 
 		return false, err
-	}
-
-	err = v.client.Update(v.ctx, pvc)
-	if err != nil {
-		l.Error(err, "Error updating annotations on PVC to break appsub ownership")
-
-		return false, fmt.Errorf("error updating annotations on PVC to break appsub ownership (%w)", err)
 	}
 
 	return true, nil
@@ -1293,8 +1283,6 @@ func (v *VSHandler) ReleasePVCOwnership(pvcNamespacedName types.NamespacedName) 
 
 	return pvc, util.NewResourceUpdater(pvc).
 		AddFinalizer(PVCFinalizerProtected).
-		DeleteAnnotation(ACMAppSubDoNotDeleteAnnotation). // Allows ACM to delete the PVC when the appsub is removed
-		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 
@@ -1345,15 +1333,6 @@ func (v *VSHandler) validatePVC(pvcNamespacedName types.NamespacedName) (
 	*corev1.PersistentVolumeClaim, error,
 ) {
 	pvc, err := v.getPVC(pvcNamespacedName)
-	if err != nil {
-		return nil, err
-	}
-
-	v.log.Info("PVC exists", "pvcName", pvcNamespacedName.Name, "pvcNamespaceName", pvcNamespacedName.Namespace)
-
-	// Add annotation to indicate that ACM should not delete/cleanup this pvc when the appsub is removed
-	// and add VRG as owner
-	err = v.addAnnotationAndUpdate(pvc, ACMAppSubDoNotDeleteAnnotation, ACMAppSubDoNotDeleteAnnotationVal)
 	if err != nil {
 		return nil, err
 	}
