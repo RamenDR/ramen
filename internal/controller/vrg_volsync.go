@@ -207,6 +207,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		return true
 	}
 
+	if err := v.volSyncHandler.RetainPVForPVC(pvc); err != nil {
+		v.log.Info("Requeuing, as retaining PV for VolSync PVC failed", "pvcName", pvc.Name, "error", err)
+
+		return true
+	}
+
 	*finalSyncPrepared = true
 
 	if isCGEnabled {
