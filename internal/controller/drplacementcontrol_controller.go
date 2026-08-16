@@ -60,9 +60,6 @@ const (
 
 	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 
-	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
-	DoNotDeletePVCAnnotationVal = "true"
-
 	IsSubmarinerEnabledAnnotation    = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
 	IsSubmarinerEnabledAnnotationVal = "true"
 )
@@ -1000,10 +997,6 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 		if vrg.Spec.ReplicationState == replicationState {
 			if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
 				return fmt.Errorf("%s VRG adoption in progress", replicationState)
-			}
-
-			if err := EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, cluster, r.Log); err != nil {
-				return fmt.Errorf("wait for annotation to propagate to the VRG. Msg: %w", err)
 			}
 
 			if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), cluster); err != nil {
@@ -2958,8 +2951,6 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 		switch k {
 		case DestinationClusterAnnotationKey:
 			fallthrough
-		case DoNotDeletePVCAnnotation:
-			fallthrough
 		case rmnutil.IsCGEnabledAnnotation:
 			fallthrough
 		case rmnutil.IsSubmarinerEnabledAnnotation:
@@ -3209,46 +3200,6 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 	return true
 }
 
-// EnsureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
-// resource to the VRG resource on the specified cluster. If the annotation is set on the DRPC but not yet
-// present on the VRG, this function updates the VRG ManifestWork to include the annotation. This is used to
-// prevent deletion of app PVCs during DR disabling.
-func EnsureDoNotDeletePVCAnnotation(
-	mwu rmnutil.MWUtil,
-	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
-	vrg *rmn.VolumeReplicationGroup,
-	cluster string,
-	log logr.Logger,
-) error {
-	if vrg.Spec.ReplicationState != rmn.Primary {
-		return nil // Only propagate the annotation if the VRG is in primary state
-	}
-
-	if rmnutil.ResourceIsDeleted(placementObj) {
-		return nil // Propagate the annotation only if the Placement resource is NOT being deleted
-	}
-
-	if IsRamenPlacementScheduler(placementObj) {
-		return nil // If Ramen is still the scheduler, no need to propagate the annotation
-	}
-
-	// Ramen is no longer the scheduler. We need to make sure the annotation exists; otherwise, the process will wait.
-	if drpc.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		return fmt.Errorf("do-not-delete-pvc annotation not yet applied to the DRPC")
-	}
-
-	// Check whether the annotation is already set on the VRG. If it is, no action is needed.
-	// If not, propagate the annotation to the VRG.
-	if vrg.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		err := propagateAnnotationToVRG(mwu, cluster, DoNotDeletePVCAnnotation, DoNotDeletePVCAnnotationVal, log)
-
-		return fmt.Errorf("annotation hasn't been propagated to cluster %s (%w)", cluster, err)
-	}
-
-	return nil
-}
-
 func IsRamenPlacementScheduler(placementObj client.Object) bool {
 	switch obj := placementObj.(type) {
 	case *plrv1.PlacementRule:
@@ -3265,52 +3216,4 @@ func IsRamenPlacementScheduler(placementObj client.Object) bool {
 	return false
 }
 
-// propagateAnnotationToVRG adds or updates a specific annotation on a VRG resource in the ManifestWork
-// for the given cluster. This is typically used to propagate the "do-not-delete-pvc" annotation from
-// the DRPC to the VRG, to ensure that app PVCs are not deleted during DR disabling.
-func propagateAnnotationToVRG(
-	mwu rmnutil.MWUtil,
-	toCluster string,
-	annoKey, annoValue string,
-	log logr.Logger,
-) error {
-	log.Info("propagate Annotation to VRG")
 
-	mw, mwErr := mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, toCluster)
-	if mwErr != nil {
-		if k8serrors.IsNotFound(mwErr) {
-			return fmt.Errorf("failed to find ManifestWork for VRG and cluster %s", toCluster)
-		}
-
-		return fmt.Errorf("error (%w) in finding ManifestWork for VRG and cluster %s",
-			mwErr, toCluster)
-	}
-
-	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
-	if err != nil {
-		return fmt.Errorf("error extracting VRG from ManifestWork for cluster %s. Error: %w", toCluster, err)
-	}
-
-	if vrg.Spec.ReplicationState != rmn.Primary {
-		return fmt.Errorf("invalid update for VRG in %s spec.replicationState on cluster %s",
-			vrg.Spec.ReplicationState, toCluster)
-	}
-
-	if vrg.GetAnnotations() == nil {
-		vrg.SetAnnotations(make(map[string]string))
-	}
-
-	if vrg.GetAnnotations()[annoKey] == annoValue {
-		log.Info(fmt.Sprintf("Annotation %s already exists with value %s on VRG %s in cluster %s",
-			annoKey, annoValue, vrg.Name, toCluster))
-
-		return nil
-	}
-
-	log.Info(fmt.Sprintf("Adding/Updating Annotation %s with value %s on VRG %s in cluster %s",
-		annoKey, annoValue, vrg.Name, toCluster))
-
-	vrg.GetAnnotations()[annoKey] = annoValue
-
-	return mwu.UpdateVRGManifestWork(vrg, mw)
-}

@@ -2302,7 +2302,6 @@ func (d *DRPCInstance) setVRGAnnotations(vrg *rmn.VolumeReplicationGroup, homeCl
 	// Create base annotations that are always present
 	vrg.ObjectMeta.Annotations = map[string]string{
 		DestinationClusterAnnotationKey:       homeCluster,
-		DoNotDeletePVCAnnotation:              d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.IsCGEnabledAnnotation:         d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
