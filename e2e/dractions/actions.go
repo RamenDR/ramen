@@ -119,10 +119,6 @@ func DisableProtection(ctx types.TestContext) error {
 		log.Infof("Unprotecting workload in cluster %q", cluster.Name)
 	}
 
-	if err := annotateDRPCDoNotDeletePVC(ctx, name); err != nil {
-		return err
-	}
-
 	if err := deleteProtectionResources(ctx); err != nil {
 		return err
 	}
