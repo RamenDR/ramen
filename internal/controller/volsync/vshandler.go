@@ -1157,18 +1157,18 @@ func (v *VSHandler) prepareForFinalSync(pvcNamespacedName types.NamespacedName) 
 }
 
 func (v *VSHandler) doPrepFinalSync(pvcNamespacedName types.NamespacedName) error {
-	_, err := v.ReleasePVCOwnership(pvcNamespacedName)
+	_, err := v.addPVCProtectionFinalizer(pvcNamespacedName)
 	if err != nil {
-		return fmt.Errorf("waiting to release pvc ownership (%w)", err)
+		return fmt.Errorf("waiting to add PVC protection finalizer (%w)", err)
 	}
 
 	return nil
 }
 
-func (v *VSHandler) ReleasePVCOwnership(pvcNamespacedName types.NamespacedName) (*corev1.PersistentVolumeClaim, error) {
+func (v *VSHandler) addPVCProtectionFinalizer(pvcNamespacedName types.NamespacedName) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvc", pvcNamespacedName)
 
-	l.V(1).Info("Release PVC ownership and remove OCM annotation")
+	l.V(1).Info("Adding PVC protection finalizer")
 
 	pvc, err := v.getPVC(pvcNamespacedName)
 	if err != nil {
