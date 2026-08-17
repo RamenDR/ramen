@@ -1694,8 +1694,8 @@ var _ = Describe("VolSync_Handler", func() {
 		})
 
 		It("Should not delete an RD when it does not belong to the VRG", func() {
-			rdToDelete := rdSpecListOtherOwner[1].ProtectedPVC.Name                   // rd name should == pvc name
-			rdToDeleteNs := rdSpecListOtherOwner[1].ProtectedPVC.Namespace            // rd namespace should == pvc namespace
+			rdToDelete := rdSpecListOtherOwner[1].ProtectedPVC.Name            // rd name should == pvc name
+			rdToDeleteNs := rdSpecListOtherOwner[1].ProtectedPVC.Namespace     // rd namespace should == pvc namespace
 			Expect(vsHandler.DeleteRD(rdToDelete, rdToDeleteNs)).To(Succeed()) // Should not return err
 
 			// No RDs should have been deleted
@@ -1850,8 +1850,8 @@ var _ = Describe("VolSync_Handler", func() {
 		})
 
 		It("Should not delete an RS when it does not belong to the VRG", func() {
-			rsToDelete := rsSpecListOtherOwner[1].ProtectedPVC.Name                   // rs name should == pvc name
-			rsToDeleteNs := rsSpecListOtherOwner[1].ProtectedPVC.Namespace            // rs namespace should == pvc namespace
+			rsToDelete := rsSpecListOtherOwner[1].ProtectedPVC.Name            // rs name should == pvc name
+			rsToDeleteNs := rsSpecListOtherOwner[1].ProtectedPVC.Namespace     // rs namespace should == pvc namespace
 			Expect(vsHandler.DeleteRS(rsToDelete, rsToDeleteNs)).To(Succeed()) // Should not return err
 
 			// No RSs should have been deleted

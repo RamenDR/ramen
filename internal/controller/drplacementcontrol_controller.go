@@ -870,7 +870,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// cleanup for VRG artifacts
-	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, placementObj, vrgNamespace); err != nil {
+	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, vrgNamespace); err != nil {
 		return err
 	}
 
@@ -944,7 +944,6 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	log logr.Logger,
 	mwu rmnutil.MWUtil,
 	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
 	vrgNamespace string,
 ) error {
 	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
@@ -960,12 +959,12 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 
 	// We have to ensure the secondary VRG is deleted before deleting the primary VRG. This will fail until there
 	// is no secondary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Secondary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Secondary); err != nil {
 		return err
 	}
 
 	// This will fail until there is no primary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Primary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Primary); err != nil {
 		return err
 	}
 
@@ -987,7 +986,6 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 	mwu rmnutil.MWUtil,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
 	vrgNamespace string,
 	replicationState rmn.ReplicationState,
 ) error {
@@ -3215,5 +3213,3 @@ func IsRamenPlacementScheduler(placementObj client.Object) bool {
 
 	return false
 }
-
-
