@@ -140,12 +140,6 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	return d.executeAction()
 }
 
-// isInCleanupProgression returns true if DRPC is in cleanup progression states
-func (d *DRPCInstance) isInCleanupProgression() bool {
-	return d.instance.Status.Progression == rmn.ProgressionCleaningUp ||
-		d.instance.Status.Progression == rmn.ProgressionWaitOnUserToCleanUp
-}
-
 // processTestFailoverFlowIfEnabled is the entry point for test failover lifecycle management.
 // It validates dryRun configuration, adds annotation when entering test failover,
 // and routes to promotion/revert handlers when exiting.
@@ -404,15 +398,13 @@ func (d *DRPCInstance) handlePromotion(testFailoverCluster, lastAppCluster strin
 }
 
 // handleRevert handles reverting a test failover and reverting to original state.
-// It validates the revert scenario, cleans up test failover state, and restores original status.
-//
-//nolint:cyclop
+// It follows the same pattern as ensureFailoverActionCompleted: sets CleaningUp and
+// calls ensureActionCompleted every reconcile until cleanup is done.
 func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) (bool, error) {
 	d.log.Info("Reverting test failover",
 		"testCluster", testFailoverCluster,
 		"originalCluster", lastAppCluster)
 
-	// Validate user correctly set spec to original state and get derived phase
 	derivedDRState, err := validateTestFailoverRevertScenario(d.instance, lastAppCluster)
 	if err != nil {
 		d.log.Error(err, "Revert validation failed")
@@ -422,56 +414,30 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 
 	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
 
-	// Check if cleanup is complete by checking if we're in cleanup progression states
-	if d.isInCleanupProgression() {
-		// Cleanup in progress - check if VRG is cleaned up on test failover cluster
-		if d.ensureVRGIsSecondaryOnCluster(testFailoverCluster) {
-			// Cleanup complete - restore original status
-			d.log.Info("VRG cleanup complete, restoring original status",
-				"savedLastAction", d.instance.GetAnnotations()[DRPCLastAction],
-				"derivedDRState", derivedDRState)
-
-			d.setDRState(derivedDRState)
-			d.setProgression(rmn.ProgressionCompleted)
-
-			// Clean up test failover annotation
-			if err := d.cleanupTestFailoverAnnotation(testFailoverCluster); err != nil {
-				return false, err
-			}
-
-			d.log.Info("Revert complete")
-
-			return false, nil
-		}
-
-		// Cleanup still in progress
-		d.log.Info("VRG cleanup in progress", "cluster", testFailoverCluster)
-
-		return true, nil
-	}
-
-	// Not in cleanup progression yet - initiate cleanup
-	d.log.Info("Initiating cleanup on test failover cluster", "cluster", testFailoverCluster)
-
-	// Set appropriate progression state based on app type
-	// For discovered apps: user must manually clean up, so set WaitOnUserToCleanUp
-	// For managed apps (AppSet): ACM handles cleanup, so set CleaningUp
-	if isDiscoveredApp(d.instance) {
-		d.setDiscoveredAppGCProgression(testFailoverCluster)
-	} else {
-		d.setProgression(rmn.ProgressionCleaningUp)
-	}
-
-	// Remove "RetainedForFailover" entry for original cluster to prevent duplicates
-	// During dryRun, the original cluster was marked as "RetainedForFailover"
-	// We must remove this before ensureActionCompleted() rebuilds PlacementDecision
-	// This applies to both managed and discovered apps (matches EnsureCleanup behavior)
 	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
 		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
 	}
 
-	// Restore original cluster as primary and clean up test failover cluster
-	return d.ensureActionCompleted(lastAppCluster)
+	d.setProgression(rmn.ProgressionCleaningUp)
+
+	done, err := d.ensureActionCompleted(lastAppCluster)
+	if err != nil {
+		return false, err
+	}
+
+	if !done {
+		return true, nil
+	}
+
+	d.setDRState(derivedDRState)
+
+	if err := d.cleanupTestFailoverAnnotation(testFailoverCluster); err != nil {
+		return false, err
+	}
+
+	d.log.Info("dryRun revert complete")
+
+	return false, nil
 }
 
 func (d *DRPCInstance) executeAction() (bool, error) {
