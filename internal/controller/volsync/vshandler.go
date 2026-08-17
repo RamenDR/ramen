@@ -289,8 +289,6 @@ func RDStatusReady(rd *volsyncv1alpha1.ReplicationDestination, log logr.Logger) 
 	return true
 }
 
-
-
 //nolint:funlen
 func (v *VSHandler) createOrUpdateRD(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec, pskSecretName string,
@@ -1384,7 +1382,7 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 		rs := currentRSListByOwner.Items[i]
 
 		if rs.GetName() == getReplicationSourceName(pvcName) {
-			if err := v.cleanupRS(&rs, pvcName, pvcNamespace); err != nil {
+			if err := v.cleanupRS(&rs); err != nil {
 				return err
 			}
 		}
@@ -1393,7 +1391,7 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 	return nil
 }
 
-func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pvcNamespace string) error {
+func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource) error {
 	if err := v.client.Delete(v.ctx, rs); err != nil {
 		v.log.Error(err, "Error cleaning up ReplicationSource", "name", rs.GetName())
 	} else {
@@ -1403,7 +1401,7 @@ func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource, pvcName, pv
 	return nil
 }
 
-func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination, pvcName, pvcNamespace string) error {
+func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination) error {
 	// Delete local RS if needed
 	if v.IsCopyMethodDirect() {
 		if err := v.deleteLocalRDAndRS(rd); err != nil {
@@ -1434,7 +1432,7 @@ func (v *VSHandler) DeleteRD(pvcName, pvcNamespace string) error {
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
 		if rd.GetName() == expectedRDName {
-			if err := v.cleanupRD(&rd, pvcName, pvcNamespace); err != nil {
+			if err := v.cleanupRD(&rd); err != nil {
 				return err
 			}
 		}
@@ -2137,27 +2135,6 @@ func (v *VSHandler) validateAndProtectSnapshot(
 	v.log.V(1).Info("VolumeSnapshot validated and protected", "volumesnapshot name", volSnap.GetName())
 
 	return volSnap, nil
-}
-
-func (v *VSHandler) addAnnotationAndUpdate(obj client.Object,
-	annotationName, annotationValue string,
-) (err error) {
-	annotationsUpdated := util.AddAnnotation(obj, annotationName, annotationValue)
-	if annotationsUpdated {
-		objKindAndName := getKindAndName(v.client.Scheme(), obj)
-
-		if err := v.client.Update(v.ctx, obj); err != nil {
-			v.log.Error(err, "Failed to add annotation or VRG owner reference to obj", "obj", objKindAndName)
-
-			return fmt.Errorf("failed to add %s annotation or VRG owner reference to %s (%w)",
-				annotationName, objKindAndName, err)
-		}
-
-		v.log.Info("annotation and VRG ownerRef added to object",
-			"obj", objKindAndName, "annotationName", annotationName, "annotation value", annotationValue)
-	}
-
-	return nil
 }
 
 func (v *VSHandler) addOwnerReferenceAndUpdate(obj client.Object, owner metav1.Object) error {
