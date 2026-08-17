@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -118,9 +119,6 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 				LeaderElect:  new(bool),
 				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 			},
-			Metrics: rmn.ControllerMetrics{
-				BindAddress: "0", // Disable metrics
-			},
 			S3StoreProfiles: []rmn.S3StoreProfile{
 				{
 					S3ProfileName:        "fake",
@@ -152,9 +150,13 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 		By("starting the DRCluster reconciler")
 
-		options := manager.Options{Scheme: scheme.Scheme}
+		options := manager.Options{
+			Scheme: scheme.Scheme,
+			Metrics: metricsserver.Options{
+				BindAddress: "0", // Disable metrics
+			},
+		}
 		options.Controller.SkipNameValidation = ptr.To(true)
-		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
 
 		Expect(err).NotTo(HaveOccurred())
 

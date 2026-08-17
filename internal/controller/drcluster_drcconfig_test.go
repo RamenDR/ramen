@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -102,9 +103,6 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 				LeaderElect:  new(bool),
 				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 			},
-			Metrics: ramen.ControllerMetrics{
-				BindAddress: "0", // Disable metrics
-			},
 		}
 		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
@@ -118,9 +116,13 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 
 		By("starting the DRCluster reconciler")
 
-		options := manager.Options{Scheme: scheme.Scheme}
+		options := manager.Options{
+			Scheme: scheme.Scheme,
+			Metrics: metricsserver.Options{
+				BindAddress: "0", // Disable metrics
+			},
+		}
 		options.Controller.SkipNameValidation = ptr.To(true)
-		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
 
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
