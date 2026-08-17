@@ -3,8 +3,6 @@ apiVersion: ramendr.openshift.io/v1alpha1
 kind: RamenConfig
 health:
   healthProbeBindAddress: :8081
-metrics:
-  bindAddress: 127.0.0.1:9289
 webhook:
   port: 9443
 leaderElection:

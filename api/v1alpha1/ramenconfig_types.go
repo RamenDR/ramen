@@ -80,9 +80,8 @@ type S3StoreProfile struct {
 
 // ControllerMetrics defines the controller metrics configuration
 type ControllerMetrics struct {
-	// BindAddress is the TCP address that the controller should bind to
-	// for serving prometheus metrics.
-	// It can be set to "0" to disable the metrics serving.
+	// Deprecated: Ignored. The metrics listen address is not a user setting; the operator always
+	// binds 0.0.0.0:9289, which the metrics Service, NetworkPolicy, and scrape config assume.
 	// +optional
 	BindAddress string `json:"bindAddress,omitempty"`
 }

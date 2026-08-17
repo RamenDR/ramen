@@ -10,6 +10,9 @@ registry in each controller. There are two ways where you can look at the
 metrics in ramen. One way is use prometheus stack(recommended) and the other way
 is to use curl or postman. More details on each of these in the below sections.
 
+`metrics.bindAddress` in the operator ConfigMap is deprecated and ignored. See
+[Deprecated options](configure.md#deprecated-options).
+
 More information on metrics is
 [here](https://book.kubebuilder.io/reference/metrics.html)
 

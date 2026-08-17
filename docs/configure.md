@@ -129,8 +129,6 @@ data:
     # Health check and monitoring
     health:
       healthProbeBindAddress: :8081
-    metrics:
-      bindAddress: 127.0.0.1:8080
 
     # Leader election
     leaderElection:
@@ -184,6 +182,13 @@ kubectl get pods -n ramen-system -w
 
 Wait for the hub operator pod to reach `Running` state with `2/2` containers
 ready.
+
+## Deprecated options
+
+**`metrics.bindAddress`** is deprecated and ignored. The operator always listens
+on `0.0.0.0:9289`. The metrics Service, NetworkPolicy, and Prometheus scrape
+config assume that port, so it is not a user setting. See
+[metrics.md](metrics.md).
 
 ## Create DRCluster Resources
 
