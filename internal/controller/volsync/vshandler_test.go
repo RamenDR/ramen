@@ -1865,68 +1865,6 @@ var _ = Describe("VolSync_Handler", func() {
 		})
 	})
 
-	Describe("Prepare PVC for final sync", func() {
-		Context("When the PVC does not exist", func() {
-			It("Should assume preparationForFinalSync is complete", func() {
-				pvcNamespacedName := types.NamespacedName{
-					Name:      "this-pvc-does-not-exist",
-					Namespace: testNamespace.GetName(),
-				}
-				pvcPreparationComplete, err := vsHandler.TakePVCOwnership(pvcNamespacedName)
-				Expect(err).To(HaveOccurred())
-				Expect(kerrors.IsNotFound(err)).To(BeTrue())
-				Expect(pvcPreparationComplete).To(BeFalse())
-			})
-		})
-
-		Context("When the PVC exists", func() {
-			var testPVC *corev1.PersistentVolumeClaim
-
-			initialAnnotations := map[string]string{
-				"pv.kubernetes.io/bind-completed":                      "yes",
-				"apps.open-cluster-management.io/cluster-admin":        "true",
-				"apps.open-cluster-management.io/hosting-subscription": "busybox-sample/busybox-sub",
-				"pv.kubernetes.io/bound-by-controller":                 "yes",
-				"volume.beta.kubernetes.io/storage-provisioner":        "ebs.csi.aws.com",
-				"apps.open-cluster-management.io/reconcile-option":     "mergeAndOwn",
-			}
-
-			BeforeEach(func() {
-				testPVCName := "my-test-pvc-aabbcc"
-				capacity := resource.MustParse("1Gi")
-				testPVC = createDummyPVC(testPVCName, testNamespace.GetName(), capacity, initialAnnotations)
-			})
-
-			var (
-				pvcPreparationComplete bool
-				pvcPreparationErr      error
-			)
-
-			JustBeforeEach(func() {
-				pvcNamespacedName := types.NamespacedName{
-					Name:      testPVC.GetName(),
-					Namespace: testPVC.GetNamespace(),
-				}
-
-				pvcPreparationComplete, pvcPreparationErr = vsHandler.TakePVCOwnership(pvcNamespacedName)
-
-				// In all cases at this point we should expect that the PVC has ownership taken over by our owner VRG
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testPVC), testPVC)
-					if err != nil {
-						return false
-					}
-					// configmap owner is faking out VRG
-					return ownerMatches(testPVC, owner.GetName(), "ConfigMap", true)
-				}, maxWait, interval).Should(BeFalse())
-			})
-
-			It("Should complete successfully and return true", func() {
-				Expect(pvcPreparationErr).ToNot(HaveOccurred())
-				Expect(pvcPreparationComplete).To(BeTrue())
-			})
-		})
-	})
 })
 
 func ownerMatches(obj metav1.Object, ownerName, ownerKind string, ownerIsController bool) bool {

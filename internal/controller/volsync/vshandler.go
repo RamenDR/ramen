@@ -1024,14 +1024,6 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 		"isCGEnabled", isCGEnabled, "copyMethodDirect", copyMethodDirect,
 		"prepFinalSync", prepFinalSync, "runFinalSync", runFinalSync)
 
-	if copyMethodDirect && !prepFinalSync && !runFinalSync {
-		taken, err := v.TakePVCOwnership(pvcNamespacedName)
-		if err != nil || !taken {
-			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, Direct: %t",
-				err, prepFinalSync, copyMethodDirect)
-		}
-	}
-
 	if !prepFinalSync {
 		return nil
 	}
@@ -1046,21 +1038,6 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 	}
 
 	return v.prepareForFinalSync(pvcNamespacedName)
-}
-
-func (v *VSHandler) TakePVCOwnership(pvcNamespacedName types.NamespacedName) (bool, error) {
-	l := v.log.WithValues("pvc", pvcNamespacedName)
-
-	l.V(1).Info("Take PVC ownership")
-
-	_, err := v.validatePVC(pvcNamespacedName)
-	if err != nil {
-		l.Error(err, "unable to validate PVC")
-
-		return false, err
-	}
-
-	return true, nil
 }
 
 func (v *VSHandler) prepareForCGFinalSync(rgsNamespacedName, pvcNamespacedName types.NamespacedName) error {
@@ -1240,21 +1217,6 @@ func (v *VSHandler) getPVC(pvcNamespacedName types.NamespacedName) (*corev1.Pers
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
-
-	return pvc, nil
-}
-
-// Adds ACM "do-not-delete" annotation to indicate that when the appsub is removed, ACM
-// should not cleanup this PVC - we want it left behind so we can run a final sync
-func (v *VSHandler) validatePVC(pvcNamespacedName types.NamespacedName) (
-	*corev1.PersistentVolumeClaim, error,
-) {
-	pvc, err := v.getPVC(pvcNamespacedName)
-	if err != nil {
-		return nil, err
-	}
-
-	v.log.V(1).Info("PVC validated", "pvcName", pvcNamespacedName.Name, "pvcNamespaceName", pvcNamespacedName.Namespace)
 
 	return pvc, nil
 }
