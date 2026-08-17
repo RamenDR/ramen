@@ -86,6 +86,7 @@ const (
 
 type DRClusterMetrics struct {
 	InvalidCIDRsDetectedMetrics
+	UndetectedCIDRsFoundMetrics
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -448,7 +449,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		)
 	}
 
-	if err = u.validateCIDRs(drclusterMetrics.InvalidCIDRsDetectedMetrics, u.log,
+	if err = u.validateCIDRs(drclusterMetrics, u.log,
 		&u.object.Status.Conditions, u.object.Generation); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
 			u.validatedSetFalseAndUpdate(ReasonValidationFailed, errors.New("CIDRs validation failed")))
@@ -505,17 +506,19 @@ func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluste
 }
 
 func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics {
-	invalidCIDRsDetectedMetricLabels := InvalidCIDRsDetectedMetricLabels(drcluster)
-	invalidCIDRsDetectedMetrics := NewInvalidCIDRsDetectedMetric(invalidCIDRsDetectedMetricLabels)
+	cidrMetricLabels := DRClusterCIDRsMetricLabels(drcluster)
+	invalidCIDRsDetectedMetrics := NewInvalidCIDRsDetectedMetric(cidrMetricLabels)
+	undetectedCIDRsFoundMetrics := NewUndetectedCIDRsFoundMetric(cidrMetricLabels)
 
 	return DRClusterMetrics{
 		InvalidCIDRsDetectedMetrics: invalidCIDRsDetectedMetrics,
+		UndetectedCIDRsFoundMetrics: undetectedCIDRsFoundMetrics,
 	}
 }
 
-// validateCIDRsConfigured ensures all detected CIDRs from DRClusterConfig StorageAccessDetails
-// are configured in the DRCluster. Additional CIDRs in DRCluster that are undetected
-// (not present in StorageAccessDetails) are allowed.
+// validateCIDRs validates the CIDRs configured in DRCluster.Spec against CIDRs detected by
+// the storage provisioner in DRClusterConfig StorageAccessDetails. Validation is skipped if
+// no CIDRs are configured, as non-MDR setups do not use network fencing.
 //
 // Terminology:
 //   - detected:     CIDRs in DRClusterConfig StorageAccessDetails, auto-detected by the storage provisioner
@@ -524,93 +527,138 @@ func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics
 //     (these cause a validation error)
 //
 // Validation is skipped if DRClusterConfig is not found or StorageAccessDetails is empty.
-// The watch on ManagedClusterView/ManifestWork will trigger reconciliation when these
-// become available.
-func (u *drclusterInstance) validateCIDRsConfigured(conditions *[]metav1.Condition, observedGeneration int64) error {
-	drcConfig, err := u.getDRCCFromCluster(u.object)
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			// skip when DRClusterConfig not created. Watch on MCV
-			// will trigger DRCluster reconcillation when DRClusterConfig created
-			return nil
-		}
-
-		return err
-	}
-
-	// Skip CIDR detection validation if StorageAccessDetails is not available.
-	// StorageAccessDetails is populated by DRClusterConfig controller when matching
-	// NetworkFenceClasses are detected in the managed cluster. Return nil to
-	// maintain backward compatibility with clusters that don't have this data yet.
-	if len(drcConfig.Status.StorageAccessDetails) == 0 {
-		return nil
-	}
-
-	storageAccessDetails := drcConfig.Status.StorageAccessDetails
-	cidrsFromDRCC := sets.NewString()
-
-	for _, sAD := range storageAccessDetails {
-		cidrsFromDRCC = cidrsFromDRCC.Insert(sAD.CIDRs...)
-	}
-
-	cidrsFromDRCluster := sets.NewString(u.object.Spec.CIDRs...)
-
-	// CIDRsValidated=False: detected CIDRs missing from DRCluster.Spec
-	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
-	if len(unconfiguredCIDRs) > 0 {
-		msg := fmt.Sprintf("detected CIDRs not configured: %s", strings.Join(unconfiguredCIDRs, ", "))
-		setCIDRsValidatedConditionDetectedCIDRsUnconfigured(conditions, observedGeneration, msg)
-
-		return fmt.Errorf("%s", msg)
-	}
-
-	// CIDRsValidated=True: additional CIDRs in DRCluster not detected by the storage provisioner
-	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
-	if len(undetectedCIDRs) > 0 {
-		setCIDRsValidatedConditionUndetectedCIDRsFound(conditions, observedGeneration,
-			fmt.Sprintf("warning: CIDRs not detected by storage provisioner: %s", strings.Join(undetectedCIDRs, ", ")))
-
-		return nil
-	}
-
-	// CIDRsValidated=True: all detected CIDRs are configured
-	setCIDRsValidatedConditionSucceeded(conditions, observedGeneration, "All detected CIDRs are configured")
-
-	return nil
-}
-
-// validateCIDRs validates the CIDRs configured in DRCluster.Spec. Validation is skipped
-// if no CIDRs are configured, as non-MDR setups do not use network fencing.
 func (u *drclusterInstance) validateCIDRs(
-	metrics InvalidCIDRsDetectedMetrics, log logr.Logger,
+	metrics DRClusterMetrics, log logr.Logger,
 	conditions *[]metav1.Condition, observedGeneration int64,
 ) error {
+	// clear stale metrics from previous reconcile; each check sets its metric on error
+	metrics.InvalidCIDRsDetected.Set(0)
+	metrics.UndetectedCIDRsFound.Set(0)
+
+	// non-MDR setups do not configure CIDRs; skip validation
 	if len(u.object.Spec.CIDRs) == 0 {
 		meta.RemoveStatusCondition(conditions, ramen.DRClusterConditionTypeCIDRsValidated)
 
 		return nil
 	}
 
-	err := validateCIDRsFormat(u.object, log)
+	// validate CIDR format before checking against detected CIDRs
+	err := validateCIDRsFormat(u.object, log, metrics.InvalidCIDRsDetectedMetrics)
 	if err != nil {
-		metrics.InvalidCIDRsDetected.Set(1)
 		setCIDRsValidatedConditionInvalidFormat(conditions, observedGeneration, err.Error())
 		log.Error(err, "CIDRs format validation failed")
 
 		return err
 	}
 
-	err = u.validateCIDRsConfigured(conditions, observedGeneration)
+	// fetch CIDRs detected by the storage provisioner; nil means data not yet available
+	cidrsFromDRCC, err := u.getCIDRSFromDRCC()
 	if err != nil {
-		metrics.InvalidCIDRsDetected.Set(1)
+		return err
+	}
+
+	if cidrsFromDRCC == nil {
+		return nil
+	}
+
+	cidrsFromDRCluster := sets.NewString(u.object.Spec.CIDRs...)
+
+	// check for unconfigured CIDRs
+	err = checkDetectedCIDRsConfigured(cidrsFromDRCC, cidrsFromDRCluster,
+		conditions, observedGeneration, metrics.InvalidCIDRsDetectedMetrics)
+	if err != nil {
 		log.Error(err, "CIDRs validation failed")
 
 		return err
 	}
 
-	metrics.InvalidCIDRsDetected.Set(float64(0))
+	// check for undetected CIDRs
+	undetectedCIDRsFound := checkUndetectedCIDRsFound(cidrsFromDRCC, cidrsFromDRCluster,
+		conditions, observedGeneration, metrics.UndetectedCIDRsFoundMetrics)
+	if !undetectedCIDRsFound {
+		// all detected CIDRs are configured and no undetected CIDRs found
+		setCIDRsValidatedConditionSucceeded(conditions, observedGeneration, "All detected CIDRs are configured")
+	}
 
 	return nil
+}
+
+// getCIDRSFromDRCC returns the CIDRs detected by the storage provisioner from DRClusterConfig
+// StorageAccessDetails. The return value has three meanings:
+//   - nil: DRClusterConfig not found, or ConfigurationProcessed is not yet True — data is not
+//     ready; a ManagedClusterView/ManifestWork watch triggers reconciliation when it is.
+//   - empty set: ConfigurationProcessed is True but no storage CIDRs were detected — the
+//     provisioner found no NetworkFenceClasses in the managed cluster.
+//   - non-empty set: CIDRs detected by the storage provisioner in StorageAccessDetails.
+func (u *drclusterInstance) getCIDRSFromDRCC() (sets.String, error) {
+	drcConfig, err := u.getDRCCFromCluster(u.object)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	// if StorageAccessDetails is empty, check ConfigurationProcessed to determine if the provisioner
+	// has completed its scan. If not yet processed, return nil to retry later.
+	// If processed, return an empty set.
+	if len(drcConfig.Status.StorageAccessDetails) == 0 {
+		processed := meta.FindStatusCondition(drcConfig.Status.Conditions,
+			ramen.DRClusterConfigConfigurationProcessed)
+		if processed == nil || processed.Status != metav1.ConditionTrue {
+			return nil, nil
+		}
+
+		return sets.NewString(), nil
+	}
+
+	cidrsFromDRCC := sets.NewString()
+
+	for _, sAD := range drcConfig.Status.StorageAccessDetails {
+		cidrsFromDRCC = cidrsFromDRCC.Insert(sAD.CIDRs...)
+	}
+
+	return cidrsFromDRCC, nil
+}
+
+// checkDetectedCIDRsConfigured checks that all CIDRs detected by the storage provisioner
+// are configured in DRCluster.Spec. Owns the InvalidCIDRsDetected metric.
+func checkDetectedCIDRsConfigured(
+	cidrsFromDRCC, cidrsFromDRCluster sets.String,
+	conditions *[]metav1.Condition, observedGeneration int64,
+	metrics InvalidCIDRsDetectedMetrics,
+) error {
+	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
+	if len(unconfiguredCIDRs) > 0 {
+		msg := fmt.Sprintf("detected CIDRs not configured: %s", strings.Join(unconfiguredCIDRs, ", "))
+		setCIDRsValidatedConditionDetectedCIDRsUnconfigured(conditions, observedGeneration, msg)
+		metrics.InvalidCIDRsDetected.Set(1)
+
+		return fmt.Errorf("%s", msg)
+	}
+
+	return nil
+}
+
+// checkUndetectedCIDRsFound checks if DRCluster has CIDRs not detected by the storage provisioner.
+// Owns the UndetectedCIDRsFound metric. Returns true if undetected CIDRs were found.
+func checkUndetectedCIDRsFound(
+	cidrsFromDRCC, cidrsFromDRCluster sets.String,
+	conditions *[]metav1.Condition, observedGeneration int64,
+	metrics UndetectedCIDRsFoundMetrics,
+) bool {
+	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
+	if len(undetectedCIDRs) > 0 {
+		setCIDRsValidatedConditionUndetectedCIDRsFound(conditions, observedGeneration,
+			fmt.Sprintf("warning: CIDRs not detected by storage provisioner: %s",
+				strings.Join(undetectedCIDRs, ", ")))
+		metrics.UndetectedCIDRsFound.Set(1)
+
+		return true
+	}
+
+	return false
 }
 
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
@@ -648,7 +696,7 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	return "", nil
 }
 
-func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
+func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger, metrics InvalidCIDRsDetectedMetrics) error {
 	// validate the CIDRs format
 	invalidCidrs := []string{}
 
@@ -661,6 +709,8 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	}
 
 	if len(invalidCidrs) > 0 {
+		metrics.InvalidCIDRsDetected.Set(1)
+
 		return fmt.Errorf("invalid CIDRs format specified %s", strings.Join(invalidCidrs, ", "))
 	}
 
@@ -687,8 +737,9 @@ func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result,
 		}
 	}
 
-	invalidCIDRsLabels := InvalidCIDRsDetectedMetricLabels(u.object)
-	DeleteInvalidCIDRsDetectedMetric(invalidCIDRsLabels)
+	cidrMetricLabels := DRClusterCIDRsMetricLabels(u.object)
+	DeleteInvalidCIDRsDetectedMetric(cidrMetricLabels)
+	DeleteUndetectedCIDRsFoundMetric(cidrMetricLabels)
 
 	if err := u.finalizerRemove(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
