@@ -31,6 +31,7 @@ const (
 
 const (
 	InvalidCIDRsDetected = "invalid_cidrs_detected"
+	UndetectedCIDRsFound = "undetected_cidrs_found"
 )
 
 // DR telemetry metrics, forwarded to Red Hat Telemetry via the
@@ -89,6 +90,10 @@ type GlobalActionMetrics struct {
 
 type InvalidCIDRsDetectedMetrics struct {
 	InvalidCIDRsDetected prometheus.Gauge
+}
+
+type UndetectedCIDRsFoundMetrics struct {
+	UndetectedCIDRsFound prometheus.Gauge
 }
 
 type DRProgressionStateMetrics struct {
@@ -155,7 +160,7 @@ var (
 		ObjNamespace, // DRPC namespace
 	}
 
-	invalidCIDRsLabels = []string{
+	cidrMetricLabels = []string{
 		ObjType, // Name of the type of the resource [DRCluster]
 		ObjName, // Name of the resoure [DRCluster-name]
 	}
@@ -238,7 +243,16 @@ var (
 			Namespace: metricNamespace,
 			Help:      "Invalid CIDRs Detected status",
 		},
-		invalidCIDRsLabels,
+		cidrMetricLabels,
+	)
+
+	undetectedCIDRsFound = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      UndetectedCIDRsFound,
+			Namespace: metricNamespace,
+			Help:      "CIDRs configured in DRCluster not detected by the storage provisioner",
+		},
+		cidrMetricLabels,
 	)
 
 	drpcProgressionState = prometheus.NewGaugeVec(
@@ -411,7 +425,7 @@ func DeleteGlobalActionMetric(labels prometheus.Labels) bool {
 }
 
 // InvalidCIDRsDetected Metric reports if CIDRs configured are valid for fencing
-func InvalidCIDRsDetectedMetricLabels(drc *rmn.DRCluster) prometheus.Labels {
+func DRClusterCIDRsMetricLabels(drc *rmn.DRCluster) prometheus.Labels {
 	return prometheus.Labels{
 		ObjType: "DRCluster",
 		ObjName: drc.Name,
@@ -426,6 +440,17 @@ func NewInvalidCIDRsDetectedMetric(labels prometheus.Labels) InvalidCIDRsDetecte
 
 func DeleteInvalidCIDRsDetectedMetric(labels prometheus.Labels) bool {
 	return invalidCIDRsDetected.Delete(labels)
+}
+
+// UndetectedCIDRsFound Metric reports if CIDRs configured in DRCluster are not detected by the storage provisioner
+func NewUndetectedCIDRsFoundMetric(labels prometheus.Labels) UndetectedCIDRsFoundMetrics {
+	return UndetectedCIDRsFoundMetrics{
+		UndetectedCIDRsFound: undetectedCIDRsFound.With(labels),
+	}
+}
+
+func DeleteUndetectedCIDRsFoundMetric(labels prometheus.Labels) bool {
+	return undetectedCIDRsFound.Delete(labels)
 }
 
 func DRProgressionStateMetricLabels(drpc *rmn.DRPlacementControl,
@@ -494,6 +519,7 @@ func init() {
 	metrics.Registry.MustRegister(cgEnabled)
 	metrics.Registry.MustRegister(globalAction)
 	metrics.Registry.MustRegister(invalidCIDRsDetected)
+	metrics.Registry.MustRegister(undetectedCIDRsFound)
 	metrics.Registry.MustRegister(drpcProgressionState)
 	metrics.Registry.MustRegister(drPolicyType)
 	metrics.Registry.MustRegister(drProtectedApps)

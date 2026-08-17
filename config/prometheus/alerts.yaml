@@ -78,6 +78,14 @@ spec:
           annotations:
             description: "CIDRs validation failed: invalid format or detected CIDRs not configured (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
             alert_type: "DisasterRecovery"
+        - alert: UndetectedCIDRsFound
+          expr: ramen_undetected_cidrs_found == 1
+          for: 5s
+          labels:
+            severity: warning
+          annotations:
+            description: "CIDRs configured in DRCluster are not detected by the storage provisioner (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
+            alert_type: "DisasterRecovery"
         - alert: ApplicationCleanupPending
           expr: ramen_progression_state{state="WaitOnUserToCleanUp"} == 1
           for: 15m
