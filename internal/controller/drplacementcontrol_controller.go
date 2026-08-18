@@ -87,6 +87,7 @@ type DRPlacementControlReconciler struct {
 	Callback                       ProgressCallback
 	eventRecorder                  *rmnutil.EventReporter
 	savedInstanceStatus            rmn.DRPlacementControlStatus
+	savedDRActionCount             string
 	ObjStoreGetter                 ObjectStoreGetter
 	RateLimiter                    *workqueue.TypedRateLimiter[reconcile.Request]
 	numClustersQueriedSuccessfully int
@@ -138,6 +139,14 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
 
+	// Recompute on every reconcile, including the not-found path after a
+	// DRPC deletion, so the metrics track the cluster state
+	defer func() {
+		if err := UpdateDRTelemetryMetrics(ctx, r.Client); err != nil {
+			logger.Info("Failed to update DR telemetry metrics", "error", err)
+		}
+	}()
+
 	drpc := &rmn.DRPlacementControl{}
 
 	err := r.APIReader.Get(ctx, req.NamespacedName, drpc)
@@ -153,6 +162,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
+	r.savedDRActionCount = drpc.GetAnnotations()[DRActionCountAnnotation]
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
@@ -189,11 +199,6 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
-
-			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
-			if statusErr != nil {
-				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
-			}
 
 			return ctrl.Result{}, err
 		}
@@ -265,11 +270,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *DRPlacementControlReconciler) setDeletionStatusAndUpdate(
 	ctx context.Context, drpc *rmn.DRPlacementControl,
 ) error {
-	updated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	progressionUpdated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	phaseUpdated := drpc.Status.Phase != rmn.Deleting
+
+	if progressionUpdated {
+		// Reset action timing on first transition into Deleting so START TIME reflects
+		// when deletion began.
+		drpc.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		drpc.Status.ActionDuration = nil
+	}
+
 	drpc.Status.Phase = rmn.Deleting
 	drpc.Status.ObservedGeneration = drpc.Generation
 
-	if updated {
+	if progressionUpdated || phaseUpdated {
 		if err := r.Status().Update(ctx, drpc); err != nil {
 			return fmt.Errorf("failed to update DRPC status: (%w)", err)
 		}
@@ -787,6 +801,11 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 
 	if !controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
 		return nil
+	}
+
+	// Set Deleting status when cleanup starts, not only after a cleanup failure.
+	if err := r.setDeletionStatusAndUpdate(ctx, drpc); err != nil {
+		return err
 	}
 
 	// Run finalization logic for dprc.
@@ -1530,6 +1549,24 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	userPlacement client.Object, log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
 	log.Info("Updating DRPC status")
+
+	// Account any DR action phase transition and persist the action count
+	// annotation before the status update, so that a failed status update
+	// cannot lose an already observed transition
+	syncDRActionCountAnnotation(drpc)
+
+	if annotation := drpc.GetAnnotations()[DRActionCountAnnotation]; annotation != r.savedDRActionCount {
+		// Update refreshes drpc from the API response, which would discard
+		// the in-memory status updates that are not persisted yet
+		status := *drpc.Status.DeepCopy()
+
+		if err := r.Update(ctx, drpc); err != nil {
+			return fmt.Errorf("failed to update DRPC dr-action-count annotation: %w", err)
+		}
+
+		drpc.Status = status
+		r.savedDRActionCount = annotation
+	}
 
 	r.updateResourceCondition(ctx, drpc, userPlacement, log, vrgs)
 

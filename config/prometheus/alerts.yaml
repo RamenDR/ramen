@@ -14,6 +14,20 @@ spec:
           expr: (time() - (ramen_last_sync_timestamp_seconds{job='ramen-hub-operator-metrics-service'}))
         - record: ramen_rpo_difference
           expr: ramen_sync_duration_seconds / on(policyname) group_left() (ramen_policy_schedule_interval_seconds{job="ramen-hub-operator-metrics-service"})
+    # Pre-aggregated series for Red Hat Telemetry. Aggregation drops the
+    # per-target labels (pod, instance, job, ...) so telemetry receives a
+    # small, stable set of series, and max dedupes overlapping scrapes of
+    # multiple operator pods (rolling update, stale former leader). These
+    # recorded names, not the raw ramen_dr_* names, belong in the
+    # cluster-monitoring-operator telemetry allowlist.
+    - name: dr_telemetry.rules
+      rules:
+        - record: ramen:dr_policy_type:max
+          expr: max by (dr_type) (ramen_dr_policy_type{job="ramen-hub-operator-metrics-service"})
+        - record: ramen:dr_protected_apps:max
+          expr: max by (management_method) (ramen_dr_protected_apps{job="ramen-hub-operator-metrics-service"})
+        - record: ramen:dr_actions:max
+          expr: max by (action) (ramen_dr_actions{job="ramen-hub-operator-metrics-service"})
     - name: alerts
       rules:
         - alert: VolumeSynchronizationDelay

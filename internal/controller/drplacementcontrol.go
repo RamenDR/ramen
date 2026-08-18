@@ -2998,6 +2998,13 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 
 		d.instance.Status.Phase = nextState
 		d.instance.Status.ObservedGeneration = d.instance.Generation
+
+		// Account the transition at the moment it happens, so that a
+		// multi-phase transition within a single reconcile cannot skip
+		// over an action phase unaccounted. Persisted by the reconciler
+		// along with the status update.
+		syncDRActionCountAnnotation(d.instance)
+
 		d.reportEvent(nextState)
 	}
 }

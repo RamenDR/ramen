@@ -5,6 +5,7 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -1367,10 +1368,42 @@ func getDRPCCondition(status *rmn.DRPlacementControlStatus, conditionType string
 	return -1, nil
 }
 
+type drActionCounts struct {
+	Failover  float64     `json:"failover"`
+	Relocate  float64     `json:"relocate"`
+	LastPhase rmn.DRState `json:"lastPhase"`
+}
+
+// getDRActionCounts returns the failover and relocate counts and the last
+// accounted phase persisted in the dr-action-count annotation of the DRPC in
+// the given namespace
+func getDRActionCounts(namespace string) drActionCounts {
+	drpc := getLatestDRPC(namespace)
+
+	counts := drActionCounts{}
+
+	value, ok := drpc.GetAnnotations()[controllers.DRActionCountAnnotation]
+	if !ok {
+		return counts
+	}
+
+	Expect(json.Unmarshal([]byte(value), &counts)).To(Succeed())
+
+	return counts
+}
+
 //nolint:unparam
 func runFailoverAction(placementObj client.Object, fromCluster, toCluster string, isSyncDR bool,
 	manualFence bool,
 ) {
+	countsBefore := getDRActionCounts(placementObj.GetNamespace())
+
+	expectedFailoverCount := countsBefore.Failover + 1
+	if countsBefore.LastPhase == rmn.FailingOver {
+		// The failover was already initiated, and counted, by an earlier step
+		expectedFailoverCount = countsBefore.Failover
+	}
+
 	if isSyncDR {
 		fenceCluster(fromCluster, manualFence)
 	}
@@ -1402,12 +1435,23 @@ func runFailoverAction(placementObj client.Object, fromCluster, toCluster string
 	Expect(condition.Reason).To(Equal(string(rmn.FailedOver)))
 	Expect(drpc.Status.ActionStartTime).ShouldNot(BeNil())
 
+	Expect(getDRActionCounts(placementObj.GetNamespace()).Failover).To(Equal(expectedFailoverCount),
+		"dr-action-count annotation should count the failover")
+
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster))
 }
 
 func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR bool, manualUnfence bool) {
 	toCluster1 := "east1-cluster"
+
+	countsBefore := getDRActionCounts(placementObj.GetNamespace())
+
+	expectedRelocateCount := countsBefore.Relocate + 1
+	if countsBefore.LastPhase == rmn.Relocating {
+		// The relocate was already initiated, and counted, by an earlier step
+		expectedRelocateCount = countsBefore.Relocate
+	}
 
 	if isSyncDR {
 		unfenceCluster(toCluster1, manualUnfence)
@@ -1453,6 +1497,9 @@ func runRelocateAction(placementObj client.Object, fromCluster string, isSyncDR 
 	Expect(len(drpc.Status.Conditions)).To(Equal(3))
 	_, condition := getDRPCCondition(&drpc.Status, rmn.ConditionAvailable)
 	Expect(condition.Reason).To(Equal(string(rmn.Relocated)))
+
+	Expect(getDRActionCounts(placementObj.GetNamespace()).Relocate).To(Equal(expectedRelocateCount),
+		"dr-action-count annotation should count the relocate")
 
 	decision := getLatestUserPlacementDecision(placementObj.GetName(), placementObj.GetNamespace())
 	Expect(decision.ClusterName).To(Equal(toCluster1))
@@ -1970,6 +2017,47 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 
 				time.Sleep(time.Second)
 			}
+		}, SpecTimeout(time.Second*10))
+	})
+
+	When("a Deployed DRPC is deleted", func() {
+		AfterEach(func() {
+			err := forceCleanupClusterAfterAErrorTest()
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("Should reset actionStartTime and clear actionDuration for deletion", func(ctx SpecContext) {
+			_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
+				UsePlacementRule)
+
+			waitForCompletion(string(rmn.Deployed))
+			waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.Deployed)
+
+			previousStartTime := metav1.NewTime(time.Now().Add(-time.Hour))
+			previousDuration := metav1.Duration{Duration: time.Minute}
+
+			err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				drpc := getLatestDRPC(DefaultDRPCNamespace)
+				drpc.Status.ActionStartTime = previousStartTime.DeepCopy()
+				drpc.Status.ActionDuration = &previousDuration
+
+				return k8sClient.Status().Update(context.TODO(), drpc)
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			err = retry.RetryOnConflict(retry.DefaultBackoff, deleteAllDRClusters)
+			Expect(err).ToNot(HaveOccurred())
+
+			deleteDRPC()
+
+			_, err = drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
+			Expect(err).To(HaveOccurred())
+
+			deletingDRPC := getLatestDRPC(DefaultDRPCNamespace)
+			Expect(deletingDRPC.Status.Phase).To(Equal(rmn.Deleting))
+			Expect(deletingDRPC.Status.Progression).To(Equal(rmn.ProgressionDeleting))
+			Expect(deletingDRPC.Status.ActionStartTime).NotTo(BeNil())
+			Expect(deletingDRPC.Status.ActionStartTime.Time.After(previousStartTime.Time)).To(BeTrue())
+			Expect(deletingDRPC.Status.ActionDuration).To(BeNil())
 		}, SpecTimeout(time.Second*10))
 	})
 })
