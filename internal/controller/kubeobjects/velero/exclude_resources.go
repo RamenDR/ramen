@@ -15,6 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ramendr/ramen/internal/controller/util"
 )
 
 const (
@@ -143,6 +145,7 @@ func (m *ExcludedResourcesManager) createDefaultConfigMap(ctx context.Context) (
 				"app.kubernetes.io/name":       "ramen-dr-cluster-operator",
 				"app.kubernetes.io/component":  "kubeobjects-protection",
 				"app.kubernetes.io/managed-by": "ramen-dr-cluster-operator",
+				util.CreatedByRamenLabel:       "true",
 			},
 			Annotations: map[string]string{
 				"ramen.openshift.io/description": "Default list of resources to exclude from Velero backups. " +
