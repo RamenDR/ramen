@@ -1002,8 +1002,10 @@ func (v *VRGInstance) cleanupResources() error {
 			return err
 		}
 
-		if err := v.deleteDestinationPVC(protectedPVC.Name, protectedPVC.Namespace); err != nil {
-			return err
+		if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary {
+			if err := v.deleteDestinationPVC(protectedPVC.Name, protectedPVC.Namespace); err != nil {
+				return err
+			}
 		}
 	}
 
