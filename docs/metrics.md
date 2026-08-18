@@ -44,10 +44,14 @@ section. Next is to install and configure ramen.
 
 ## 2. Basic testing (no Prometheus required)
 
-If running from minikube or a container, expose the port using `port-forward` on
-the hub. The endpoint exposed is `localhost:8443/metrics`. The metrics endpoint
-is protected by controller-runtime built-in auth; use a service account token
-when scraping.
+The operator serves metrics on pod port 9289 (`metrics.bindAddress`, default
+`0.0.0.0:9289`). The metrics Service (`ramen-hub-operator-metrics-service`)
+exposes HTTPS on service port 8443 and forwards to that pod port.
+
+If running from minikube or a container, port-forward the metrics Service on the
+hub. Use service port 8443; the local endpoint is
+`https://localhost:8443/metrics`. The metrics endpoint is protected by
+controller-runtime built-in auth; use a service account token when scraping.
 
 ### Steps
 
@@ -95,10 +99,10 @@ kubectl get serviceaccount metrics-reader-sa -n ramen-system
 
 #### 2. Port-forward
 
-Start port-forwarding to the Ramen operator:
+Start port-forwarding to the metrics Service (service port 8443):
 
 ```bash
-kubectl port-forward -n ramen-system deployment/ramen-hub-operator 8443:8443
+kubectl port-forward -n ramen-system svc/ramen-hub-operator-metrics-service 8443:8443
 ```
 
 #### 3. Get a token

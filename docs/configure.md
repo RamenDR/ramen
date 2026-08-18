@@ -130,7 +130,7 @@ data:
     health:
       healthProbeBindAddress: :8081
     metrics:
-      bindAddress: 127.0.0.1:8080
+      bindAddress: 0.0.0.0:9289
 
     # Leader election
     leaderElection:
