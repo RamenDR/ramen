@@ -1836,6 +1836,10 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 		return err
 	}
 
+	if err := v.StripPVCOwnerReferences(pvc); err != nil {
+		return err
+	}
+
 	return v.RetainPVForPVC(*pvc)
 }
 

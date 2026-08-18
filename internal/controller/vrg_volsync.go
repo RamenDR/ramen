@@ -188,7 +188,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		rsSpec = *rsSpecInfo
 	}
 
-	v.log.Info("PVC has CG label", "name", pvc.Name, "Labels", pvc.Labels)
+	v.log.Info("PVC has CG label?", "name", pvc.Name, "Labels", pvc.Labels)
 	cg, ok := v.getCGLablelFromPVC(&pvc, v.instance.Spec.RunFinalSync)
 
 	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
@@ -975,10 +975,6 @@ func (v *VRGInstance) undoPVRetentionForVolSyncPVCs() error {
 		pvc := &v.volSyncPVCs[idx]
 
 		if err := v.volSyncHandler.UndoPVRetentionForPVC(*pvc); err != nil {
-			return err
-		}
-
-		if err := v.volSyncHandler.StripPVCOwnerReferences(pvc); err != nil {
 			return err
 		}
 	}
