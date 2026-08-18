@@ -519,3 +519,244 @@ var _ = Describe("DRPolicyController", func() {
 		})
 	})
 })
+
+var _ = Describe("DRPolicyController NAD validation", Ordered, func() {
+	const (
+		clusterA = "nad-cluster-a"
+		clusterB = "nad-cluster-b"
+	)
+
+	// nadEntry builds a NetworkAttachment suitable for DRClusterConfig status.
+	nadEntry := func(name, ns, cniType string) ramen.NetworkAttachment {
+		return ramen.NetworkAttachment{Name: name, Namespace: ns, CNIType: cniType}
+	}
+
+	// drccWith builds a minimal DRClusterConfig whose status carries the given NADs.
+	drccWith := func(cluster string, nads ...ramen.NetworkAttachment) *ramen.DRClusterConfig {
+		return &ramen.DRClusterConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: cluster},
+			Status:     ramen.DRClusterConfigStatus{NetworkAttachments: nads},
+		}
+	}
+
+	// nadConditionExpect polls until the DRPolicy carries the expected
+	// NetworkAttachmentsValidated condition status and message.
+	nadConditionExpect := func(drp *ramen.DRPolicy, status metav1.ConditionStatus,
+		msgMatcher gomegaTypes.GomegaMatcher,
+	) {
+		Eventually(func(g Gomega) {
+			g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp)).To(Succeed())
+			cond := util.FindCondition(drp.Status.Conditions, controllers.ConditionNetworkAttachmentsValidated)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(status))
+			g.Expect(cond.Message).To(msgMatcher)
+		}, timeout, interval).Should(Succeed())
+	}
+
+	// deletePolicy deletes a DRPolicy and waits for it to disappear.
+	deletePolicy := func(drp *ramen.DRPolicy) {
+		Expect(k8sClient.Delete(context.TODO(), drp)).To(Succeed())
+		Eventually(func() bool {
+			return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp))
+		}, timeout, interval).Should(BeTrue())
+	}
+
+	// newNetworkPolicy creates a DRPolicy spec referencing both NAD clusters
+	// and a NetworkMappingRef so that NAD validation is triggered.
+	newNetworkPolicy := func(name string) *ramen.DRPolicy {
+		return &ramen.DRPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: ramen.DRPolicySpec{
+				DRClusters:         []string{clusterA, clusterB},
+				SchedulingInterval: "1h",
+				NetworkMappingRef:  &corev1.LocalObjectReference{Name: "dummy-network-map"},
+			},
+		}
+	}
+
+	BeforeAll(func() {
+		By("creating ManagedClusters and DRClusters for NAD validation tests")
+
+		for _, name := range []string{clusterA, clusterB} {
+			ensureManagedCluster(k8sClient, name)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			_ = k8sClient.Create(context.TODO(), ns) // ignore already-exists
+
+			drc := &ramen.DRCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: name},
+				Spec:       ramen.DRClusterSpec{S3ProfileName: s3Profiles[0].S3ProfileName, Region: "east"},
+			}
+
+			if err := k8sClient.Create(context.TODO(), drc); err != nil && !k8serrors.IsAlreadyExists(err) {
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			updateDRClusterManifestWorkStatus(k8sClient, apiReader, name)
+			updateDRClusterConfigMWStatus(k8sClient, apiReader, name)
+			objectConditionExpectEventually(
+				apiReader,
+				drc,
+				metav1.ConditionTrue,
+				Equal("Succeeded"),
+				Ignore(),
+				ramen.DRClusterValidated,
+				!ramenConfig.DrClusterOperator.DeploymentAutomationEnabled,
+			)
+		}
+	})
+
+	AfterAll(func() {
+		By("removing DRClusters created for NAD validation tests")
+
+		for _, name := range []string{clusterA, clusterB} {
+			drc := &ramen.DRCluster{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			_ = k8sClient.Delete(context.TODO(), drc)
+		}
+	})
+
+	AfterEach(func() {
+		// Reset shared NAD map so each It starts clean.
+		nadDataByCluster = map[string]*ramen.DRClusterConfig{}
+	})
+
+	When("DRPolicy has no NetworkMappingRef", func() {
+		It("does not set NetworkAttachmentsValidated condition", func() {
+			drp := &ramen.DRPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "nad-no-mapping"},
+				Spec: ramen.DRPolicySpec{
+					DRClusters:         []string{clusterA, clusterB},
+					SchedulingInterval: "1h",
+				},
+			}
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp)).To(Succeed())
+				cond := util.FindCondition(drp.Status.Conditions, controllers.ConditionNetworkAttachmentsValidated)
+				g.Expect(cond).To(BeNil())
+				validated := util.FindCondition(drp.Status.Conditions, ramen.DRPolicyValidated)
+				g.Expect(validated).NotTo(BeNil())
+				g.Expect(validated.Status).To(Equal(metav1.ConditionTrue))
+			}, timeout, interval).Should(Succeed())
+
+			deletePolicy(drp)
+		})
+	})
+
+	When("NADs are symmetric across both clusters", func() {
+		It("sets NetworkAttachmentsValidated=True and populates NetworkPeers", func() {
+			nad := nadEntry("macvlan-net", "vm-ns", "macvlan")
+			nadDataByCluster[clusterA] = drccWith(clusterA, nad)
+			nadDataByCluster[clusterB] = drccWith(clusterB, nad)
+
+			drp := newNetworkPolicy("nad-symmetric")
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+
+			nadConditionExpect(drp, metav1.ConditionTrue, ContainSubstring("symmetric"))
+
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp)).To(Succeed())
+				g.Expect(drp.Status.NetworkPeers).To(HaveLen(1))
+				peer := drp.Status.NetworkPeers[0]
+				g.Expect(peer.NADName).To(Equal("macvlan-net"))
+				g.Expect(peer.NADNamespace).To(Equal("vm-ns"))
+				g.Expect(peer.ClusterCNITypes).To(HaveKeyWithValue(clusterA, "macvlan"))
+				g.Expect(peer.ClusterCNITypes).To(HaveKeyWithValue(clusterB, "macvlan"))
+				validated := util.FindCondition(drp.Status.Conditions, ramen.DRPolicyValidated)
+				g.Expect(validated).NotTo(BeNil())
+				g.Expect(validated.Status).To(Equal(metav1.ConditionTrue))
+			}, timeout, interval).Should(Succeed())
+
+			deletePolicy(drp)
+		})
+	})
+
+	When("a NAD is present on clusterA but missing on clusterB", func() {
+		It("sets NetworkAttachmentsValidated=False and DRPolicyValidated=False with reason NADsMissing", func() {
+			nadDataByCluster[clusterA] = drccWith(clusterA, nadEntry("net1", "vm-ns", "macvlan"))
+			nadDataByCluster[clusterB] = drccWith(clusterB) // empty
+
+			drp := newNetworkPolicy("nad-missing-on-b")
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+
+			nadConditionExpect(drp, metav1.ConditionFalse, ContainSubstring("missing"))
+
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp)).To(Succeed())
+				validated := util.FindCondition(drp.Status.Conditions, ramen.DRPolicyValidated)
+				g.Expect(validated).NotTo(BeNil())
+				g.Expect(validated.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(validated.Reason).To(Equal("NADsMissing"))
+				g.Expect(drp.Status.NetworkPeers).To(BeEmpty())
+			}, timeout, interval).Should(Succeed())
+
+			deletePolicy(drp)
+		})
+	})
+
+	When("a NAD is present on clusterB but missing on clusterA", func() {
+		It("sets NetworkAttachmentsValidated=False listing the missing NAD by name", func() {
+			nadDataByCluster[clusterA] = drccWith(clusterA) // empty
+			nadDataByCluster[clusterB] = drccWith(clusterB, nadEntry("bridge-net", "vm-ns", "bridge"))
+
+			drp := newNetworkPolicy("nad-missing-on-a")
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+
+			nadConditionExpect(drp, metav1.ConditionFalse, ContainSubstring("missing"))
+
+			deletePolicy(drp)
+		})
+	})
+
+	When("multiple NADs are all symmetric across both clusters", func() {
+		It("populates NetworkPeers for each NAD", func() {
+			nads := []ramen.NetworkAttachment{
+				nadEntry("net1", "vm-ns", "macvlan"),
+				nadEntry("net2", "vm-ns", "bridge"),
+			}
+			nadDataByCluster[clusterA] = drccWith(clusterA, nads...)
+			nadDataByCluster[clusterB] = drccWith(clusterB, nads...)
+
+			drp := newNetworkPolicy("nad-multi-symmetric")
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+
+			nadConditionExpect(drp, metav1.ConditionTrue, ContainSubstring("symmetric"))
+
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp)).To(Succeed())
+				g.Expect(drp.Status.NetworkPeers).To(HaveLen(2))
+			}, timeout, interval).Should(Succeed())
+
+			deletePolicy(drp)
+		})
+	})
+
+	When("NADs are corrected to be symmetric after an initial mismatch", func() {
+		It("transitions NetworkAttachmentsValidated from False to True", func() {
+			// Start with NAD only on clusterA — mismatch.
+			nadDataByCluster[clusterA] = drccWith(clusterA, nadEntry("heal-net", "vm-ns", "macvlan"))
+			nadDataByCluster[clusterB] = drccWith(clusterB)
+
+			drp := newNetworkPolicy("nad-healed")
+			Expect(k8sClient.Create(context.TODO(), drp)).To(Succeed())
+
+			nadConditionExpect(drp, metav1.ConditionFalse, ContainSubstring("missing"))
+
+			// Fix: add the NAD to clusterB, then trigger a reconcile via annotation update.
+			nadDataByCluster[clusterB] = drccWith(clusterB, nadEntry("heal-net", "vm-ns", "macvlan"))
+
+			Eventually(func(g Gomega) {
+				g.Expect(apiReader.Get(context.TODO(), types.NamespacedName{Name: drp.Name}, drp)).To(Succeed())
+				if drp.Annotations == nil {
+					drp.Annotations = map[string]string{}
+				}
+				drp.Annotations["test.ramendr.io/trigger"] = "healed"
+				g.Expect(k8sClient.Update(context.TODO(), drp)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			nadConditionExpect(drp, metav1.ConditionTrue, ContainSubstring("symmetric"))
+
+			deletePolicy(drp)
+		})
+	})
+})
