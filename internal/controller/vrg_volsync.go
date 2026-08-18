@@ -213,6 +213,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		return true
 	}
 
+	if err := v.volSyncHandler.StripPVCOwnerReferences(&pvc); err != nil {
+		v.log.Info("Requeuing, as stripping legacy ownerReferences failed", "pvcName", pvc.Name, "error", err)
+
+		return true
+	}
+
 	*finalSyncPrepared = true
 
 	if isCGEnabled {
@@ -969,6 +975,10 @@ func (v *VRGInstance) undoPVRetentionForVolSyncPVCs() error {
 		pvc := &v.volSyncPVCs[idx]
 
 		if err := v.volSyncHandler.UndoPVRetentionForPVC(*pvc); err != nil {
+			return err
+		}
+
+		if err := v.volSyncHandler.StripPVCOwnerReferences(pvc); err != nil {
 			return err
 		}
 	}
