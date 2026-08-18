@@ -1832,7 +1832,11 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 
 	logger.V(1).Info("PVC created", "operation", op)
 
-	return nil
+	if err := v.client.Get(ctx, client.ObjectKeyFromObject(pvc), pvc); err != nil {
+		return err
+	}
+
+	return v.RetainPVForPVC(*pvc)
 }
 
 //nolint:nestif
@@ -3471,6 +3475,10 @@ func (v *VSHandler) RetainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
 	pv := &corev1.PersistentVolume{}
 
 	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
 		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}

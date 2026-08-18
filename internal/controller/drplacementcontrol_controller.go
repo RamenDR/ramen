@@ -3160,5 +3160,3 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 	// in the same namespace — this is explicitly supported, skip the conflict check.
 	return true
 }
-
-
