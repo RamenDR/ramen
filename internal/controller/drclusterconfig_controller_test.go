@@ -24,11 +24,11 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
-	config "k8s.io/component-base/config/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -144,22 +144,12 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		By("starting the DRClusterConfig reconciler")
 
-		ramenConfig := &ramen.RamenConfig{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "RamenConfig",
-				APIVersion: ramen.GroupVersion.String(),
-			},
-			LeaderElection: &config.LeaderElectionConfiguration{
-				LeaderElect:  new(bool),
-				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
-			},
-			Metrics: ramen.ControllerMetrics{
+		options := manager.Options{
+			Scheme: scheme.Scheme,
+			Metrics: metricsserver.Options{
 				BindAddress: "0", // Disable metrics
 			},
 		}
-
-		options := manager.Options{Scheme: scheme.Scheme}
-		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
 
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
