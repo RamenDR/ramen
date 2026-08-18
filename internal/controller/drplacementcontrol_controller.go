@@ -3198,18 +3198,4 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 	return true
 }
 
-func IsRamenPlacementScheduler(placementObj client.Object) bool {
-	switch obj := placementObj.(type) {
-	case *plrv1.PlacementRule:
-		scName := obj.Spec.SchedulerName
-		if scName == RamenScheduler {
-			return true
-		}
-	case *clrapiv1beta1.Placement:
-		if val, ok := obj.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; ok && val == "true" {
-			return true
-		}
-	}
 
-	return false
-}
