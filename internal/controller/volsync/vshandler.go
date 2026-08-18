@@ -747,7 +747,7 @@ func (v *VSHandler) SetupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (
 
 func (v *VSHandler) retainPVAndCreateTmpPVC(pvc *corev1.PersistentVolumeClaim) (*corev1.PersistentVolumeClaim, error) {
 	// Retain the PersistentVolume
-	if err := v.retainPVForPVC(*pvc); err != nil {
+	if err := v.retainPVAndRedirectForFinalSync(*pvc); err != nil {
 		v.log.Info("Requeuing, as retaining PersistentVolume failed", "error", err)
 
 		return nil, err
@@ -772,7 +772,7 @@ func (v *VSHandler) retainPVAndCreateTmpPVC(pvc *corev1.PersistentVolumeClaim) (
 	return tmpPVC, nil
 }
 
-func (v *VSHandler) retainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
+func (v *VSHandler) retainPVAndRedirectForFinalSync(pvc corev1.PersistentVolumeClaim) error {
 	l := v.log.WithValues("pvc", pvc.Name)
 
 	l.V(1).Info("retain PV for PVC")

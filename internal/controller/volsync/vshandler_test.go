@@ -1864,7 +1864,6 @@ var _ = Describe("VolSync_Handler", func() {
 			}, maxWait, interval).Should(Equal(len(rsSpecList) + len(rsSpecListOtherOwner)))
 		})
 	})
-
 })
 
 func ownerMatches(obj metav1.Object, ownerName, ownerKind string, ownerIsController bool) bool {
