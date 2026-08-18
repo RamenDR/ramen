@@ -256,7 +256,7 @@ func (s *s3ObjectStore) HeadBucket() error {
 		Bucket: &s.s3Bucket,
 	})
 	if err != nil {
-		return processAwsError(fmt.Errorf("bucket %s does not exist or is not accessible", s.s3Bucket), err)
+		return processAwsError(fmt.Errorf("failed to head bucket %s", s.s3Bucket), err)
 	}
 
 	return nil
