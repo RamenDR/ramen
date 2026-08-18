@@ -469,6 +469,7 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	}
 
 	v.ensureVolSyncMoverJobLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	v.ensureVolSyncServiceImportLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -1708,6 +1709,45 @@ func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
 			v.log.V(1).Info("Failed to label VolSync EndpointSlice",
 				"endpointSlice", epSliceList.Items[i].Name, "error", err)
 		}
+	}
+}
+
+const (
+	ServiceImportKind    = "ServiceImport"
+	ServiceImportVersion = "v1alpha1"
+)
+
+func (v *VSHandler) ensureVolSyncServiceImportLabels(pvcName, namespace string) {
+	if !util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		return
+	}
+
+	rdName := util.GetReplicationDestinationName(pvcName)
+	serviceName := util.GetLocalServiceNameForRD(rdName)
+
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		serviceName = util.GetLocalServiceNameForDiffRD(rdName)
+	}
+
+	svcImport := &unstructured.Unstructured{}
+	svcImport.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   ServiceExportGroup,
+		Kind:    ServiceImportKind,
+		Version: ServiceImportVersion,
+	})
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, svcImport)
+	if err != nil {
+		v.log.V(1).Info("ServiceImport not found yet, skipping label", "serviceName", serviceName)
+
+		return
+	}
+
+	err = util.NewResourceUpdater(svcImport).
+		AddLabel(util.CreatedByRamenLabel, "transitive").
+		Update(v.ctx, v.client)
+	if err != nil {
+		v.log.V(1).Info("Failed to label ServiceImport", "serviceName", serviceName, "error", err)
 	}
 }
 
