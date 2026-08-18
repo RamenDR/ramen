@@ -637,7 +637,7 @@ var _ = Describe("VolSync_Handler", func() {
 				})
 			})
 
-			Context("Workload deletion: RD deletion should leave RD as PVC owner (GC cleans PVC)", func() {
+			Context("When using CopyMethod Direct and RD is deleted", func() {
 				var (
 					vsHandlerDirect *volsync.VSHandler
 					rdSpec          ramendrv1alpha1.VolSyncReplicationDestinationSpec
