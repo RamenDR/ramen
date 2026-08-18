@@ -122,6 +122,7 @@ func (j JobHook) getJobTemplateFromRecipe() (*batchv1.Job, error) {
 
 	job.Labels["ramendr.openshift.io/hook-name"] = j.Hook.Name
 	job.Labels["ramendr.openshift.io/job-name"] = j.Hook.Job.Name
+	job.Labels[util.CreatedByRamenLabel] = "true"
 
 	return job, nil
 }
