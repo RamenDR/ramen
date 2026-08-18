@@ -197,6 +197,8 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
+	v.ensureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+
 	if err = v.ReconcileServiceExportForRD(rd); err != nil {
 		return nil, nil, err
 	}
@@ -465,6 +467,8 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	if replicationSource == nil {
 		return false, nil, nil // Requeue
 	}
+
+	v.ensureVolSyncMoverJobLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -1683,6 +1687,26 @@ func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
 		if err != nil {
 			v.log.V(1).Info("Failed to label VolSync EndpointSlice",
 				"endpointSlice", epSliceList.Items[i].Name, "error", err)
+		}
+	}
+}
+
+func (v *VSHandler) ensureVolSyncMoverJobLabels(pvcName, namespace string) {
+	for _, prefix := range []string{"volsync-rsync-tls-src-", "volsync-rsync-tls-dst-"} {
+		jobName := util.GetJobName(prefix, pvcName)
+
+		job := &batchv1.Job{}
+
+		err := v.client.Get(v.ctx, types.NamespacedName{Name: jobName, Namespace: namespace}, job)
+		if err != nil {
+			continue
+		}
+
+		err = util.NewResourceUpdater(job).
+			AddLabel(util.CreatedByRamenLabel, "transitive").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync mover Job", "jobName", jobName, "error", err)
 		}
 	}
 }
