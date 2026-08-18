@@ -414,6 +414,8 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 
 	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
 
+	d.setDRState(derivedDRState)
+
 	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
 		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
 	}
@@ -428,8 +430,6 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 	if !done {
 		return true, nil
 	}
-
-	d.setDRState(derivedDRState)
 
 	if err := d.cleanupTestFailoverAnnotation(testFailoverCluster); err != nil {
 		return false, err
