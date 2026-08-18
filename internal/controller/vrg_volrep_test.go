@@ -947,6 +947,64 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		})
 	})
 
+	var vrgReplicationHealthyTestCase *vrgTest
+
+	Context("VR Replicating condition is mirrored into VRG ReplicationHealthy", func() {
+		storageIDLabel := genStorageIDLabel(storageIDs[0])
+		storageID := storageIDLabel[vrgController.StorageIDLabel]
+		vrcLabels := genVRCLabels(replicationIDs[0], storageID, "ramen")
+		createTestTemplate := &template{
+			ClaimBindInfo:          corev1.ClaimBound,
+			VolumeBindInfo:         corev1.VolumeBound,
+			schedulingInterval:     "1h",
+			storageClassName:       "manual",
+			replicationClassName:   "test-replicationclass",
+			vrcProvisioner:         "manual.storage.com",
+			scProvisioner:          "manual.storage.com",
+			storageIDLabels:        storageIDLabel,
+			replicationClassLabels: vrcLabels,
+		}
+
+		It("sets up PVCs, PVs and a VRG", func() {
+			createTestTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			vrgReplicationHealthyTestCase = newVRGTestCaseCreateAndStart(2, createTestTemplate, true, false, true)
+		})
+		It("waits for VRG to create a VR for each PVC", func() {
+			vrgReplicationHealthyTestCase.waitForVRCountToMatch(len(vrgReplicationHealthyTestCase.pvcNames))
+		})
+		It("leaves ReplicationHealthy unset when VR Replicating is absent", func() {
+			vrgReplicationHealthyTestCase.promoteVolReps()
+			vrgReplicationHealthyTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+			vrgReplicationHealthyTestCase.waitForVRGConditionAbsent(vrgController.VRGConditionTypeReplicationHealthy)
+		})
+		It("sets ReplicationHealthy True when all VRs are replicating", func() {
+			vrgReplicationHealthyTestCase.promoteVolRepsWithOptions(promoteOptions{
+				Replicating: vrReplicating(metav1.ConditionTrue),
+			})
+			vrgReplicationHealthyTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+			vrgReplicationHealthyTestCase.waitForVRGCondition(
+				vrgController.VRGConditionTypeReplicationHealthy, metav1.ConditionTrue, vrgController.VRGConditionReasonReady)
+		})
+		It("sets ReplicationHealthy Unknown when a VR cannot tell if it is replicating", func() {
+			vrgReplicationHealthyTestCase.setVolRepReplicatingAt(0, metav1.ConditionUnknown,
+				volrep.Replicating, "replication status is unknown")
+			vrgReplicationHealthyTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+			vrgReplicationHealthyTestCase.waitForVRGCondition(
+				vrgController.VRGConditionTypeReplicationHealthy, metav1.ConditionUnknown,
+				vrgController.VRGConditionReasonErrorUnknown)
+		})
+		It("sets ReplicationHealthy False when a VR is not replicating, without changing DataReady", func() {
+			vrgReplicationHealthyTestCase.setVolRepReplicatingAt(0, metav1.ConditionFalse,
+				volrep.NotReplicating, "volume is not replicating")
+			vrgReplicationHealthyTestCase.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+			vrgReplicationHealthyTestCase.waitForVRGCondition(
+				vrgController.VRGConditionTypeReplicationHealthy, metav1.ConditionFalse, vrgController.VRGConditionReasonError)
+		})
+		It("cleans up after testing", func() {
+			vrgReplicationHealthyTestCase.cleanupProtected()
+		})
+	})
+
 	// Test VRG finalizer removal during deletion is deferred till VGR is deleted
 	var vrgVGRDeleteEnsureTestCase *vrgTest
 
@@ -3152,6 +3210,11 @@ func (v *vrgTest) promoteVolRepsWithOptions(options promoteOptions) {
 type promoteOptions struct {
 	ValidatedMissing bool
 	ValidatedFailed  bool
+	Replicating      *metav1.ConditionStatus
+}
+
+func vrReplicating(status metav1.ConditionStatus) *metav1.ConditionStatus {
+	return &status
 }
 
 //nolint:dupl
@@ -3250,7 +3313,13 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 		Message:            "volume is not resyncing",
 	}
 
-	return append(conditions, completed, degraded, resyncing)
+	conditions = append(conditions, completed, degraded, resyncing)
+
+	if options.Replicating != nil {
+		conditions = append(conditions, replicatingVRCondition(generation, *options.Replicating, lastTransitionTime))
+	}
+
+	return conditions
 }
 
 func validatedVRCondition(generation int64, failed bool, lastTransitionTime metav1.Time) metav1.Condition {
@@ -3270,6 +3339,32 @@ func validatedVRCondition(generation int64, failed bool, lastTransitionTime meta
 	}
 
 	return validated
+}
+
+func replicatingVRCondition(generation int64, status metav1.ConditionStatus, lastTransitionTime metav1.Time,
+) metav1.Condition {
+	reason := volrep.Replicating
+	message := "volume is replicating"
+
+	switch status {
+	case metav1.ConditionTrue:
+		reason = volrep.Replicating
+		message = "volume is replicating"
+	case metav1.ConditionFalse:
+		reason = volrep.NotReplicating
+		message = "volume is not replicating"
+	case metav1.ConditionUnknown:
+		message = "replication status is unknown"
+	}
+
+	return metav1.Condition{
+		Type:               volrep.ConditionReplicating,
+		Reason:             reason,
+		ObservedGeneration: generation,
+		Status:             status,
+		LastTransitionTime: lastTransitionTime,
+		Message:            message,
+	}
 }
 
 func (v *vrgTest) deleteVolReps() {
@@ -3468,6 +3563,39 @@ func (v *vrgTest) waitForProtectedPVCCondition(
 	}, vrgtimeout, vrginterval).Should(BeTrue(),
 		"failed to wait for protected pvc condition %q to become %q with message %q",
 		conditionType, conditionStatus, conditionMessage)
+}
+
+func (v *vrgTest) waitForVRGCondition(conditionType string, status metav1.ConditionStatus, reason string) {
+	Eventually(func(g Gomega) {
+		cond := meta.FindStatusCondition(v.getVRG().Status.Conditions, conditionType)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Status).To(Equal(status))
+		g.Expect(cond.Reason).To(Equal(reason))
+	}, vrgtimeout, vrginterval).Should(Succeed(),
+		"failed to wait for VRG condition %q to become %q/%q", conditionType, status, reason)
+}
+
+func (v *vrgTest) waitForVRGConditionAbsent(conditionType string) {
+	Expect(meta.FindStatusCondition(v.getVRG().Status.Conditions, conditionType)).To(BeNil(),
+		"expected VRG condition %q to remain absent", conditionType)
+}
+
+func (v *vrgTest) setVolRepReplicatingAt(index int, status metav1.ConditionStatus, reason, message string) {
+	volRepList := &volrep.VolumeReplicationList{}
+	err := k8sClient.List(context.TODO(), volRepList, &client.ListOptions{Namespace: v.namespace})
+	Expect(err).NotTo(HaveOccurred(), "failed to get a list of VRs in namespace %s", v.namespace)
+	Expect(index).To(BeNumerically("<", len(volRepList.Items)))
+
+	vr := volRepList.Items[index]
+	meta.SetStatusCondition(&vr.Status.Conditions, metav1.Condition{
+		Type:               volrep.ConditionReplicating,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: vr.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	Expect(k8sClient.Status().Update(context.TODO(), &vr)).To(Succeed())
 }
 
 func (v *vrgTest) waitForProtectedPVCs(vrNamespacedName types.NamespacedName) {

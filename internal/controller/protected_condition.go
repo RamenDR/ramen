@@ -47,6 +47,10 @@ func updateDRPCProtectedCondition(
 		return
 	}
 
+	if updateVRGReplicationHealthy(drpc, vrg, clusterName) {
+		return
+	}
+
 	if updateVRGNoClusterDataConflict(drpc, vrg, clusterName) {
 		return
 	}
@@ -141,6 +145,25 @@ func updateVRGDestinationInfoAvailable(drpc *rmn.DRPlacementControl,
 
 	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeDestinationInfoAvailable,
 		"destination info availability", "waiting for destination info", "destination info")
+}
+
+// updateVRGReplicationHealthy uses VRG ReplicationHealthy when setting DRPC Protected.
+// If the VRG does not have that condition, this check is skipped.
+func updateVRGReplicationHealthy(drpc *rmn.DRPlacementControl,
+	vrg *rmn.VolumeReplicationGroup,
+	clusterName string,
+) bool {
+	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeReplicationHealthy)
+	if condition == nil {
+		return false
+	}
+
+	if condition.Status == metav1.ConditionTrue && condition.ObservedGeneration == vrg.Generation {
+		return false
+	}
+
+	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeReplicationHealthy,
+		"replication health", "waiting for replication health", "replication health")
 }
 
 // updateVRGDataReadyAsPrimary is a helper function to process VRG DataReady when VRG is Primary and update DRPC
