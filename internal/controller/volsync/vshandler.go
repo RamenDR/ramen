@@ -3523,6 +3523,37 @@ func (v *VSHandler) UndoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim) erro
 	return v.client.Update(v.ctx, pv)
 }
 
+// StripPVCOwnerReferences removes any VRG, RS, or RD ownerReferences from the PVC.
+// This is a migration step for PVCs that were protected by older versions of Ramen
+// which set ownerReferences on PVCs. Without this, upgrading and then disabling DR
+// would still trigger Kubernetes GC on those PVCs.
+func (v *VSHandler) StripPVCOwnerReferences(pvc *corev1.PersistentVolumeClaim) error {
+	if len(pvc.OwnerReferences) == 0 {
+		return nil
+	}
+
+	newRefs := make([]metav1.OwnerReference, 0, len(pvc.OwnerReferences))
+
+	for _, ref := range pvc.OwnerReferences {
+		switch ref.Kind {
+		case "VolumeReplicationGroup", "ReplicationSource", "ReplicationDestination":
+			continue
+		default:
+			newRefs = append(newRefs, ref)
+		}
+	}
+
+	if len(newRefs) == len(pvc.OwnerReferences) {
+		return nil
+	}
+
+	pvc.OwnerReferences = newRefs
+
+	v.log.Info("Stripped legacy DR ownerReferences from PVC", "pvcName", pvc.Name)
+
+	return v.client.Update(v.ctx, pvc)
+}
+
 // CleanupPVClaimRefForPVCDeletion prepares the PV for rebinding before the PVC is deleted.
 // Clears claimRef.UID, ResourceVersion, APIVersion while keeping Kind, Name, Namespace
 // so the PV transitions to Available (not Released) and can rebind to a new PVC with the same name.
