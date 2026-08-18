@@ -424,12 +424,22 @@ func DeleteTypedObject(s ObjectStorer, keyPrefix, keySuffix string, object inter
 }
 
 func processAwsError(errMsgPrefix, err error) error {
-	var awsErr awserr.Error
-	if errors.As(err, &awsErr) {
-		return fmt.Errorf("%w: code: %s, message: %s", errMsgPrefix, awsErr.Code(), awsErr.Message())
+	if err == nil {
+		return errMsgPrefix
 	}
 
-	return errMsgPrefix
+	var awsErr awserr.Error
+	if !errors.As(err, &awsErr) {
+		return fmt.Errorf("%w: %w", errMsgPrefix, err)
+	}
+
+	if origErr := awsErr.OrigErr(); origErr != nil {
+		return fmt.Errorf("%w: code: %s, message: %s, orig: %v",
+			errMsgPrefix, awsErr.Code(), awsErr.Message(), origErr)
+	}
+
+	return fmt.Errorf("%w: code: %s, message: %s",
+		errMsgPrefix, awsErr.Code(), awsErr.Message())
 }
 
 // UploadObject uploads the given object to the bucket with the given key.
