@@ -3215,22 +3215,7 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 	lastTransitionTime := metav1.NewTime(time.Now())
 
 	if !options.ValidatedMissing {
-		validated := metav1.Condition{
-			Type:               volrep.ConditionValidated,
-			Reason:             volrep.PrerequisiteMet,
-			ObservedGeneration: generation,
-			Status:             metav1.ConditionTrue,
-			LastTransitionTime: lastTransitionTime,
-			Message:            "volume is validated",
-		}
-
-		if options.ValidatedFailed {
-			validated.Status = metav1.ConditionFalse
-			validated.Reason = volrep.PrerequisiteNotMet
-			validated.Message = "failed to meet prerequisite: details..."
-		}
-
-		conditions = append(conditions, validated)
+		conditions = append(conditions, validatedVRCondition(generation, options.ValidatedFailed, lastTransitionTime))
 	}
 
 	completed := metav1.Condition{
@@ -3266,6 +3251,25 @@ func (v *vrgTest) generateVRConditions(generation int64, options promoteOptions)
 	}
 
 	return append(conditions, completed, degraded, resyncing)
+}
+
+func validatedVRCondition(generation int64, failed bool, lastTransitionTime metav1.Time) metav1.Condition {
+	validated := metav1.Condition{
+		Type:               volrep.ConditionValidated,
+		Reason:             volrep.PrerequisiteMet,
+		ObservedGeneration: generation,
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: lastTransitionTime,
+		Message:            "volume is validated",
+	}
+
+	if failed {
+		validated.Status = metav1.ConditionFalse
+		validated.Reason = volrep.PrerequisiteNotMet
+		validated.Message = "failed to meet prerequisite: details..."
+	}
+
+	return validated
 }
 
 func (v *vrgTest) deleteVolReps() {
