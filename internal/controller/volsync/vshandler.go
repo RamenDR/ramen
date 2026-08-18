@@ -55,11 +55,6 @@ const (
 	VolSyncDoNotDeleteLabel    = "volsync.backube/do-not-delete" // TODO: point to volsync constant once it is available
 	VolSyncDoNotDeleteLabelVal = "true"
 
-	// See: https://issues.redhat.com/browse/ACM-1256
-	// https://github.com/stolostron/backlog/issues/21824
-	ACMAppSubDoNotDeleteAnnotation    = "apps.open-cluster-management.io/do-not-delete"
-	ACMAppSubDoNotDeleteAnnotationVal = "true"
-
 	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
 	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
 
@@ -1165,7 +1160,8 @@ func (v *VSHandler) doPrepFinalSync(pvcNamespacedName types.NamespacedName) erro
 	return nil
 }
 
-func (v *VSHandler) addPVCProtectionFinalizer(pvcNamespacedName types.NamespacedName) (*corev1.PersistentVolumeClaim, error) {
+func (v *VSHandler) addPVCProtectionFinalizer(pvcNamespacedName types.NamespacedName,
+) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvc", pvcNamespacedName)
 
 	l.V(1).Info("Adding PVC protection finalizer")

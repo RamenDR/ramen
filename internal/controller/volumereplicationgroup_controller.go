@@ -2903,7 +2903,6 @@ func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition 
 //   - replication.storage.openshift.io
 //   - volumereplicationgroups.ramendr.openshift.io
 //   - volsync.backube
-//   - apps.open-cluster-management.io && key == ACMAppSubDoNotDeleteAnnotation
 //
 // Parameters:
 //
@@ -2930,9 +2929,6 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 		case strings.HasPrefix(key, "volumereplicationgroups.ramendr.openshift.io"):
 			continue
 		case strings.HasPrefix(key, "volsync.backube"):
-			continue
-		case strings.HasPrefix(key, "apps.open-cluster-management.io") &&
-			key == volsync.ACMAppSubDoNotDeleteAnnotation:
 			continue
 		}
 
