@@ -913,16 +913,22 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 // disownPVCs this function is disassociating all PVCs (targeted for VolSync replication) from its owner (VRG)
 func (v *VRGInstance) disownPVCs() error {
-	if v.instance.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		return nil
-	}
+	vrgHasAnnotation := v.instance.GetAnnotations()[DoNotDeletePVCAnnotation] == DoNotDeletePVCAnnotationVal
 
 	for idx := range v.volSyncPVCs {
 		pvc := &v.volSyncPVCs[idx]
 
-		err := v.volSyncHandler.DisownVolSyncManagedPVC(pvc)
-		if err != nil {
-			return err
+		pvcHasAnnotation := pvc.GetAnnotations()[volsync.ACMAppSubDoNotDeleteAnnotation] ==
+			volsync.ACMAppSubDoNotDeleteAnnotationVal
+
+		// The VRG annotation is only set when Ramen is not the scheduler (ApplicationSet apps with
+		// default scheduler). For Subscription apps using Ramen scheduler, the VRG annotation is never
+		// set, but the PVC has the ACM annotation. Check both to handle all app types.
+		if vrgHasAnnotation || pvcHasAnnotation {
+			err := v.volSyncHandler.DisownVolSyncManagedPVC(pvc)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
