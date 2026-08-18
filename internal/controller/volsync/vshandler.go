@@ -1797,9 +1797,6 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	}
 
 	if pvc != nil {
-		// This PVC is used by the RD. We don't need have the finalizer.
-		ctrlutil.RemoveFinalizer(pvc, PVCFinalizerProtected)
-
 		if err := v.removeOCMAnnotationsAndUpdate(pvc); err != nil {
 			return err
 		}
