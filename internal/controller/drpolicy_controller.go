@@ -55,6 +55,10 @@ const ReasonDRClustersUnavailable = "DRClustersUnavailable"
 // ReasonDRPolicyConflictFound is set when the DRPolicy has overlapping metro clusters with another DRPolicy
 const ReasonDRPolicyConflictFound = "DRPolicyConflictFound"
 
+// ReasonNoEligibleNetworkAttachments is set on NetworkAttachmentsValidated when no NADs eligible for static-IP
+// translation were discovered on either cluster; symmetry is trivially satisfied.
+const ReasonNoEligibleNetworkAttachments = "NoEligibleNetworkAttachments"
+
 // ReasonSucceeded is set when the DRPolicy validation completes successfully
 const ReasonSucceeded = "Succeeded"
 
@@ -770,13 +774,31 @@ func (v *NetworkMappingValidator) UpdateNADValidationCondition(u *drpolicyUpdate
 		return false, err
 	}
 
-	if len(missing) == 0 {
+	// Distinguish three outcomes:
+	//  1. Both clusters have zero eligible NADs — trivially symmetric but nothing
+	//     usable for static-IP translation.  Surface this explicitly so users are
+	//     not misled into thinking translation is active.
+	//  2. NADs are present and fully symmetric — validation succeeded.
+	//  3. One or more NADs are missing on a peer cluster — validation failed.
+	noEligibleNADs := len(missing) == 0 && len(drPolicy.Status.NetworkPeers) == 0
+
+	switch {
+	case noEligibleNADs:
+		util.GenericStatusConditionSet(drPolicy, &drPolicy.Status.Conditions,
+			ConditionNetworkAttachmentsValidated,
+			metav1.ConditionTrue, ReasonNoEligibleNetworkAttachments,
+			"No NADs eligible for static-IP translation were discovered on either cluster; "+
+				"symmetry is trivially satisfied but no IP translation will occur.",
+			v.log)
+
+	case len(missing) == 0:
 		util.GenericStatusConditionSet(drPolicy, &drPolicy.Status.Conditions,
 			ConditionNetworkAttachmentsValidated,
 			metav1.ConditionTrue, "Validated",
 			"NADs are symmetric across both clusters",
 			v.log)
-	} else {
+
+	default:
 		util.GenericStatusConditionSet(drPolicy, &drPolicy.Status.Conditions,
 			ConditionNetworkAttachmentsValidated,
 			metav1.ConditionFalse, "NADsMissing",
