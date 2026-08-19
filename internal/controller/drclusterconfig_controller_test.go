@@ -182,6 +182,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 			Scheme:      k8sManager.GetScheme(),
 			Log:         ctrl.Log.WithName("controllers").WithName("DRClusterConfig"),
 			RateLimiter: &rateLimiter,
+			APIReader:   k8sManager.GetAPIReader(),
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())

@@ -18,6 +18,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
+	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.7
 	github.com/kubernetes-csi/external-snapshotter/client/v8 v8.6.0
 	github.com/onsi/ginkgo/v2 v2.28.3
 	github.com/onsi/gomega v1.40.0

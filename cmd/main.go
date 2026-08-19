@@ -13,6 +13,8 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	// +kubebuilder:scaffold:imports
+	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	publicgroupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -45,7 +47,6 @@ import (
 	controllers "github.com/ramendr/ramen/internal/controller"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
-	// +kubebuilder:scaffold:imports
 	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
@@ -129,6 +130,7 @@ func configureController() error {
 		utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(virtv1.AddToScheme(scheme))
 		utilruntime.Must(csiaddonsv1alpha1.AddToScheme(scheme))
+		utilruntime.Must(netattdefv1.AddToScheme(scheme))
 	}
 
 	return nil
@@ -183,9 +185,10 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 	}
 
 	if err := (&controllers.DRClusterConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("drcc"),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Log:       ctrl.Log.WithName("drcc"),
+		APIReader: mgr.GetAPIReader(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRClusterConfig")
 		os.Exit(1)
