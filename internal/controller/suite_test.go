@@ -14,6 +14,8 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	// +kubebuilder:scaffold:imports
+	netv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,7 +53,6 @@ import (
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	testutils "github.com/ramendr/ramen/internal/controller/testutils"
 	"github.com/ramendr/ramen/internal/controller/util"
-	// +kubebuilder:scaffold:imports
 	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
@@ -240,6 +241,9 @@ var _ = BeforeSuite(func() {
 	err = virtv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
+
+	err = netv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
