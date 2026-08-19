@@ -1829,10 +1829,6 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 
 	logger.V(1).Info("PVC created", "operation", op)
 
-	if err := v.client.Get(ctx, client.ObjectKeyFromObject(pvc), pvc); err != nil {
-		return err
-	}
-
 	if err := v.StripPVCOwnerReferences(pvc); err != nil {
 		return err
 	}
