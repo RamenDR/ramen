@@ -1872,21 +1872,19 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 
 			deleteDRPC()
 
-			errCount := 0
+			Eventually(func() error {
+				_, err := drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
 
-			for {
-				_, err = drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to get drclusters"))
+				return err
+			}, timeout, interval).Should(MatchError(ContainSubstring("failed to get drclusters")))
 
-				errCount++
-				if errCount > 2 {
-					// Found the required error message for more than a second
-					break
-				}
+			// Ensure the expected error is returned consistently, not just once,
+			// guarding against the drclusters being recreated by another actor.
+			Consistently(func() error {
+				_, err := drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
 
-				time.Sleep(time.Second)
-			}
+				return err
+			}, timeout, interval).Should(MatchError(ContainSubstring("failed to get drclusters")))
 		}, SpecTimeout(time.Second*10))
 	})
 
