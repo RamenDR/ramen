@@ -131,3 +131,25 @@ undeploy it.
 ramendev unconfig test/envs/regional-dr.yaml
 ramendev undeploy test/envs/regional-dr.yaml
 ```
+
+## Handling CI failures after a PR is created
+
+After submitting a pull request, check the CI results in the **Checks** tab and
+address any failures.
+
+If the failure requires a code change, make the fix locally and push again:
+
+```sh
+git push <your-fork> <your-branch>
+```
+
+This re-triggers the applicable CI jobs automatically.
+
+Otherwise, if the failure is due to a timeout or a transient issue and a restart
+is needed, amend your last commit without changes and force-push to re-trigger
+the CI jobs:
+
+```sh
+git commit --no-edit --amend
+git push <your-fork> <your-branch> --force
+```
