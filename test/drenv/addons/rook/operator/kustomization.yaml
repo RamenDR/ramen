@@ -47,5 +47,3 @@ patches:
                   #   x509: certificate signed by unknown authority
                   - name: ROOK_DISABLE_ADMISSION_CONTROLLER
                     value: 'true'
-                  - name: ROOK_CSIADDONS_IMAGE
-                    value: quay.io/nladha/csiaddons-sidecar:cg
