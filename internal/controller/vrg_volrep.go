@@ -1872,6 +1872,7 @@ func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, vol
 	}
 
 	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+	v.checkAndUpdateReplicationHealthy(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
 		volRep.GetNamespace()))
@@ -2007,6 +2008,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvcs []*corev1.Pers
 	}
 
 	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+	v.checkAndUpdateReplicationHealthy(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
@@ -2080,6 +2082,7 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(pvcs []*corev1.Persistent
 	}
 
 	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+	v.checkAndUpdateReplicationHealthy(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
@@ -2288,6 +2291,57 @@ func (v *VRGInstance) checkAndUpdateDestinationInfoAvailable(
 			v.updatePVCDestinationInfoAvailableCondition(pvc.Namespace, pvc.Name,
 				VRGConditionReasonProgressing, "VolumeReplication destination info not yet available")
 		}
+	}
+}
+
+func (v *VRGInstance) updatePVCReplicationHealthyCondition(pvcNamespace, pvcName string,
+	status metav1.ConditionStatus, reason, message string,
+) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
+	}
+
+	rmnutil.SetStatusCondition(&protectedPVC.Conditions, metav1.Condition{
+		Type:               VRGConditionTypeReplicationHealthy,
+		Status:             status,
+		ObservedGeneration: v.instance.Generation,
+		Reason:             reason,
+		Message:            message,
+	})
+}
+
+// checkAndUpdateReplicationHealthy copies the VR Replicating condition onto each PVC.
+// Nothing is set if the VR has no Replicating condition.
+func (v *VRGInstance) checkAndUpdateReplicationHealthy(
+	pvcs []*corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus,
+) {
+	replicatingCond := rmnutil.FindCondition(status.Conditions, volrep.ConditionReplicating)
+	if replicatingCond == nil {
+		return
+	}
+
+	reason := VRGConditionReasonErrorUnknown
+
+	switch replicatingCond.Status {
+	case metav1.ConditionTrue:
+		reason = VRGConditionReasonReady
+	case metav1.ConditionFalse:
+		reason = VRGConditionReasonError
+	case metav1.ConditionUnknown:
+		reason = VRGConditionReasonErrorUnknown
+	}
+
+	message := replicatingCond.Message
+	if message == "" {
+		message = "VolumeReplication Replicating condition has no message"
+	}
+
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		v.updatePVCReplicationHealthyCondition(pvc.Namespace, pvc.Name, replicatingCond.Status, reason, message)
 	}
 }
 
@@ -3242,6 +3296,89 @@ func (v *VRGInstance) aggregateVolRepDestinationInfoAvailableCondition() *metav1
 		Reason:             VRGConditionReasonProgressing,
 		Message:            "Destination info is not yet available for one or more VolumeReplication resources",
 	}
+}
+
+// aggregateVolRepReplicationHealthyCondition builds the VRG ReplicationHealthy
+// condition from ProtectedPVCs. Returns nil when none of them report it.
+// A False PVC wins over Unknown, and we keep that PVC's message.
+func (v *VRGInstance) aggregateVolRepReplicationHealthyCondition() *metav1.Condition {
+	found, falsePVC, falseCond, unknownPVC, unknownCond := v.collectReplicationHealthyPVCConditions()
+	if !found {
+		return nil
+	}
+
+	if falseCond != nil {
+		return newVRGReplicationHealthyCondition(v.instance.Generation, metav1.ConditionFalse,
+			VRGConditionReasonError, replicationHealthyPVCMessage(falsePVC, falseCond))
+	}
+
+	if unknownCond != nil {
+		return newVRGReplicationHealthyCondition(v.instance.Generation, metav1.ConditionUnknown,
+			VRGConditionReasonErrorUnknown, replicationHealthyPVCMessage(unknownPVC, unknownCond))
+	}
+
+	return newVRGReplicationHealthyCondition(v.instance.Generation, metav1.ConditionTrue,
+		VRGConditionReasonReady, "VolumeReplication resources are replicating")
+}
+
+func (v *VRGInstance) collectReplicationHealthyPVCConditions() (
+	found bool,
+	falsePVC *ramendrv1alpha1.ProtectedPVC,
+	falseCond *metav1.Condition,
+	unknownPVC *ramendrv1alpha1.ProtectedPVC,
+	unknownCond *metav1.Condition,
+) {
+	for i := range v.instance.Status.ProtectedPVCs {
+		protectedPVC := &v.instance.Status.ProtectedPVCs[i]
+		if protectedPVC.ProtectedByVolSync {
+			continue
+		}
+
+		condition := rmnutil.FindCondition(protectedPVC.Conditions, VRGConditionTypeReplicationHealthy)
+		if condition == nil {
+			continue
+		}
+
+		found = true
+
+		switch condition.Status {
+		case metav1.ConditionFalse:
+			if falseCond == nil {
+				falseCond = condition
+				falsePVC = protectedPVC
+			}
+		case metav1.ConditionUnknown:
+			if unknownCond == nil {
+				unknownCond = condition
+				unknownPVC = protectedPVC
+			}
+		case metav1.ConditionTrue:
+			continue
+		}
+	}
+
+	return found, falsePVC, falseCond, unknownPVC, unknownCond
+}
+
+func newVRGReplicationHealthyCondition(observedGeneration int64, status metav1.ConditionStatus,
+	reason, message string,
+) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionTypeReplicationHealthy,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	}
+}
+
+func replicationHealthyPVCMessage(protectedPVC *ramendrv1alpha1.ProtectedPVC, condition *metav1.Condition) string {
+	if protectedPVC == nil {
+		return condition.Message
+	}
+
+	return fmt.Sprintf("VolumeReplication for PVC %s/%s: %s",
+		protectedPVC.Namespace, protectedPVC.Name, condition.Message)
 }
 
 // Checks and requeues reconciler of VM resource cleanup.

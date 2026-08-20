@@ -451,6 +451,15 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 		ObservedGeneration: vrg.Generation,
 	})
 
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeReplicationHealthy,
+		Reason:             controllers.VRGConditionReasonReady,
+		Status:             metav1.ConditionTrue,
+		Message:            "Replication healthy",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
+
 	t := metav1.Now()
 	vrg.Status.LastGroupSyncTime = &t
 
@@ -1877,6 +1886,12 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 			for {
 				_, err = drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
 				Expect(err).To(HaveOccurred())
+				// drpcReconcile runs alongside the envtest controller, so a
+				// status update can hit a conflict before this path lists DRClusters.
+				if k8serrors.IsConflict(err) {
+					continue
+				}
+
 				Expect(err.Error()).To(ContainSubstring("failed to get drclusters"))
 
 				errCount++
