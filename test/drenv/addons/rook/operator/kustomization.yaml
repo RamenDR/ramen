@@ -26,11 +26,6 @@ patches:
       - op: replace
         path: /data/ROOK_USE_CSI_OPERATOR
         value: 'false'
-  # Disable to avoid random failures when restaring the enviroment.
-  #   failed to call webhook:
-  #   Post "https://rook-ceph-admission-controller.rook-ceph.svc:443/
-  #   validate-ceph-rook-io-v1-cephblockpool?timeout=5s":
-  #   x509: certificate signed by unknown authority
   - target:
       kind: Deployment
       name: rook-ceph-operator
@@ -45,7 +40,10 @@ patches:
             containers:
               - name: rook-ceph-operator
                 env:
+                  # Disable to avoid random failures when restaring the enviroment.
+                  #   failed to call webhook:
+                  #   Post "https://rook-ceph-admission-controller.rook-ceph.svc:443/
+                  #   validate-ceph-rook-io-v1-cephblockpool?timeout=5s":
+                  #   x509: certificate signed by unknown authority
                   - name: ROOK_DISABLE_ADMISSION_CONTROLLER
                     value: 'true'
-                  - name: ROOK_CSIADDONS_IMAGE
-                    value: quay.io/nladha/csiaddons-sidecar:cg
