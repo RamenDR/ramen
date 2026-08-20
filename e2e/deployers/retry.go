@@ -4,6 +4,7 @@
 package deployers
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -62,6 +63,10 @@ func WaitWorkloadHealth(ctx types.TestContext, cluster *types.Cluster) error {
 				ctx.AppNamespace(), w.GetAppName(), cluster.Name, elapsed.Seconds())
 
 			return nil
+		}
+
+		if errors.Is(err, util.ErrUnrecoverable) {
+			return err
 		}
 
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
