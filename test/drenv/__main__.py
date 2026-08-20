@@ -431,6 +431,10 @@ def add_stress_test_command(sp, width):
         description=options.dedent("""
             Execute one or more stress-test runs and write the results to
             the specified output directory.
+
+            Examples:
+              # Run a single stress test for the regional-dr environment
+              drenv stress-test run envs/regional-dr.yaml
             """),
     )
     p.add_argument(
@@ -463,6 +467,10 @@ def add_stress_test_command(sp, width):
         description=options.dedent("""
             Generate a human-readable markdown report from the JSON
             results produced by a stress-test run.
+
+            Examples:
+              # Generate a report from stress test results
+              drenv stress-test report out
             """),
     )
     p.add_argument(
@@ -480,6 +488,10 @@ def add_stress_test_command(sp, width):
         description=options.dedent("""
             Compare the results of two stress-test output directories and
             summarize the differences.
+
+            Examples:
+              # Compare two stress test results
+              drenv stress-test compare out/before out/after
             """),
     )
     p.add_argument(
