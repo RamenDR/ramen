@@ -15,7 +15,7 @@ data:
     health:
       healthProbeBindAddress: :8081
     metrics:
-      bindAddress: :8443
+      bindAddress: 0.0.0.0:9289
     webhook:
       port: 9443
     leaderElection:
