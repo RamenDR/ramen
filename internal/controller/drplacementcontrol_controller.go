@@ -469,7 +469,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 		return nil, err
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return nil, err
 	}
@@ -763,7 +763,7 @@ func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	update = rmnutil.AddLabel(drpc, rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue)
 	update = rmnutil.AddFinalizer(drpc, DRPCFinalizer) || update
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return err
 	}
@@ -845,7 +845,7 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 		}
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, r.Log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, r.Log, drpc, placementObj)
 	if err != nil {
 		return err
 	}
@@ -1604,7 +1604,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
 	log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) {
-	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, userPlacement)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, log, drpc, userPlacement)
 	if err != nil {
 		log.Info("Failed to select VRG namespace", "error", err)
 
@@ -2328,6 +2328,41 @@ func (r *DRPlacementControlReconciler) retainPlacementClusterDecisionAsFailover(
 	return nil
 }
 
+// nestedGeneratorsMatchPlacement returns true when any generator in the slice
+// carries a clusterDecisionResource whose PlacementLabel matches placementName.
+func nestedGeneratorsMatchPlacement(
+	generators []argocdv1alpha1hack.ApplicationSetNestedGenerator, placementName string,
+) bool {
+	for i := range generators {
+		cdr := generators[i].ClusterDecisionResource
+		if cdr != nil && cdr.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel] == placementName {
+			return true
+		}
+	}
+
+	return false
+}
+
+// appSetGeneratorMatchesPlacement returns true when the given top-level ApplicationSet generator
+// references the supplied Placement name, either directly via a clusterDecisionResource generator
+// or nested one level deep inside a matrix or merge combinator generator.
+func appSetGeneratorMatchesPlacement(gen *argocdv1alpha1hack.ApplicationSetGenerator, placementName string) bool {
+	if gen.ClusterDecisionResource != nil &&
+		gen.ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel] == placementName {
+		return true
+	}
+
+	if gen.Matrix != nil && nestedGeneratorsMatchPlacement(gen.Matrix.Generators, placementName) {
+		return true
+	}
+
+	if gen.Merge != nil && nestedGeneratorsMatchPlacement(gen.Merge.Generators, placementName) {
+		return true
+	}
+
+	return false
+}
+
 func getApplicationDestinationNamespace(
 	client client.Client,
 	log logr.Logger,
@@ -2350,10 +2385,9 @@ func getApplicationDestinationNamespace(
 	//
 	for i := range appSetList.Items {
 		appSet := &appSetList.Items[i]
-		if len(appSet.Spec.Generators) > 0 &&
-			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
-			name := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
-			if name == placement.GetName() {
+
+		for j := range appSet.Spec.Generators {
+			if appSetGeneratorMatchesPlacement(&appSet.Spec.Generators[j], placement.GetName()) {
 				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
 				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
@@ -2371,7 +2405,7 @@ func getApplicationDestinationNamespace(
 	return placement.GetNamespace(), nil
 }
 
-func selectVRGNamespace(
+func SelectVRGNamespace(
 	client client.Client,
 	log logr.Logger,
 	drpc *rmn.DRPlacementControl,
@@ -2593,7 +2627,7 @@ func (r *DRPlacementControlReconciler) determineDRPCState(
 ) (Progress, string, error) {
 	log.Info("Rebuild DRPC state")
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, log, drpc, placementObj)
 	if err != nil {
 		log.Info("Failed to select VRG namespace")
 
@@ -3021,7 +3055,7 @@ func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacem
 		}
 	}
 
-	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(r.Client, log, drpc, placementObj)
 	if err != nil {
 		return []string{}, err
 	}

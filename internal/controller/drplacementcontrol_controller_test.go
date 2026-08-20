@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/retry"
 	spokeClusterV1 "open-cluster-management.io/api/cluster/v1"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
@@ -30,6 +31,7 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -2821,6 +2823,186 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 			RunningVolSyncTests = false
 
 			deleteDRClustersAsync()
+		})
+	})
+	Context("getApplicationDestinationNamespace", func() {
+		const (
+			placementName      = "test-placement"
+			placementNamespace = "placement-ns"
+			appNamespaceName   = "app-ns"
+		)
+
+		var (
+			testPlacement *clrapiv1beta1.Placement
+			testDRPC      *rmn.DRPlacementControl
+		)
+
+		BeforeEach(func() {
+			testPlacement = &clrapiv1beta1.Placement{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      placementName,
+					Namespace: placementNamespace,
+				},
+			}
+			testDRPC = &rmn.DRPlacementControl{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-drpc",
+					Namespace: placementNamespace,
+				},
+			}
+		})
+
+		buildFakeClient := func(appSets ...argocdv1alpha1hack.ApplicationSet) client.Client {
+			objects := make([]client.Object, len(appSets))
+
+			for i := range appSets {
+				objects[i] = &appSets[i]
+			}
+
+			return fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(objects...).Build()
+		}
+
+		makeDirectAppSet := func(placementName, destNamespace string) argocdv1alpha1hack.ApplicationSet {
+			return argocdv1alpha1hack.ApplicationSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "direct-appset",
+					Namespace: placementNamespace,
+				},
+				Spec: argocdv1alpha1hack.ApplicationSetSpec{
+					Generators: []argocdv1alpha1hack.ApplicationSetGenerator{
+						{
+							ClusterDecisionResource: &argocdv1alpha1hack.DuckTypeGenerator{
+								LabelSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										clrapiv1beta1.PlacementLabel: placementName,
+									},
+								},
+							},
+						},
+					},
+					Template: argocdv1alpha1hack.ApplicationSetTemplate{
+						Spec: argocdv1alpha1hack.ApplicationSpec{
+							Destination: argocdv1alpha1hack.ApplicationDestination{
+								Namespace: destNamespace,
+							},
+						},
+					},
+				},
+			}
+		}
+
+		makeMatrixAppSet := func(placementName, destNamespace string) argocdv1alpha1hack.ApplicationSet {
+			return argocdv1alpha1hack.ApplicationSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "matrix-appset",
+					Namespace: placementNamespace,
+				},
+				Spec: argocdv1alpha1hack.ApplicationSetSpec{
+					Generators: []argocdv1alpha1hack.ApplicationSetGenerator{
+						{
+							Matrix: &argocdv1alpha1hack.MatrixGenerator{
+								Generators: []argocdv1alpha1hack.ApplicationSetNestedGenerator{
+									// First nested generator: some other type (e.g. git list), no CDR.
+									{},
+									// Second nested generator: the clusterDecisionResource one.
+									{
+										ClusterDecisionResource: &argocdv1alpha1hack.DuckTypeGenerator{
+											LabelSelector: metav1.LabelSelector{
+												MatchLabels: map[string]string{
+													clrapiv1beta1.PlacementLabel: placementName,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Template: argocdv1alpha1hack.ApplicationSetTemplate{
+						Spec: argocdv1alpha1hack.ApplicationSpec{
+							Destination: argocdv1alpha1hack.ApplicationDestination{
+								Namespace: destNamespace,
+							},
+						},
+					},
+				},
+			}
+		}
+
+		makeMergeAppSet := func(placementName, destNamespace string) argocdv1alpha1hack.ApplicationSet {
+			return argocdv1alpha1hack.ApplicationSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "merge-appset",
+					Namespace: placementNamespace,
+				},
+				Spec: argocdv1alpha1hack.ApplicationSetSpec{
+					Generators: []argocdv1alpha1hack.ApplicationSetGenerator{
+						{
+							Merge: &argocdv1alpha1hack.MergeGenerator{
+								Generators: []argocdv1alpha1hack.ApplicationSetNestedGenerator{
+									{
+										ClusterDecisionResource: &argocdv1alpha1hack.DuckTypeGenerator{
+											LabelSelector: metav1.LabelSelector{
+												MatchLabels: map[string]string{
+													clrapiv1beta1.PlacementLabel: placementName,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Template: argocdv1alpha1hack.ApplicationSetTemplate{
+						Spec: argocdv1alpha1hack.ApplicationSpec{
+							Destination: argocdv1alpha1hack.ApplicationDestination{
+								Namespace: destNamespace,
+							},
+						},
+					},
+				},
+			}
+		}
+
+		When("no ApplicationSet exists", func() {
+			It("should return the placement namespace", func() {
+				fakeClient := buildFakeClient()
+				ns, err := controllers.SelectVRGNamespace(fakeClient, testLogger, testDRPC, testPlacement)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ns).To(Equal(placementNamespace))
+			})
+		})
+		When("a direct clusterDecisionResource generator references the Placement", func() {
+			It("should return the ApplicationSet destination namespace", func() {
+				fakeClient := buildFakeClient(makeDirectAppSet(placementName, appNamespaceName))
+				ns, err := controllers.SelectVRGNamespace(fakeClient, testLogger, testDRPC, testPlacement)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ns).To(Equal(appNamespaceName))
+			})
+		})
+		When("a clusterDecisionResource generator is nested inside a matrix generator", func() {
+			It("should return the ApplicationSet destination namespace", func() {
+				fakeClient := buildFakeClient(makeMatrixAppSet(placementName, appNamespaceName))
+				ns, err := controllers.SelectVRGNamespace(fakeClient, testLogger, testDRPC, testPlacement)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ns).To(Equal(appNamespaceName))
+			})
+		})
+		When("a clusterDecisionResource generator is nested inside a merge generator", func() {
+			It("should return the ApplicationSet destination namespace", func() {
+				fakeClient := buildFakeClient(makeMergeAppSet(placementName, appNamespaceName))
+				ns, err := controllers.SelectVRGNamespace(fakeClient, testLogger, testDRPC, testPlacement)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ns).To(Equal(appNamespaceName))
+			})
+		})
+		When("no generator references the Placement", func() {
+			It("should return the placement namespace", func() {
+				fakeClient := buildFakeClient(makeDirectAppSet("other-placement", appNamespaceName))
+				ns, err := controllers.SelectVRGNamespace(fakeClient, testLogger, testDRPC, testPlacement)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ns).To(Equal(placementNamespace))
+			})
 		})
 	})
 })
