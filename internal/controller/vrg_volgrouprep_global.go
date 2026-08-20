@@ -323,7 +323,7 @@ func (v *VRGInstance) validateGlobalVGRStatus(
 
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, dataReadyReason, dataReadyMsg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonDataProtected, dataProtectedMsg)
-		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, status)
+		v.updatePVCLastSyncCounters(pvc, status)
 	}
 
 	v.log.Info("Global VGR status validated", "vgr", volRep.GetName(), "namespace", volRep.GetNamespace(), "state", state)
