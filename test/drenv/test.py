@@ -36,7 +36,7 @@ def start(name, file):
     # the level to debug.
     logging.basicConfig(level=logging.INFO, format=log_format)
 
-    # Working directory for runing the test.
+    # Working directory for running the test.
     workdir = os.path.abspath(os.path.dirname(file))
 
     parser = argparse.ArgumentParser(name)

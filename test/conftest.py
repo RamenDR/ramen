@@ -7,7 +7,7 @@ import pytest
 
 from drenv import envfile
 
-# DRIVER can be overriden to allow testing in github when we don't have
+# DRIVER can be overridden to allow testing in github when we don't have
 # hardware acceleration for VMs.
 DRIVER = os.environ.get("DRIVER", "vm")
 
