@@ -197,7 +197,7 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
-	v.ensureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 
 	if err = v.ReconcileServiceExportForRD(rd); err != nil {
 		return nil, nil, err
@@ -468,8 +468,8 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, nil // Requeue
 	}
 
-	v.ensureVolSyncMoverJobLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
-	v.ensureVolSyncServiceImportLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncMoverJobLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncServiceImportLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -1697,7 +1697,7 @@ const (
 	ServiceImportVersion = "v1alpha1"
 )
 
-func (v *VSHandler) ensureVolSyncServiceImportLabels(pvcName, namespace string) {
+func (v *VSHandler) EnsureVolSyncServiceImportLabels(pvcName, namespace string) {
 	if !util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
 		return
 	}
@@ -1731,7 +1731,7 @@ func (v *VSHandler) ensureVolSyncServiceImportLabels(pvcName, namespace string) 
 	}
 }
 
-func (v *VSHandler) ensureVolSyncMoverJobLabels(pvcName, namespace string) {
+func (v *VSHandler) EnsureVolSyncMoverJobLabels(pvcName, namespace string) {
 	for _, prefix := range []string{"volsync-rsync-tls-src-", "volsync-rsync-tls-dst-"} {
 		jobName := util.GetJobName(prefix, pvcName)
 
