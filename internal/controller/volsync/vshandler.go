@@ -198,6 +198,7 @@ func (v *VSHandler) ReconcileRD(
 	}
 
 	v.EnsureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncServiceImportLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 
 	if err = v.ReconcileServiceExportForRD(rd); err != nil {
 		return nil, nil, err
