@@ -14,11 +14,11 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -53,14 +53,19 @@ const (
 
 	DRClusterConfigS3Reachable   = "Reachable"
 	DRClusterConfigS3Unreachable = "Unreachable"
+	NADCRDMissing                = "NADCRDMissing"
+	NADWatchNotRegistered        = "NADWatchNotRegistered"
+	StaticIPDiscoveryEnabled     = "StaticIPDiscoveryEnabled"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
 type DRClusterConfigReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Log         logr.Logger
-	RateLimiter *workqueue.TypedRateLimiter[reconcile.Request]
+	Scheme             *runtime.Scheme
+	APIReader          client.Reader
+	Log                logr.Logger
+	NadWatchRegistered bool
+	RateLimiter        *workqueue.TypedRateLimiter[reconcile.Request]
 }
 
 // NADDRNetworkLabel is an opt-in marker for Ramen's static-IP disaster
@@ -72,7 +77,11 @@ type DRClusterConfigReconciler struct {
 //
 // are included in DR network discovery and validation. NADs labeled
 // "false", or NADs that do not carry this label, are ignored.
-const NADDRNetworkLabel = "ramendr.openshift.io/dr-network"
+const (
+	NADDRNetworkLabel      = "ramendr.openshift.io/dr-network"
+	NADResourceName        = "network-attachment-definitions.k8s.cni.cncf.io"
+	StaticIPDiscoveryReady = "StaticIPDiscoveryReady"
+)
 
 // nadGVK is the GroupVersionKind used when listing NADs via the unstructured client.
 // NAD is not a first-class Go type in this module, so we use dynamic listing.
@@ -297,6 +306,8 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 
 	setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
 		"Configuration processed and validated", metav1.ConditionTrue, DRClusterConfigConditionConfigurationProcessed)
+
+	r.updateStaticIPDiscoveryCondition(ctx, drCConfig)
 
 	return ctrl.Result{}, nil
 }
@@ -637,8 +648,7 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
-		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn).
-		Watches(nadObject(), drccMapFn, drccPredFn)
+		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn)
 
 	if err := util.EnsureLocalVGSAPI(context.TODO(), mgr.GetAPIReader()); err != nil {
 		r.Log.Info("VolumeGroupSnapshotClass API not available, skipping watch", "reason", err.Error())
@@ -646,16 +656,66 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		controllerBuilder = util.WatchesVolumeGroupSnapshotClass(controllerBuilder, r.Log, drccMapFn, drccPredFn)
 	}
 
+	// NAD CRD is optional (requires Multus). Only register the watch when the
+	// CRD is already present at startup; on clusters without Multus the
+	// RequeueAfter in processCreateOrUpdate re-checks periodically.
+	if r.nadCRDInstalled(context.Background()) {
+		r.NadWatchRegistered = true
+		controllerBuilder = controller.Watches(&netattdefv1.NetworkAttachmentDefinition{}, drccMapFn, drccPredFn)
+	}
+
 	return controllerBuilder.Complete(r)
 }
 
-// listDRSupportedNADs returns all NetworkAttachmentDefinitions across all
-// namespaces that carry the label ramendr.openshift.io/dr-network.
-//
-// The result is a []NetworkAttachment slice sorted by "namespace/name" so that
-// status comparisons are stable and do not produce spurious updates.
+func (r *DRClusterConfigReconciler) nadCRDInstalled(ctx context.Context) bool {
+	return util.IsCRDInstalled(ctx, r.APIReader, NADResourceName)
+}
+
+// parseCNIType extracts the CNI plugin type from spec.config (a JSON string)
+// of a NetworkAttachmentDefinition.
+// Returns "unknown" with a non-nil error when config is absent or the type field is not set.
+func parseCNIType(nad *netattdefv1.NetworkAttachmentDefinition) (string, error) {
+	if nad.Spec.Config == "" {
+		return "unknown", fmt.Errorf("spec.config is empty")
+	}
+
+	// spec.config is a JSON string containing the CNI configuration.
+	var cfg struct {
+		Type    string `json:"type"`
+		Plugins []struct {
+			Type string `json:"type"`
+		} `json:"plugins"`
+	}
+
+	if err := json.Unmarshal([]byte(nad.Spec.Config), &cfg); err != nil {
+		return "unknown", fmt.Errorf("spec.config is not valid JSON: %w", err)
+	}
+
+	// Simple CNI config.
+	if cfg.Type != "" {
+		return cfg.Type, nil
+	}
+
+	// Multus conflist format: first plugin is the primary CNI.
+	if len(cfg.Plugins) > 0 && cfg.Plugins[0].Type != "" {
+		return cfg.Plugins[0].Type, nil
+	}
+
+	return "unknown", nil
+}
+
 func (r *DRClusterConfigReconciler) listDRSupportedNADs(ctx context.Context) ([]ramen.NetworkAttachment, error) {
-	nadList := &unstructured.UnstructuredList{}
+	// The NAD CRD is optional — it is only present when Multus is installed.
+	if !r.nadCRDInstalled(ctx) {
+		r.Log.Info(
+			"Skipping NAD discovery because the NetworkAttachmentDefinition CRD is not installed",
+			"gvk", nadGVK.String(),
+		)
+
+		return nil, nil
+	}
+
+	nadList := &netattdefv1.NetworkAttachmentDefinitionList{}
 	nadList.SetGroupVersionKind(nadGVK)
 
 	if err := r.Client.List(ctx, nadList,
@@ -664,7 +724,7 @@ func (r *DRClusterConfigReconciler) listDRSupportedNADs(ctx context.Context) ([]
 		return nil, fmt.Errorf("failed to list NADs with label %s=true: %w", NADDRNetworkLabel, err)
 	}
 
-	nads := make([]ramen.NetworkAttachment, 0, len(nadList.Items))
+	nads := []ramen.NetworkAttachment{}
 
 	for i := range nadList.Items {
 		item := &nadList.Items[i]
@@ -704,50 +764,69 @@ func (r *DRClusterConfigReconciler) listDRSupportedNADs(ctx context.Context) ([]
 	return nads, nil
 }
 
-// parseCNIType extracts the CNI plugin type from spec.config (a JSON string)
-// of a NetworkAttachmentDefinition.
-// Returns "unknown" when config is absent or the type field is not set.
-func parseCNIType(nad *unstructured.Unstructured) (string, error) {
-	raw, found, err := unstructured.NestedString(nad.Object, "spec", "config")
-	if err != nil || !found || len(raw) == 0 {
-		return "unknown", fmt.Errorf("spec.config is not a string: %w", err)
-	}
-
-	// spec.config is a JSON string (the CNI config JSON blob).
-	var cfg struct {
-		Type    string `json:"type"`
-		Plugins []struct {
-			Type string `json:"type"`
-		} `json:"plugins"`
-	}
-
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		return "unknown", fmt.Errorf("spec.config is not valid JSON: %w", err)
-	}
-
-	if cfg.Type != "" {
-		return cfg.Type, nil
-	}
-
-	// Multus conflist format — first plugin type is the primary one.
-	if len(cfg.Plugins) > 0 && cfg.Plugins[0].Type != "" {
-		return cfg.Plugins[0].Type, nil
-	}
-
-	return "unknown", nil
+func setStaticIPDiscoveryCondition(
+	conditions *[]metav1.Condition,
+	status metav1.ConditionStatus,
+	reason, message string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:    StaticIPDiscoveryReady,
+		Status:  status,
+		Reason:  reason,
+		Message: message,
+	})
 }
 
-// nadObject returns an unstructured NAD object with the GVK set so that the
-// controller-runtime watcher can register an informer for the NAD resource.
-// NAD has no typed Go struct in this module, so we use the dynamic client
-// approach consistent with listDRSupportedNADs in drclusterconfig_nad_discovery.go.
-func nadObject() *unstructured.Unstructured {
-	nad := &unstructured.Unstructured{}
-	nad.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "k8s.cni.cncf.io",
-		Version: "v1",
-		Kind:    "NetworkAttachmentDefinition",
-	})
+// Determine static-IP discovery readiness based on NAD CRD availability
+// and whether the NAD watch was successfully registered at controller startup.
+//
+// Scenarios:
+// 1. NAD CRD absent:
+//   - Static-IP discovery is unavailable.
+//   - Report NADCRDMissing.
+//   - If the CRD is installed later, the controller must be restarted
+//     to register the NAD watch.
+//
+// 2. NAD CRD present but watch not registered:
+//   - Static-IP discovery remains unavailable because NAD changes
+//     cannot be observed.
+//   - Report that a controller restart is required.
+//
+// 3. NAD CRD present and watch registered:
+//   - Static-IP discovery is fully operational.
+//   - NAD create/update/delete events will be observed and processed.
+func (r *DRClusterConfigReconciler) updateStaticIPDiscoveryCondition(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) {
+	if !r.nadCRDInstalled(ctx) {
+		r.NadWatchRegistered = false
 
-	return nad
+		setStaticIPDiscoveryCondition(
+			&drCConfig.Status.Conditions,
+			metav1.ConditionFalse,
+			NADCRDMissing,
+			"NetworkAttachmentDefinition CRD is not installed on the cluster",
+		)
+
+		return
+	}
+
+	if !r.NadWatchRegistered {
+		setStaticIPDiscoveryCondition(
+			&drCConfig.Status.Conditions,
+			metav1.ConditionFalse,
+			NADWatchNotRegistered,
+			"NetworkAttachmentDefinition CRD is available, but NAD monitoring is disabled until the controller is restarted",
+		)
+
+		return
+	}
+
+	setStaticIPDiscoveryCondition(
+		&drCConfig.Status.Conditions,
+		metav1.ConditionTrue,
+		StaticIPDiscoveryEnabled,
+		"NetworkAttachmentDefinition monitoring is enabled and static IP discovery is operational",
+	)
 }
