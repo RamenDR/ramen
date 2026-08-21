@@ -18,6 +18,11 @@ import (
 	controllers "github.com/ramendr/ramen/internal/controller"
 )
 
+const (
+	// s3 list operations need more time than the default suite timeout under CI load
+	protectedVrgListTimeout = time.Second * 10
+)
+
 func protectedVrgListCreate(name string, s3ProfileNumber int) *ramen.ProtectedVolumeReplicationGroupList {
 	protectedVrgList := &ramen.ProtectedVolumeReplicationGroupList{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
@@ -48,7 +53,7 @@ func protectedVrgListSampleTimeRecentWait(protectedVrgList *ramen.ProtectedVolum
 		Expect(protectedVrgListGet(protectedVrgList)).To(Succeed())
 
 		return protectedVrgList.Status
-	}, timeout, interval).ShouldNot(BeNil())
+	}, protectedVrgListTimeout, interval).ShouldNot(BeNil())
 	Expect(protectedVrgList.Status.SampleTime.Time).Should(
 		BeTemporally("~", time.Now(), 2*time.Second),
 		"%#v", *protectedVrgList,
@@ -71,7 +76,7 @@ func protectedVrgListDeleteAndNotFoundWait(protectedVrgList *ramen.ProtectedVolu
 	Expect(k8sClient.Delete(context.TODO(), protectedVrgList)).To(Succeed())
 	Eventually(func() error {
 		return protectedVrgListGet(protectedVrgList)
-	}, timeout, interval).Should(
+	}, protectedVrgListTimeout, interval).Should(
 		MatchError(
 			k8serrors.NewNotFound(
 				schema.GroupResource{
@@ -125,7 +130,7 @@ func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplic
 		}
 
 		return true
-	}, timeout, interval).Should(BeTrue())
+	}, protectedVrgListTimeout, interval).Should(BeTrue())
 }
 
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
