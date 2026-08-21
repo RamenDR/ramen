@@ -2691,25 +2691,8 @@ func (v *vrgTest) kubeObjectProtectionValidate() *ramendrv1alpha1.VolumeReplicat
 func kubeObjectProtectionValidate(tests []*vrgTest) {
 	for _, v := range tests {
 		v.ensureVRGIsUploadedToS3(true, vrgController.VRGConditionReasonUploaded)
+		v.kubeObjectProtectionValidate()
 	}
-
-	protectedVrgList := protectedVrgListCreateAndStatusWait("protectedvrglist-vrg-"+tests[0].uniqueID, vrgS3ProfileNumber)
-
-	// Refresh the list once all VRGs have been uploaded to S3 store to fix race condition,
-	// since the initial scan may have happened before all uploads completed successfully.
-	protectedVrgListRefresh(protectedVrgList)
-
-	vrgs := make([]ramendrv1alpha1.VolumeReplicationGroup, len(tests))
-
-	for i, v := range tests {
-		vrg := v.kubeObjectProtectionValidate()
-		vrgController.VrgTidyForList(vrg)
-		vrgs[i] = *vrg
-		protectedVrgListExpectInclude(protectedVrgList, vrgs[i:i+1])
-	}
-
-	protectedVrgListExpectInclude(protectedVrgList, vrgs)
-	protectedVrgListDeleteAndNotFoundWait(protectedVrgList)
 }
 
 func (v *vrgTest) cleanupStatusAbsent() {
