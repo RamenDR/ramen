@@ -82,6 +82,7 @@ func (v *VRGInstance) resourceModifierConfigMapName() string {
 func (v *VRGInstance) resourceModifierLabels() map[string]string {
 	labels := util.OwnerLabels(v.instance)
 	labels[resourceModifierComponentLabel] = "true"
+	labels[util.CreatedByRamenLabel] = "true"
 
 	return labels
 }

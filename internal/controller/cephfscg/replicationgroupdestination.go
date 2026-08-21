@@ -238,6 +238,9 @@ func (m *rgdMachine) ReconcileRD(
 		return nil, err
 	}
 
+	m.VSHandler.EnsureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+	m.VSHandler.EnsureVolSyncServiceImportLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+
 	if m.VSHandler.IsSubmarinerEnabled() {
 		err = m.VSHandler.ReconcileServiceExportForRD(rd)
 		if err != nil {

@@ -545,6 +545,9 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		createdOrUpdated = createdOrUpdated ||
 			(op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated)
 
+		h.VSHandler.EnsureVolSyncMoverJobLabels(originalPVCName, replicationSourceNamespace)
+		h.VSHandler.EnsureVolSyncServiceImportLabels(originalPVCName, replicationSourceNamespace)
+
 		replicationSources = append(replicationSources, &corev1.ObjectReference{
 			APIVersion: replicationSource.APIVersion,
 			Kind:       replicationSource.Kind,

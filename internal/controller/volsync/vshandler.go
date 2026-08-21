@@ -197,6 +197,9 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
+	v.EnsureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncServiceImportLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+
 	if err = v.ReconcileServiceExportForRD(rd); err != nil {
 		return nil, nil, err
 	}
@@ -465,6 +468,9 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	if replicationSource == nil {
 		return false, nil, nil // Requeue
 	}
+
+	v.EnsureVolSyncMoverJobLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncServiceImportLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -1683,6 +1689,71 @@ func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
 		if err != nil {
 			v.log.V(1).Info("Failed to label VolSync EndpointSlice",
 				"endpointSlice", epSliceList.Items[i].Name, "error", err)
+		}
+	}
+}
+
+const (
+	ServiceImportKind    = "ServiceImport"
+	ServiceImportVersion = "v1alpha1"
+)
+
+func (v *VSHandler) EnsureVolSyncServiceImportLabels(pvcName, namespace string) {
+	if !util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		return
+	}
+
+	rdName := util.GetReplicationDestinationName(pvcName)
+	serviceName := util.GetLocalServiceNameForRD(rdName)
+
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		serviceName = util.GetLocalServiceNameForDiffRD(rdName)
+	}
+
+	svcImport := &unstructured.Unstructured{}
+	svcImport.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   ServiceExportGroup,
+		Kind:    ServiceImportKind,
+		Version: ServiceImportVersion,
+	})
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, svcImport)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			v.log.V(1).Info("Failed to get ServiceImport", "serviceName", serviceName, "error", err)
+		}
+
+		return
+	}
+
+	err = util.NewResourceUpdater(svcImport).
+		AddLabel(util.CreatedByRamenLabel, "transitive").
+		Update(v.ctx, v.client)
+	if err != nil {
+		v.log.V(1).Info("Failed to label ServiceImport", "serviceName", serviceName, "error", err)
+	}
+}
+
+func (v *VSHandler) EnsureVolSyncMoverJobLabels(pvcName, namespace string) {
+	for _, prefix := range []string{"volsync-rsync-tls-src-", "volsync-rsync-tls-dst-"} {
+		jobName := util.GetJobName(prefix, pvcName)
+
+		job := &batchv1.Job{}
+
+		err := v.client.Get(v.ctx, types.NamespacedName{Name: jobName, Namespace: namespace}, job)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				v.log.V(1).Info("Failed to get VolSync mover Job", "jobName", jobName, "error", err)
+			}
+
+			continue
+		}
+
+		err = util.NewResourceUpdater(job).
+			AddLabel(util.CreatedByRamenLabel, "transitive").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync mover Job", "jobName", jobName, "error", err)
 		}
 	}
 }
