@@ -1719,7 +1719,9 @@ func (v *VSHandler) EnsureVolSyncServiceImportLabels(pvcName, namespace string) 
 
 	err := v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, svcImport)
 	if err != nil {
-		v.log.V(1).Info("ServiceImport not found yet, skipping label", "serviceName", serviceName)
+		if !errors.IsNotFound(err) {
+			v.log.V(1).Info("Failed to get ServiceImport", "serviceName", serviceName, "error", err)
+		}
 
 		return
 	}
@@ -1740,6 +1742,10 @@ func (v *VSHandler) EnsureVolSyncMoverJobLabels(pvcName, namespace string) {
 
 		err := v.client.Get(v.ctx, types.NamespacedName{Name: jobName, Namespace: namespace}, job)
 		if err != nil {
+			if !errors.IsNotFound(err) {
+				v.log.V(1).Info("Failed to get VolSync mover Job", "jobName", jobName, "error", err)
+			}
+
 			continue
 		}
 
