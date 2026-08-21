@@ -5,7 +5,7 @@ import hashlib
 
 from drenv import mc
 
-from .config import BUCKET, PACKAGE_DIR
+from .config import BUCKET_PREFIX, PACKAGE_DIR
 
 # Use minio.yaml as convenient test data for S3 operations.
 _TEST_FILE = PACKAGE_DIR / "start-data" / "minio.yaml"
@@ -18,7 +18,8 @@ def test(cluster):
     with open(_TEST_FILE, "rb") as f:
         c1 = hashlib.sha256(f.read()).hexdigest()
 
-    target = f"{cluster}/{BUCKET}/drenv/addons/minio/test"
+    bucket = f"{BUCKET_PREFIX}-{cluster}"
+    target = f"{cluster}/{bucket}/drenv/addons/minio/test"
 
     print(f"Copying minio.yaml to {target}")
     mc.cp(str(_TEST_FILE), target)
