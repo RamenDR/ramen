@@ -12,7 +12,7 @@ from drenv import commands
 from drenv import kubectl
 
 PACKAGE_DIR = Path(__file__).parent
-CACHE_KEY = "addons/rook-cluster-1.19-2.yaml"
+CACHE_KEY = "addons/rook-cluster-1.19-3.yaml"
 
 # The ceph, and ceph-csi images are very large (500m each), using larger
 # timeout to avoid timeouts with flaky network.

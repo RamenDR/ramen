@@ -49,3 +49,5 @@ patches:
                     value: 'true'
                   - name: ROOK_CSIADDONS_IMAGE
                     value: quay.io/nladha/csiaddons-sidecar:cg
+                  - name: ROOK_CSI_CEPH_IMAGE
+                    value: quay.io/nladha/cephcsi:cg
