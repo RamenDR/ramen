@@ -20,6 +20,7 @@ from . import cluster
 from . import commands
 from . import envfile
 from . import kubectl
+from . import options
 from . import providers
 from . import ramen
 from . import registry
@@ -50,6 +51,7 @@ def main():
 
 
 def parse_args():
+    width = options.terminal_width()
     parser = argparse.ArgumentParser(prog="drenv")
 
     sp = parser.add_subparsers(
@@ -60,7 +62,24 @@ def parse_args():
 
     # Environment commands.
 
-    p = add_command(sp, "start", do_start, help="start an environment")
+    p = add_command(
+        sp,
+        "start",
+        do_start,
+        width=width,
+        help="start an environment",
+        description=options.dedent("""
+            Start the DR environment defined in the envfile. Creates the
+            clusters if needed, deploys all addons, and runs addon tests.
+            The command is idempotent - rerunning it on an already-running
+            environment is safe. Run "drenv setup" once before the first
+            start to prepare the host.
+
+            Examples:
+              # Start the regional-dr environment
+              drenv start envs/regional-dr.yaml
+            """),
+    )
     p.add_argument(
         "--skip-tests",
         dest="run_tests",
@@ -105,7 +124,22 @@ def parse_args():
         ),
     )
 
-    p = add_command(sp, "stop", do_stop, help="stop an environment")
+    p = add_command(
+        sp,
+        "stop",
+        do_stop,
+        width=width,
+        help="stop an environment",
+        description=options.dedent("""
+            Stop the DR environment defined in the envfile. Stops all
+            clusters for the environment profiles. Cluster data
+            is preserved and can be resumed later with "drenv start".
+
+            Examples:
+              # Stop the regional-dr environment
+              drenv stop envs/regional-dr.yaml
+            """),
+    )
     p.add_argument(
         "--skip-addons",
         dest="run_addons",
@@ -113,7 +147,23 @@ def parse_args():
         help="Do not run addons 'stop' hooks",
     )
 
-    p = add_command(sp, "cache", do_cache, help="cache environment resources")
+    p = add_command(
+        sp,
+        "cache",
+        do_cache,
+        width=width,
+        help="cache environment resources",
+        description=options.dedent("""
+            Pre-fetch and cache addon resources for the envfile. Runs each
+            addon's "cache" hook to prepare resources needed by the
+            environment. This improves stability when running with
+            bad network connectivity.
+
+            Examples:
+              # Cache resources for the regional-dr environment
+              drenv cache envs/regional-dr.yaml
+            """),
+    )
     p.add_argument(
         "--max-workers",
         type=int,
@@ -121,7 +171,22 @@ def parse_args():
         help="maximum number of workers per profile",
     )
 
-    p = add_command(sp, "gather", do_gather, help="gather environment data")
+    p = add_command(
+        sp,
+        "gather",
+        do_gather,
+        width=width,
+        help="gather environment data",
+        description=options.dedent("""
+            Gather diagnostic data from a running environment. Collects
+            logs and resource dumps from every cluster defined in the
+            envfile, useful for debugging.
+
+            Examples:
+              # Gather data from all namespaces into the default directory
+              drenv gather envs/regional-dr.yaml
+            """),
+    )
     p.add_argument(
         "-d",
         "--directory",
@@ -134,43 +199,189 @@ def parse_args():
         help="if specified, comma separated list of namespaces to gather data from",
     )
 
-    p = add_command(sp, "load", do_load, help="load an image into the cluster")
+    p = add_command(
+        sp,
+        "load",
+        do_load,
+        width=width,
+        help="load an image into the cluster",
+        description=options.dedent("""
+            Load a container image into every cluster in the envfile.
+            Useful for testing local image builds without pushing them to a
+            registry first. Use "podman save -o myimage.tar myimage" to
+            create the image tarball.
+
+            Examples:
+              # Load a local image tarball into all profiles
+              drenv load --image myimage.tar envs/regional-dr.yaml
+            """),
+    )
     p.add_argument(
         "--image",
         required=True,
         help="image to load into the cluster in tar format",
     )
 
-    add_command(sp, "delete", do_delete, help="delete an environment")
-    add_command(sp, "suspend", do_suspend, help="suspend virtual machines")
-    add_command(sp, "resume", do_resume, help="resume virtual machines")
-    add_command(sp, "dump", do_dump, help="dump an environment yaml")
+    add_command(
+        sp,
+        "delete",
+        do_delete,
+        width=width,
+        help="delete an environment",
+        description=options.dedent("""
+            Delete a DR environment. Deletes all clusters and
+            temporary files under `~/.config/drenv` for the
+            profiles and environment.
+
+            Examples:
+              # Delete the regional-dr environment
+              drenv delete envs/regional-dr.yaml
+            """),
+    )
+    add_command(
+        sp,
+        "suspend",
+        do_suspend,
+        width=width,
+        help="suspend virtual machines",
+        description=options.dedent("""
+            Suspend the virtual machines for the envfile. Pauses the
+            underlying virtual machines for every profile without deleting
+            them, freeing up host resources temporarily. Resume them later
+            with "drenv resume". Supported on Linux only.
+
+            Examples:
+              # Suspend the regional-dr environment
+              drenv suspend envs/regional-dr.yaml
+            """),
+    )
+    add_command(
+        sp,
+        "resume",
+        do_resume,
+        width=width,
+        help="resume virtual machines",
+        description=options.dedent("""
+            Resume virtual machines previously suspended for the envfile.
+            Supported on Linux only.
+
+            Examples:
+              # Resume the regional-dr environment
+              drenv resume envs/regional-dr.yaml
+            """),
+    )
+    add_command(
+        sp,
+        "dump",
+        do_dump,
+        width=width,
+        help="dump an environment yaml",
+        description=options.dedent("""
+            Dump the resolved environment as yaml. Prints the fully
+            resolved environment configuration (after applying defaults and
+            the name prefix) to stdout. Useful for debugging envfile
+            definitions.
+
+            Examples:
+              # Dump the resolved regional-dr environment
+              drenv dump envs/regional-dr.yaml
+            """),
+    )
 
     # Host commands.
 
-    add_command(sp, "clear", do_clear, help="cleared cached resources", envfile=False)
-    add_command(sp, "setup", do_setup, help="setup host for drenv")
-    add_command(sp, "cleanup", do_cleanup, help="cleanup host")
+    add_command(
+        sp,
+        "clear",
+        do_clear,
+        width=width,
+        help="clear cached resources",
+        envfile=False,
+        description=options.dedent("""
+            Clear all cached resources. Removes resources cached by
+            "drenv cache", freeing up disk space. This affects all
+            environments, not just one.
+
+            Examples:
+              # Clear all cached resources
+              drenv clear
+            """),
+    )
+    add_command(
+        sp,
+        "setup",
+        do_setup,
+        width=width,
+        help="setup host for drenv",
+        description=options.dedent("""
+            Prepare the host for the DR environment defined in the envfile.
+            Configures the host-level dependencies required by the environment.
+            This command does not create or start any clusters. Run it once
+            before the first "drenv start", and again after every reboot since
+            registry cache containers started by setup do not survive a reboot.
+
+            Examples:
+              # Prepare the host for the regional-dr environment
+              drenv setup envs/regional-dr.yaml
+            """),
+    )
+    add_command(
+        sp,
+        "cleanup",
+        do_cleanup,
+        width=width,
+        help="cleanup host",
+        description=options.dedent("""
+            Clean up host-level dependencies installed by "drenv setup".
+            Reverses the changes made by "drenv setup" for the given
+            envfile, removing host-level dependencies that are no longer
+            needed.
+
+            Examples:
+              # Clean up host dependencies for the regional-dr environment
+              drenv cleanup envs/regional-dr.yaml
+            """),
+    )
 
     # Sub commands.
 
-    add_registry_cache_command(sp)
-    add_stress_test_command(sp)
+    add_registry_cache_command(sp, width)
+    add_stress_test_command(sp, width)
 
     argcomplete.autocomplete(parser)
     return parser.parse_args()
 
 
-def add_registry_cache_command(sp):
-    p = sp.add_parser("registry-cache", help="manage registry cache")
+def add_registry_cache_command(sp, width):
+    p = sp.add_parser(
+        "registry-cache",
+        help="manage registry cache",
+        description=options.wrap_description(
+            options.dedent("""
+            Manage the drenv registry cache. Inspect or remove cached
+            registry containers used by drenv.
+            """),
+            width=width,
+        ),
+        formatter_class=options.formatter_class(width),
+    )
     sp = p.add_subparsers(dest="command", required=True)
 
     p = add_command(
         sp,
         "stats",
         registry.show_stats,
+        width=width,
         help="show cache statistics",
         envfile=False,
+        description=options.dedent("""
+            Display the current contents and usage statistics for the
+            cached registry containers managed by drenv.
+
+            Examples:
+              # Show cache statistics in JSON format
+              drenv registry-cache stats
+            """),
     )
     p.add_argument(
         "-o",
@@ -183,20 +394,48 @@ def add_registry_cache_command(sp):
         sp,
         "remove",
         registry.remove_containers,
+        width=width,
         help="remove cache containers",
         envfile=False,
+        description=options.dedent("""
+            Remove the cached registry containers managed by drenv.
+
+            Examples:
+              # Remove all cached registry containers
+              drenv registry-cache remove
+            """),
     )
 
 
-def add_stress_test_command(sp):
-    p = sp.add_parser("stress-test", help="run drenv stress test")
+def add_stress_test_command(sp, width):
+    p = sp.add_parser(
+        "stress-test",
+        help="run drenv stress test",
+        description=options.wrap_description(
+            options.dedent("""
+            Run drenv stress tests. Execute repeated stress-test runs
+            and collect results for later comparison and reporting.
+            """),
+            width=width,
+        ),
+        formatter_class=options.formatter_class(width),
+    )
     sp = p.add_subparsers(dest="command", required=True)
 
     p = add_command(
         sp,
         "run",
         stress.run,
+        width=width,
         help="run stress test",
+        description=options.dedent("""
+            Execute one or more stress-test runs and write the results to
+            the specified output directory.
+
+            Examples:
+              # Run a single stress test for the regional-dr environment
+              drenv stress-test run envs/regional-dr.yaml
+            """),
     )
     p.add_argument(
         "-r",
@@ -222,8 +461,17 @@ def add_stress_test_command(sp):
         sp,
         "report",
         stress.report,
+        width=width,
         help="generate markdown report from stress test results",
         envfile=False,
+        description=options.dedent("""
+            Generate a human-readable markdown report from the JSON
+            results produced by a stress-test run.
+
+            Examples:
+              # Generate a report from stress test results
+              drenv stress-test report out
+            """),
     )
     p.add_argument(
         "directory",
@@ -234,8 +482,17 @@ def add_stress_test_command(sp):
         sp,
         "compare",
         stress.compare,
+        width=width,
         help="compare 2 stress tests",
         envfile=False,
+        description=options.dedent("""
+            Compare the results of two stress-test output directories and
+            summarize the differences.
+
+            Examples:
+              # Compare two stress test results
+              drenv stress-test compare out/before out/after
+            """),
     )
     p.add_argument(
         "before",
@@ -247,8 +504,15 @@ def add_stress_test_command(sp):
     )
 
 
-def add_command(sp, name, func, help=None, envfile=True):
-    parser = sp.add_parser(name, help=help)
+def add_command(sp, name, func, help=None, envfile=True, description=None, width=None):
+    parser = sp.add_parser(
+        name,
+        help=help,
+        description=(
+            options.wrap_description(description, width) if description else None
+        ),
+        formatter_class=options.formatter_class(width) if description else None,
+    )
     parser.add_argument(
         "--logfile",
         default=LOGFILE,
