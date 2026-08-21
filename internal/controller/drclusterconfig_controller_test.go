@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	ramencontrollers "github.com/ramendr/ramen/internal/controller"
 	"github.com/ramendr/ramen/internal/controller/util"
@@ -44,6 +45,7 @@ type Classes struct {
 	VolumeGroupSnapshotClasses    []string
 	NetworkFenceClasses           []string
 	storageAccessDetails          []ramen.StorageAccessDetail
+	NetworkAttachments            []ramen.NetworkAttachment
 }
 
 func ensureNamespaceExists(ctx context.Context, k8sClient client.Client, namespace string) {
@@ -81,6 +83,7 @@ func ensureClassStatus(apiReader client.Reader, drCConfig *ramen.DRClusterConfig
 		g.Expect(drClusterConfig.Status.VolumeGroupSnapshotClasses).To(ConsistOf(classes.VolumeGroupSnapshotClasses))
 		g.Expect(drClusterConfig.Status.NetworkFenceClasses).To(ConsistOf(classes.NetworkFenceClasses))
 		g.Expect(drClusterConfig.Status.StorageAccessDetails).To(ConsistOf(classes.storageAccessDetails))
+		g.Expect(drClusterConfig.Status.NetworkAttachments).To(ConsistOf(classes.NetworkAttachments))
 	}, timeout, interval).Should(Succeed())
 }
 
@@ -100,6 +103,8 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		baseVGSC, vgsc1, vgsc2            *groupsnapv1beta1.VolumeGroupSnapshotClass
 		baseNFC, nfc1, nfc2               *csiaddonsv1alpha1.NetworkFenceClass
 		baseCSIAddonsNode, csiAddonsNode1 *csiaddonsv1alpha1.CSIAddonsNode
+		baseNAD, nad1, nad2               *netattdefv1.NetworkAttachmentDefinition
+		nadNamespace                      string
 		classes                           Classes
 	)
 
@@ -289,6 +294,24 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 				Driver: csiaddonsv1alpha1.CSIAddonsNodeDriver{
 					Name: "fake.ramen.com",
 				},
+			},
+		}
+
+		By("Defining base NAD namespace and object")
+
+		nadNamespace = "nad-test-ns"
+		ensureNamespaceExists(context.TODO(), k8sClient, nadNamespace)
+
+		baseNAD = &netattdefv1.NetworkAttachmentDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "baseNAD",
+				Namespace: nadNamespace,
+				Labels: map[string]string{
+					"ramendr.openshift.io/dr-network": "true",
+				},
+			},
+			Spec: netattdefv1.NetworkAttachmentDefinitionSpec{
+				Config: `{"type":"bridge","name":"baseNAD"}`,
 			},
 		}
 	})
@@ -915,6 +938,126 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 					Equal("Configuration processed and validated"),
 					ramen.DRClusterConfigConfigurationProcessed,
 				)
+			})
+		})
+		When("there is a NetworkAttachmentDefinition with dr-enabled label", func() {
+			It("updates DRClusterConfig Status with NetworkAttachments", func() {
+				By("creating a NetworkAttachmentDefinition with dr-enabled label")
+
+				nad1 = baseNAD.DeepCopy()
+				nad1.Name = "nad1"
+				Expect(k8sClient.Create(context.TODO(), nad1)).To(Succeed())
+
+				classes.NetworkAttachments = []ramen.NetworkAttachment{
+					{Name: nad1.Name, Namespace: nadNamespace, CNIType: "bridge"},
+				}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("a NetworkAttachmentDefinition with dr-enabled label is deleted", func() {
+			It("removes the NAD from DRClusterConfig Status", func() {
+				By("deleting the NetworkAttachmentDefinition")
+
+				Expect(k8sClient.Delete(context.TODO(), nad1)).To(Succeed())
+
+				classes.NetworkAttachments = []ramen.NetworkAttachment{}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("there are multiple NetworkAttachmentDefinitions with dr-enabled label", func() {
+			It("updates DRClusterConfig Status with all NetworkAttachments", func() {
+				By("creating multiple NetworkAttachmentDefinitions")
+
+				nad1 = baseNAD.DeepCopy()
+				nad1.Name = "nad1"
+				Expect(k8sClient.Create(context.TODO(), nad1)).To(Succeed())
+
+				nad2 = baseNAD.DeepCopy()
+				nad2.Name = "nad2"
+				Expect(k8sClient.Create(context.TODO(), nad2)).To(Succeed())
+
+				classes.NetworkAttachments = []ramen.NetworkAttachment{
+					{Name: nad1.Name, Namespace: nadNamespace, CNIType: "bridge"},
+					{Name: nad2.Name, Namespace: nadNamespace, CNIType: "bridge"},
+				}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("a NetworkAttachmentDefinition's dr-enabled label is removed", func() {
+			It("removes the NAD from DRClusterConfig Status", func() {
+				By("removing the dr-enabled label from the NetworkAttachmentDefinition")
+
+				nad1.Labels = map[string]string{}
+				Expect(k8sClient.Update(context.TODO(), nad1)).To(Succeed())
+
+				classes.NetworkAttachments = []ramen.NetworkAttachment{
+					{Name: nad2.Name, Namespace: nadNamespace, CNIType: "bridge"},
+				}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+			})
+		})
+		When("a NetworkAttachmentDefinition without dr-enabled label exists", func() {
+			It("does not include it in DRClusterConfig Status", func() {
+				By("creating a NAD without the dr-enabled label")
+
+				unlabeledNAD := baseNAD.DeepCopy()
+				unlabeledNAD.Name = "unlabeled-nad"
+				unlabeledNAD.Labels = map[string]string{}
+				Expect(k8sClient.Create(context.TODO(), unlabeledNAD)).To(Succeed())
+
+				// NetworkAttachments should still only contain nad2 (labeled)
+				classes.NetworkAttachments = []ramen.NetworkAttachment{
+					{Name: nad2.Name, Namespace: nadNamespace, CNIType: "bridge"},
+				}
+
+				ensureClassStatus(apiReader, drCConfig, classes)
+				objectConditionExpectEventually(
+					apiReader,
+					drCConfig,
+					metav1.ConditionTrue,
+					Equal("Succeeded"),
+					Equal("Configuration processed and validated"),
+					ramen.DRClusterConfigConfigurationProcessed,
+				)
+
+				// cleanup
+				Expect(k8sClient.Delete(context.TODO(), unlabeledNAD)).To(Succeed())
 			})
 		})
 	})

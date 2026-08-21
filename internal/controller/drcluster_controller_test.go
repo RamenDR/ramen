@@ -29,6 +29,10 @@ import (
 
 var NFClassCount int // Number of NFCs to simulate (0=disabled, 1=single, 2+=multiple)
 
+// nadDataByCluster holds per-cluster DRClusterConfig for NAD validation tests.
+// Tests set entries before creating DRPolicy objects; AfterEach should reset to {}.
+var nadDataByCluster = map[string]*ramen.DRClusterConfig{}
+
 var cidrs = [][]string{
 	{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
 	{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
@@ -165,6 +169,10 @@ func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
 	resourceName string,
 	annotations map[string]string,
 ) (*ramen.DRClusterConfig, error) {
+	// NAD validation tests pre-populate nadDataByCluster; serve that first.
+	if cfg, ok := nadDataByCluster[resourceName]; ok {
+		return cfg, nil
+	}
 	// Guard against test interference: Only return populated DRClusterConfig when
 	// NFClass is being tested to maintain test isolation for other test suites.
 	if NFClassCount > 0 {
