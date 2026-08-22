@@ -14,6 +14,8 @@ import subprocess
 import sys
 import time
 
+from .. import git
+
 PROGRESS = (
     "[%(done)d/%(runs)d] "
     "%(passed)d passed, "
@@ -210,15 +212,7 @@ def linux_info():
 
 
 def git_info():
-    return {
-        "commit": git("rev-parse", "HEAD"),
-        "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
-    }
-
-
-def git(*args):
-    cmd = ["git", *args]
-    return subprocess.check_output(cmd).decode().strip()
+    return git.info()
 
 
 def sysctl(name):

@@ -19,6 +19,7 @@ from . import cache
 from . import cluster
 from . import commands
 from . import envfile
+from . import git
 from . import kubectl
 from . import providers
 from . import ramen
@@ -37,6 +38,16 @@ executors = []
 def main():
     args = parse_args()
     configure_logging(args)
+    git_info = git.info()
+    if git_info:
+        logging.debug(
+            "[main] Using git repo branch=%s commit=%s dirty=%s",
+            git_info["branch"],
+            git_info["commit"],
+            git_info["dirty"],
+        )
+    else:
+        logging.debug("[main] git info not available")
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:
