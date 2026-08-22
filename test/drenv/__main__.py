@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import time
 
@@ -37,6 +38,7 @@ executors = []
 def main():
     args = parse_args()
     configure_logging(args)
+    logging.info("[main] Using commit %s", _git_version())
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:
@@ -290,6 +292,25 @@ def configure_logging(args):
         level=logging.DEBUG,
         handlers=[console, logfile],
     )
+
+
+def _git_version():
+    """
+    Return the current git commit hash with a '-dirty' suffix if the working
+    tree has uncommitted changes. Falls back to 'unknown' if git is unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--always", "--dirty", "--no-tags"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return "unknown"
 
 
 def shutdown_executors():
