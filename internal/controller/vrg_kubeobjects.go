@@ -244,6 +244,11 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 		result.Requeue = true
 
+		if v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil &&
+			time.Since(v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom.StartTime.Time) <= 2*interval {
+			v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploading, "Kube objects capture in-progress")
+		}
+
 		return
 	}
 
