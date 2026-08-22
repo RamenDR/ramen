@@ -37,7 +37,6 @@ templates:
           - name: ocm-cluster
             args: ["$name", "hub"]
       - addons:
-          - name: odf-external-snapshotter
           - name: external-snapshotter
           - name: minio
           - name: velero
