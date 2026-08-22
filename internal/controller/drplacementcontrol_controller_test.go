@@ -769,7 +769,9 @@ func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
 		for idx := range drClusters {
 			if managedCluster.Name == drClusters[idx].Name {
 				err := k8sClient.Create(context.TODO(), &drClusters[idx])
-				Expect(err).NotTo(HaveOccurred())
+				if err != nil && !k8serrors.IsAlreadyExists(err) {
+					Expect(err).NotTo(HaveOccurred())
+				}
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drClusters[idx].Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drClusters[idx].Name)
 			}
