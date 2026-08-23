@@ -12,23 +12,31 @@ from drenv import commands
 from drenv import kubectl
 
 PACKAGE_DIR = Path(__file__).parent
-CACHE_KEY = "addons/rook-cluster-1.19-2.yaml"
+CACHE_KEY = "addons/rook-cluster-1.20.yaml"
 
 # The ceph, and ceph-csi images are very large (500m each), using larger
 # timeout to avoid timeouts with flaky network.
 TIMEOUT = 600
 
-# CSI driver components created by the rook operator as part of the
-# CephCluster reconciliation.
-CSI_COMPONENTS = [
-    {"kind": "daemonset", "name": "csi-rbdplugin"},
-    {"kind": "daemonset", "name": "csi-cephfsplugin"},
-    {"kind": "deployment", "name": "csi-rbdplugin-provisioner"},
-    {"kind": "deployment", "name": "csi-cephfsplugin-provisioner"},
-]
-
 CSIADDONS_TIMEOUT = 300
 CSIADDONS_ATTEMPTS = 3
+
+# Plugin pods start with the operator, before the cluster exists. kubelet
+# projects monitor addresses into the pods after Rook publishes them.
+# Typically about one minute; fail faster than CephCluster image pull.
+CSI_PLUGIN_TIMEOUT = 120
+CSI_PLUGIN_POLL = 5
+
+CSI_PLUGINS = [
+    {
+        "deploy": "deploy/rook-ceph.rbd.csi.ceph.com-ctrlplugin",
+        "container": "csi-rbdplugin",
+    },
+    {
+        "deploy": "deploy/rook-ceph.cephfs.csi.ceph.com-ctrlplugin",
+        "container": "csi-cephfsplugin",
+    },
+]
 
 # CSIAddonsNode resources are created by the csi-addons sidecar in the CSI
 # driver pods. The sidecar registers the node after the pod is ready.
@@ -39,9 +47,9 @@ CSIADDONS_ATTEMPTS = 3
 # CSI driver's replication client, causing VR reconciliation to fail with
 # "no leader for the ControllerService".
 CSIADDONS_NODES = [
-    "daemonset-csi-rbdplugin",
-    "deployment-csi-rbdplugin-provisioner",
-    "deployment-csi-cephfsplugin-provisioner",
+    "daemonset-rook-ceph.rbd.csi.ceph.com-nodeplugin-csi-addons",
+    "deployment-rook-ceph.rbd.csi.ceph.com-ctrlplugin",
+    "deployment-rook-ceph.cephfs.csi.ceph.com-ctrlplugin",
 ]
 
 
@@ -92,16 +100,83 @@ def wait(cluster):
     info = {"ceph cluster status": json.loads(out)}
     print(yaml.dump(info, sort_keys=False))
 
-    for comp in CSI_COMPONENTS:
-        print(f"Waiting until {comp['kind']} 'rook-ceph/{comp['name']}' is rolled out")
-        kubectl.rollout(
-            "status",
-            f"{comp['kind']}/{comp['name']}",
-            "--namespace=rook-ceph",
-            context=cluster,
-        )
-
+    wait_for_csi_plugins(cluster)
     wait_for_csiaddons_nodes(cluster)
+
+
+def wait_for_csi_plugins(cluster):
+    """
+    Wait until CSI provisioners can read this cluster's monitor list.
+
+    CephCluster Ready does not cover CSI: plugins are a separate operator
+    and are Running before the cluster exists. Creating a PVC before they
+    have monitors fails with InvalidArgument, and the provisioner delays
+    retries past the CephFS test timeout.
+    """
+    deadline = time.monotonic() + CSI_PLUGIN_TIMEOUT
+    for plugin in CSI_PLUGINS:
+        deploy = plugin["deploy"]
+        print(f"Waiting until '{deploy}' has ceph monitors")
+        while True:
+            if _csi_plugin_has_monitors(cluster, plugin):
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"Timeout waiting for ceph monitors in '{deploy}'")
+            time.sleep(CSI_PLUGIN_POLL)
+
+
+def _csi_plugin_has_monitors(cluster, plugin):
+    deploy = plugin["deploy"]
+    try:
+        data = _csi_plugin_config(cluster, plugin)
+    except commands.Error as e:
+        print(f"failed to read config in '{deploy}': {e.error.rstrip()!r}")
+        return False
+
+    if not data.strip():
+        return False
+
+    try:
+        monitors = _monitors(data)
+    except json.JSONDecodeError as e:
+        print(f"Invalid CSI config in '{deploy}': {e}: {data.rstrip()}")
+        return False
+
+    if monitors:
+        print(f"Found ceph monitors in '{deploy}': {monitors}")
+        return True
+
+    print(f"CSI config in '{deploy}': {data.rstrip()}")
+    return False
+
+
+def _csi_plugin_config(cluster, plugin):
+    # Missing file is expected until kubelet projects the ConfigMap. Return
+    # empty instead of failing so the wait stays quiet. Other exec errors
+    # still raise.
+    return kubectl.exec(
+        plugin["deploy"],
+        "--namespace=rook-ceph",
+        "-c",
+        plugin["container"],
+        "--",
+        "sh",
+        "-c",
+        "if [ -f /etc/ceph-csi-config/config.json ]; then cat /etc/ceph-csi-config/config.json; fi",
+        context=cluster,
+    )
+
+
+def _monitors(data):
+    cfg = json.loads(data)
+    if not isinstance(cfg, list) or not cfg:
+        return []
+    if not isinstance(cfg[0], dict):
+        return []
+    monitors = cfg[0].get("monitors", [])
+    if not isinstance(monitors, list):
+        return []
+    return monitors
 
 
 def wait_for_csiaddons_nodes(cluster):
