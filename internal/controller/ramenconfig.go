@@ -134,25 +134,6 @@ func LoadControllerConfig(configFile string,
 	return DefaultRamenConfig(ct)
 }
 
-func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.RamenConfig) {
-	if ramenConfig == nil {
-		return
-	}
-
-	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
-	options.Metrics = MetricsServerOptions(ramenConfig.Metrics.BindAddress)
-
-	if ramenConfig.LeaderElection != nil {
-		if ramenConfig.LeaderElection.LeaderElect != nil {
-			options.LeaderElection = *ramenConfig.LeaderElection.LeaderElect
-		}
-
-		if ramenConfig.LeaderElection.ResourceName != "" {
-			options.LeaderElectionID = ramenConfig.LeaderElection.ResourceName
-		}
-	}
-}
-
 // DeprecatedManagerOptionWarnings returns a warning for each manager option
 // still present in the RamenConfig that differs from the effective manager
 // options. These RamenConfig fields are deprecated and ignored: the manager
