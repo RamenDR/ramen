@@ -2879,8 +2879,31 @@ func (v *VRGInstance) IsSecondaryVRG() bool {
 		switchedToSecondary
 }
 
-func (v *VRGInstance) isSecondaryWithVolRepProtectedPVCs() bool {
-	return v.IsSecondaryVRG() && len(v.volRepPVCs) > 0
+// hasConflictingVolRepPVCsOnSecondary reports whether a VolRep-protected PVC on this Secondary VRG
+// is a genuine cross-cluster conflict, as opposed to a leftover still being cleaned up as part of an
+// in-flight DR transition.
+//
+// During Relocate (and Failover), the demoted source cluster reports SecondaryState as soon as its
+// VolumeReplication/VolumeGroupReplication is demoted, which happens before its PVCs are actually
+// removed: PVC deletion is held off while the VGR/VR awaits final removal. Those leftover PVCs are
+// already marked for deletion, so the secondary has not yet converged and is still in transition -
+// counting them as a conflict would surface a spurious "Protection error" until cleanup completes.
+//
+// A PVC that is present but NOT marked for deletion is not part of Ramen's cleanup and therefore
+// represents a real conflict (e.g. a workload PVC that independently matches the label selector on
+// the secondary); it is reported immediately.
+func (v *VRGInstance) hasConflictingVolRepPVCsOnSecondary() bool {
+	if !v.IsSecondaryVRG() {
+		return false
+	}
+
+	for i := range v.volRepPVCs {
+		if !util.ResourceIsDeleted(&v.volRepPVCs[i]) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition {
@@ -2888,7 +2911,7 @@ func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition 
 		return nil
 	}
 
-	if v.isSecondaryWithVolRepProtectedPVCs() {
+	if v.hasConflictingVolRepPVCsOnSecondary() {
 		return updateVRGNoClusterDataConflictCondition(
 			v.instance.Generation, metav1.ConditionFalse, VRGConditionReasonClusterDataConflictSecondary,
 			"No PVC on the secondary should match the label selector",
