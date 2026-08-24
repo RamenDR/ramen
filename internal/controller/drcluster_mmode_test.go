@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -154,7 +155,7 @@ var _ = Describe("DRClusterMModeTests", Ordered, func() {
 
 		options := manager.Options{Scheme: scheme.Scheme}
 		options.Controller.SkipNameValidation = ptr.To(true)
-		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+		options.Metrics = metricsserver.Options{BindAddress: "0"}
 
 		Expect(err).NotTo(HaveOccurred())
 
