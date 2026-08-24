@@ -55,7 +55,6 @@ import (
 var (
 	scheme               = runtime.NewScheme()
 	setupLog             = ctrl.Log.WithName("setup")
-	configFile           string
 	metricsAddr          string
 	probeAddr            string
 	enableLeaderElection bool
@@ -84,10 +83,6 @@ func configureLogOptions() *zap.Options {
 // bindFlags takes a list of functions that bind flags to variables.
 // In addition, any ramen specific flags are bound here.
 func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0.0.0.0:9289",
 		"The address the metrics endpoint binds to. Use \"0\" to disable the metrics server.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
@@ -306,7 +301,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	ramenConfig := controllers.LoadControllerConfig(configFile, setupLog)
+	ramenConfig := controllers.LoadControllerConfig(setupLog)
 
 	restCfg := ctrl.GetConfigOrDie()
 

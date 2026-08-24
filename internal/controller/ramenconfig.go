@@ -113,9 +113,7 @@ func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv
 	return cfg
 }
 
-func LoadControllerConfig(configFile string,
-	log logr.Logger,
-) (ramenConfig *ramendrv1alpha1.RamenConfig) {
+func LoadControllerConfig(log logr.Logger) (ramenConfig *ramendrv1alpha1.RamenConfig) {
 	controllerType := os.Getenv("RAMEN_CONTROLLER_TYPE")
 	if controllerType == "" {
 		panic(fmt.Errorf("RAMEN_CONTROLLER_TYPE environment variable must be set"))
