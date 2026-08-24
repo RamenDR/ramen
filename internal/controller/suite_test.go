@@ -44,6 +44,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -336,7 +337,7 @@ var _ = BeforeSuite(func() {
 	s3ProfilesUpdate()
 
 	options := manager.Options{Scheme: scheme.Scheme}
-	ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+	options.Metrics = metricsserver.Options{BindAddress: "0"}
 
 	Expect(err).NotTo(HaveOccurred())
 
