@@ -61,17 +61,21 @@ const NoS3StoreAvailable = "NoS3"
 
 var ControllerType ramendrv1alpha1.ControllerType
 
-func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv1alpha1.RamenConfig {
-	var leaderElectionResourceName string
-
+// LeaderElectionResourceName returns the leader election lease name for the
+// given controller type.
+func LeaderElectionResourceName(controllerType ramendrv1alpha1.ControllerType) string {
 	switch controllerType {
 	case ramendrv1alpha1.DRHubType:
-		leaderElectionResourceName = HubLeaderElectionResourceName
+		return HubLeaderElectionResourceName
 	case ramendrv1alpha1.DRClusterType:
-		leaderElectionResourceName = drClusterLeaderElectionResourceName
+		return drClusterLeaderElectionResourceName
 	default:
 		panic(fmt.Sprintf("unknown controller type %q", controllerType))
 	}
+}
+
+func DefaultRamenConfig(controllerType ramendrv1alpha1.ControllerType) *ramendrv1alpha1.RamenConfig {
+	leaderElectionResourceName := LeaderElectionResourceName(controllerType)
 
 	leaderElect := true
 
@@ -136,20 +140,7 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 	}
 
 	options.HealthProbeBindAddress = ramenConfig.Health.HealthProbeBindAddress
-
-	if ramenConfig.Metrics.BindAddress == "0" {
-		options.Metrics = metricsserver.Options{BindAddress: "0"}
-	} else {
-		// Use /etc/metrics-certs for OpenShift Service CA or
-		// cert-manager certs. Falls back to auto-generated certs if
-		// directory doesn't exist
-		options.Metrics = metricsserver.Options{
-			BindAddress:    ramenConfig.Metrics.BindAddress,
-			SecureServing:  true,
-			CertDir:        "/etc/metrics-certs",
-			FilterProvider: filters.WithAuthenticationAndAuthorization,
-		}
-	}
+	options.Metrics = MetricsServerOptions(ramenConfig.Metrics.BindAddress)
 
 	if ramenConfig.LeaderElection != nil {
 		if ramenConfig.LeaderElection.LeaderElect != nil {
@@ -159,6 +150,24 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 		if ramenConfig.LeaderElection.ResourceName != "" {
 			options.LeaderElectionID = ramenConfig.LeaderElection.ResourceName
 		}
+	}
+}
+
+// MetricsServerOptions returns the manager metrics server options for the
+// given bind address. A bind address of "0" disables the metrics server.
+func MetricsServerOptions(bindAddress string) metricsserver.Options {
+	if bindAddress == "0" {
+		return metricsserver.Options{BindAddress: "0"}
+	}
+
+	// Use /etc/metrics-certs for OpenShift Service CA or
+	// cert-manager certs. Falls back to auto-generated certs if
+	// directory doesn't exist
+	return metricsserver.Options{
+		BindAddress:    bindAddress,
+		SecureServing:  true,
+		CertDir:        "/etc/metrics-certs",
+		FilterProvider: filters.WithAuthenticationAndAuthorization,
 	}
 }
 
