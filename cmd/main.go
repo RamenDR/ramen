@@ -53,9 +53,12 @@ import (
 )
 
 var (
-	scheme     = runtime.NewScheme()
-	setupLog   = ctrl.Log.WithName("setup")
-	configFile string
+	scheme               = runtime.NewScheme()
+	setupLog             = ctrl.Log.WithName("setup")
+	configFile           string
+	metricsAddr          string
+	probeAddr            string
+	enableLeaderElection bool
 )
 
 func init() {
@@ -85,6 +88,13 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 		"The controller will load its initial configuration from this file. "+
 			"Omit this flag to use the default configuration values. "+
 			"Command-line flags override configuration from this file.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0.0.0.0:9289",
+		"The address the metrics endpoint binds to. Use \"0\" to disable the metrics server.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
+		"The address the probe endpoint binds to.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
+		"Enable leader election for controller manager. "+
+			"Enabling this will ensure there is only one active controller manager.")
 
 	for _, f := range bindfuncs {
 		f(flag.CommandLine)
@@ -93,7 +103,13 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 
 func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
-	ctrlOptions := ctrl.Options{Scheme: scheme}
+	ctrlOptions := ctrl.Options{
+		Scheme:                 scheme,
+		HealthProbeBindAddress: probeAddr,
+		Metrics:                controllers.MetricsServerOptions(metricsAddr),
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       controllers.LeaderElectionResourceName(controllers.ControllerType),
+	}
 
 	c, err := client.New(restCfg, client.Options{Scheme: scheme})
 	if err != nil {
@@ -108,7 +124,9 @@ func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig
 		os.Exit(1)
 	}
 
-	controllers.LoadControllerOptions(&ctrlOptions, ramenConfig)
+	for _, warning := range controllers.DeprecatedManagerOptionWarnings(ramenConfig, &ctrlOptions) {
+		setupLog.Info(warning)
+	}
 
 	return &ctrlOptions, ramenConfig
 }
