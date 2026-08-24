@@ -44,9 +44,10 @@ section. Next is to install and configure ramen.
 
 ## 2. Basic testing (no Prometheus required)
 
-The operator serves metrics on pod port 9289 (`metrics.bindAddress`, default
-`0.0.0.0:9289`). The metrics Service (`ramen-hub-operator-metrics-service`)
-exposes HTTPS on service port 8443 and forwards to that pod port.
+The operator serves metrics on pod port 9289 (the `--metrics-bind-address` flag,
+default `0.0.0.0:9289`). The metrics Service
+(`ramen-hub-operator-metrics-service`) exposes HTTPS on service port 8443 and
+forwards to that pod port.
 
 If running from minikube or a container, port-forward the metrics Service on the
 hub. Use service port 8443; the local endpoint is
