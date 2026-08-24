@@ -114,7 +114,16 @@ func objectsToDeploy(hubOperatorRamenConfig *rmn.RamenConfig) ([]interface{}, er
 	drClusterOperatorRamenConfig := *hubOperatorRamenConfig
 	ramenConfig := &drClusterOperatorRamenConfig
 	drClusterOperatorNamespaceName := drClusterOperatorNamespaceNameOrDefault(ramenConfig)
-	ramenConfig.LeaderElection.ResourceName = drClusterLeaderElectionResourceName
+
+	// leaderElection is deprecated and ignored by the operator and may be
+	// absent from the hub ConfigMap. When present, rewrite the resource name
+	// for the dr-cluster operator on a copy: the shallow config copy above
+	// shares the LeaderElection pointer with the hub's config.
+	if ramenConfig.LeaderElection != nil {
+		leaderElection := *ramenConfig.LeaderElection
+		leaderElection.ResourceName = drClusterLeaderElectionResourceName
+		ramenConfig.LeaderElection = &leaderElection
+	}
 
 	drClusterOperatorConfigMap, err := ConfigMapNew(
 		drClusterOperatorNamespaceName,
