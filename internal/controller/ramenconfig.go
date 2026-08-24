@@ -153,6 +153,50 @@ func LoadControllerOptions(options *ctrl.Options, ramenConfig *ramendrv1alpha1.R
 	}
 }
 
+// DeprecatedManagerOptionWarnings returns a warning for each manager option
+// still present in the RamenConfig that differs from the effective manager
+// options. These RamenConfig fields are deprecated and ignored: the manager
+// options are set only via command line flags.
+func DeprecatedManagerOptionWarnings(ramenConfig *ramendrv1alpha1.RamenConfig, options *ctrl.Options) []string {
+	var warnings []string
+
+	deprecated := func(field, configValue, effectiveValue, flag string) {
+		warnings = append(warnings, fmt.Sprintf(
+			"RamenConfig %s %q is deprecated and ignored; the manager uses %q from the %s flag",
+			field, configValue, effectiveValue, flag))
+	}
+
+	if address := ramenConfig.Health.HealthProbeBindAddress; address != "" &&
+		address != options.HealthProbeBindAddress {
+		deprecated("health.healthProbeBindAddress", address,
+			options.HealthProbeBindAddress, "--health-probe-bind-address")
+	}
+
+	if address := ramenConfig.Metrics.BindAddress; address != "" &&
+		address != options.Metrics.BindAddress {
+		deprecated("metrics.bindAddress", address,
+			options.Metrics.BindAddress, "--metrics-bind-address")
+	}
+
+	if ramenConfig.LeaderElection != nil {
+		if leaderElect := ramenConfig.LeaderElection.LeaderElect; leaderElect != nil &&
+			*leaderElect != options.LeaderElection {
+			deprecated("leaderElection.leaderElect", fmt.Sprintf("%t", *leaderElect),
+				fmt.Sprintf("%t", options.LeaderElection), "--leader-elect")
+		}
+
+		if name := ramenConfig.LeaderElection.ResourceName; name != "" &&
+			name != options.LeaderElectionID {
+			warnings = append(warnings, fmt.Sprintf(
+				"RamenConfig leaderElection.resourceName %q is deprecated and ignored; "+
+					"the manager uses %q derived from the controller type",
+				name, options.LeaderElectionID))
+		}
+	}
+
+	return warnings
+}
+
 // MetricsServerOptions returns the manager metrics server options for the
 // given bind address. A bind address of "0" disables the metrics server.
 func MetricsServerOptions(bindAddress string) metricsserver.Options {
