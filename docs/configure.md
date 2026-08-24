@@ -126,17 +126,6 @@ data:
     apiVersion: ramendr.openshift.io/v1alpha1
     kind: RamenConfig
 
-    # Health check and monitoring
-    health:
-      healthProbeBindAddress: :8081
-    metrics:
-      bindAddress: 0.0.0.0:9289
-
-    # Leader election
-    leaderElection:
-      enabled: true
-      resourceName: hub.ramendr.openshift.io
-
     # Volume replication configuration
     volSync:
       disabled: false

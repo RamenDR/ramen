@@ -12,15 +12,6 @@ data:
   ramen_manager_config.yaml: |
     apiVersion: ramendr.openshift.io/v1alpha1
     kind: RamenConfig
-    health:
-      healthProbeBindAddress: :8081
-    metrics:
-      bindAddress: 0.0.0.0:9289
-    webhook:
-      port: 9443
-    leaderElection:
-      leaderElect: true
-      resourceName: hub.ramendr.openshift.io
     maxConcurrentReconciles: 50
     drClusterOperator:
       deploymentAutomationEnabled: $auto_deploy

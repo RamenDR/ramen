@@ -1,14 +1,5 @@
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: RamenConfig
-health:
-  healthProbeBindAddress: :8081
-metrics:
-  bindAddress: 0.0.0.0:9289
-webhook:
-  port: 9443
-leaderElection:
-  leaderElect: true
-  resourceName: leaderelection.ramendr.openshift.io
 s3StoreProfiles:
   - s3ProfileName: s3-profile-of-east
     s3CompatibleEndpoint: http://rook-ceph-rgw-ocs-storagecluster-cephobjectstore.openshift-storage.svc.cluster.east:80
