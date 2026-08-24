@@ -234,10 +234,10 @@ build: generate manifests  ## Build manager binary.
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run-hub: generate manifests ## Run DR Orchestrator controller from your host.
-	go run ./cmd/main.go --config=examples/dr_hub_config.yaml
+	RAMEN_CONTROLLER_TYPE=dr-hub POD_NAMESPACE=$${POD_NAMESPACE:-ramen-system} go run ./cmd/main.go
 
 run-dr-cluster: generate manifests ## Run DR manager controller from your host.
-	go run ./cmd/main.go --config=examples/dr_cluster_config.yaml
+	RAMEN_CONTROLLER_TYPE=dr-cluster POD_NAMESPACE=$${POD_NAMESPACE:-ramen-system} go run ./cmd/main.go
 
 docker-build: ## Build docker image with the manager.
 	$(DOCKERCMD) build --platform linux/$(PLATFORM) -t ${IMG} .
