@@ -370,27 +370,27 @@ func (m ManagedClusterViewGetterImpl) selectVGSGroupVersionFromManagedCluster(
 	managedCluster string,
 	annotations map[string]string,
 ) (schema.GroupVersion, error) {
-	return resolveVGSGroupVersion(func(crdName string) (bool, error) {
-		err := m.getCRDFromManagedCluster(crdName, managedCluster, annotations)
+	return resolveVGSGroupVersion(func(crdName string) (*apiextensionsv1.CustomResourceDefinition, error) {
+		crd, err := m.getCRDFromManagedCluster(crdName, managedCluster, annotations)
 		if err == nil {
-			return true, nil
+			return crd, nil
 		}
 
 		if k8serrors.IsNotFound(err) {
-			return false, nil
+			return nil, nil
 		}
 
-		return false, fmt.Errorf("get VGS CRD %q on managed cluster %q: %w", crdName, managedCluster, err)
+		return nil, fmt.Errorf("get VGS CRD %q on managed cluster %q: %w", crdName, managedCluster, err)
 	})
 }
 
 func (m ManagedClusterViewGetterImpl) getCRDFromManagedCluster(
 	crdName, managedCluster string,
 	annotations map[string]string,
-) error {
+) (*apiextensionsv1.CustomResourceDefinition, error) {
 	crd := &apiextensionsv1.CustomResourceDefinition{}
 
-	return m.getResourceFromManagedCluster(
+	return crd, m.getResourceFromManagedCluster(
 		crdName,
 		"",
 		managedCluster,

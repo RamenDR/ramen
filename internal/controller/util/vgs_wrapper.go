@@ -6,9 +6,12 @@ package util
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	publicgroupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -97,32 +100,92 @@ func UsePrivateVGSAPI() bool {
 }
 
 // SelectVGSGroupVersion picks the VGS API GroupVersion using the same precedence as
-// UsePublicVGSAPI / UsePrivateVGSAPI: public if the public CRD is installed, otherwise
-// private if installed.
+// UsePublicVGSAPI / UsePrivateVGSAPI: public if its CRD is installed and serves the
+// public client's version, otherwise private under the same rule.
 func SelectVGSGroupVersion(ctx context.Context, apiReader client.Reader) (schema.GroupVersion, error) {
-	return resolveVGSGroupVersion(func(crdName string) (bool, error) {
-		return IsCRDInstalled(ctx, apiReader, crdName), nil
+	return resolveVGSGroupVersion(func(crdName string) (*apiextensionsv1.CustomResourceDefinition, error) {
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		if err := apiReader.Get(ctx, types.NamespacedName{Name: crdName}, crd); err != nil {
+			if k8serrors.IsNotFound(err) {
+				return nil, nil
+			}
+
+			return nil, err
+		}
+
+		return crd, nil
 	})
 }
 
+// crdServesVersion reports whether the CRD serves the given API version.
+// Selecting an API version the CRD does not serve is fatal at a distance:
+// every informer on that GroupVersion fails cache sync and takes the manager
+// down with it, so mere CRD existence is not enough to pick an API.
+func crdServesVersion(crd *apiextensionsv1.CustomResourceDefinition, version string) bool {
+	for _, v := range crd.Spec.Versions {
+		if v.Name == version && v.Served {
+			return true
+		}
+	}
+
+	return false
+}
+
+func crdServedVersions(crd *apiextensionsv1.CustomResourceDefinition) []string {
+	served := []string{}
+
+	for _, v := range crd.Spec.Versions {
+		if v.Served {
+			served = append(served, v.Name)
+		}
+	}
+
+	return served
+}
+
 // resolveVGSGroupVersion applies the public-first precedence rule given a function
-// that reports whether a named CRD exists. Shared by local and managed-cluster callers.
-func resolveVGSGroupVersion(crdExists func(string) (bool, error)) (schema.GroupVersion, error) {
-	if exists, err := crdExists(VGSCRDName); err != nil {
-		return schema.GroupVersion{}, fmt.Errorf("checking public VGS CRD %q: %w", VGSCRDName, err)
-	} else if exists {
-		return publicgroupsnapv1.SchemeGroupVersion, nil
+// that returns a named CRD ((nil, nil) when absent). A candidate qualifies only if
+// its CRD serves the version Ramen's client for that API speaks. Shared by local
+// and managed-cluster callers.
+func resolveVGSGroupVersion(
+	getCRD func(string) (*apiextensionsv1.CustomResourceDefinition, error),
+) (schema.GroupVersion, error) {
+	candidates := []struct {
+		crdName string
+		gv      schema.GroupVersion
+	}{
+		{VGSCRDName, publicgroupsnapv1.SchemeGroupVersion},
+		{VGSCRDPrivateName, groupsnapv1beta1.SchemeGroupVersion},
 	}
 
-	if exists, err := crdExists(VGSCRDPrivateName); err != nil {
-		return schema.GroupVersion{}, fmt.Errorf("checking private VGS CRD %q: %w", VGSCRDPrivateName, err)
-	} else if exists {
-		return groupsnapv1beta1.SchemeGroupVersion, nil
+	mismatches := []string{}
+
+	for _, c := range candidates {
+		crd, err := getCRD(c.crdName)
+		if err != nil {
+			return schema.GroupVersion{}, fmt.Errorf("checking VGS CRD %q: %w", c.crdName, err)
+		}
+
+		if crd == nil {
+			continue
+		}
+
+		if crdServesVersion(crd, c.gv.Version) {
+			return c.gv, nil
+		}
+
+		mismatches = append(mismatches, fmt.Sprintf("%s is installed but serves [%s], not the required %s",
+			c.crdName, strings.Join(crdServedVersions(crd), ", "), c.gv.Version))
 	}
 
-	return schema.GroupVersion{}, fmt.Errorf("VolumeGroupSnapshot CRD is required. " +
+	msg := "VolumeGroupSnapshot CRD is required. " +
 		"Please install either the public (groupsnapshot.storage.k8s.io) or private (groupsnapshot.storage.openshift.io) " +
-		"VolumeGroupSnapshot CRD and restart the operator")
+		"VolumeGroupSnapshot CRD and restart the operator"
+	if len(mismatches) > 0 {
+		msg += ": " + strings.Join(mismatches, "; ")
+	}
+
+	return schema.GroupVersion{}, fmt.Errorf("%s", msg)
 }
 
 // NewVolumeGroupSnapshot returns an empty VolumeGroupSnapshot of the appropriate API type.
