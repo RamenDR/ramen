@@ -418,19 +418,28 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 
 	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
 
-	d.setDRState(derivedDRState)
-
-	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
-		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
-	}
-
-	// Restore last-app-deployment-cluster to original cluster and persist (once)
+	// Restore last-app-deployment-cluster to original cluster before cleanup
+	// This prevents updateUserPlacementRule() from calling Update() during ensureActionCompleted(),
+	// which would save status prematurely and overwrite WaitOnUserToCleanUp for discovered apps
 	if added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster); added {
 		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
 			return false, err
 		}
 	}
 
+	// Set DRState to show target phase immediately
+	d.setDRState(derivedDRState)
+
+	// Remove "RetainedForFailover" entry for original cluster
+	// During dryRun, the original cluster was marked as "RetainedForFailover"
+	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
+		d.log.Error(err, "Failed to remove cluster decision, continuing with revert")
+	}
+
+	// Follow real failover cleanup pattern
+	// This ensures both AppSet and discovered apps are handled correctly:
+	// - AppSet: ACM auto-deletes workload → VRG secondary → Completed
+	// - Discovered: stays at WaitOnUserToCleanUp until user deletes workload → VRG secondary → Completed
 	d.setProgression(rmn.ProgressionCleaningUp)
 
 	done, err := d.ensureActionCompleted(lastAppCluster)
