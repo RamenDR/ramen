@@ -12,6 +12,7 @@ from .config import POOL_NAME, PACKAGE_DIR
 NAMESPACE = "rbd-mirror-test"
 PVC_NAME = "rbd-pvc"
 VR_NAME = "vr-1m"
+VR_KIND = "volumereplication"
 
 _DATA_DIR = PACKAGE_DIR / "test-data"
 
@@ -30,6 +31,23 @@ def test(cluster1, cluster2):
 
 
 def test_volume_replication(primary, secondary):
+    _deploy_pvc(primary)
+
+    _deploy_replication(primary, VR_KIND, VR_NAME)
+
+    rbd_image = _build_rbd_image_name(primary)
+
+    _check_rbd_replication(primary, secondary, rbd_image)
+    _show_replication(primary, VR_KIND, VR_NAME)
+    _rbd_mirror_status(primary, rbd_image)
+    _delete_replication(primary, VR_KIND, VR_NAME)
+
+    _delete_pvc(primary)
+
+    print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")
+
+
+def _deploy_pvc(primary):
     print(f"Deploying pvc {NAMESPACE}/{PVC_NAME} in cluster '{primary}'")
     kubectl.apply(f"--kustomize={_DATA_DIR}", context=primary)
 
@@ -41,31 +59,37 @@ def test_volume_replication(primary, secondary):
         context=primary,
     )
 
-    print(f"Deploying vr {NAMESPACE}/{VR_NAME} in cluster '{primary}'")
+
+def _deploy_replication(primary, kind, name):
+    print(f"Deploying {kind} {NAMESPACE}/{name} in cluster '{primary}'")
     kubectl.apply(
-        f"--filename={_DATA_DIR / f'{VR_NAME}.yaml'}",
+        f"--filename={_DATA_DIR / f'{name}.yaml'}",
         f"--namespace={NAMESPACE}",
         context=primary,
     )
 
-    print(f"Waiting until vr {NAMESPACE}/{VR_NAME} is completed in cluster '{primary}'")
+    print(
+        f"Waiting until {kind} {NAMESPACE}/{name} is completed in cluster '{primary}'"
+    )
     kubectl.wait(
-        f"volumereplication/{VR_NAME}",
+        f"{kind}/{name}",
         "--for=condition=Completed",
         f"--namespace={NAMESPACE}",
         context=primary,
     )
 
     print(
-        f"Waiting until vr {NAMESPACE}/{VR_NAME} state is primary in cluster '{primary}'"
+        f"Waiting until {kind} {NAMESPACE}/{name} state is primary in cluster '{primary}'"
     )
     kubectl.wait(
-        f"volumereplication/{VR_NAME}",
+        f"{kind}/{name}",
         "--for=jsonpath={.status.state}=Primary",
         f"--namespace={NAMESPACE}",
         context=primary,
     )
 
+
+def _build_rbd_image_name(primary):
     print(f"Looking up pvc {NAMESPACE}/{PVC_NAME} pv name in cluster '{primary}'")
     pv_name = kubectl.get(
         f"pvc/{PVC_NAME}",
@@ -75,12 +99,14 @@ def test_volume_replication(primary, secondary):
     )
 
     print(f"Looking up rbd image for pv {pv_name} in cluster '{primary}'")
-    rbd_image = kubectl.get(
+    return kubectl.get(
         f"pv/{pv_name}",
         "--output=jsonpath={.spec.csi.volumeAttributes.imageName}",
         context=primary,
     )
 
+
+def _check_rbd_replication(primary, secondary, rbd_image):
     print(f"rbd image {rbd_image} info in cluster '{primary}'")
     out = _rbd("info", rbd_image, cluster=primary)
     print(out)
@@ -96,29 +122,35 @@ def test_volume_replication(primary, secondary):
     else:
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
-    print(f"vr {NAMESPACE}/{VR_NAME} info on primary cluster '{primary}'")
+
+def _show_replication(primary, kind, name):
+    print(f"{kind} {NAMESPACE}/{name} info on primary cluster '{primary}'")
     kubectl.get(
-        f"volumereplication/{VR_NAME}",
+        f"{kind}/{name}",
         "--output=yaml",
         f"--namespace={NAMESPACE}",
         context=primary,
     )
 
+
+def _rbd_mirror_status(primary, rbd_image):
     print(f"rbd mirror image status in cluster '{primary}'")
     image_status = _rbd_mirror_image_status(primary, rbd_image)
     print(json.dumps(image_status, indent=2))
 
-    print(f"Deleting vr {NAMESPACE}/{VR_NAME} in primary cluster '{primary}'")
+
+def _delete_replication(primary, kind, name):
+    print(f"Deleting {kind} {NAMESPACE}/{name} in primary cluster '{primary}'")
     kubectl.delete(
-        f"--filename={_DATA_DIR / f'{VR_NAME}.yaml'}",
+        f"--filename={_DATA_DIR / f'{name}.yaml'}",
         f"--namespace={NAMESPACE}",
         context=primary,
     )
 
+
+def _delete_pvc(primary):
     print(f"Deleting pvc {NAMESPACE}/{PVC_NAME} in primary cluster '{primary}'")
     kubectl.delete(f"--kustomize={_DATA_DIR}", context=primary)
-
-    print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")
 
 
 def _rbd(*args, cluster=None):
