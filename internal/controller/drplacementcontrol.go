@@ -170,16 +170,17 @@ func (d *DRPCInstance) processTestFailoverFlowIfEnabled() (bool, error) {
 		}
 	}
 	// Add dry-run annotation when entering test failover
-	// Skip validation if already in dryRun (annotation added, lastAppCluster updated)
+	// Validate failover cluster is different from current deployment cluster
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	if d.instance.Spec.DryRun &&
 		d.instance.Spec.Action == rmn.ActionFailover &&
 		d.instance.Spec.FailoverCluster != "" &&
-		(d.instance.Spec.FailoverCluster != lastAppCluster ||
-			rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation)) {
+		d.instance.Spec.FailoverCluster != lastAppCluster {
 		// Check if annotation already exists to avoid unnecessary updates
 		if !rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
 			// Add test failover annotation
+			// Note: We don't update last-action annotation during dryRun,
+			// so it naturally preserves the pre-test state for revert validation
 			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
 
 			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
@@ -273,13 +274,13 @@ func (d *DRPCInstance) cleanupTestFailoverAnnotation(clusterName string) error {
 // or revert to original state, then routes to the appropriate handler.
 func (d *DRPCInstance) detectPromotionOrRevert() (bool, error) {
 	// last-app-deployment-cluster now points to current cluster (updated during dryRun)
-	currentCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+	activeTestFailoverCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 
 	// Compute peer cluster (will be the original cluster to revert to)
 	peerCluster := ""
 
 	for _, drCluster := range d.drClusters {
-		if drCluster.Name != currentCluster {
+		if drCluster.Name != activeTestFailoverCluster {
 			peerCluster = drCluster.Name
 
 			break
@@ -293,15 +294,15 @@ func (d *DRPCInstance) detectPromotionOrRevert() (bool, error) {
 	// Determine if this is promotion or revert
 	// Promotion: FailoverCluster matches current cluster (user wants to keep test cluster)
 	// Since last-app-deployment-cluster is updated during dryRun, both point to same cluster
-	isPromotion := d.instance.Spec.FailoverCluster == currentCluster &&
+	isPromotion := d.instance.Spec.FailoverCluster == activeTestFailoverCluster &&
 		d.instance.Spec.Action == rmn.ActionFailover &&
 		!d.instance.Spec.DryRun
 
 	if isPromotion {
-		return d.handlePromotion(currentCluster, peerCluster)
+		return d.handlePromotion(activeTestFailoverCluster, peerCluster)
 	}
 
-	return d.handleRevert(currentCluster, peerCluster)
+	return d.handleRevert(activeTestFailoverCluster, peerCluster)
 }
 
 // validateTestFailoverRevertScenario validates user correctly set spec to revert to original state.
@@ -423,11 +424,11 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
 	}
 
-	// Restore last-app-deployment-cluster to original cluster and persist
-	rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster)
-
-	if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-		return false, err
+	// Restore last-app-deployment-cluster to original cluster and persist (once)
+	if added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster); added {
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			return false, err
+		}
 	}
 
 	d.setProgression(rmn.ProgressionCleaningUp)
@@ -738,13 +739,6 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 
 		if d.instance.Spec.DryRun && d.instance.Spec.Action == rmn.ActionFailover {
 			d.setProgression(rmn.ProgressionTestingFailover)
-
-			// Update last-app-deployment-cluster to test cluster and persist
-			rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, failoverCluster)
-
-			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-				return !done, err
-			}
 
 			if err := d.ensurePlacement(failoverCluster); err != nil {
 				return !done, err
@@ -1903,7 +1897,11 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 
 	// Update last-app-deployment-cluster to track current cluster
 	added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
-	added = rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action)) || added
+
+	// Don't update last-action during dryRun - preserve pre-test state for revert validation
+	if !d.instance.Spec.DryRun {
+		added = rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action)) || added
+	}
 
 	if added {
 		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
