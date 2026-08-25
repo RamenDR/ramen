@@ -55,7 +55,7 @@ type peerInfo struct {
 	// clusterIDs is a list of 2 IDs that denote the IDs for the clusters in this peer relationship
 	clusterIDs []string
 
-	// gouping is flag that indicates wheather to proceed grouping based with replication
+	// grouping is flag that indicates whether to proceed grouping based with replication
 	grouping bool
 
 	// offloaded represents replication is offloaded for the storageClassName across both peers, and is applicable
