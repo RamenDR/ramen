@@ -114,9 +114,9 @@ def _check_rbd_replication(primary, secondary, rbd_image):
     print(f"Waiting until rbd image {rbd_image} is created in cluster '{secondary}'")
     for i in range(60):
         time.sleep(1)
-        out = _rbd("list", cluster=primary)
+        out = _rbd("list", cluster=secondary)
         if rbd_image in out:
-            out = _rbd("info", rbd_image, cluster=primary)
+            out = _rbd("info", rbd_image, cluster=secondary)
             print(out)
             break
     else:
