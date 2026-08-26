@@ -846,6 +846,7 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		tmpPVC.ResourceVersion = ""
 		tmpPVC.UID = ""
 		tmpPVC.Finalizers = nil
+		tmpPVC.OwnerReferences = nil             // prevent cascade deletion if the workload owner is deleted
 		tmpPVC.Annotations = map[string]string{} // {"ramendr/tmp-pvc-created": "yes"}
 		// We don't need any labels by default, but if the original PVC has a CG label,
 		// include it on the tmpPVC so that if the CG is enabled the tmpPVC will be included
