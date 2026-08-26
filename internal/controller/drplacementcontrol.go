@@ -418,44 +418,40 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 
 	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
 
-	// Restore last-app-deployment-cluster to original cluster before cleanup
-	// This prevents updateUserPlacementRule() from calling Update() during ensureActionCompleted(),
-	// which would save status prematurely and overwrite WaitOnUserToCleanUp for discovered apps
-	if added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster); added {
-		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-			return false, err
-		}
-	}
+	// Restore last-app-deployment-cluster to original cluster (in-memory only - don't persist yet)
+	// This prevents updateUserPlacementRule() from calling Update() during cleanup (which would
+	// save progression prematurely). The annotation will be persisted by cleanupTestFailoverAnnotation()
+	// after cleanup completes, ensuring both changes (annotation restoration + test annotation removal)
+	// are saved together atomically.
+	rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster)
 
 	// Set DRState to show target phase immediately
 	d.setDRState(derivedDRState)
 
-	// Remove "RetainedForFailover" entry for original cluster
-	// During dryRun, the original cluster was marked as "RetainedForFailover"
-	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
-		d.log.Error(err, "Failed to remove cluster decision, continuing with revert")
-	}
-
-	// Follow real failover cleanup pattern
-	// This ensures both AppSet and discovered apps are handled correctly:
-	// - AppSet: ACM auto-deletes workload → VRG secondary → Completed
-	// - Discovered: stays at WaitOnUserToCleanUp until user deletes workload → VRG secondary → Completed
+	// Set progression before cleanup (same pattern as real failover)
 	d.setProgression(rmn.ProgressionCleaningUp)
 
+	// Explicit cleanup - handles BOTH AppSet and discovered apps correctly
+	// ensureActionCompleted() → EnsureCleanup() → cleanupSecondary(testCluster)
+	// For discovered apps: sets WaitOnUserToCleanUp and waits for user cleanup
+	// For AppSet apps: stays in CleaningUp until ACM deletes workload
 	done, err := d.ensureActionCompleted(lastAppCluster)
 	if err != nil {
 		return false, err
 	}
 
 	if !done {
-		return true, nil
+		d.log.Info("Cleanup in progress - waiting for test cluster cleanup", "testCluster", testFailoverCluster)
+
+		return true, nil // Requeue - cleanup not finished
 	}
 
+	// Cleanup complete - remove test failover annotation
 	if err := d.cleanupTestFailoverAnnotation(testFailoverCluster); err != nil {
 		return false, err
 	}
 
-	d.log.Info("dryRun revert complete")
+	d.log.Info("dryRun revert cleanup complete")
 
 	return false, nil
 }
