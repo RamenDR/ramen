@@ -1455,6 +1455,25 @@ func (v *VSHandler) deleteVolumeSnapshots(snapshots []snapv1.VolumeSnapshot) err
 	return nil
 }
 
+func (v *VSHandler) deleteSnapshotsForPVC(pvcName, pvcNamespace string) error {
+	snapList := &snapv1.VolumeSnapshotList{}
+
+	if err := v.client.List(v.ctx, snapList, client.InNamespace(pvcNamespace)); err != nil {
+		return fmt.Errorf("error listing VolumeSnapshots in namespace %s (%w)", pvcNamespace, err)
+	}
+
+	var toDelete []snapv1.VolumeSnapshot
+
+	for i := range snapList.Items {
+		src := snapList.Items[i].Spec.Source.PersistentVolumeClaimName
+		if src != nil && *src == pvcName {
+			toDelete = append(toDelete, snapList.Items[i])
+		}
+	}
+
+	return v.deleteVolumeSnapshots(toDelete)
+}
+
 //nolint:gocognit
 func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error {
 	latestRDImage, err := v.getRDLatestImage(rd.GetName(), rd.GetNamespace())
@@ -3079,6 +3098,10 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 	if err != nil {
 		v.log.Info("Failed to delete RS", "rs name", pvc.GetName(), "error", err)
 
+		return err
+	}
+
+	if err := v.deleteSnapshotsForPVC(pvc.GetName(), pvc.GetNamespace()); err != nil {
 		return err
 	}
 
