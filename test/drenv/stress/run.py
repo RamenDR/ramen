@@ -31,7 +31,7 @@ def command(args):
     test = {
         "start_time": int(time.time()),
         "host": host_info(),
-        "git": git_info(),
+        "git": git.info(),
         "config": {
             "runs": args.runs,
             "envfile": args.envfile,
@@ -209,10 +209,6 @@ def linux_info():
         "memory_gb": mem / 2**30,
         "python": platform.python_version(),
     }
-
-
-def git_info():
-    return git.info()
 
 
 def sysctl(name):
