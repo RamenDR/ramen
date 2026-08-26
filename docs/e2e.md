@@ -263,6 +263,47 @@ Example:
 This command runs all DR tests related to RBD PVCs across all deployers. Ideal
 for verifying functionality specific to a storage type.
 
+#### Run individual DR steps
+
+For manual testing and debugging, you can run individual DR operations step by
+step:
+
+Deploy an appset based test application:
+
+```sh
+./run.sh -test.run TestDR/appset-deploy-rbd/Deploy
+```
+
+Protect the application:
+
+```sh
+./run.sh -test.run TestDR/appset-deploy-rbd/Enable
+```
+
+Failover to the secondary cluster:
+
+```sh
+./run.sh -test.run TestDR/appset-deploy-rbd/Failover
+```
+
+Relocate back to the primary cluster:
+
+```sh
+./run.sh -test.run TestDR/appset-deploy-rbd/Relocate
+```
+
+Disable DR protection:
+
+```sh
+./run.sh -test.run TestDR/appset-deploy-rbd/Disable
+```
+
+Undeploy the application:
+
+```sh
+./run.sh -test.run TestDR/appset-deploy-rbd/Undeploy
+```
+
 ### Using multiple config files
 
 Use this option if you want to maintain multiple configuration files and run
