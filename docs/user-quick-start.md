@@ -392,48 +392,10 @@ ramendev config test/envs/regional-dr.yaml
 ## Running system tests
 
 At this point *Ramen* is ready to protect workloads in your cluster, and you are
-ready for testing basic flows.
+ready for testing DR flows.
 
-Ramen basic test use the
-[ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples). Before
-running the tests, you need to deploy a channel pointing this repo:
-
-```
-kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel --context hub
-```
-
-To run basic tests using regional-dr environment run:
-
-```
-test/basic-test/run test/envs/regional-dr.yaml
-```
-
-This test does these operations:
-
-1. Deploys a busybox application
-1. Enables DR for the application
-1. Fails over the application to the other cluster
-1. Relocates the application back to the original cluster
-1. Disables DR for the application
-1. Uninstalls the application
-
-If needed, you can run one or more steps from this test, for example to deploy
-and enable DR run:
-
-```
-env=$PWD/test/envs/regional-dr.yaml
-test/basic-test/deploy $env
-test/basic-test/enable-dr $env
-```
-
-At this point you can run run manually failover, relocate one or more times as
-needed.
-
-To clean up the basic-test for regional-dr.yaml run this command:
-
-```
-test/basic-test/undeploy $env
-```
+Please refer to the [e2e testing documentation](../docs/e2e.md) for detailed
+instructions on running end-to-end tests.
 
 ## Undeploying the test environment
 
