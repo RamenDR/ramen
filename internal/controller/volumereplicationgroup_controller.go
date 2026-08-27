@@ -1671,10 +1671,31 @@ func (v *VRGInstance) reconcileAsPrimary() {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
 
-	if !v.result.Requeue && v.isVMRecipeProtection() {
+	// Discover VMs with static IPs for all discovered apps (any recipe, any namespace)
+	v.discoverStaticIPsForProtectedVMs()
+}
+
+// discoverStaticIPsForProtectedVMs performs VM static IP discovery for discovered apps.
+// For vm-recipe: validates VM list matches label selector, then discovers static IPs.
+// For other discovered apps: scans namespaces for VMs with static IPs.
+func (v *VRGInstance) discoverStaticIPsForProtectedVMs() {
+	if v.result.Requeue || !v.isDiscoveredApp() {
+		return
+	}
+
+	if v.isVMRecipeProtection() {
+		// vm-recipe: validate VM list matches label selector, then discover static IPs
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.result.Requeue = true
 		}
+
+		return
+	}
+
+	// All other discovered apps: scan namespaces for VMs with static IPs
+	if err := v.discoverAndValidateStaticIPsForAllProtectedVMs(); err != nil {
+		v.log.Error(err, "Failed to discover static IPs for protected VMs")
+		v.result.Requeue = true
 	}
 }
 
@@ -3021,6 +3042,111 @@ func (v *VRGInstance) validateAndRecordStaticIPDiscovery(vmList []string, vmName
 		"totalVMs", len(infos), "staticIPVMs", len(resources))
 
 	return nil
+}
+
+// discoverAndValidateStaticIPsForAllProtectedVMs performs VM static IP discovery
+// for any discovered app, regardless of recipe type. It scans all protected namespaces,
+// finds all VMs, and records those with static IP annotations.
+//
+// This handles:
+// - vm-recipe: VMs explicitly listed in RecipeParameters
+// - namespace-level protection: all VMs in ProtectedNamespaces
+// - custom recipes: any VMs in namespaces being protected
+// - mixed workloads: only VMs with static IP annotations are recorded
+func (v *VRGInstance) discoverAndValidateStaticIPsForAllProtectedVMs() error {
+	// Only run on Primary during steady state
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary {
+		return nil
+	}
+
+	if v.IsDRActionInProgress() {
+		return nil
+	}
+
+	// Determine which namespaces to scan
+	namespacesToScan := v.getProtectedNamespaces()
+	if len(namespacesToScan) == 0 {
+		v.log.Info("No protected namespaces found; skipping VM static IP discovery")
+
+		return nil
+	}
+
+	v.log.Info("Scanning for VMs with static IPs", "namespaces", namespacesToScan)
+
+	// Discover all VMs across all protected namespaces
+	allVMs, err := v.discoverVMsInNamespaces(namespacesToScan)
+	if err != nil {
+		return fmt.Errorf("failed to discover VMs in protected namespaces: %w", err)
+	}
+
+	if len(allVMs) == 0 {
+		v.log.Info("No VMs found in protected namespaces")
+		// Clear any previous discovery status
+		v.instance.Status.StaticIPDiscoveryStatus = nil
+
+		return nil
+	}
+
+	// Extract VM names and namespaces for validation
+	vmNames := make([]string, 0, len(allVMs))
+	vmNamespaces := make([]string, 0, len(allVMs))
+
+	for _, vm := range allVMs {
+		vmNames = append(vmNames, vm.Name)
+		vmNamespaces = append(vmNamespaces, vm.Namespace)
+	}
+
+	// Validate and record static IPs (filters to only VMs with static IP annotations)
+	return v.validateAndRecordStaticIPDiscovery(vmNames, vmNamespaces)
+}
+
+// getProtectedNamespaces returns the list of namespaces being protected,
+// handling both vm-recipe (RecipeParameters) and namespace-level protection.
+func (v *VRGInstance) getProtectedNamespaces() []string {
+	namespaces := make(map[string]struct{})
+
+	// Check ProtectedNamespaces (namespace-level protection, custom recipes)
+	if v.instance.Spec.ProtectedNamespaces != nil {
+		for _, ns := range *v.instance.Spec.ProtectedNamespaces {
+			namespaces[ns] = struct{}{}
+		}
+	}
+
+	// Check RecipeParameters (vm-recipe, custom recipes)
+	if v.instance.Spec.KubeObjectProtection != nil &&
+		v.instance.Spec.KubeObjectProtection.RecipeParameters != nil {
+		if vmNamespaces, ok := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]; ok {
+			for _, ns := range vmNamespaces {
+				namespaces[ns] = struct{}{}
+			}
+		}
+	}
+
+	// Convert to slice
+	result := make([]string, 0, len(namespaces))
+	for ns := range namespaces {
+		result = append(result, ns)
+	}
+
+	return result
+}
+
+// discoverVMsInNamespaces lists all VirtualMachine resources across the given namespaces.
+// Returns VMs regardless of whether they have static IP annotations (filtering happens later).
+func (v *VRGInstance) discoverVMsInNamespaces(namespaces []string) ([]virtv1.VirtualMachine, error) {
+	var allVMs []virtv1.VirtualMachine
+
+	for _, ns := range namespaces {
+		vmList := &virtv1.VirtualMachineList{}
+		if err := v.reconciler.Client.List(v.ctx, vmList, client.InNamespace(ns)); err != nil {
+			return nil, fmt.Errorf("failed to list VMs in namespace %s: %w", ns, err)
+		}
+
+		v.log.Info("Found VMs in namespace", "namespace", ns, "count", len(vmList.Items))
+		allVMs = append(allVMs, vmList.Items...)
+	}
+
+	return allVMs, nil
 }
 
 // ValidateStaticIPNetworkMapping inspects every protected VM in the VRG and
