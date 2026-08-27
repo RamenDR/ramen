@@ -355,6 +355,15 @@ func (v *VRGInstance) getRSSpecForPVC(pvc corev1.PersistentVolumeClaim,
 func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	v.log.Info("Reconcile VolSync as Secondary", "RDSpec", v.instance.Spec.VolSync.RDSpec)
 
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
+		log := logWithPvcName(v.log, pvc)
+
+		if !v.isPVCReadyForSecondary(pvc, log) {
+			return true // requeue
+		}
+	}
+
 	// If we are secondary, and RDSpec is not set, then we don't want to have any PVC
 	// flagged as a VolSync PVC.
 	if v.instance.Spec.VolSync.RDSpec == nil {
