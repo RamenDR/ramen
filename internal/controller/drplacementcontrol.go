@@ -422,6 +422,8 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 
 	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
 
+	d.setDRState(derivedDRState)
+
 	// Check if cleanup is complete by checking if we're in cleanup progression states
 	if d.isInCleanupProgression() {
 		// Cleanup in progress - check if VRG is cleaned up on test failover cluster
@@ -431,7 +433,6 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 				"savedLastAction", d.instance.GetAnnotations()[DRPCLastAction],
 				"derivedDRState", derivedDRState)
 
-			d.setDRState(derivedDRState)
 			d.setProgression(rmn.ProgressionCompleted)
 
 			// Clean up test failover annotation
