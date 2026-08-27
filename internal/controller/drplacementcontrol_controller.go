@@ -508,16 +508,18 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 
 	d.drType = DRTypeAsync
 
-	isMetro, _, err := dRPolicySupportsMetro(drPolicy, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
-	}
+	if !allVRGPeerClassesOffloaded(vrgs) {
+		isMetro, _, err := dRPolicySupportsMetro(drPolicy, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
+		}
 
-	if isMetro {
-		d.volSyncDisabled = true
-		d.drType = DRTypeSync
+		if isMetro {
+			d.volSyncDisabled = true
+			d.drType = DRTypeSync
 
-		log.Info("volsync is set to disabled")
+			log.Info("volsync is set to disabled")
+		}
 	}
 
 	if !d.volSyncDisabled && drpcInAdminNamespace(drpc, ramenConfig) {
@@ -528,6 +530,27 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
 
 	return d, nil
+}
+
+// allVRGPeerClassesOffloaded returns true if every PeerClass across all VRGs
+// has its Offloaded field set to true. When true, the workload uses only
+// offloaded storage classes and should never be treated as metro DR.
+func allVRGPeerClassesOffloaded(vrgs map[string]*rmn.VolumeReplicationGroup) bool {
+	found := false
+
+	for _, vrg := range vrgs {
+		if vrg.Spec.Async != nil {
+			for i := range vrg.Spec.Async.PeerClasses {
+				if !vrg.Spec.Async.PeerClasses[i].Offloaded {
+					return false
+				}
+
+				found = true
+			}
+		}
+	}
+
+	return found
 }
 
 func (r *DRPlacementControlReconciler) loadNetworkMapping(
