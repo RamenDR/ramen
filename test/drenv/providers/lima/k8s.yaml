@@ -70,7 +70,9 @@ provision:
       apt-get install -y apt-transport-https ca-certificates curl
       VERSION=1.34
       echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list
-      curl -fsSL https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      curl --fail --silent --show-error --location \
+          https://pkgs.k8s.io/core:/stable:/v${VERSION}/deb/Release.key \
+          | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       apt-get update
       # cri-tools
       apt-get install -y cri-tools

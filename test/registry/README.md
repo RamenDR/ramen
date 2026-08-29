@@ -113,7 +113,7 @@ sudo systemctl start registry.service
 ## Testing the local registry
 
 ```
-$ curl http://host.minikube.internal:5050/v2/_catalog
+$ curl --fail --silent --show-error http://host.minikube.internal:5050/v2/_catalog
 {"repositories":[]}
 ```
 
