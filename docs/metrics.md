@@ -119,7 +119,7 @@ export TOKEN=$(kubectl create token metrics-reader-sa -n ramen-system)
 Call the metrics endpoint using the token:
 
 ```bash
-curl -k -H "Authorization: Bearer $TOKEN" https://localhost:8443/metrics
+curl --fail --silent --show-error --insecure --header "Authorization: Bearer $TOKEN" https://localhost:8443/metrics
 ```
 
 If curl can connect, search for your metrics in the output.
@@ -132,6 +132,7 @@ To get the list of all the Ramen metrics available and their descriptions, run
 the Ramen code, then run this command (requires `$TOKEN` from the steps above):
 
 ```bash
-curl -k -s -H "Authorization: Bearer $TOKEN" https://localhost:8443/metrics \
-  | grep "# HELP ramen_"
+bash -o pipefail -c "curl --fail --silent --show-error --insecure \
+    --header \"Authorization: Bearer $TOKEN\" https://localhost:8443/metrics \
+    | grep '# HELP ramen_'"
 ```

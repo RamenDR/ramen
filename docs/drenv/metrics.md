@@ -20,7 +20,8 @@ brew install netdata
 Linux:
 
 ```
-curl -fsSL https://get.netdata.cloud/kickstart.sh -o /tmp/netdata-kickstart.sh
+curl --fail --silent --show-error --location --output /tmp/netdata-kickstart.sh \
+    https://get.netdata.cloud/kickstart.sh
 bash /tmp/netdata-kickstart.sh --no-updates --stable-channel
 ```
 
