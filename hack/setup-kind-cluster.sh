@@ -18,7 +18,8 @@ KIND_BIN="${scriptdir}/../bin/kind"
 mkdir -p "${scriptdir}/../bin"
 
 if [[ ! -x ${KIND_BIN} ]]; then
-	curl -L -o kind https://github.com/kubernetes-sigs/kind/releases/download/"${KIND_VERSION}"/kind-linux-amd64
+	curl --fail --silent --show-error --location --output kind \
+		https://github.com/kubernetes-sigs/kind/releases/download/"${KIND_VERSION}"/kind-linux-amd64
 	install ./kind "${KIND_BIN}"
 	rm ./kind
 elif [[ ${KIND_VERSION} != v"$(${KIND_BIN} --version | cut -f 3 -d ' ')" ]]; then
