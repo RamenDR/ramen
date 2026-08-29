@@ -3,6 +3,11 @@ resources:
   - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/release-8.6/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
   - https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/release-8.6/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
 namespace: kube-system
+images:
+  # The 8.6.0 controller uses 8.5.0 image, fixed in master
+  # https://github.com/kubernetes-csi/external-snapshotter/issues/1478
+  - name: registry.k8s.io/sig-storage/snapshot-controller
+    newTag: v8.6.0
 patches:
   # Enable volume group replication support
   - target:
