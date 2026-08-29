@@ -210,7 +210,7 @@ podman ps --filter name=drenv-cache
 To view cached images for a specific registry (e.g., quay.io on port 5051):
 
 ```
-curl -s http://localhost:5051/v2/_catalog | jq
+bash -o pipefail -c 'curl --fail --silent --show-error http://localhost:5051/v2/_catalog | jq'
 ```
 
 ### Viewing logs

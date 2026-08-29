@@ -26,7 +26,7 @@ fi
 
 echo "Installing ${tool}:${required_version} in ${target_dir}"
 mkdir -p "${target_dir}"
-curl --silent --show-error --location --output "${target_archive}" "${source_url}"
+curl --fail --silent --show-error --location --output "${target_archive}" "${source_url}"
 tar -xzf "${target_archive}" -C "${target_dir}"
 chmod +x "${target_path}"
 rm "${target_archive}"

@@ -42,7 +42,7 @@ def download_image(version, out):
     url = (
         f"https://download.cirros-cloud.net/{version}/cirros-{version}-x86_64-disk.img"
     )
-    cmd = ["curl", "--no-progress-meter", "--location", "--output", out, url]
+    cmd = ["curl", "--fail", "--silent", "--show-error", "--location", "--output", out, url]
     logging.debug("Running %s", cmd)
     subprocess.run(cmd, check=True)
 
