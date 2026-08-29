@@ -5,4 +5,4 @@ from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).parent
 CRDS_CACHE_KEY = "addons/external-snapshotter-crds-8.6.yaml"
-CONTROLLER_CACHE_KEY = "addons/external-snapshotter-controller-8.6.yaml"
+CONTROLLER_CACHE_KEY = "addons/external-snapshotter-controller-8.6-1.yaml"
