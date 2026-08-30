@@ -276,6 +276,14 @@ func failoverRelocate(
 		return err
 	}
 
+	if err := util.WaitVRGSecondaryOnCluster(ctx, currentCluster, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	if err := deployers.WaitWorkloadAbsent(ctx, currentCluster); err != nil {
+		return err
+	}
+
 	return deployers.WaitWorkloadHealth(ctx, targetCluster)
 }
 
