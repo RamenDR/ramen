@@ -40,16 +40,16 @@ width = options.terminal_width()
 def main():
     args = parse_args()
     configure_logging(args)
-    git_info = git.info()
-    if git_info:
+    try:
+        git_info = git.info()
         logging.debug(
             "[main] Using git repo branch=%s commit=%s dirty=%s",
             git_info["branch"],
             git_info["commit"],
             git_info["dirty"],
         )
-    else:
-        logging.debug("[main] git info not available")
+    except commands.Error as e:
+        logging.debug("[main] git info not available: %s", e)
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:

@@ -6,6 +6,7 @@ Run stress test.
 """
 
 import json
+import logging
 import os
 import platform
 import re
@@ -14,6 +15,7 @@ import subprocess
 import sys
 import time
 
+from .. import commands
 from .. import git
 
 PROGRESS = (
@@ -31,7 +33,7 @@ def command(args):
     test = {
         "start_time": int(time.time()),
         "host": host_info(),
-        "git": git.info(),
+        "git": git_info(),
         "config": {
             "runs": args.runs,
             "envfile": args.envfile,
@@ -167,6 +169,17 @@ def drenv(
         cmd.extend(("--directory", directory))
     cmd.append(envfile)
     return subprocess.run(cmd, stderr=subprocess.DEVNULL, check=check)
+
+
+def git_info():
+    """
+    Return git repository info, or an empty dict if git info is not available.
+    """
+    try:
+        return git.info()
+    except commands.Error as e:
+        logging.debug("Git info not available: %s", e)
+        return {}
 
 
 def host_info():
