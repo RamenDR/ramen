@@ -123,6 +123,22 @@ def test_apply_rejects_raw_server_side_flags(args):
 
 
 @pytest.mark.parametrize(
+    "flag",
+    ["--force-conflicts", "--force-conflicts=true", "--force-conflicts=false"],
+)
+def test_apply_rejects_raw_force_conflicts_flags(flag):
+    with pytest.raises(
+        ValueError,
+        match="use force_conflicts argument instead of --force-conflicts flag",
+    ):
+        kubectl.apply(
+            "--filename=resource.yaml",
+            flag,
+            context="non-existing",
+        )
+
+
+@pytest.mark.parametrize(
     "args,expected",
     [
         (["--filename", "VALUE", "--all"], ["--filename", "--all"]),

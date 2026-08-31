@@ -91,7 +91,14 @@ def exec(*args, context=None):
     return _run("exec", *args, context=context)
 
 
-def apply(*args, server_side=True, input=None, context=None, log=print):
+def apply(
+    *args,
+    server_side=True,
+    force_conflicts=False,
+    input=None,
+    context=None,
+    log=print,
+):
     """
     Run kubectl apply ... logging progress messages.
 
@@ -102,8 +109,14 @@ def apply(*args, server_side=True, input=None, context=None, log=print):
     for flag in _apply_flags(args):
         if flag == "--server-side" or flag.startswith("--server-side="):
             raise ValueError("use server_side argument instead of --server-side flag")
+        if flag == "--force-conflicts" or flag.startswith("--force-conflicts="):
+            raise ValueError(
+                "use force_conflicts argument instead of --force-conflicts flag"
+            )
     if server_side:
         args.append("--server-side=true")
+    if force_conflicts:
+        args.append("--force-conflicts")
     _watch("apply", *args, input=input, context=context, log=log)
 
 
