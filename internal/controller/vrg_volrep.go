@@ -2863,7 +2863,6 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 	// this (destination) cluster.
 	if pv.Spec.CSI != nil && pv.Annotations != nil {
 		if destHandle, ok := pv.Annotations[destinationVolumeHandleAnnotation]; ok && destHandle != "" {
-			v.log.V(1).Info("Set PV volume handle from destination handle", "PV", pv.Name, "handle", destHandle)
 			pv.Spec.CSI.VolumeHandle = destHandle
 			delete(pv.Annotations, destinationVolumeHandleAnnotation)
 		}
@@ -2900,8 +2899,6 @@ func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, s
 		pv.Spec.CSI.VolumeAttributes = map[string]string{}
 	}
 
-	v.log.V(1).Info("Set PV clusterID for target cluster",
-		"PV", pv.Name, "clusterID", clusterID)
 	pv.Spec.CSI.VolumeAttributes[clusterIDKey] = clusterID
 }
 
@@ -3499,15 +3496,13 @@ func (v *VRGInstance) skipVMCleanupVerificationCheck() ([]virtv1.VirtualMachine,
 	var foundVMs []virtv1.VirtualMachine
 
 	if len(vmList) == 0 {
-		v.log.V(1).Info("no protected VMs specified. Skipping VM garbage collection processing")
-
 		return nil, true
 	}
 
 	foundVMs, yes, err := rmnutil.IsVMDeletionInProgress(v.ctx, v.reconciler.Client, vmList, vmNamespaceList, v.log)
 	if err != nil {
 		// Skip and requeue for Get API errors
-		v.log.V(1).Error(err, "Failed to list VMs")
+		v.log.Error(err, "Failed to list VMs")
 
 		return foundVMs, true
 	}

@@ -277,9 +277,6 @@ func (m *DRPCNetworkMappingManager) LoadNetworkMapping(
 	}
 
 	if len(cmName) == 0 {
-		m.log.V(1).Info("DRPC has no network-mapping annotation; skipping",
-			"drpc", drpc.Name)
-
 		return nil, nil
 	}
 
@@ -935,7 +932,7 @@ func (d *DRPCInstance) translateSourceIP(srcIP, sourceCluster string, nadRef Net
 		return srcIP
 	}
 
-	targetIP, ruleType, err := translateIP(srcIP, d.networkMappingRules, dir, nadRef)
+	targetIP, _, err := translateIP(srcIP, d.networkMappingRules, dir, nadRef)
 	if err != nil {
 		d.log.Error(err, "IP translation failed; using source IP unchanged",
 			"sourceIP", srcIP,
@@ -943,13 +940,6 @@ func (d *DRPCInstance) translateSourceIP(srcIP, sourceCluster string, nadRef Net
 
 		return srcIP
 	}
-
-	d.log.V(1).Info("Translated IP",
-		"network", nadRef.NADNamespace+"/"+nadRef.NADName,
-		"sourceCluster", sourceCluster,
-		"inputIP", srcIP,
-		"ruleType", ruleType,
-		"outputIP", targetIP)
 
 	return targetIP
 }

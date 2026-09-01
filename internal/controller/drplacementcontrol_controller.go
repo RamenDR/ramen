@@ -1166,10 +1166,8 @@ func getPlacementOrPlacementRule(
 
 // getPlacementRule - remove some noisy Info logs and keep validation logic
 func getPlacementRule(ctx context.Context, k8sclient client.Client,
-	drpc *rmn.DRPlacementControl, log logr.Logger,
+	drpc *rmn.DRPlacementControl, _ logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.V(1).Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
-
 	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
 	if plRuleNamespace == "" {
 		plRuleNamespace = drpc.Namespace
@@ -1186,8 +1184,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace}, usrPlRule)
 	if err != nil {
-		log.V(1).Info("Get PlacementRule returned", "err", err)
-
 		return nil, err
 	}
 
@@ -1198,11 +1194,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 			return nil, fmt.Errorf("placementRule %s does not have the ramen scheduler. Scheduler used %s",
 				usrPlRule.Name, scName)
 		}
-
-		if usrPlRule.Spec.ClusterReplicas == nil || *usrPlRule.Spec.ClusterReplicas != 1 {
-			log.V(1).Info("User PlacementRule replica count is not set to 1, reconciliation will only " +
-				"schedule it to a single cluster")
-		}
 	}
 
 	return usrPlRule, nil
@@ -1212,8 +1203,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 func getPlacement(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
-	log.V(1).Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
-
 	plmntNamespace := drpc.Spec.PlacementRef.Namespace
 	if plmntNamespace == "" {
 		plmntNamespace = drpc.Namespace
@@ -1229,8 +1218,6 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plmntNamespace}, usrPlmnt)
 	if err != nil {
-		log.V(1).Info("Get Placement returned", "err", err)
-
 		return nil, err
 	}
 

@@ -209,8 +209,6 @@ func IsPVAttachedToNode(ctx context.Context,
 
 	if pvName == "" {
 		// Assuming if no volumename is set, the PVC has not been bound yet, so return false for in-use
-		log.V(1).Info("pvc has no VolumeName set, assuming not in-use")
-
 		return false, nil
 	}
 

@@ -3451,13 +3451,10 @@ func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
 	if d.isVMRecipeInUse() {
 		switch {
 		case d.isPreparingForFinalSync(clusterName): // for relocation only
-			d.log.V(1).Info("Setting progression - PreparingFinalSync")
 			d.setProgression(rmn.ProgressionPreparingFinalSync)
 		case d.isVMAutoCleanupFeasible(clusterName):
-			d.log.V(1).Info("Setting progression - CleanUpReadiness")
 			d.setProgression(rmn.ProgressionCleanupReadiness)
 		case d.isVMAutoCleanupCompleted(clusterName):
-			d.log.V(1).Info("Setting progression - Cleaning Up")
 			d.setProgression(rmn.ProgressionCleaningUp)
 		default:
 			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
@@ -3573,24 +3570,18 @@ func (d *DRPCInstance) recipeNeedsUpdate(mw *ocmworkv1.ManifestWork, sourceRecip
 
 	// Compare Spec - this is the most important part
 	if !reflect.DeepEqual(existingRecipe.Spec, sourceRecipe.Spec) {
-		d.log.V(1).Info("Recipe Spec has changed", "recipe", sourceRecipe.Name)
-
 		return true, nil
 	}
 
 	// Compare Labels - only if both have labels
 	// Handle nil vs empty map equivalence
 	if !mapsEqual(existingRecipe.Labels, sourceRecipe.Labels) {
-		d.log.V(1).Info("Recipe Labels have changed", "recipe", sourceRecipe.Name)
-
 		return true, nil
 	}
 
 	// Compare Annotations - only if both have annotations
 	// Handle nil vs empty map equivalence
 	if !mapsEqual(existingRecipe.Annotations, sourceRecipe.Annotations) {
-		d.log.V(1).Info("Recipe Annotations have changed", "recipe", sourceRecipe.Name)
-
 		return true, nil
 	}
 

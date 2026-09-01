@@ -323,8 +323,6 @@ func (r *DRPlacementControlReconciler) FilterGlobalPeerDRPCs(
 	}
 
 	if len(drpcs.Items) == 0 {
-		log.V(1).Info("No DRPCs matched label, skipping enqueue")
-
 		return []ctrl.Request{}
 	}
 

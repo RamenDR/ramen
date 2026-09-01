@@ -247,7 +247,7 @@ func (m *rgdMachine) ReconcileRD(
 		}
 	}
 
-	if !volsync.RDStatusReady(rd, m.Logger) {
+	if !volsync.RDStatusReady(rd) {
 		return nil, nil
 	}
 

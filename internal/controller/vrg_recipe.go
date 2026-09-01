@@ -225,14 +225,10 @@ func getRecipeObj(ctx context.Context, recipeNamespacedName types.NamespacedName
 	return recipe, nil
 }
 
-func RecipeParametersExpand(ctx context.Context, recipe *recipev1.Recipe, parameters map[string][]string,
-	log logr.Logger,
+func RecipeParametersExpand(_ context.Context, recipe *recipev1.Recipe, parameters map[string][]string,
+	_ logr.Logger,
 ) error {
 	spec := &recipe.Spec
-
-	if ctx.Value(util.RecipeElementsGetForPVC) == nil {
-		log.V(1).Info("Recipe pre-expansion", "spec", *spec, "parameters", parameters)
-	}
 
 	bytes, err := json.Marshal(*spec)
 	if err != nil {
@@ -244,10 +240,6 @@ func RecipeParametersExpand(ctx context.Context, recipe *recipev1.Recipe, parame
 
 	if err = json.Unmarshal([]byte(s2), spec); err != nil {
 		return fmt.Errorf("recipe spec %v json unmarshal error: %w", s2, err)
-	}
-
-	if ctx.Value(util.RecipeElementsGetForPVC) == nil {
-		log.V(1).Info("Recipe post-expansion", "spec", *spec)
 	}
 
 	return nil
