@@ -3762,11 +3762,6 @@ func (d *DRPCInstance) shouldInjectStaticIPTranslationSpec(
 // restore on secondary clusters and should not remain configured on the
 // promoted primary after failover/relocation.
 func (d *DRPCInstance) ResetVMStaticIPSpecOnPrimary(clusterName string) error {
-	// Only process if we have static IP VMs (regardless of recipe or protection type)
-	if len(d.instance.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs) == 0 {
-		return nil
-	}
-
 	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
