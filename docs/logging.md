@@ -7,6 +7,13 @@ This document outlines the logging standards and best practices for Ramen.
 1. **Consistency**: All controllers should follow the same logging conventions.
 1. **Performance Awareness**: Logging should not significantly impact the
    performance. Be mindful of the logging levels and the amount of data logged.
+   - Do not log at Info for every Kubernetes watch event or map/predicate
+     evaluation. Log rare failures (for example type-assertion errors) only.
+   - Do not log steady-state reconcile bookkeeping (unchanged conditions, metric
+     setters, status no-ops, Get/Run breadcrumbs). Entering/Exiting reconcile is
+     enough for the idle loop.
+   - Keep Info for failures, failover/relocate/delete/finalizer transitions, and
+     actual status writes.
 
 ## Logger Configuration
 
