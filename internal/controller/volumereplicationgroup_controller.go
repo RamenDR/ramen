@@ -3045,14 +3045,13 @@ func (v *VRGInstance) validateAndRecordStaticIPDiscovery(vmList []string, vmName
 }
 
 // discoverAndValidateStaticIPsForAllProtectedVMs performs VM static IP discovery
-// for any discovered app, regardless of recipe type. It scans all protected namespaces,
-// finds all VMs, and records those with static IP annotations.
+// for discovered apps (non-vm-recipe). Handles three scenarios:
 //
-// This handles:
-// - vm-recipe: VMs explicitly listed in RecipeParameters
-// - namespace-level protection: all VMs in ProtectedNamespaces
-// - custom recipes: any VMs in namespaces being protected
-// - mixed workloads: only VMs with static IP annotations are recorded
+// 1. Namespace-level with kubeObjectSelector: filters VMs by kubeObjectSelector
+// 2. Custom recipe with RecipeParameters[K8SLabelSelector]: filters VMs by recipe selector
+// 3. Pure namespace-level: discovers all VMs in ProtectedNamespaces
+//
+// Note: vm-recipe is handled separately by validateVMsForStandaloneProtection()
 func (v *VRGInstance) discoverAndValidateStaticIPsForAllProtectedVMs() error {
 	// Only run on Primary during steady state
 	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary {
@@ -3071,16 +3070,14 @@ func (v *VRGInstance) discoverAndValidateStaticIPsForAllProtectedVMs() error {
 		return nil
 	}
 
-	v.log.Info("Scanning for VMs with static IPs", "namespaces", namespacesToScan)
-
-	// Discover all VMs across all protected namespaces
-	allVMs, err := v.discoverVMsInNamespaces(namespacesToScan)
+	// Discover VMs based on protection type
+	allVMs, err := v.discoverVMsBasedOnProtectionType(namespacesToScan)
 	if err != nil {
 		return fmt.Errorf("failed to discover VMs in protected namespaces: %w", err)
 	}
 
 	if len(allVMs) == 0 {
-		v.log.Info("No VMs found in protected namespaces")
+		v.log.Info("No VMs found matching protection criteria")
 		// Clear any previous discovery status
 		v.instance.Status.StaticIPDiscoveryStatus = nil
 
@@ -3098,6 +3095,108 @@ func (v *VRGInstance) discoverAndValidateStaticIPsForAllProtectedVMs() error {
 
 	// Validate and record static IPs (filters to only VMs with static IP annotations)
 	return v.validateAndRecordStaticIPDiscovery(vmNames, vmNamespaces)
+}
+
+// discoverVMsBasedOnProtectionType discovers VMs based on the protection configuration:
+// Priority order:
+// 1. vm-recipe: handled separately (should not reach here)
+// 2. Custom recipe with K8SLabelSelector: filter by recipe label selector
+// 3. Namespace-level with kubeObjectSelector: filter by kubeObjectSelector
+// 4. Pure namespace-level: discover all VMs
+func (v *VRGInstance) discoverVMsBasedOnProtectionType(namespaces []string) ([]virtv1.VirtualMachine, error) {
+	// Safety check: vm-recipe should be handled by validateVMsForStandaloneProtection()
+	if v.isVMRecipeProtection() {
+		v.log.Info("vm-recipe protection detected but should have been handled earlier")
+
+		return nil, fmt.Errorf("vm-recipe should be handled by validateVMsForStandaloneProtection")
+	}
+
+	// Priority 1: Check for custom recipe with K8SLabelSelector in RecipeParameters
+	recipeLabelSelectors := v.getRecipeLabelSelectors()
+	if len(recipeLabelSelectors) > 0 {
+		v.log.Info("Custom recipe protection: discovering VMs by recipe label selector",
+			"namespaces", namespaces, "labelSelectors", recipeLabelSelectors)
+
+		return v.discoverVMsByRecipeLabelSelector(namespaces, recipeLabelSelectors)
+	}
+
+	// Priority 2: Check for kubeObjectSelector (namespace-level protection)
+	kubeObjectSelector := v.getKubeObjectSelector()
+	if kubeObjectSelector != nil {
+		v.log.Info("Namespace-level protection: discovering VMs by kubeObjectSelector",
+			"namespaces", namespaces, "selector", kubeObjectSelector)
+
+		return v.discoverVMsByKubeObjectSelector(namespaces, kubeObjectSelector)
+	}
+
+	// Priority 3: Pure namespace-level protection without selectors
+	v.log.Info("Pure namespace-level protection: discovering all VMs", "namespaces", namespaces)
+
+	return util.ListAllVMsInNamespaces(v.ctx, v.reconciler.Client, v.log, namespaces)
+}
+
+// getRecipeLabelSelectors returns K8SLabelSelector from RecipeParameters if present.
+// This is used by custom recipes to filter which VMs to protect.
+func (v *VRGInstance) getRecipeLabelSelectors() []string {
+	if v.instance.Spec.KubeObjectProtection == nil ||
+		v.instance.Spec.KubeObjectProtection.RecipeParameters == nil {
+		return nil
+	}
+
+	return v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]
+}
+
+// getKubeObjectSelector returns the kubeObjectSelector from KubeObjectProtection if present.
+// This is used by namespace-level protection to filter which resources to protect.
+func (v *VRGInstance) getKubeObjectSelector() *metav1.LabelSelector {
+	if v.instance.Spec.KubeObjectProtection == nil {
+		return nil
+	}
+
+	return v.instance.Spec.KubeObjectProtection.KubeObjectSelector
+}
+
+// discoverVMsByRecipeLabelSelector discovers VMs matching the recipe's K8SLabelSelector.
+// Used by custom recipes that specify label selectors in RecipeParameters.
+func (v *VRGInstance) discoverVMsByRecipeLabelSelector(
+	namespaces []string,
+	labelSelectors []string,
+) ([]virtv1.VirtualMachine, error) {
+	return util.DiscoverVMsByRecipeLabelSelector(v.ctx, v.reconciler.Client, v.log,
+		labelSelectors, namespaces)
+}
+
+// discoverVMsByKubeObjectSelector discovers VMs matching the kubeObjectSelector.
+// Used by namespace-level protection with label-based filtering.
+func (v *VRGInstance) discoverVMsByKubeObjectSelector(
+	namespaces []string,
+	selector *metav1.LabelSelector,
+) ([]virtv1.VirtualMachine, error) {
+	var allVMs []virtv1.VirtualMachine
+
+	// Convert metav1.LabelSelector to client.ListOptions
+	labelSelector, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert kubeObjectSelector to selector: %w", err)
+	}
+
+	for _, ns := range namespaces {
+		vmList := &virtv1.VirtualMachineList{}
+		listOptions := []client.ListOption{
+			client.InNamespace(ns),
+			client.MatchingLabelsSelector{Selector: labelSelector},
+		}
+
+		if err := v.reconciler.Client.List(v.ctx, vmList, listOptions...); err != nil {
+			return nil, fmt.Errorf("failed to list VMs in namespace %s with kubeObjectSelector: %w", ns, err)
+		}
+
+		v.log.Info("Found VMs matching kubeObjectSelector",
+			"namespace", ns, "count", len(vmList.Items))
+		allVMs = append(allVMs, vmList.Items...)
+	}
+
+	return allVMs, nil
 }
 
 // getProtectedNamespaces returns the list of namespaces being protected,
@@ -3129,24 +3228,6 @@ func (v *VRGInstance) getProtectedNamespaces() []string {
 	}
 
 	return result
-}
-
-// discoverVMsInNamespaces lists all VirtualMachine resources across the given namespaces.
-// Returns VMs regardless of whether they have static IP annotations (filtering happens later).
-func (v *VRGInstance) discoverVMsInNamespaces(namespaces []string) ([]virtv1.VirtualMachine, error) {
-	var allVMs []virtv1.VirtualMachine
-
-	for _, ns := range namespaces {
-		vmList := &virtv1.VirtualMachineList{}
-		if err := v.reconciler.Client.List(v.ctx, vmList, client.InNamespace(ns)); err != nil {
-			return nil, fmt.Errorf("failed to list VMs in namespace %s: %w", ns, err)
-		}
-
-		v.log.Info("Found VMs in namespace", "namespace", ns, "count", len(vmList.Items))
-		allVMs = append(allVMs, vmList.Items...)
-	}
-
-	return allVMs, nil
 }
 
 // ValidateStaticIPNetworkMapping inspects every protected VM in the VRG and
