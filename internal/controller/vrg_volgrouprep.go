@@ -582,9 +582,6 @@ func (v *VRGInstance) pvcsUnprotectVolGroupRep(groupPVCs map[types.NamespacedNam
 
 			continue
 		}
-
-		log.Info("Successfully processed VolumeGroupReplication", "VR instance",
-			v.instance.Name)
 	}
 }
 

@@ -125,10 +125,6 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getNamespacesAndVrgPrefixe
 		return prefixNamespaceVRG, fmt.Errorf("error during ParseResultListFromReplicaStore: %w", err)
 	}
 
-	for index, val := range prefixNamespaceVRG {
-		s.log.Info(fmt.Sprintf("prefixNamespaceVRG[%d]=%s", index, val))
-	}
-
 	return prefixNamespaceVRG, nil
 }
 
@@ -140,8 +136,6 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefi
 	const NoPrefixToRemove = ""
 
 	namespaceNamesList := getUniqueStringsFromList(prefixNamespaceVRG, ParseSingleSlash, NoPrefixToRemove)
-
-	s.log.Info("namespaceNames:")
 
 	for _, namespace := range namespaceNamesList {
 		namespaceAndVRG := getUniqueStringsFromList(prefixNamespaceVRG, ParseRemoveSlashes, namespace)
@@ -157,13 +151,14 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefi
 			// add all VRGs found to list
 			for i := range vrgs {
 				vrg := &vrgs[i]
-				s.log.Info(fmt.Sprintf("downloaded VRG with name '%s' in namespace '%s'", vrg.Name, vrg.Namespace))
 				VrgTidyForList(vrg)
 
 				vrgsAll = append(vrgsAll, *vrg)
 			}
 		}
 	}
+
+	s.log.Info("downloaded VRGs from S3", "count", len(vrgsAll))
 
 	return vrgsAll, nil
 }
