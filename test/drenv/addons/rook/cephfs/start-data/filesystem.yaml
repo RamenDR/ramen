@@ -26,4 +26,4 @@ spec:
   preserveFilesystemOnDelete: false
   metadataServer:
     activeCount: 1
-    activeStandby: true
+    activeStandby: false
