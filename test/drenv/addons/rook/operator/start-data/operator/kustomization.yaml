@@ -9,7 +9,7 @@ resources:
 patches:
   # Rook 1.20 manages CSI through ceph-csi-operator CRs. These settings used
   # to live in rook-ceph-operator-config (CSI_ENABLE_CSIADDONS,
-  # CSI_ENABLE_OMAP_GENERATOR).
+  # CSI_ENABLE_OMAP_GENERATOR, CSI_*_IMAGE).
   - target:
       kind: OperatorConfig
       name: ceph-csi-operator-config
@@ -21,6 +21,17 @@ patches:
       - op: replace
         path: /spec/driverSpecDefaults/generateOMapInfo
         value: true
+  # Custom Ceph-CSI image with RBD group mirroring (consistency groups)
+  # support. Rook 1.20 ignores ROOK_CSI_CEPH_IMAGE; CSI plugin images come
+  # from this ImageSet ConfigMap.
+  - target:
+      kind: ConfigMap
+      name: rook-csi-operator-image-set-configmap
+      namespace: rook-ceph
+    patch: |-
+      - op: replace
+        path: /data/plugin
+        value: quay.io/nladha/cephcsi:cg
   - target:
       kind: Deployment
       name: rook-ceph-operator
