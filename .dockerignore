@@ -1,10 +1,11 @@
 # More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
 # Ignore everything
 *
-# Except what the Dockerfile needs.
+# Except what the Dockerfiles need.
 !go.mod
 !go.sum
 !api/
 !cmd/
 !internal/
 !LICENSE
+!config/
