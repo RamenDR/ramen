@@ -30,6 +30,17 @@ configuration depends on the topology specified in the environment file.
 ramendev config FILENAME
 ```
 
+## Updating ramen on the hub and managed clusters
+
+Running `ramendev deploy` again after rebuilding the image will update the
+operator on all clusters. Existing configuration and DR-protected workloads are
+not affected.
+
+```sh
+make docker-build
+ramendev deploy FILENAME
+```
+
 ## Unconfigure ramen hub operator
 
 Before undeploying *ramen* unconfigure it so undo the changes made by

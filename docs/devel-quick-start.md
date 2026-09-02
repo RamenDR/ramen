@@ -118,6 +118,17 @@ You can either deploy the *Ramen* operator using the make targets or use the
   ramendev config test/envs/regional-dr.yaml
   ```
 
+## Updating ramen after code changes
+
+After making code changes, rebuild the image and deploy again. This will update
+the *Ramen* operator on all clusters without affecting existing DR-protected
+workloads or configuration.
+
+```sh
+make docker-build
+ramendev deploy test/envs/regional-dr.yaml
+```
+
 ## Testing Ramen
 
 - Read the [testing](./testing.md) guide for test instructions.
