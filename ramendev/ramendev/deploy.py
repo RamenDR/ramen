@@ -5,8 +5,11 @@ import concurrent.futures
 import os
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 
 from drenv import kubectl
+from drenv import patch
+from drenv import yaml
 
 from . import command
 
@@ -66,12 +69,18 @@ def load_image(args):
 
 
 def deploy(args, cluster, deploy_type, distro="", timeout=120):
+    deploy = f"ramen-{deploy_type}-operator"
+
     command.info("Deploying ramen operator in cluster '%s'", cluster)
     overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", distro)
-    yaml = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")
-    kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
+    manifests = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")
+    kubectl.apply(
+        "--filename=-",
+        input=annotate_deployment(manifests, deploy),
+        context=cluster,
+        log=command.debug,
+    )
 
-    deploy = f"ramen-{deploy_type}-operator"
     command.info("Waiting until '%s' is rolled out in cluster '%s'", deploy, cluster)
     kubectl.rollout(
         "status",
@@ -81,3 +90,34 @@ def deploy(args, cluster, deploy_type, distro="", timeout=120):
         context=cluster,
         log=command.debug,
     )
+
+
+def annotate_deployment(manifests, name):
+    """
+    Annotate the Deployment pod template so apply rolls out new pods.
+
+    The operator image tag is always :latest and imagePullPolicy is
+    IfNotPresent. Applying the same manifests does not change spec.template,
+    so Kubernetes keeps the running pods and they never pick up the image
+    loaded by drenv.
+    """
+    timestamp = datetime.now(timezone.utc).isoformat()
+    deployment_patch = {
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "ramendr.openshift.io/deployed-at": timestamp,
+                    }
+                }
+            }
+        }
+    }
+    docs = []
+    for doc in yaml.safe_load_all(manifests):
+        if doc is None:
+            continue
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == name:
+            doc = patch.merge(doc, deployment_patch)
+        docs.append(doc)
+    return "".join("---\n" + yaml.safe_dump(doc) for doc in docs)
