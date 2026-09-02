@@ -12,7 +12,9 @@ from .config import POOL_NAME, PACKAGE_DIR
 NAMESPACE = "rbd-mirror-test"
 PVC_NAME = "rbd-pvc"
 VR_NAME = "vr-1m"
+VGR_NAME = "vgr-1m"
 VR_KIND = "volumereplication"
+VGR_KIND = "volumegroupreplication"
 
 _DATA_DIR = PACKAGE_DIR / "test-data"
 
@@ -23,11 +25,16 @@ def test(cluster1, cluster2):
     """
     with concurrent.futures.ThreadPoolExecutor() as e:
         tests = [
-            e.submit(test_volume_replication, cluster1, cluster2),
-            e.submit(test_volume_replication, cluster2, cluster1),
+            e.submit(_test_replication, cluster1, cluster2),
+            e.submit(_test_replication, cluster2, cluster1),
         ]
         for t in concurrent.futures.as_completed(tests):
             t.result()
+
+
+def _test_replication(primary, secondary):
+    test_volume_replication(primary, secondary)
+    test_volume_group_replication(primary, secondary)
 
 
 def test_volume_replication(primary, secondary):
@@ -39,12 +46,31 @@ def test_volume_replication(primary, secondary):
 
     _check_rbd_replication(primary, secondary, rbd_image)
     _show_replication(primary, VR_KIND, VR_NAME)
-    _rbd_mirror_status(primary, rbd_image)
+    _rbd_mirror_status(primary, rbd_image, kind="image")
     _delete_replication(primary, VR_KIND, VR_NAME)
 
     _delete_pvc(primary)
 
     print(f"Replication from cluster '{primary}' to cluster '{secondary}' succeeded")
+
+
+def test_volume_group_replication(primary, secondary):
+    _deploy_pvc(primary)
+
+    _deploy_replication(primary, VGR_KIND, VGR_NAME)
+
+    rbd_image = _build_rbd_group_name(primary)
+
+    _check_rbd_group_replication(primary, secondary, rbd_image)
+    _show_replication(primary, VGR_KIND, VGR_NAME)
+    _rbd_mirror_status(primary, rbd_image, kind="group")
+    _delete_replication(primary, VGR_KIND, VGR_NAME)
+
+    _delete_pvc(primary)
+
+    print(
+        f"Group replication from cluster '{primary}' to cluster '{secondary}' succeeded"
+    )
 
 
 def _deploy_pvc(primary):
@@ -89,6 +115,23 @@ def _deploy_replication(primary, kind, name):
     )
 
 
+def _build_rbd_group_name(primary):
+    rbd_image = _build_rbd_image_name(primary)
+
+    print(f"Looking up rbd group for image {rbd_image} in cluster '{primary}'")
+    for i in range(60):
+        time.sleep(1)
+        info = json.loads(_rbd("info", rbd_image, "--format=json", cluster=primary))
+        group = info.get("group")
+        if group:
+            break
+    else:
+        raise RuntimeError(f"Timeout waiting for image {rbd_image}")
+
+    # rbd info reports a group spec: pool[/namespace]/name
+    return group.rsplit("/", 1)[-1]
+
+
 def _build_rbd_image_name(primary):
     print(f"Looking up pvc {NAMESPACE}/{PVC_NAME} pv name in cluster '{primary}'")
     pv_name = kubectl.get(
@@ -123,6 +166,23 @@ def _check_rbd_replication(primary, secondary, rbd_image):
         raise RuntimeError(f"Timeout waiting for image {rbd_image}")
 
 
+def _check_rbd_group_replication(primary, secondary, rbd_image):
+    print(f"rbd image {rbd_image} info in cluster '{primary}'")
+    out = _rbd("group", "info", rbd_image, cluster=primary)
+    print(out)
+
+    print(f"Waiting until rbd image {rbd_image} is created in cluster '{secondary}'")
+    for i in range(60):
+        time.sleep(1)
+        out = _rbd("group", "list", cluster=primary)
+        if rbd_image in out:
+            out = _rbd("group", "info", rbd_image, cluster=primary)
+            print(out)
+            break
+    else:
+        raise RuntimeError(f"Timeout waiting for image {rbd_image}")
+
+
 def _show_replication(primary, kind, name):
     print(f"{kind} {NAMESPACE}/{name} info on primary cluster '{primary}'")
     kubectl.get(
@@ -133,9 +193,9 @@ def _show_replication(primary, kind, name):
     )
 
 
-def _rbd_mirror_status(primary, rbd_image):
-    print(f"rbd mirror image status in cluster '{primary}'")
-    image_status = _rbd_mirror_image_status(primary, rbd_image)
+def _rbd_mirror_status(primary, rbd_image, kind):
+    print(f"rbd mirror {kind} status in cluster '{primary}'")
+    image_status = _rbd_mirror_image_status(primary, rbd_image, kind)
     print(json.dumps(image_status, indent=2))
 
 
@@ -168,10 +228,10 @@ def _rbd(*args, cluster=None):
     )
 
 
-def _rbd_mirror_image_status(cluster, image):
+def _rbd_mirror_image_status(cluster, image, kind):
     out = _rbd(
         "mirror",
-        "image",
+        kind,
         "status",
         image,
         "--format=json",
