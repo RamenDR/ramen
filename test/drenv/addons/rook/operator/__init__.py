@@ -9,8 +9,8 @@ from drenv import kubectl
 PACKAGE_DIR = Path(__file__).parent
 DEPS_DIR = PACKAGE_DIR / "start-data" / "deps"
 OPERATOR_DIR = PACKAGE_DIR / "start-data" / "operator"
-DEPS_CACHE_KEY = "addons/rook-operator-deps-1.20.yaml"
-OPERATOR_CACHE_KEY = "addons/rook-operator-1.20.yaml"
+DEPS_CACHE_KEY = "addons/rook-operator-deps-1.20-1.yaml"
+OPERATOR_CACHE_KEY = "addons/rook-operator-1.20-2.yaml"
 
 # operator.yaml includes OperatorConfig and Driver CRs. Those CRDs are in
 # csi-operator.yaml, so they must be established before the second apply.
