@@ -294,9 +294,9 @@ controller-gen: ## Download controller-gen locally.
 	@hack/install-controller-gen.sh
 
 .PHONY: kustomize
-KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize: ## Download kustomize locally.
-	@hack/install-kustomize.sh
+KUSTOMIZE = go tool -modfile=$(CURDIR)/tools.mod kustomize
+kustomize: ## Ensure kustomize is available via go tool.
+	@go tool -modfile=$(CURDIR)/tools.mod kustomize version >/dev/null
 
 .PHONY: opm
 OPM = ./bin/opm
