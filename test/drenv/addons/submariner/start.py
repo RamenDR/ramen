@@ -32,9 +32,6 @@ def start(broker, *clusters):
         join_cluster(cluster, broker_info)
 
     for cluster in clusters:
-        configure_submariner(cluster)
-
-    for cluster in clusters:
         wait_for_cluster(cluster)
 
     for cluster in clusters:
@@ -84,26 +81,6 @@ def join_cluster(cluster, broker_info):
         cable_driver="vxlan",
         version=VERSION,
     )
-
-
-def configure_submariner(cluster):
-    """
-    Configure submariner for minikube kernel.
-
-    TODO: Remove when minikube supports knftables:
-    https://github.com/kubernetes/minikube/issues/23450
-    """
-    print(f"Configuring submariner on cluster '{cluster}'")
-    configmap = """
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: submariner-global
-  namespace: submariner-operator
-data:
-  use-nftables: "false"
-"""
-    kubectl.apply("--filename=-", input=configmap, context=cluster)
 
 
 def annotate_nodes(cluster):
