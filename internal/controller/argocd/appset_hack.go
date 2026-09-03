@@ -39,6 +39,30 @@ type ApplicationSetSpec struct {
 type ApplicationSetGenerator struct {
 	//nolint:lll
 	ClusterDecisionResource *DuckTypeGenerator `json:"clusterDecisionResource,omitempty" protobuf:"bytes,5,name=clusterDecisionResource"`
+	// Matrix combines two generators by taking the cartesian product of their parameters.
+	// The clusterDecisionResource generator may appear as one of the nested generators.
+	Matrix *MatrixGenerator `json:"matrix,omitempty" protobuf:"bytes,10,name=matrix"`
+	// Merge combines generators by merging their parameters.
+	// The clusterDecisionResource generator may appear as one of the nested generators.
+	Merge *MergeGenerator `json:"merge,omitempty" protobuf:"bytes,11,name=merge"`
+}
+
+// MatrixGenerator is the subset of the ArgoCD MatrixGenerator that Ramen cares about:
+// the list of nested generators whose clusterDecisionResource entries must be inspected.
+type MatrixGenerator struct {
+	Generators []ApplicationSetNestedGenerator `json:"generators" protobuf:"bytes,1,name=generators"`
+}
+
+// MergeGenerator is the subset of the ArgoCD MergeGenerator that Ramen cares about.
+type MergeGenerator struct {
+	Generators []ApplicationSetNestedGenerator `json:"generators" protobuf:"bytes,1,name=generators"`
+}
+
+// ApplicationSetNestedGenerator is a generator that may appear inside a Matrix or Merge combinator.
+// It holds only the fields that Ramen inspects.
+type ApplicationSetNestedGenerator struct {
+	//nolint:lll
+	ClusterDecisionResource *DuckTypeGenerator `json:"clusterDecisionResource,omitempty" protobuf:"bytes,5,name=clusterDecisionResource"`
 }
 
 type DuckTypeGenerator struct {
@@ -87,8 +111,86 @@ func (in *ApplicationSet) DeepCopyInto(out *ApplicationSet) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	out.Spec = in.Spec
+	in.Spec.DeepCopyInto(&out.Spec)
 	out.Status = in.Status
+}
+
+func (in *ApplicationSetSpec) DeepCopyInto(out *ApplicationSetSpec) {
+	*out = *in
+
+	if in.Generators != nil {
+		in, out := &in.Generators, &out.Generators
+		*out = make([]ApplicationSetGenerator, len(*in))
+
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+
+	out.Template = in.Template
+}
+
+func (in *DuckTypeGenerator) DeepCopyInto(out *DuckTypeGenerator) {
+	*out = *in
+	in.LabelSelector.DeepCopyInto(&out.LabelSelector)
+}
+
+func (in *ApplicationSetNestedGenerator) DeepCopyInto(out *ApplicationSetNestedGenerator) {
+	*out = *in
+
+	if in.ClusterDecisionResource != nil {
+		in, out := &in.ClusterDecisionResource, &out.ClusterDecisionResource
+		*out = new(DuckTypeGenerator)
+		(*in).DeepCopyInto(*out)
+	}
+}
+
+func (in *ApplicationSetGenerator) DeepCopyInto(out *ApplicationSetGenerator) {
+	*out = *in
+
+	if in.ClusterDecisionResource != nil {
+		in, out := &in.ClusterDecisionResource, &out.ClusterDecisionResource
+		*out = new(DuckTypeGenerator)
+		(*in).DeepCopyInto(*out)
+	}
+
+	if in.Matrix != nil {
+		in, out := &in.Matrix, &out.Matrix
+		*out = new(MatrixGenerator)
+		(*in).DeepCopyInto(*out)
+	}
+
+	if in.Merge != nil {
+		in, out := &in.Merge, &out.Merge
+		*out = new(MergeGenerator)
+		(*in).DeepCopyInto(*out)
+	}
+}
+
+func (in *MatrixGenerator) DeepCopyInto(out *MatrixGenerator) {
+	*out = *in
+
+	if in.Generators != nil {
+		in, out := &in.Generators, &out.Generators
+		*out = make([]ApplicationSetNestedGenerator, len(*in))
+
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *MergeGenerator) DeepCopyInto(out *MergeGenerator) {
+	*out = *in
+
+	if in.Generators != nil {
+		in, out := &in.Generators, &out.Generators
+		*out = make([]ApplicationSetNestedGenerator, len(*in))
+
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 }
 
 // DeepCopy### interfaces required to use ApplicationSetList as a runtime.Object
