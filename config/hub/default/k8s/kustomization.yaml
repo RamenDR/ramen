@@ -43,7 +43,6 @@ transformers:
 
 # Metrics endpoint is protected by controller-runtime built-in auth (WithAuthenticationAndAuthorization).
 
-
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

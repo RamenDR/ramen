@@ -46,6 +46,19 @@ transformers:
 
 # Metrics endpoint is protected by controller-runtime built-in auth (WithAuthenticationAndAuthorization).
 
+# [METRICS-WITH-CERTS] OpenShift service-ca certificates for the metrics server.
+# The service-ca operator will auto-provision and rotate the TLS certificate.
+patches:
+- path: cert_metrics_service_ca_patch.yaml
+  target:
+    kind: Service
+- path: cert_metrics_manager_patch.yaml
+  target:
+    kind: Deployment
+- path: monitor_tls_patch.yaml
+  target:
+    kind: ServiceMonitor
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

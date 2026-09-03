@@ -1,0 +1,21 @@
+# This patch adds the volume and volumeMount to allow the manager to use
+# service-ca-managed certificates for the metrics server on OpenShift.
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    mountPath: /etc/metrics-certs
+    name: metrics-certs
+    readOnly: true
+
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: metrics-certs
+    secret:
+      secretName: metrics-server-cert
+      optional: false
+      items:
+        - key: tls.crt
+          path: tls.crt
+        - key: tls.key
+          path: tls.key
