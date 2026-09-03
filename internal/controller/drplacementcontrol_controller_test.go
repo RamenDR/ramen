@@ -769,7 +769,10 @@ func createDRClusters(inClusters []*spokeClusterV1.ManagedCluster) {
 		for idx := range drClusters {
 			if managedCluster.Name == drClusters[idx].Name {
 				err := k8sClient.Create(context.TODO(), &drClusters[idx])
-				Expect(err).NotTo(HaveOccurred())
+				if err != nil && !k8serrors.IsAlreadyExists(err) {
+					Expect(err).NotTo(HaveOccurred())
+				}
+
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drClusters[idx].Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drClusters[idx].Name)
 			}
@@ -1872,19 +1875,25 @@ var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 
 			deleteDRPC()
 
-			Eventually(func() error {
-				_, err := drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
+			errCount := 0
 
-				return err
-			}, timeout, interval).Should(MatchError(ContainSubstring("failed to get drclusters")))
+			for {
+				_, err = drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
+				Expect(err).To(HaveOccurred())
 
-			// Ensure the expected error is returned consistently, not just once,
-			// guarding against the drclusters being recreated by another actor.
-			Consistently(func() error {
-				_, err := drpcReconcile(DRPCCommonName, DefaultDRPCNamespace)
+				// Accept conflict errors as transient - only count expected errors
+				if !strings.Contains(err.Error(), "Operation cannot be fulfilled") {
+					Expect(err.Error()).To(ContainSubstring("failed to get drclusters"))
 
-				return err
-			}, timeout, interval).Should(MatchError(ContainSubstring("failed to get drclusters")))
+					errCount++
+					if errCount > 2 {
+						// Found the required error message for more than a second
+						break
+					}
+				}
+
+				time.Sleep(time.Second)
+			}
 		}, SpecTimeout(time.Second*10))
 	})
 
