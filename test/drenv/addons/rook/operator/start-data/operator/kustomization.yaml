@@ -21,6 +21,12 @@ patches:
       - op: replace
         path: /spec/driverSpecDefaults/generateOMapInfo
         value: true
+      # Adds --feature-gates=CSIVolumeGroupSnapshot=true to the
+      # csi-snapshotter sidecar. Without this, VolumeGroupSnapshot stays
+      # readyToUse: false even though snapshot-controller has the gate.
+      - op: add
+        path: /spec/driverSpecDefaults/snapshotPolicy
+        value: volumeGroupSnapshot
   # Custom Ceph-CSI image with RBD group mirroring (consistency groups)
   # support. Rook 1.20 ignores ROOK_CSI_CEPH_IMAGE; CSI plugin images come
   # from this ImageSet ConfigMap.
