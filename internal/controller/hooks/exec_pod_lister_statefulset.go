@@ -32,7 +32,7 @@ func (l *StatefulSetPodLister) GetPods(log logr.Logger) ([]ExecPodSpec, error) {
 		return l.getPodsFromStatefulSets(statefulSets)
 	}
 
-	return l.getAllPodsFromStatefulSets(statefulSets, log)
+	return l.getAllPodsFromStatefulSets(statefulSets)
 }
 
 //nolint:dupl // getDaemonSets mirrors this structure; both use label/name selectors.
@@ -103,7 +103,7 @@ func (l *StatefulSetPodLister) getPodsFromStatefulSets(statefulSets []appsv1.Sta
 }
 
 func (l *StatefulSetPodLister) getAllPodsFromStatefulSets(
-	statefulSets []appsv1.StatefulSet, log logr.Logger,
+	statefulSets []appsv1.StatefulSet,
 ) ([]ExecPodSpec, error) {
 	execPods := make([]ExecPodSpec, 0)
 
@@ -111,8 +111,6 @@ func (l *StatefulSetPodLister) getAllPodsFromStatefulSets(
 	if err != nil {
 		return execPods, fmt.Errorf("error converting command to string array: %w", err)
 	}
-
-	log.V(1).Info("getAllPodsFromStatefulSets", "statefulSetCount", len(statefulSets))
 
 	for _, statefulSet := range statefulSets {
 		if statefulSet.Status.ReadyReplicas > 0 {

@@ -673,19 +673,10 @@ func (w objectWriter) checkBSLStatus(
 	reader client.Reader,
 	key client.ObjectKey,
 	currentBSL *velero.BackupStorageLocation,
-	bslName string,
 ) (bool, error) {
 	if err := reader.Get(w.ctx, key, currentBSL); err != nil {
-		if k8serrors.IsNotFound(err) {
-			w.log.V(1).Info("BSL not found", "bsl", bslName, "error", err)
-		} else {
-			w.log.V(1).Info("Failed to get BSL", "bsl", bslName, "error", err)
-		}
-
 		return false, err
 	}
-
-	w.log.V(1).Info("BSL status check", "bsl", bslName, "phase", currentBSL.Status.Phase)
 
 	return isBSLAvailable(*currentBSL), nil
 }
@@ -704,10 +695,8 @@ func (w objectWriter) checkBSLAvailability(bsl *velero.BackupStorageLocation) er
 
 	currentBSL := &velero.BackupStorageLocation{}
 
-	available, err := w.checkBSLStatus(reader, key, currentBSL, bsl.Name)
+	available, err := w.checkBSLStatus(reader, key, currentBSL)
 	if err != nil {
-		w.log.V(1).Info("Failed to check BSL status, will retry in next reconcile", "bsl", bsl.Name, "error", err)
-
 		return fmt.Errorf("failed to check BSL status: %w", err)
 	}
 

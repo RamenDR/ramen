@@ -85,7 +85,7 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 	vsHandler, vgsHandler := r.buildVGSHandler(ctx, logger, rgs, vrg, ramenConfig, defaultCephFSCSIDriverName)
 
-	return r.runRGSReconcile(ctx, logger, rgs, vrg, vsHandler, vgsHandler, defaultCephFSCSIDriverName)
+	return r.runRGSReconcile(ctx, logger, rgs, vrg, vsHandler, vgsHandler)
 }
 
 // getRGSConfig fetches the RGS object, ramen config, and the owning VRG.
@@ -107,8 +107,6 @@ func (r *ReplicationGroupSourceReconciler) getRGSConfig(
 				"Please install VolumeGroupSnapshot CRD and restart the operator", req.Namespace, req.Name)
 	}
 
-	logger.Info("Get ReplicationGroupSource")
-
 	rgs = &ramendrv1alpha1.ReplicationGroupSource{}
 	if err = r.Client.Get(ctx, req.NamespacedName, rgs); err != nil {
 		if !k8serrors.IsNotFound(err) {
@@ -118,16 +116,12 @@ func (r *ReplicationGroupSourceReconciler) getRGSConfig(
 		return nil, nil, nil, true, client.IgnoreNotFound(err)
 	}
 
-	logger.Info("Get ramen config from configmap")
-
 	_, ramenConfig, err = ConfigMapGet(ctx, r.Client)
 	if err != nil {
 		logger.Error(err, "Failed to get ramen config")
 
 		return nil, nil, nil, true, err
 	}
-
-	logger.Info("Get vrg from ReplicationGroupSource")
 
 	vrg = &ramendrv1alpha1.VolumeReplicationGroup{}
 	if err = r.Client.Get(ctx, types.NamespacedName{
@@ -181,7 +175,6 @@ func (r *ReplicationGroupSourceReconciler) runRGSReconcile(
 	vrg *ramendrv1alpha1.VolumeReplicationGroup,
 	vsHandler *volsync.VSHandler,
 	vgsHandler cephfscg.VolumeGroupSourceHandler,
-	defaultCephFSCSIDriverName string,
 ) (ctrl.Result, error) {
 	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
 		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
@@ -190,8 +183,6 @@ func (r *ReplicationGroupSourceReconciler) runRGSReconcile(
 
 		return ctrl.Result{RequeueAfter: retryDelay}, vgsHandler.CleanVolumeGroupSnapshot(ctx)
 	}
-
-	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 
 	result, err := statemachine.Run(
 		ctx,

@@ -582,9 +582,6 @@ func (v *VRGInstance) pvcsUnprotectVolGroupRep(groupPVCs map[types.NamespacedNam
 
 			continue
 		}
-
-		log.Info("Successfully processed VolumeGroupReplication", "VR instance",
-			v.instance.Name)
 	}
 }
 
@@ -765,8 +762,6 @@ func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState, log logr.Logger,
 ) (bool, bool, error) {
 	const requeue = true
-
-	v.log.V(1).Info("create or update VGR", "state", state, "pvcs", len(pvcs))
 
 	if err := v.labelPVCsWithVGROwner(pvcs, vrNamespacedName.Name); err != nil {
 		return requeue, false, err
@@ -1359,8 +1354,6 @@ func (v *VRGInstance) cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationC
 	// on this (destination) cluster.
 	if vgrc.Annotations != nil {
 		if destHandle, ok := vgrc.Annotations[destinationVolumeGroupHandleAnnotation]; ok && destHandle != "" {
-			v.log.V(1).Info("Set VGRC volume group replication handle from destination handle",
-				"VGRC", vgrc.Name, "handle", destHandle)
 			vgrc.Spec.VolumeGroupReplicationHandle = destHandle
 			delete(vgrc.Annotations, destinationVolumeGroupHandleAnnotation)
 		}
@@ -1394,9 +1387,6 @@ func (v *VRGInstance) updateVGRCVolumeHandlesForRestore(vgrc *volrep.VolumeGroup
 					vgrc.Name, pvMapping.Name, handle)
 			}
 
-			v.log.V(1).Info("Set VGRC volume handle from destination handle",
-				"VGRC", vgrc.Name, "handle", pvMapping.DestinationVolumeHandle)
-
 			vgrc.Spec.Source.VolumeHandles[i] = pvMapping.DestinationVolumeHandle
 
 			break
@@ -1425,8 +1415,6 @@ func (v *VRGInstance) updateVGRCClusterIDForRestore(vgrc *volrep.VolumeGroupRepl
 		vgrc.Spec.VolumeGroupAttributes = map[string]string{}
 	}
 
-	v.log.V(1).Info("Set VGRC clusterID for target cluster",
-		"VGRC", vgrc.Name, "clusterID", clusterID)
 	vgrc.Spec.VolumeGroupAttributes[clusterIDKey] = clusterID
 
 	return nil

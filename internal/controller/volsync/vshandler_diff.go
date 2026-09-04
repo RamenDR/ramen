@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
-	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -88,7 +87,6 @@ func (v *VSHandler) reconcileDiffLocalReplication(
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 	pskSecretName string,
-	l logr.Logger,
 ) (*volsyncv1alpha1.ReplicationDestination, *volsyncv1alpha1.ReplicationSource, error) {
 	// Step 1: Create current state snapshot of the app PVC
 	currentSnapName, err := v.CreateCurrentStateSnapshot(rdSpec)
@@ -118,8 +116,6 @@ func (v *VSHandler) reconcileDiffLocalReplication(
 	if err != nil {
 		return lrd, nil, fmt.Errorf("failed to reconcile diff localRS (%w)", err)
 	}
-
-	l.V(1).Info(fmt.Sprintf("Diff local replication reconcile complete lrd=%s, lrs=%s", lrd.Name, lrs.Name))
 
 	return lrd, lrs, nil
 }
@@ -160,7 +156,7 @@ func (v *VSHandler) ReconcileDiffLocalRD(
 		pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
 	}
 
-	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrd, func() error {
+	_, err = ctrlutil.CreateOrUpdate(v.ctx, v.client, lrd, func() error {
 		util.AddLabel(lrd, util.CreatedByRamenLabel, "true")
 		util.AddLabel(lrd, util.VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrd, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
@@ -188,12 +184,8 @@ func (v *VSHandler) ReconcileDiffLocalRD(
 
 	// Wait for address — plugin populates Status.RsyncTLS.Address even for External spec
 	if lrd.Status == nil || lrd.Status.RsyncTLS == nil || lrd.Status.RsyncTLS.Address == nil {
-		v.log.V(1).Info("Diff local ReplicationDestination waiting for Address...")
-
 		return nil, fmt.Errorf("waiting for address")
 	}
-
-	v.log.V(1).Info("Diff local ReplicationDestination Reconcile Complete", "op", op)
 
 	return lrd, nil
 }
@@ -228,7 +220,7 @@ func (v *VSHandler) ReconcileDiffLocalRS(
 		},
 	}
 
-	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrs, func() error {
+	_, err = ctrlutil.CreateOrUpdate(v.ctx, v.client, lrs, func() error {
 		util.AddLabel(lrs, util.CreatedByRamenLabel, "true")
 		util.AddLabel(lrs, util.VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrs, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
@@ -253,9 +245,6 @@ func (v *VSHandler) ReconcileDiffLocalRS(
 
 		return nil
 	})
-
-	v.log.V(1).Info("Diff local ReplicationSource createOrUpdate Complete", "op", op, "error", err)
-
 	if err != nil {
 		return nil, err
 	}

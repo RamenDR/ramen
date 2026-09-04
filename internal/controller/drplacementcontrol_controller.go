@@ -303,13 +303,11 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncTimeMetrics,
-	t *metav1.Time, log logr.Logger,
+	t *metav1.Time,
 ) {
 	if syncMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("Setting metric: (%s)", LastSyncTimestampSeconds))
 
 	if t == nil {
 		syncMetrics.LastSyncTime.Set(0)
@@ -321,13 +319,11 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncTi
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
-	t *metav1.Duration, log logr.Logger,
+	t *metav1.Duration,
 ) {
 	if syncDurationMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", LastSyncDurationSeconds))
 
 	if t == nil {
 		syncDurationMetrics.LastSyncDuration.Set(0)
@@ -339,13 +335,11 @@ func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMet
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
-	b *int64, log logr.Logger,
+	b *int64,
 ) {
 	if syncDataBytesMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", LastSyncDataBytes))
 
 	if b == nil {
 		syncDataBytesMetrics.LastSyncDataBytes.Set(0)
@@ -359,13 +353,11 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 // setWorkloadProtectionMetric sets the workload protection info metric, where 0 indicates not protected and
 // 1 indicates protected
 func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProtectionMetrics *WorkloadProtectionMetrics,
-	conditions []metav1.Condition, log logr.Logger,
+	conditions []metav1.Condition,
 ) {
 	if workloadProtectionMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", WorkloadProtectionStatus))
 
 	protected := 0
 
@@ -384,13 +376,11 @@ func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProte
 // where 0 indicates consistency grouping is not enabled
 // and 1 indicates consistency grouping is enabled
 func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementControl,
-	cgEnabledMetrics *CGEnabledMetrics, log logr.Logger,
+	cgEnabledMetrics *CGEnabledMetrics,
 ) {
 	if cgEnabledMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", CGEnabled))
 
 	enabled := 0
 
@@ -405,13 +395,11 @@ func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementC
 // setGlobalActionMetric sets the global action consensus metric for a DRPC.
 // 1 indicates consensus reached, 0 indicates blocked. Only emitted for global VGR DRPCs.
 func (r *DRPlacementControlReconciler) setGlobalActionMetric(
-	drpc *rmn.DRPlacementControl, metric *GlobalActionMetrics, log logr.Logger,
+	drpc *rmn.DRPlacementControl, metric *GlobalActionMetrics,
 ) {
 	if metric == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("Setting metric: (%s)", GlobalActionStatus))
 
 	consensus := 0
 
@@ -428,13 +416,11 @@ func (r *DRPlacementControlReconciler) setGlobalActionMetric(
 }
 
 func (r *DRPlacementControlReconciler) setDRProgressionStateMetric(drpc *rmn.DRPlacementControl,
-	drProgressionStateMetrics *DRProgressionStateMetrics, log logr.Logger,
+	drProgressionStateMetrics *DRProgressionStateMetrics,
 ) {
 	if drProgressionStateMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", DRProgressionState))
 
 	currentState := string(drpc.Status.Progression)
 	for _, trackedState := range trackedDRProgressionStates {
@@ -688,23 +674,18 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 	}
 
 	requeue := d.startProcessing()
-	log.Info("Finished processing", "Requeue?", requeue)
 
 	if !requeue {
-		log.Info("Done reconciling", "state", d.getLastDRState())
 		r.Callback(d.instance.Name, string(d.getLastDRState()))
 	}
 
 	if d.mcvRequestInProgress && d.getLastDRState() != "" {
 		duration := d.getRequeueDuration()
-		log.Info(fmt.Sprintf("Requeing after %v", duration))
 
 		return reconcile.Result{RequeueAfter: duration}, nil
 	}
 
 	if requeue {
-		log.Info("Requeing...")
-
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -715,7 +696,6 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 	}
 
 	requeueTimeDuration := r.getStatusCheckDelay(beforeProcessing, afterProcessing)
-	log.Info("Requeue time", "duration", requeueTimeDuration)
 
 	return ctrl.Result{RequeueAfter: requeueTimeDuration}, nil
 }
@@ -1186,10 +1166,8 @@ func getPlacementOrPlacementRule(
 
 // getPlacementRule - remove some noisy Info logs and keep validation logic
 func getPlacementRule(ctx context.Context, k8sclient client.Client,
-	drpc *rmn.DRPlacementControl, log logr.Logger,
+	drpc *rmn.DRPlacementControl, _ logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.V(1).Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
-
 	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
 	if plRuleNamespace == "" {
 		plRuleNamespace = drpc.Namespace
@@ -1206,8 +1184,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace}, usrPlRule)
 	if err != nil {
-		log.V(1).Info("Get PlacementRule returned", "err", err)
-
 		return nil, err
 	}
 
@@ -1218,11 +1194,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 			return nil, fmt.Errorf("placementRule %s does not have the ramen scheduler. Scheduler used %s",
 				usrPlRule.Name, scName)
 		}
-
-		if usrPlRule.Spec.ClusterReplicas == nil || *usrPlRule.Spec.ClusterReplicas != 1 {
-			log.V(1).Info("User PlacementRule replica count is not set to 1, reconciliation will only " +
-				"schedule it to a single cluster")
-		}
 	}
 
 	return usrPlRule, nil
@@ -1232,8 +1203,6 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 func getPlacement(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
-	log.V(1).Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
-
 	plmntNamespace := drpc.Spec.PlacementRef.Namespace
 	if plmntNamespace == "" {
 		plmntNamespace = drpc.Namespace
@@ -1249,8 +1218,6 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plmntNamespace}, usrPlmnt)
 	if err != nil {
-		log.V(1).Info("Get Placement returned", "err", err)
-
 		return nil, err
 	}
 
@@ -1562,8 +1529,6 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	ctx context.Context, drpc *rmn.DRPlacementControl,
 	userPlacement client.Object, log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
-	log.Info("Updating DRPC status")
-
 	// Account any DR action phase transition and persist the action count
 	// annotation before the status update, so that a failed status update
 	// cannot lose an already observed transition
@@ -1601,8 +1566,6 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	}
 
 	if reflect.DeepEqual(r.savedInstanceStatus, drpc.Status) {
-		log.Info("No need to update DRPC Status")
-
 		return nil
 	}
 
@@ -1875,16 +1838,14 @@ func (r *DRPlacementControlReconciler) clusterForVRGStatus(
 func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) error {
-	log.Info("setting WorkloadProtectionMetrics")
-
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
-	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions)
 
 	cgEnabledMetrics := r.createCGEnabledMetricsInstance(drpc)
-	r.setCGEnabledMetric(drpc, cgEnabledMetrics, log)
+	r.setCGEnabledMetric(drpc, cgEnabledMetrics)
 
 	globalActionMetrics := r.createGlobalActionMetricsInstance(drpc)
-	r.setGlobalActionMetric(drpc, globalActionMetrics, log)
+	r.setGlobalActionMetric(drpc, globalActionMetrics)
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
@@ -1906,17 +1867,15 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		return nil
 	}
 
-	log.Info("setting SyncMetrics")
-
 	syncMetrics := r.createSyncMetricsInstance(drPolicy, drpc)
 
 	if syncMetrics != nil {
-		r.setLastSyncTimeMetric(&syncMetrics.SyncTimeMetrics, drpc.Status.LastGroupSyncTime, log)
-		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
-		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
+		r.setLastSyncTimeMetric(&syncMetrics.SyncTimeMetrics, drpc.Status.LastGroupSyncTime)
+		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration)
+		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes)
 	}
 
-	r.setDRProgressionStateMetric(drpc, &DRProgressionStateMetrics{}, log)
+	r.setDRProgressionStateMetric(drpc, &DRProgressionStateMetrics{})
 
 	return nil
 }

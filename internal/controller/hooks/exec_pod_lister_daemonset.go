@@ -32,7 +32,7 @@ func (l *DaemonSetPodLister) GetPods(log logr.Logger) ([]ExecPodSpec, error) {
 		return l.getPodsFromDaemonSets(daemonSets, log)
 	}
 
-	return l.getAllPodsFromDaemonSets(daemonSets, log)
+	return l.getAllPodsFromDaemonSets(daemonSets)
 }
 
 //nolint:dupl // getStatefulSets mirrors this structure; both use label/name selectors.
@@ -123,7 +123,7 @@ func (l *DaemonSetPodLister) getFirstRunningPodForDaemonSet(daemonSet *appsv1.Da
 }
 
 func (l *DaemonSetPodLister) getAllPodsFromDaemonSets(
-	daemonSets []appsv1.DaemonSet, log logr.Logger,
+	daemonSets []appsv1.DaemonSet,
 ) ([]ExecPodSpec, error) {
 	execPods := make([]ExecPodSpec, 0)
 
@@ -131,8 +131,6 @@ func (l *DaemonSetPodLister) getAllPodsFromDaemonSets(
 	if err != nil {
 		return execPods, fmt.Errorf("error converting command to string array: %w", err)
 	}
-
-	log.V(1).Info("getAllPodsFromDaemonSets", "daemonSetCount", len(daemonSets))
 
 	for _, daemonSet := range daemonSets {
 		if daemonSet.Status.NumberReady > 0 {

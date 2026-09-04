@@ -141,8 +141,6 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
 	}
 
-	log.Info("create/update")
-
 	reason, err := validateDRPolicy(drpolicy, drclusters)
 	if err != nil {
 		statusErr := u.validatedSetFalse(reason, err)
@@ -346,8 +344,6 @@ func validateDRPolicy(drpolicy *ramen.DRPolicy,
 }
 
 func (r *DRPolicyReconciler) setDRPolicyMetrics(drPolicy *ramen.DRPolicy) error {
-	r.Log.Info(fmt.Sprintf("Setting metric: (%v)", DRPolicySyncIntervalSeconds))
-
 	syncIntervalMetricsLabels := DRPolicySyncIntervalMetricLabels(drPolicy)
 	metric := NewDRPolicySyncIntervalMetrics(syncIntervalMetricsLabels)
 

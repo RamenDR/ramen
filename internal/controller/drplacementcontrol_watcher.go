@@ -62,8 +62,6 @@ func ManifestWorkPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info(fmt.Sprintf("Update event for MW %s/%s", oldMW.Name, oldMW.Namespace))
-
 			return !reflect.DeepEqual(oldMW.Status, newMW.Status)
 		},
 	}
@@ -114,8 +112,6 @@ func ManagedClusterViewPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info(fmt.Sprintf("Update event for MCV %s/%s", oldMCV.Name, oldMCV.Namespace))
-
 			return !reflect.DeepEqual(oldMCV.Status, newMCV.Status)
 		},
 	}
@@ -140,7 +136,6 @@ func filterMCV(mcv *viewv1beta1.ManagedClusterView) []ctrl.Request {
 }
 
 func PlacementRulePredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("DRPCPredicate").WithName("UserPlRule")
 	usrPlRulePredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -152,8 +147,6 @@ func PlacementRulePredicateFunc() predicate.Funcs {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			log.Info("Delete event")
-
 			return true
 		},
 	}
@@ -178,7 +171,6 @@ func filterUsrPlRule(usrPlRule *plrv1.PlacementRule) []ctrl.Request {
 }
 
 func PlacementPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("DRPCPredicate").WithName("UserPlmnt")
 	usrPlmntPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -190,8 +182,6 @@ func PlacementPredicateFunc() predicate.Funcs {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			log.Info("Delete event")
-
 			return true
 		},
 	}
@@ -216,7 +206,6 @@ func filterUsrPlmnt(usrPlmnt *clrapiv1beta1.Placement) []ctrl.Request {
 }
 
 func DRClusterPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("DRPCPredicate").WithName("DRCluster")
 	drClusterPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -228,8 +217,6 @@ func DRClusterPredicateFunc() predicate.Funcs {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			log.Info("Update event")
-
 			drcOld, ok := e.ObjectOld.(*rmn.DRCluster)
 			if !ok {
 				return false
@@ -248,7 +235,6 @@ func DRClusterPredicateFunc() predicate.Funcs {
 }
 
 func DRPolicyPredicateFunc() predicate.Funcs {
-	log := ctrl.Log.WithName("DRPCPredicate").WithName("DRPolicy")
 	drPolicyPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -260,8 +246,6 @@ func DRPolicyPredicateFunc() predicate.Funcs {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			log.Info("Update event")
-
 			drpOld, ok := e.ObjectOld.(*rmn.DRPolicy)
 			if !ok {
 				return false
@@ -339,8 +323,6 @@ func (r *DRPlacementControlReconciler) FilterGlobalPeerDRPCs(
 	}
 
 	if len(drpcs.Items) == 0 {
-		log.V(1).Info("No DRPCs matched label, skipping enqueue")
-
 		return []ctrl.Request{}
 	}
 
@@ -735,10 +717,6 @@ func manifestWorkMapFunc() handler.EventHandler {
 				return nil
 			}
 
-			ctrl.Log.Info(
-				fmt.Sprintf("DRPC: Filtering ManifestWork (%s/%s)",
-					mw.Name, mw.Namespace))
-
 			return filterMW(mw)
 		},
 	)
@@ -752,8 +730,6 @@ func managedClusterViewMapFunc() handler.EventHandler {
 				return []reconcile.Request{}
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
-
 			return filterMCV(mcv)
 		}))
 }
@@ -765,8 +741,6 @@ func placementRuleMapFunc() handler.EventHandler {
 			if !ok {
 				return []reconcile.Request{}
 			}
-
-			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User PlacementRule (%s/%s)", usrPlRule.Name, usrPlRule.Namespace))
 
 			return filterUsrPlRule(usrPlRule)
 		}))
@@ -780,8 +754,6 @@ func placementMapFunc() handler.EventHandler {
 				return []reconcile.Request{}
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRPC: Filtering User Placement (%s/%s)", usrPlmnt.Name, usrPlmnt.Namespace))
-
 			return filterUsrPlmnt(usrPlmnt)
 		}))
 }
@@ -794,8 +766,6 @@ func (r *DRPlacementControlReconciler) drClusterMapFunc() handler.EventHandler {
 				return []reconcile.Request{}
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering DRCluster (%s)", drCluster.Name))
-
 			return r.FilterDRCluster(drCluster)
 		}))
 }
@@ -807,8 +777,6 @@ func (r *DRPlacementControlReconciler) drPolicyMapFunc() handler.EventHandler {
 			if !ok {
 				return []reconcile.Request{}
 			}
-
-			ctrl.Log.Info(fmt.Sprintf("DRPC Map: Filtering DRPolicy (%s)", drPolicy.Name))
 
 			return r.FilterDRPCsForDRPolicyUpdate(drPolicy)
 		}))

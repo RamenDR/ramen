@@ -2408,8 +2408,6 @@ func (r *VolumeReplicationGroupReconciler) filterGlobalVGRVRGs(
 	}
 
 	if len(vrgs.Items) == 0 {
-		log.V(1).Info("No VRGs matched label, skipping enqueue")
-
 		return []reconcile.Request{}
 	}
 
@@ -2442,8 +2440,6 @@ func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
 	// Get VRG owner information from VGR labels
 	ownerNamespace, ownerName, ok := util.OwnerNamespaceNameAndName(vgr.GetLabels())
 	if !ok {
-		log.V(1).Info("VGR does not have owner labels, skipping")
-
 		return req
 	}
 
@@ -2455,9 +2451,7 @@ func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
 	}
 
 	if err := r.Client.Get(context.TODO(), vrgNamespacedName, vrg); err != nil {
-		if k8serrors.IsNotFound(err) {
-			log.V(1).Info("VRG not found for VGR", "vrg", vrgNamespacedName)
-		} else {
+		if !k8serrors.IsNotFound(err) {
 			log.Error(err, "Failed to get VRG for VGR", "vrg", vrgNamespacedName)
 		}
 

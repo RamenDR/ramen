@@ -145,8 +145,6 @@ func (sp *secretPropagator) cleanup() error {
 		return err
 	}
 
-	sp.Log.V(1).Info("Secret propagation policy, pl binding and rule cleanup Complete")
-
 	return nil
 }
 
@@ -169,7 +167,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 
 	util.AddLabel(policy, util.CreatedByRamenLabel, "true")
 
-	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, policy, func() error {
+	_, err = ctrlutil.CreateOrUpdate(sp.Context, sp.Client, policy, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, policy, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference on policy")
 
@@ -196,8 +194,6 @@ func (sp *secretPropagator) reconcileSecretPropagationPolicy() error {
 
 		return fmt.Errorf("error creating or updating secret propagation policy (%w)", err)
 	}
-
-	sp.Log.V(1).Info("Secret propagation policy createOrUpdate Complete", "op", op)
 
 	return nil
 }
@@ -273,7 +269,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 		clustersToApply = append(clustersToApply, plrulev1.GenericClusterReference{Name: clusterName})
 	}
 
-	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementRule, func() error {
+	_, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementRule, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, placementRule, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference")
 
@@ -300,8 +296,6 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 		return fmt.Errorf("error creating or updating secret propagation placement rule (%w)", err)
 	}
 
-	sp.Log.V(1).Info("Secret propagation policy placementrule createOrUpdate Complete", "op", op)
-
 	return nil
 }
 
@@ -315,7 +309,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 
 	util.AddLabel(placementBinding, util.CreatedByRamenLabel, "true")
 
-	op, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementBinding, func() error {
+	_, err := ctrlutil.CreateOrUpdate(sp.Context, sp.Client, placementBinding, func() error {
 		if err := ctrl.SetControllerReference(sp.Owner, placementBinding, sp.Client.Scheme()); err != nil {
 			sp.Log.Error(err, "unable to set controller reference")
 
@@ -343,8 +337,6 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementBinding() error {
 
 		return fmt.Errorf("error creating or updating secret propagation placement binding (%w)", err)
 	}
-
-	sp.Log.V(1).Info("Secret propagation policy placementbinding createOrUpdate Complete", "op", op)
 
 	return nil
 }

@@ -213,7 +213,6 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 			return nil, !finalSyncComplete, err
 		}
 
-		log.V(1).Info("RGD not found, will use default RS specs")
 		// Fall back to default behavior if RGD not found
 		rsSpecsWithProtectedPVC = c.populateRSSMoverConfig()
 	} else {
@@ -372,8 +371,6 @@ func (c *cgHandler) populateRSSMoverConfig() []ramendrv1alpha1.VolSyncReplicatio
 func (c *cgHandler) buildRSSpecsFromRDSpecs(
 	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) []ramendrv1alpha1.VolSyncReplicationSourceSpec {
-	log := c.logger.WithName("buildRSSpecsFromRDSpecs")
-
 	rsSpecs := make([]ramendrv1alpha1.VolSyncReplicationSourceSpec, 0, len(rdSpecs))
 
 	for _, rdSpec := range rdSpecs {
@@ -398,8 +395,6 @@ func (c *cgHandler) buildRSSpecsFromRDSpecs(
 		}
 
 		rsSpecs = append(rsSpecs, rsSpec)
-
-		log.V(1).Info("Added RS spec for PVC", "PVC", pvcName)
 	}
 
 	return rsSpecs

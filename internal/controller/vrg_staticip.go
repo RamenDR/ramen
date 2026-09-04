@@ -378,9 +378,6 @@ func (v *VRGInstance) deleteResourceModifierCM(ctx context.Context, namespace st
 	err := v.reconciler.Get(ctx, key, cm)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			v.log.V(1).Info("ResourceModifier ConfigMap already deleted",
-				"namespace", namespace, "name", cmName)
-
 			return nil
 		}
 

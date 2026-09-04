@@ -163,12 +163,6 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	if skip {
-		v.log.Info("Skipping PVC for VolSync",
-			"PVC", pvc.Name,
-			"namespace", pvc.Namespace,
-			"reason", "not valid for unprotection",
-		)
-
 		return false
 	}
 
@@ -188,7 +182,6 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		rsSpec = *rsSpecInfo
 	}
 
-	v.log.Info("PVC has CG label?", "name", pvc.Name, "Labels", pvc.Labels)
 	cg, ok := v.getCGLablelFromPVC(&pvc, v.instance.Spec.RunFinalSync)
 
 	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
@@ -1130,8 +1123,6 @@ func (v *VRGInstance) getCGLablelFromPVC(pvc *corev1.PersistentVolumeClaim, fina
 	// annotations and use it from there. If the annotation is missing, we cannot safely
 	// proceed with the final sync.
 	if finalSync {
-		v.log.Info("The CG label is not found in the PVC's labels. Looking up in annotations", "PVC", pvc.Name)
-
 		if pvc.GetAnnotations() != nil {
 			cgLabelVal, ok = pvc.GetAnnotations()[util.ConsistencyGroupLabel]
 			if ok && cgLabelVal != "" {
@@ -1141,8 +1132,6 @@ func (v *VRGInstance) getCGLablelFromPVC(pvc *corev1.PersistentVolumeClaim, fina
 			}
 		}
 	}
-
-	v.log.Info("The CG label is not found", "PVC", pvc.Name)
 
 	return "", false
 }

@@ -99,8 +99,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return []reconcile.Request{}
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
-
 			return filterDRPC(drpc)
 		}))
 
@@ -113,8 +111,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return []reconcile.Request{}
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
-
 			return filterDRClusterMW(mw)
 		}))
 
@@ -126,8 +122,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if !ok {
 				return []reconcile.Request{}
 			}
-
-			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 			return filterDRClusterMCV(mcv)
 		}))
@@ -409,8 +403,6 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 //nolint:cyclop,funlen
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
 	var requeue bool
-
-	u.log.Info("create/update")
 
 	_, ramenConfig, err := ConfigMapGet(u.ctx, r.APIReader)
 	if err != nil {
@@ -794,8 +786,6 @@ func (u *drclusterInstance) statusUpdate() error {
 
 		return nil
 	}
-
-	u.log.Info(fmt.Sprintf("Nothing to update (%s/%s)", u.object.Name, u.object.Namespace))
 
 	return nil
 }

@@ -287,7 +287,7 @@ func GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(
 		return nil, err
 	}
 
-	logger.Info("GetVolumeSnapshotsOwnedByVolumeGroupSnapshot", "VolumeSnapshotList", volumeSnapshotList.Items)
+	logger.Info("GetVolumeSnapshotsOwnedByVolumeGroupSnapshot", "count", len(volumeSnapshotList.Items))
 
 	var volumeSnapshots []vsv1.VolumeSnapshot
 
