@@ -43,7 +43,9 @@ environment.
 1. Install the `kubectl` tool
 
    ```
-   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   version=$(curl --fail --silent --show-error --location https://dl.k8s.io/release/stable.txt)
+   curl --fail --silent --show-error --location --remote-name \
+       "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
    sudo install kubectl /usr/local/bin
    rm kubectl
    kubectl version --client
@@ -56,7 +58,9 @@ environment.
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh \
+       | bash -s 0.11.2'
    clusteradm version
    ```
 
@@ -68,7 +72,7 @@ environment.
 1. Install the `subctl` tool
 
    ```
-   curl -Ls https://get.submariner.io | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location https://get.submariner.io | bash'
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
    subctl version
@@ -81,7 +85,8 @@ environment.
 1. Install the `velero` tool
 
    ```
-   curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
+   curl --fail --silent --show-error --location --output velero.tar.gz \
+       https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
    tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
@@ -94,11 +99,13 @@ environment.
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-    HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
-    curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
-    sudo install helm /usr/local/bin
-    rm -f helm
-    helm version
+   HELM_VERSION=$(curl --fail --silent --show-error --location https://get.helm.sh/helm-latest-version)
+   bash -o pipefail -c "curl --fail --silent --show-error --location \
+       https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz \
+       | tar xz --strip 1 linux-amd64/helm"
+   sudo install helm /usr/local/bin
+   rm -f helm
+   helm version
    ```
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
@@ -107,7 +114,8 @@ environment.
 1. Install the `virtctl` tool
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
+   curl --fail --silent --show-error --location --output virtctl \
+       https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
    virtctl version
@@ -119,7 +127,8 @@ environment.
 1. Install `mc` tool
 
    ```
-   curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   curl --fail --silent --show-error --location --output mc \
+       https://dl.min.io/client/mc/release/linux-amd64/mc
    sudo install mc /usr/local/bin
    rm mc
    mc --version
@@ -131,7 +140,9 @@ environment.
 1. Install `kustomize` tool
 
    ```
-   curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh \
+       | bash'
    sudo install kustomize /usr/local/bin
    rm kustomize
    kustomize version
@@ -143,7 +154,8 @@ environment.
 1. Install the `argocd` tool
 
    ```
-   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v3.4.4/argocd-linux-amd64
+   curl --fail --silent --show-error --location --output argocd \
+       https://github.com/argoproj/argo-cd/releases/download/v3.4.4/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
    argocd version --client
@@ -155,8 +167,11 @@ environment.
 1. Install the `kubectl-gather` plugin
 
    ```
-   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
+   tag=$(curl --fail --silent --show-error --location --head -o /dev/null -w '%{url_effective}' \
+       https://github.com/nirs/kubectl-gather/releases/latest)
+   tag=${tag##*/}
+   curl --fail --silent --show-error --location --output kubectl-gather \
+       https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    kubectl gather --version
@@ -203,7 +218,9 @@ environment.
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh \
+       | bash -s 0.11.2'
    clusteradm version
    ```
 
@@ -215,7 +232,7 @@ environment.
 1. Install the `subctl` tool
 
    ```
-   curl -Ls https://get.submariner.io | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location https://get.submariner.io | bash'
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
    subctl version
@@ -228,8 +245,11 @@ environment.
 1. Install the `kubectl-gather` plugin
 
    ```
-   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
+   tag=$(curl --fail --silent --show-error --location --head -o /dev/null -w '%{url_effective}' \
+       https://github.com/nirs/kubectl-gather/releases/latest)
+   tag=${tag##*/}
+   curl --fail --silent --show-error --location --output kubectl-gather \
+       https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    kubectl gather --version

@@ -13,7 +13,14 @@ def test(cluster):
     cmd = ["minikube", "ip", "--profile", cluster]
     node_addr = subprocess.check_output(cmd).decode().rstrip()
 
-    cmd = ["curl", "--no-progress-meter", f"http://{node_addr}/"]
+    cmd = [
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        f"http://{node_addr}/",
+    ]
     out = subprocess.check_output(cmd).decode().rstrip()
 
     if "Welcome to nginx!" not in out:
