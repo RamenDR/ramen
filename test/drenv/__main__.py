@@ -40,16 +40,7 @@ width = options.terminal_width()
 def main():
     args = parse_args()
     configure_logging(args)
-    try:
-        git_info = git.info()
-        logging.debug(
-            "[main] Using git repo branch=%s commit=%s dirty=%s",
-            git_info["branch"],
-            git_info["commit"],
-            git_info["dirty"],
-        )
-    except commands.Error as e:
-        logging.debug("[main] git info not available: %s", e)
+    log_git_info()
     signal.signal(signal.SIGTERM, handle_termination_signal)
     become_process_group_leader()
     try:
@@ -548,6 +539,19 @@ def configure_logging(args):
         level=logging.DEBUG,
         handlers=[console, logfile],
     )
+
+
+def log_git_info():
+    try:
+        d = git.info()
+        logging.debug(
+            "[main] Using git repo branch=%s commit=%s dirty=%s",
+            d["branch"],
+            d["commit"],
+            d["dirty"],
+        )
+    except commands.Error as e:
+        logging.debug("[main] git info not available: %s", e)
 
 
 def shutdown_executors():
