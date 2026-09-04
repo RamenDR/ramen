@@ -6,6 +6,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +113,7 @@ func (v *VRGInstance) kubeObjectsProtect(
 	)
 }
 
+//nolint:funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	result *ctrl.Result,
 	captureToRecoverFrom *ramen.KubeObjectsCaptureIdentifier,
@@ -141,6 +143,18 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 
 		log.Info("Kube objects capture resume", "generation", generation)
 
+		// If VRG generation changed since the workflow started, reset step tracking
+		// to restart the workflow from the beginning with the new recipe/spec
+		startGeneration := captureToRecoverFrom.StartGeneration
+
+		currentGeneration := vrg.GetGeneration()
+		if startGeneration != currentGeneration {
+			log.Info("VRG generation changed during capture, resetting step tracking",
+				"startGeneration", startGeneration, "currentGeneration", currentGeneration,
+				"completedCaptureWorkflowSteps", v.instance.Status.KubeObjectProtection.CompletedCaptureWorkflowSteps)
+			v.instance.Status.KubeObjectProtection.CompletedCaptureWorkflowSteps = nil
+		}
+
 		v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName, namePrefix, veleroNamespaceName,
 			interval, generation, kubeobjects.RequestsMapKeyedByName(requests), log)
 
@@ -166,6 +180,9 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	generation := vrg.GetGeneration()
 
 	log.Info("Kube objects capture start", "generation", generation)
+
+	// Reset step tracking when starting a new capture
+	v.instance.Status.KubeObjectProtection.CompletedCaptureWorkflowSteps = nil
 
 	v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName,
 		namePrefix, veleroNamespaceName, interval, generation,
@@ -354,7 +371,17 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	labels := util.OwnerLabels(v.instance)
 	labels[util.VeleroKubevirtMetadataOnlyBackupLabel] = "true"
 
+	completedCaptureWorkflowSteps := v.instance.Status.KubeObjectProtection.CompletedCaptureWorkflowSteps
+
 	for groupNumber, captureGroup := range captureSteps {
+		stepName := captureGroup.Name
+
+		if slices.Contains(completedCaptureWorkflowSteps, stepName) {
+			log.Info("Skipping already completed capture workflow step", "step", stepName)
+
+			continue
+		}
+
 		var err error
 
 		var skip bool
@@ -367,7 +394,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		log1 := log.WithValues("group", groupNumber, "name", cg.Name)
 
 		if cg.IsHook {
-			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
+			isEssentialStep = isEssential(cg.Hook.Essential)
 
 			if skip, err = v.kubeObjectsHookExecute(cg.Hook, log1, failOn, isEssentialStep, &hooksSucceeded,
 				&anyHookFailed, &lastCaptureHookFailureMessage); skip {
@@ -376,7 +403,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		}
 
 		if !cg.IsHook {
-			isEssentialStep = cg.GroupEssential != nil && *cg.GroupEssential
+			isEssentialStep = isEssential(cg.GroupEssential)
 			loopCount, err = v.kubeObjectsGroupCapture(
 				result, cg, pathName, capturePathName, namePrefix, veleroNamespaceName,
 				labels, annotations, requests, log,
@@ -410,6 +437,10 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 				return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
 			}
 		}
+
+		if err := v.recordCompletedCaptureStep(stepName, log); err != nil {
+			return false, err
+		}
 	}
 
 	v.kubeObjectsHookWorkflowResult(hooksSucceeded, anyHookFailed,
@@ -422,6 +453,13 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	}
 
 	return allEssentialStepsFailed, nil
+}
+
+func (v *VRGInstance) recordCompletedCaptureStep(stepName string, log logr.Logger) error {
+	s := &v.instance.Status.KubeObjectProtection
+	s.CompletedCaptureWorkflowSteps = append(s.CompletedCaptureWorkflowSteps, stepName)
+
+	return v.persistWorkflowStepProgress(log)
 }
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
@@ -606,6 +644,16 @@ func (v *VRGInstance) kubeObjectsCaptureStatus(status metav1.ConditionStatus, re
 		Reason:             reason,
 		Message:            message,
 	}
+}
+
+func (v *VRGInstance) persistWorkflowStepProgress(log logr.Logger) error {
+	if err := v.reconciler.Status().Update(v.ctx, v.instance); err != nil {
+		log.Error(err, "Failed to persist workflow step progress")
+
+		return err
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) getVRGFromS3Profile(s3ProfileName string) (*ramen.VolumeReplicationGroup, error) {
@@ -838,7 +886,17 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 	labels := util.OwnerLabels(v.instance)
 
 	recoverSteps := v.recipeElements.RecoverWorkflow
+	completedRecoverWorkflowSteps := v.instance.Status.KubeObjectProtection.CompletedRecoverWorkflowSteps
+
 	for groupNumber, recoverGroup := range recoverSteps {
+		stepName := recoverStepName(groupNumber, recoverGroup)
+
+		if slices.Contains(completedRecoverWorkflowSteps, stepName) {
+			log.Info("Skipping already completed recover workflow step", "step", stepName)
+
+			continue
+		}
+
 		var err error
 
 		var skip bool
@@ -880,6 +938,10 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 			allEssentialStepsFailed = false
 			essentialStepsCount++
 		}
+
+		if err := v.recordCompletedRecoverStep(stepName, log); err != nil {
+			return false, err
+		}
 	}
 
 	v.kubeObjectsHookWorkflowResult(hooksSucceeded, anyHookFailed,
@@ -892,6 +954,31 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 	}
 
 	return allEssentialStepsFailed, nil
+}
+
+func recoverStepName(groupNumber int, rg kubeobjects.RecoverSpec) string {
+	prefix := strconv.Itoa(groupNumber) + "-"
+
+	if !rg.IsHook {
+		return prefix + rg.BackupName
+	}
+
+	if rg.Hook.Type == "check" {
+		return prefix + rg.Hook.Name + "-" + rg.Hook.Chk.Name
+	}
+
+	return prefix + rg.Hook.Name + "-" + rg.Hook.Op.Name
+}
+
+func (v *VRGInstance) recordCompletedRecoverStep(stepName string, log logr.Logger) error {
+	s := &v.instance.Status.KubeObjectProtection
+	s.CompletedRecoverWorkflowSteps = append(s.CompletedRecoverWorkflowSteps, stepName)
+
+	return v.persistWorkflowStepProgress(log)
+}
+
+func isEssential(essential *bool) bool {
+	return essential != nil && *essential
 }
 
 // function considers failOn and essential parameters and returns
