@@ -3744,12 +3744,9 @@ func (d *DRPCInstance) updateVRGStaticIPTranslationSpec(
 func (d *DRPCInstance) shouldInjectStaticIPTranslationSpec(
 	vrg *rmn.VolumeReplicationGroup,
 ) (bool, string) {
-	if !d.isVMRecipeInUse() {
-		return false, "VM recipe not in use"
-	}
-
+	// Check if we have any VMs with static IPs (regardless of recipe or protection type)
 	if len(d.instance.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs) == 0 {
-		return false, "VMs are not configured with static IP."
+		return false, "No VMs configured with static IP"
 	}
 
 	if vrg.Spec.ReplicationState != rmn.Secondary {
@@ -3765,10 +3762,6 @@ func (d *DRPCInstance) shouldInjectStaticIPTranslationSpec(
 // restore on secondary clusters and should not remain configured on the
 // promoted primary after failover/relocation.
 func (d *DRPCInstance) ResetVMStaticIPSpecOnPrimary(clusterName string) error {
-	if !d.isVMRecipeInUse() {
-		return nil
-	}
-
 	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {

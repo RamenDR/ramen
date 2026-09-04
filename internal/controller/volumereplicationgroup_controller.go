@@ -1667,10 +1667,31 @@ func (v *VRGInstance) reconcileAsPrimary() {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
 
-	if !v.result.Requeue && v.isVMRecipeProtection() {
+	// Discover VMs with static IPs for all discovered apps (any recipe, any namespace)
+	v.discoverStaticIPsForProtectedVMs()
+}
+
+// discoverStaticIPsForProtectedVMs performs VM static IP discovery for discovered apps.
+// For vm-recipe: validates VM list matches label selector, then discovers static IPs.
+// For other discovered apps: scans namespaces for VMs with static IPs.
+func (v *VRGInstance) discoverStaticIPsForProtectedVMs() {
+	if v.result.Requeue || !v.isDiscoveredApp() {
+		return
+	}
+
+	if v.isVMRecipeProtection() {
+		// vm-recipe: validate VM list matches label selector, then discover static IPs
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.result.Requeue = true
 		}
+
+		return
+	}
+
+	// All other discovered apps: scan namespaces for VMs with static IPs
+	if err := v.discoverAndValidateStaticIPsForAllProtectedVMs(); err != nil {
+		v.log.Error(err, "Failed to discover static IPs for protected VMs")
+		v.result.Requeue = true
 	}
 }
 
@@ -3003,6 +3024,192 @@ func (v *VRGInstance) validateAndRecordStaticIPDiscovery(vmList []string, vmName
 		"totalVMs", len(infos), "staticIPVMs", len(resources))
 
 	return nil
+}
+
+// discoverAndValidateStaticIPsForAllProtectedVMs performs VM static IP discovery
+// for discovered apps (non-vm-recipe). Handles three scenarios:
+//
+// 1. Namespace-level with kubeObjectSelector: filters VMs by kubeObjectSelector
+// 2. Custom recipe with RecipeParameters[K8SLabelSelector]: filters VMs by recipe selector
+// 3. Pure namespace-level: discovers all VMs in ProtectedNamespaces
+//
+// Note: vm-recipe is handled separately by validateVMsForStandaloneProtection()
+func (v *VRGInstance) discoverAndValidateStaticIPsForAllProtectedVMs() error {
+	// Only run on Primary during steady state
+	if v.instance.Spec.ReplicationState != ramendrv1alpha1.Primary {
+		return nil
+	}
+
+	if v.IsDRActionInProgress() {
+		return nil
+	}
+
+	// Determine which namespaces to scan
+	namespacesToScan := v.getProtectedNamespaces()
+	if len(namespacesToScan) == 0 {
+		v.log.Info("No protected namespaces found; skipping VM static IP discovery")
+
+		return nil
+	}
+
+	// Discover VMs based on protection type
+	allVMs, err := v.discoverVMsBasedOnProtectionType(namespacesToScan)
+	if err != nil {
+		return fmt.Errorf("failed to discover VMs in protected namespaces: %w", err)
+	}
+
+	if len(allVMs) == 0 {
+		v.log.Info("No VMs found matching protection criteria")
+		// Clear any previous discovery status
+		v.instance.Status.StaticIPDiscoveryStatus = nil
+
+		return nil
+	}
+
+	// Extract VM names and namespaces for validation
+	vmNames := make([]string, 0, len(allVMs))
+	vmNamespaces := make([]string, 0, len(allVMs))
+
+	for _, vm := range allVMs {
+		vmNames = append(vmNames, vm.Name)
+		vmNamespaces = append(vmNamespaces, vm.Namespace)
+	}
+
+	// Validate and record static IPs (filters to only VMs with static IP annotations)
+	return v.validateAndRecordStaticIPDiscovery(vmNames, vmNamespaces)
+}
+
+// discoverVMsBasedOnProtectionType discovers VMs based on the protection configuration:
+// Priority order:
+// 1. vm-recipe: handled separately (should not reach here)
+// 2. Custom recipe with K8SLabelSelector: filter by recipe label selector
+// 3. Namespace-level with kubeObjectSelector: filter by kubeObjectSelector
+// 4. Pure namespace-level: discover all VMs
+func (v *VRGInstance) discoverVMsBasedOnProtectionType(namespaces []string) ([]virtv1.VirtualMachine, error) {
+	// Safety check: vm-recipe should be handled by validateVMsForStandaloneProtection()
+	if v.isVMRecipeProtection() {
+		v.log.Info("vm-recipe protection detected but should have been handled earlier")
+
+		return nil, fmt.Errorf("vm-recipe should be handled by validateVMsForStandaloneProtection")
+	}
+
+	// Priority 1: Check for custom recipe with K8SLabelSelector in RecipeParameters
+	recipeLabelSelectors := v.getRecipeLabelSelectors()
+	if len(recipeLabelSelectors) > 0 {
+		v.log.Info("Custom recipe protection: discovering VMs by recipe label selector",
+			"namespaces", namespaces, "labelSelectors", recipeLabelSelectors)
+
+		return v.discoverVMsByRecipeLabelSelector(namespaces, recipeLabelSelectors)
+	}
+
+	// Priority 2: Check for kubeObjectSelector (namespace-level protection)
+	kubeObjectSelector := v.getKubeObjectSelector()
+	if kubeObjectSelector != nil {
+		v.log.Info("Namespace-level protection: discovering VMs by kubeObjectSelector",
+			"namespaces", namespaces, "selector", kubeObjectSelector)
+
+		return v.discoverVMsByKubeObjectSelector(namespaces, kubeObjectSelector)
+	}
+
+	// Priority 3: Pure namespace-level protection without selectors
+	v.log.Info("Pure namespace-level protection: discovering all VMs", "namespaces", namespaces)
+
+	return util.ListAllVMsInNamespaces(v.ctx, v.reconciler.Client, v.log, namespaces)
+}
+
+// getRecipeLabelSelectors returns K8SLabelSelector from RecipeParameters if present.
+// This is used by custom recipes to filter which VMs to protect.
+func (v *VRGInstance) getRecipeLabelSelectors() []string {
+	if v.instance.Spec.KubeObjectProtection == nil ||
+		v.instance.Spec.KubeObjectProtection.RecipeParameters == nil {
+		return nil
+	}
+
+	return v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.K8SLabelSelector]
+}
+
+// getKubeObjectSelector returns the kubeObjectSelector from KubeObjectProtection if present.
+// This is used by namespace-level protection to filter which resources to protect.
+func (v *VRGInstance) getKubeObjectSelector() *metav1.LabelSelector {
+	if v.instance.Spec.KubeObjectProtection == nil {
+		return nil
+	}
+
+	return v.instance.Spec.KubeObjectProtection.KubeObjectSelector
+}
+
+// discoverVMsByRecipeLabelSelector discovers VMs matching the recipe's K8SLabelSelector.
+// Used by custom recipes that specify label selectors in RecipeParameters.
+func (v *VRGInstance) discoverVMsByRecipeLabelSelector(
+	namespaces []string,
+	labelSelectors []string,
+) ([]virtv1.VirtualMachine, error) {
+	return util.DiscoverVMsByRecipeLabelSelector(v.ctx, v.reconciler.Client, v.log,
+		labelSelectors, namespaces)
+}
+
+// discoverVMsByKubeObjectSelector discovers VMs matching the kubeObjectSelector.
+// Used by namespace-level protection with label-based filtering.
+func (v *VRGInstance) discoverVMsByKubeObjectSelector(
+	namespaces []string,
+	selector *metav1.LabelSelector,
+) ([]virtv1.VirtualMachine, error) {
+	var allVMs []virtv1.VirtualMachine
+
+	// Convert metav1.LabelSelector to client.ListOptions
+	labelSelector, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert kubeObjectSelector to selector: %w", err)
+	}
+
+	for _, ns := range namespaces {
+		vmList := &virtv1.VirtualMachineList{}
+		listOptions := []client.ListOption{
+			client.InNamespace(ns),
+			client.MatchingLabelsSelector{Selector: labelSelector},
+		}
+
+		if err := v.reconciler.Client.List(v.ctx, vmList, listOptions...); err != nil {
+			return nil, fmt.Errorf("failed to list VMs in namespace %s with kubeObjectSelector: %w", ns, err)
+		}
+
+		v.log.Info("Found VMs matching kubeObjectSelector",
+			"namespace", ns, "count", len(vmList.Items))
+		allVMs = append(allVMs, vmList.Items...)
+	}
+
+	return allVMs, nil
+}
+
+// getProtectedNamespaces returns the list of namespaces being protected,
+// handling both vm-recipe (RecipeParameters) and namespace-level protection.
+func (v *VRGInstance) getProtectedNamespaces() []string {
+	namespaces := make(map[string]struct{})
+
+	// Check ProtectedNamespaces (namespace-level protection, custom recipes)
+	if v.instance.Spec.ProtectedNamespaces != nil {
+		for _, ns := range *v.instance.Spec.ProtectedNamespaces {
+			namespaces[ns] = struct{}{}
+		}
+	}
+
+	// Check RecipeParameters (vm-recipe, custom recipes)
+	if v.instance.Spec.KubeObjectProtection != nil &&
+		v.instance.Spec.KubeObjectProtection.RecipeParameters != nil {
+		if vmNamespaces, ok := v.instance.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]; ok {
+			for _, ns := range vmNamespaces {
+				namespaces[ns] = struct{}{}
+			}
+		}
+	}
+
+	// Convert to slice
+	result := make([]string, 0, len(namespaces))
+	for ns := range namespaces {
+		result = append(result, ns)
+	}
+
+	return result
 }
 
 // ValidateStaticIPNetworkMapping inspects every protected VM in the VRG and
