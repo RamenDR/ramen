@@ -75,3 +75,47 @@ func WaitWorkloadHealth(ctx types.TestContext, cluster *types.Cluster) error {
 		}
 	}
 }
+
+func WaitWorkloadAbsent(ctx types.TestContext, cluster *types.Cluster) error {
+	log := ctx.Logger()
+	w := ctx.Workload()
+	start := time.Now()
+
+	log.Debugf("Waiting until workload \"%s/%s\" is removed from cluster %q",
+		ctx.AppNamespace(), w.GetAppName(), cluster.Name)
+
+	for {
+		absent, err := workloadAbsentOnCluster(ctx, cluster)
+		if err != nil {
+			return err
+		}
+
+		if absent {
+			elapsed := time.Since(start)
+			log.Debugf("Workload \"%s/%s\" removed from cluster %q in %.3f seconds",
+				ctx.AppNamespace(), w.GetAppName(), cluster.Name, elapsed.Seconds())
+
+			return nil
+		}
+
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return fmt.Errorf("workload \"%s/%s\" still present on cluster %q: %w",
+				ctx.AppNamespace(), w.GetAppName(), cluster.Name, err)
+		}
+	}
+}
+
+func workloadAbsentOnCluster(ctx types.TestContext, cluster *types.Cluster) (bool, error) {
+	statuses, err := ctx.Workload().Status(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	for _, status := range statuses {
+		if status.ClusterName == cluster.Name {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
