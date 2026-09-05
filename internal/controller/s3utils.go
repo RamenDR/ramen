@@ -256,7 +256,7 @@ func (s *s3ObjectStore) HeadBucket() error {
 		Bucket: &s.s3Bucket,
 	})
 	if err != nil {
-		return processAwsError(fmt.Errorf("bucket %s does not exist or is not accessible", s.s3Bucket), err)
+		return processAwsError(fmt.Errorf("failed to head bucket %s", s.s3Bucket), err)
 	}
 
 	return nil
@@ -425,11 +425,21 @@ func DeleteTypedObject(s ObjectStorer, keyPrefix, keySuffix string, object inter
 
 func processAwsError(errMsgPrefix, err error) error {
 	var awsErr awserr.Error
-	if errors.As(err, &awsErr) {
-		return fmt.Errorf("%w: code: %s, message: %s", errMsgPrefix, awsErr.Code(), awsErr.Message())
+	if !errors.As(err, &awsErr) {
+		if err != nil {
+			return fmt.Errorf("%w: %w", errMsgPrefix, err)
+		}
+
+		return errMsgPrefix
 	}
 
-	return errMsgPrefix
+	if orig := awsErr.OrigErr(); orig != nil {
+		return fmt.Errorf("%w: code: %s, message: %s, orig: %v",
+			errMsgPrefix, awsErr.Code(), awsErr.Message(), orig)
+	}
+
+	return fmt.Errorf("%w: code: %s, message: %s",
+		errMsgPrefix, awsErr.Code(), awsErr.Message())
 }
 
 // UploadObject uploads the given object to the bucket with the given key.
