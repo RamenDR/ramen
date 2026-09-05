@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
+	config "k8s.io/component-base/config/v1alpha1"
 	ocmv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -102,6 +103,7 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		baseNFC, nfc1, nfc2               *csiaddonsv1alpha1.NetworkFenceClass
 		baseCSIAddonsNode, csiAddonsNode1 *csiaddonsv1alpha1.CSIAddonsNode
 		classes                           Classes
+		ramenConfig                       *ramen.RamenConfig
 	)
 
 	BeforeAll(func() {
@@ -143,6 +145,32 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 
 		ramencontrollers.ControllerType = ramen.DRHubType
 
+		By("Defining a ramen configuration")
+
+		ramenConfig = &ramen.RamenConfig{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "RamenConfig",
+				APIVersion: ramen.GroupVersion.String(),
+			},
+			LeaderElection: &config.LeaderElectionConfiguration{
+				LeaderElect:  new(bool),
+				ResourceName: ramencontrollers.HubLeaderElectionResourceName,
+			},
+			Metrics: ramen.ControllerMetrics{
+				BindAddress: "0", // Disable metrics
+			},
+			RamenControllerType: ramen.DRHubType,
+		}
+		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
+		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
+		configMap, err := ramencontrollers.ConfigMapNew(
+			ramenNamespace,
+			ramencontrollers.HubOperatorConfigMapName,
+			ramenConfig,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Create(context.TODO(), configMap)).To(Succeed())
+
 		By("starting the DRClusterConfig reconciler")
 
 		options := manager.Options{
@@ -169,11 +197,12 @@ var _ = Describe("DRClusterConfigControllerTests", Ordered, func() {
 		util.ForcePrivateVGSAPIForTesting()
 
 		Expect((&ramencontrollers.DRClusterConfigReconciler{
-			Client:      k8sManager.GetClient(),
-			Scheme:      k8sManager.GetScheme(),
-			Log:         ctrl.Log.WithName("controllers").WithName("DRClusterConfig"),
-			RateLimiter: &rateLimiter,
-			APIReader:   k8sManager.GetAPIReader(),
+			Client:            k8sManager.GetClient(),
+			Scheme:            k8sManager.GetScheme(),
+			Log:               ctrl.Log.WithName("controllers").WithName("DRClusterConfig"),
+			RateLimiter:       &rateLimiter,
+			APIReader:         k8sManager.GetAPIReader(),
+			ObjectStoreGetter: fakeObjectStoreGetter{},
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())
