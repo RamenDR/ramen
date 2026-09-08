@@ -163,12 +163,6 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 	}
 
 	if skip {
-		v.log.Info("Skipping PVC for VolSync",
-			"PVC", pvc.Name,
-			"namespace", pvc.Namespace,
-			"reason", "not valid for unprotection",
-		)
-
 		return false
 	}
 
@@ -188,7 +182,6 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		rsSpec = *rsSpecInfo
 	}
 
-	v.log.Info("PVC has CG label?", "name", pvc.Name, "Labels", pvc.Labels)
 	cg, ok := v.getCGLablelFromPVC(&pvc, v.instance.Spec.RunFinalSync)
 
 	isCGEnabled := ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader)
@@ -370,7 +363,13 @@ func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 		}
 
 		v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
-		v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
+		names := make([]string, 0, len(v.instance.Status.ProtectedPVCs))
+
+		for _, pvc := range v.instance.Status.ProtectedPVCs {
+			names = append(names, pvc.Namespace+"/"+pvc.Name)
+		}
+
+		v.log.Info("Protected PVCs left", "count", len(names), "names", names)
 
 		if requeue := v.updateWorkloadActivityAsSecondary(); requeue {
 			v.log.Info("Workload is still active, requeueing for VolSync reconciliation as Secondary")

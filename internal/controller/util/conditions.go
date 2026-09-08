@@ -29,10 +29,6 @@ func GenericStatusConditionSet(
 			condition.Reason == reason &&
 			condition.Message == message &&
 			condition.ObservedGeneration == generation {
-			log.Info("condition unchanged", "type", conditionType,
-				"status", status, "reason", reason, "message", message, "generation", generation,
-			)
-
 			return !updated
 		}
 

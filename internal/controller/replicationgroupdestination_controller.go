@@ -68,8 +68,6 @@ func (r *ReplicationGroupDestinationReconciler) getRGDConfig(
 	done bool,
 	err error,
 ) {
-	logger.Info("Get ReplicationGroupDestination")
-
 	rgd = &ramendrv1alpha1.ReplicationGroupDestination{}
 	if err = r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
 		if !k8serrors.IsNotFound(err) {
@@ -84,8 +82,6 @@ func (r *ReplicationGroupDestinationReconciler) getRGDConfig(
 
 		return nil, nil, nil, true, nil
 	}
-
-	logger.Info("Get vrg from ReplicationGroupDestination")
 
 	vrg = &ramendrv1alpha1.VolumeReplicationGroup{}
 	if err = r.Client.Get(ctx, types.NamespacedName{
@@ -103,8 +99,6 @@ func (r *ReplicationGroupDestinationReconciler) getRGDConfig(
 
 		return nil, nil, nil, true, nil
 	}
-
-	logger.Info("Get ramen config from configmap")
 
 	_, ramenConfig, err = ConfigMapGet(ctx, r.Client)
 	if err != nil {
@@ -126,8 +120,6 @@ func (r *ReplicationGroupDestinationReconciler) runRGDReconcile(
 ) (ctrl.Result, error) {
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
-
-	logger.Info("Run ReplicationGroupDestination state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 
 	result, err := statemachine.Run(
 		ctx,

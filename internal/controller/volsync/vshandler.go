@@ -106,9 +106,7 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 	}
 
 	vrg, ok := owner.(*ramendrv1alpha1.VolumeReplicationGroup)
-	if !ok {
-		log.Info("VolumeReplicationGroup(PVC) map function received non-VRG resource")
-	} else {
+	if ok {
 		vsHandler.moverConfig = append([]ramendrv1alpha1.MoverConfig(nil), vrg.Spec.VolSync.MoverConfig...)
 	}
 

@@ -389,6 +389,8 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		// this. If not found, then reconcile request would not be sent
 		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
+			log1.Error(err, "Failed to convert PVC label selector", "vrg", vrg.Name)
+
 			continue
 		}
 
@@ -655,7 +657,19 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to get recipe", false)
 	}
 
-	v.log.Info("Recipe", "elements", v.recipeElements)
+	captureNames := make([]string, 0, len(v.recipeElements.CaptureWorkflow))
+
+	for _, step := range v.recipeElements.CaptureWorkflow {
+		captureNames = append(captureNames, step.Name)
+	}
+
+	v.log.Info("Recipe",
+		"namespaces", v.recipeElements.PvcSelector.NamespaceNames,
+		"captureSteps", captureNames,
+		"recoverSteps", len(v.recipeElements.RecoverWorkflow),
+		"captureFailOn", v.recipeElements.CaptureFailOn,
+		"restoreFailOn", v.recipeElements.RestoreFailOn,
+	)
 
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
@@ -1946,9 +1960,6 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 
 		return result
 	}
-
-	v.log.Info(fmt.Sprintf("Nothing to update VolRep pvccount (%d), VolSync pvccount(%d)",
-		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	return result
 }
