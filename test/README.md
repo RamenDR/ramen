@@ -38,7 +38,8 @@ environment.
    minikube version
    ```
 
-   Tested with version v1.38.0.
+   **NOTE**: minikube version 1.39.0 or later is required, latest version is
+   recommended. Tested with version v1.39.0.
 
 1. Install the `kubectl` tool
 
@@ -51,7 +52,7 @@ environment.
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.34.1.
+   Tested with version v1.37.0.
 
 1. Install the `clusteradm` tool
 
@@ -189,7 +190,7 @@ environment.
        virtctl
    ```
 
-   **NOTE**: minikube version 1.38.0 or later is required, latest version is
+   **NOTE**: minikube version 1.39.0 or later is required, latest version is
    recommended.
 
 1. Install `vmnet-helper`
