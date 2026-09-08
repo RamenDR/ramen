@@ -8,8 +8,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
@@ -172,5 +174,176 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 			Expect(err).To(BeNil())
 			Expect(converted).To(Equal(targetRecoverSpec))
 		})
+	})
+})
+
+func vrgCond(typ string, status metav1.ConditionStatus, reason string) metav1.Condition {
+	return metav1.Condition{
+		Type:               typ,
+		Status:             status,
+		Reason:             reason,
+		Message:            reason,
+		ObservedGeneration: 1,
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+func pvcWithReplicationHealthy(namespace, name string, status metav1.ConditionStatus, reason, message string,
+) rmn.ProtectedPVC {
+	return rmn.ProtectedPVC{
+		Namespace: namespace,
+		Name:      name,
+		Conditions: []metav1.Condition{{
+			Type:               VRGConditionTypeReplicationHealthy,
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: 1,
+		}},
+	}
+}
+
+func vrgInstanceWithPVCs(pvcs ...rmn.ProtectedPVC) *VRGInstance {
+	return &VRGInstance{
+		instance: &rmn.VolumeReplicationGroup{
+			ObjectMeta: metav1.ObjectMeta{Generation: 1},
+			Status: rmn.VolumeReplicationGroupStatus{
+				ProtectedPVCs: pvcs,
+			},
+		},
+	}
+}
+
+func healthyPrimaryVRG() *rmn.VolumeReplicationGroup {
+	const generation int64 = 1
+
+	return &rmn.VolumeReplicationGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: "app-vrg", Namespace: "app-ns", Generation: generation},
+		Spec: rmn.VolumeReplicationGroupSpec{
+			ReplicationState: rmn.Primary,
+		},
+		Status: rmn.VolumeReplicationGroupStatus{
+			ObservedGeneration: generation,
+			State:              rmn.PrimaryState,
+			Conditions: []metav1.Condition{
+				vrgCond(VRGConditionTypeClusterDataReady, metav1.ConditionTrue, VRGConditionReasonReady),
+				vrgCond(VRGConditionTypeDataReady, metav1.ConditionTrue, VRGConditionReasonReady),
+				vrgCond(VRGConditionTypeDataProtected, metav1.ConditionTrue, VRGConditionReasonDataProtected),
+				vrgCond(VRGConditionTypeNoClusterDataConflict, metav1.ConditionTrue,
+					VRGConditionReasonNoConflictDetected),
+				vrgCond(VRGConditionTypeClusterDataProtected, metav1.ConditionTrue, VRGConditionReasonUploaded),
+			},
+		},
+	}
+}
+
+var _ = Describe("aggregateVolRepReplicationHealthyCondition", func() {
+	It("returns nil when no ProtectedPVC reports ReplicationHealthy", func() {
+		v := vrgInstanceWithPVCs(rmn.ProtectedPVC{Name: "pvc-a", Namespace: "ns"})
+		Expect(v.aggregateVolRepReplicationHealthyCondition()).To(BeNil())
+	})
+
+	It("returns True when every reported PVC is replicating", func() {
+		v := vrgInstanceWithPVCs(
+			pvcWithReplicationHealthy("ns-a", "pvc-a", metav1.ConditionTrue, VRGConditionReasonReady, "replicating"),
+			pvcWithReplicationHealthy("ns-b", "pvc-b", metav1.ConditionTrue, VRGConditionReasonReady, "replicating"),
+		)
+
+		cond := v.aggregateVolRepReplicationHealthyCondition()
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal(VRGConditionReasonReady))
+	})
+
+	It("returns False when any PVC is not replicating", func() {
+		v := vrgInstanceWithPVCs(
+			pvcWithReplicationHealthy("ns-a", "pvc-a", metav1.ConditionTrue, VRGConditionReasonReady, "replicating"),
+			pvcWithReplicationHealthy("ns-b", "pvc-b", metav1.ConditionFalse, VRGConditionReasonError, "mirror down"),
+		)
+
+		cond := v.aggregateVolRepReplicationHealthyCondition()
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(VRGConditionReasonError))
+		Expect(cond.Message).To(ContainSubstring("pvc-b"))
+		Expect(cond.Message).To(ContainSubstring("mirror down"))
+	})
+
+	It("prefers False over Unknown", func() {
+		v := vrgInstanceWithPVCs(
+			pvcWithReplicationHealthy("ns-a", "pvc-a", metav1.ConditionUnknown, VRGConditionReasonErrorUnknown, "unknown"),
+			pvcWithReplicationHealthy("ns-b", "pvc-b", metav1.ConditionFalse, VRGConditionReasonError, "mirror down"),
+		)
+
+		cond := v.aggregateVolRepReplicationHealthyCondition()
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(VRGConditionReasonError))
+	})
+
+	It("skips VolSync PVCs", func() {
+		volsyncPVC := pvcWithReplicationHealthy("ns-vs", "pvc-vs", metav1.ConditionFalse, VRGConditionReasonError, "ignored")
+		volsyncPVC.ProtectedByVolSync = true
+		v := vrgInstanceWithPVCs(volsyncPVC)
+		Expect(v.aggregateVolRepReplicationHealthyCondition()).To(BeNil())
+	})
+})
+
+var _ = Describe("updateDRPCProtectedCondition ReplicationHealthy", func() {
+	protectedCondition := func(drpc *rmn.DRPlacementControl) *metav1.Condition {
+		return meta.FindStatusCondition(drpc.Status.Conditions, rmn.ConditionProtected)
+	}
+
+	It("keeps Protected True when ReplicationHealthy is missing", func() {
+		drpc := &rmn.DRPlacementControl{ObjectMeta: metav1.ObjectMeta{Name: "drpc", Namespace: "ns", Generation: 1}}
+		updateDRPCProtectedCondition(drpc, healthyPrimaryVRG(), "cluster-1")
+
+		cond := protectedCondition(drpc)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal(rmn.ReasonProtected))
+	})
+
+	It("keeps Protected True when ReplicationHealthy is True", func() {
+		drpc := &rmn.DRPlacementControl{ObjectMeta: metav1.ObjectMeta{Name: "drpc", Namespace: "ns", Generation: 1}}
+		vrg := healthyPrimaryVRG()
+		vrg.Status.Conditions = append(vrg.Status.Conditions,
+			vrgCond(VRGConditionTypeReplicationHealthy, metav1.ConditionTrue, VRGConditionReasonReady))
+
+		updateDRPCProtectedCondition(drpc, vrg, "cluster-1")
+
+		cond := protectedCondition(drpc)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal(rmn.ReasonProtected))
+	})
+
+	It("sets Protected False when ReplicationHealthy is False", func() {
+		drpc := &rmn.DRPlacementControl{ObjectMeta: metav1.ObjectMeta{Name: "drpc", Namespace: "ns", Generation: 1}}
+		vrg := healthyPrimaryVRG()
+		vrg.Status.Conditions = append(vrg.Status.Conditions,
+			vrgCond(VRGConditionTypeReplicationHealthy, metav1.ConditionFalse, VRGConditionReasonError))
+
+		updateDRPCProtectedCondition(drpc, vrg, "cluster-1")
+
+		cond := protectedCondition(drpc)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(rmn.ReasonProtectedError))
+		Expect(cond.Message).To(ContainSubstring("replication health"))
+	})
+
+	It("sets Protected Unknown when ReplicationHealthy is Unknown", func() {
+		drpc := &rmn.DRPlacementControl{ObjectMeta: metav1.ObjectMeta{Name: "drpc", Namespace: "ns", Generation: 1}}
+		vrg := healthyPrimaryVRG()
+		vrg.Status.Conditions = append(vrg.Status.Conditions,
+			vrgCond(VRGConditionTypeReplicationHealthy, metav1.ConditionUnknown, VRGConditionReasonErrorUnknown))
+
+		updateDRPCProtectedCondition(drpc, vrg, "cluster-1")
+
+		cond := protectedCondition(drpc)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+		Expect(cond.Reason).To(Equal(rmn.ReasonProtectedUnknown))
 	})
 })

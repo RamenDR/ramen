@@ -451,6 +451,15 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 		ObservedGeneration: vrg.Generation,
 	})
 
+	vrg.Status.Conditions = append(vrg.Status.Conditions, metav1.Condition{
+		Type:               controllers.VRGConditionTypeReplicationHealthy,
+		Reason:             controllers.VRGConditionReasonReady,
+		Status:             metav1.ConditionTrue,
+		Message:            "Replication healthy",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: vrg.Generation,
+	})
+
 	t := metav1.Now()
 	vrg.Status.LastGroupSyncTime = &t
 
