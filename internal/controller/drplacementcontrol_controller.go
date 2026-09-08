@@ -2376,7 +2376,7 @@ func getApplicationDestinationNamespace(
 		if len(appSet.Spec.Generators) > 0 &&
 			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
 			name := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
-			if name == placement.GetName() {
+			if name == placement.GetName() && appSet.Namespace == placement.GetNamespace() {
 				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
 				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
