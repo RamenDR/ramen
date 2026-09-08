@@ -8,12 +8,9 @@ package controllers
 //
 // # ConfigMap contract
 //
-// The DRPC carries an annotation:
-//
-//	drplacementcontrol.ramendr.openshift.io/network-mapping: "<configmap-name>"
-//
-// That annotation references a ConfigMap in the same namespace as the DRPC.
-// The ConfigMap's "mappings.yaml" data key contains a YAML document.
+// The DRPolicy carries Spec.NetworkMappingRef, which points to a ConfigMap
+// in the same namespace as the DRPC. The ConfigMap's "mappings.yaml" data
+// key contains a YAML document.
 // Cluster names (dr1/dr2) come from drpolicy.spec.drClusters[0] and [1].
 //
 // # Schema — each block maps one NAD and may carry any combination of rules
@@ -260,7 +257,7 @@ func NewDRPCNetworkMappingManager(c client.Client, log logr.Logger) *DRPCNetwork
 }
 
 // LoadNetworkMapping returns the parsed NetworkMappingRules for the DRPC, or
-// (nil, nil) if the DRPC does not carry the annotation.
+// (nil, nil) if the DRPolicy does not define a networkMappingRef.
 //
 // drPolicy is required to resolve cluster names from drpolicy.spec.drClusters.
 func (m *DRPCNetworkMappingManager) LoadNetworkMapping(
@@ -277,7 +274,7 @@ func (m *DRPCNetworkMappingManager) LoadNetworkMapping(
 	}
 
 	if len(cmName) == 0 {
-		m.log.V(1).Info("DRPC has no network-mapping annotation; skipping",
+		m.log.V(1).Info("DRPolicy is not configured with networkMappingRef; skipping",
 			"drpc", drpc.Name)
 
 		return nil, nil
