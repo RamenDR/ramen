@@ -48,7 +48,11 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 	BeforeEach(func() {
 		volumeGroupSourceHandler = cephfscg.NewVolumeGroupSourceHandler(
-			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, nil, testLogger,
+			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName,
+			volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
+				&v1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+				internalController.DefaultVolSyncCopyMethod, false,
+			), testLogger,
 		)
 
 		CreatePVC(appPVCName)
