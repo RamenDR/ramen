@@ -67,9 +67,9 @@ LIBVIRT_DRIVERS = [
 TOOLS = [
     {
         "name": "minikube",
-        "version": "v1.38.1",
+        "version": "v1.39.0",
         "url": "https://github.com/kubernetes/minikube/releases/download/{version}/minikube-{goos}-{goarch}",
-        "digest": "099477eaf248bcb5bcea8ce78a2898e93ac01461c35189da1848c3de82ecd22e",
+        "digest": "b738496da01be06bbaf80c688f57ce25acd3849fbb518155f3a88e03ef555aa4",
         "verify": ["minikube", "version"],
     },
     {
@@ -85,9 +85,9 @@ TOOLS = [
     },
     {
         "name": "kubectl",
-        "version": "v1.36.1",
+        "version": "v1.37.0",
         "url": "https://dl.k8s.io/release/{version}/bin/{goos}/{goarch}/kubectl",
-        "digest": "629d3f410e09bf49b64ae7079f7f0bda1191efed311f7d37fdbab0ad5b0ec2b7",
+        "digest": "6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f",
         "verify": ["kubectl", "version", "--client"],
     },
     {
