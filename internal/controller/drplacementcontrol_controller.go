@@ -2374,6 +2374,10 @@ func getApplicationDestinationNamespace(
 	for i := range appSetList.Items {
 		appSet := &appSetList.Items[i]
 
+		if appSet.Namespace != placement.GetNamespace() {
+			continue
+		}
+
 		for j := range appSet.Spec.Generators {
 			if argocdv1alpha1hack.AppSetGeneratorMatchesPlacement(&appSet.Spec.Generators[j], placement.GetName()) {
 				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
