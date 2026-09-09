@@ -539,14 +539,16 @@ func allVRGPeerClassesOffloaded(vrgs map[string]*rmn.VolumeReplicationGroup) boo
 	found := false
 
 	for _, vrg := range vrgs {
-		if vrg.Spec.Async != nil {
-			for i := range vrg.Spec.Async.PeerClasses {
-				if !vrg.Spec.Async.PeerClasses[i].Offloaded {
-					return false
-				}
+		if vrg.Spec.Async == nil || len(vrg.Spec.Async.PeerClasses) == 0 {
+			return false
+		}
 
-				found = true
+		for i := range vrg.Spec.Async.PeerClasses {
+			if !vrg.Spec.Async.PeerClasses[i].Offloaded {
+				return false
 			}
+
+			found = true
 		}
 	}
 
