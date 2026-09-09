@@ -25,7 +25,7 @@ def exists(profile):
     return True
 
 
-def start(profile, verbose=False, timeout=None, local_registry=False):
+def start(profile, verbose=False, timeout=None, local_registry=False, dns_mode="auto"):
     start = time.monotonic()
     logging.info("[%s] Checking external cluster status", profile["name"])
 
@@ -45,7 +45,7 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     )
 
 
-def configure(profile, existing=False, dns_mode="auto"):
+def configure(profile, existing=False):
     logging.info("[%s] Skipping configure for external cluster", profile["name"])
 
 

@@ -63,7 +63,7 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False, timeout=None, local_registry=False):
+def start(profile, verbose=False, timeout=None, local_registry=False, dns_mode="auto"):
     start = time.monotonic()
     logging.info("[%s] Starting lima cluster", profile["name"])
 
@@ -100,7 +100,7 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
     )
 
 
-def configure(profile, existing=False, dns_mode="auto"):
+def configure(profile, existing=False):
     logging.info("[%s] Skipping configure for lima cluster", profile["name"])
 
 

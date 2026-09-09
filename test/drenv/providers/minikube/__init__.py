@@ -84,11 +84,32 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False, timeout=_START_TIMEOUT, local_registry=False):
+def start(
+    profile,
+    verbose=False,
+    timeout=_START_TIMEOUT,
+    local_registry=False,
+    dns_mode="auto",
+):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
 
     args = []
+
+    is_vm = profile["driver"] in ("kvm2", "vfkit")
+    if dns_mode == "auto":
+        dns_mode = "static" if is_vm and dns.is_managed_mac(profile) else "host"
+    if dns_mode == "static":
+        if is_vm:
+            args.extend(("--dns-servers", ",".join(dns.SERVERS)))
+        else:
+            logging.warning(
+                "[%s] static dns mode not supported for driver '%s'",
+                profile["name"],
+                profile["driver"],
+            )
+    elif dns_mode != "host":
+        raise RuntimeError(f"Invalid dns_mode '{dns_mode}'")
 
     if profile["driver"]:
         args.extend(("--driver", profile["driver"]))
@@ -157,15 +178,13 @@ def start(profile, verbose=False, timeout=_START_TIMEOUT, local_registry=False):
     )
 
 
-def configure(profile, existing=False, dns_mode="auto"):
+def configure(profile, existing=False):
     """
     Load configuration done in setup() before the minikube cluster was
     started.
 
     Must be called after the cluster is started, before running any addon.
     """
-    dns.configure(sys.modules[__name__], profile, dns_mode)
-
     if not existing:
         _copy_registry_mirrors(profile["name"])
         _configure_containerd(profile)
