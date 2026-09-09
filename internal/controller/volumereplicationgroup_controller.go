@@ -1819,7 +1819,7 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result := ctrl.Result{}
 
-	result.Requeue = v.HandleSecondaryConflictsAndCleanup() || result.Requeue
+	result.Requeue = v.ensureSecondaryState() || result.Requeue
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
