@@ -31,6 +31,59 @@ class FakeNetworkExtension:
 PROFILE = {"name": "test"}
 
 
+@pytest.mark.parametrize("driver", ["vfkit", "kvm2", "docker", "podman"])
+def test_servers_host(driver):
+    assert dns.servers({"name": "test", "driver": driver}, "host") == []
+
+
+@pytest.mark.parametrize("driver", ["vfkit", "kvm2"])
+def test_servers_static_vm(driver):
+    assert dns.servers({"name": "test", "driver": driver}, "static") == [
+        "8.8.8.8",
+        "1.1.1.1",
+    ]
+
+
+@pytest.mark.parametrize("driver", ["docker", "podman"])
+def test_servers_static_container(driver, caplog):
+    assert dns.servers({"name": "test", "driver": driver}, "static") == []
+    assert f"static dns mode not supported for driver '{driver}'" in caplog.text
+
+
+ACTIVE = True
+INACTIVE = False
+
+
+@requires_darwin
+@pytest.mark.parametrize(
+    "driver,active,servers",
+    [
+        pytest.param("vfkit", ACTIVE, list(dns.SERVERS), id="vfkit-active"),
+        pytest.param("vfkit", INACTIVE, [], id="vfkit-inactive"),
+        pytest.param("docker", ACTIVE, [], id="docker-active"),
+        pytest.param("docker", INACTIVE, [], id="docker-inactive"),
+        pytest.param("podman", ACTIVE, [], id="podman-active"),
+        pytest.param("podman", INACTIVE, [], id="podman-inactive"),
+    ],
+)
+def test_servers_auto_darwin(driver, active, servers, monkeypatch):
+    provider = FakeNetworkExtension(NetworkExtension(active=active, enabled=True))
+    monkeypatch.setattr(networkextension, "list_extensions", provider.list_extensions)
+    profile = {"name": "test", "driver": driver}
+    assert dns.servers(profile, "auto") == servers
+
+
+@requires_linux
+@pytest.mark.parametrize("driver", ["vfkit", "kvm2", "docker", "podman"])
+def test_servers_auto_linux(driver):
+    assert dns.servers({"name": "test", "driver": driver}, "auto") == []
+
+
+def test_servers_invalid_mode():
+    with pytest.raises(RuntimeError, match="Invalid dns_mode 'invalid'"):
+        dns.servers({"name": "test", "driver": "vfkit"}, "invalid")
+
+
 @requires_darwin
 def test_is_managed_mac_some_active_and_enabled():
     provider = FakeNetworkExtension(
