@@ -96,20 +96,9 @@ def start(
 
     args = []
 
-    is_vm = profile["driver"] in ("kvm2", "vfkit")
-    if dns_mode == "auto":
-        dns_mode = "static" if is_vm and dns.is_managed_mac(profile) else "host"
-    if dns_mode == "static":
-        if is_vm:
-            args.extend(("--dns-servers", ",".join(dns.SERVERS)))
-        else:
-            logging.warning(
-                "[%s] static dns mode not supported for driver '%s'",
-                profile["name"],
-                profile["driver"],
-            )
-    elif dns_mode != "host":
-        raise RuntimeError(f"Invalid dns_mode '{dns_mode}'")
+    dns_servers = dns.servers(profile, dns_mode)
+    if dns_servers:
+        args.extend(("--dns-servers", ",".join(dns_servers)))
 
     if profile["driver"]:
         args.extend(("--driver", profile["driver"]))

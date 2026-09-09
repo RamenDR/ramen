@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Detect managed Macs that need Minikube\'s --dns-servers startup option."""
+"""Select DNS servers for Minikube, including managed-Mac detection."""
 
 import logging
 import platform
@@ -12,6 +12,28 @@ from . import networkextension
 # - 8.8.8.8: Google Public DNS (https://developers.google.com/speed/public-dns)
 # - 1.1.1.1: Cloudflare DNS (https://1.1.1.1/)
 SERVERS = ("8.8.8.8", "1.1.1.1")
+
+
+def servers(profile, dns_mode):
+    """Return static DNS servers for this profile, or an empty list for host DNS.
+
+    Auto mode selects static DNS only for VM drivers on managed Macs.
+    Explicit static mode is supported for VM drivers on any host.
+    """
+    is_vm = profile["driver"] in ("kvm2", "vfkit")
+    if dns_mode == "auto":
+        dns_mode = "static" if is_vm and is_managed_mac(profile) else "host"
+    if dns_mode == "static":
+        if is_vm:
+            return list(SERVERS)
+        logging.warning(
+            "[%s] static dns mode not supported for driver '%s'",
+            profile["name"],
+            profile["driver"],
+        )
+    elif dns_mode != "host":
+        raise RuntimeError(f"Invalid dns_mode '{dns_mode}'")
+    return []
 
 
 def is_managed_mac(profile, provider=networkextension):
