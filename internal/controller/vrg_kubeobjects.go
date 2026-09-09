@@ -12,12 +12,14 @@ import (
 
 	"github.com/go-logr/logr"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/hooks"
@@ -1027,6 +1029,116 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 		result.Requeue = true
 
 		return err
+	}
+
+	return nil
+}
+
+// cleanupVeleroBackupsForSecondary removes Velero Backup CRs owned by THIS specific VRG.
+// S3 backup data is preserved because:
+//  1. Ramen creates Backup CRs without finalizers
+//  2. BackupSyncPeriod is disabled in BSL config, so Velero doesn't add gc-finalizers
+//  3. Deleting a Backup CR without finalizers only removes the CR, not S3 data
+//
+// This cleanup is executed BEFORE vrg.status.state transitions to Secondary, during the
+// reconciliation when vrg.spec.replicationState is Secondary. This is critical because once
+// the VRG achieves Secondary state, reconciliation frequency reduces, so cleanup must happen
+// during the transition to ensure CRs are removed.
+//
+// Applies to ALL discovered apps (vm-recipe, other kube object protection schemes).
+func (v *VRGInstance) cleanupVeleroBackupsForSecondary() error {
+	if v.kubeObjectProtectionDisabled("secondary-cleanup") {
+		return nil
+	}
+
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(v.instance)
+
+	v.log.Info("Starting velero backup cleanup for secondary",
+		"vrgNamespace", v.instance.GetNamespace(),
+		"vrgName", v.instance.GetName(),
+		"veleroNamespace", veleroNS,
+		"ownerLabels", labels)
+
+	backupList, err := v.listVeleroBackupsForVRG(veleroNS, labels)
+	if err != nil {
+		return err
+	}
+
+	// Early exit for idempotency - no backups to clean up
+	// This is expected when:
+	// - Backups were already cleaned up in a previous reconcile
+	// - No kube object protection backups were ever created
+	// - This is a PVC-only protection (no recipe/discovered app)
+	if len(backupList.Items) == 0 {
+		v.log.Info("No velero backup CRs to cleanup (already clean or not applicable)")
+
+		return nil
+	}
+
+	v.log.Info("Found velero backup CRs to cleanup",
+		"count", len(backupList.Items),
+		"vrgName", v.instance.GetName())
+
+	return v.deleteVeleroBackups(backupList)
+}
+
+// listVeleroBackupsForVRG lists all Velero Backup CRs owned by this VRG
+func (v *VRGInstance) listVeleroBackupsForVRG(veleroNS string, labels map[string]string) (*velero.BackupList, error) {
+	backupList := &velero.BackupList{}
+
+	listOpts := []client.ListOption{
+		client.InNamespace(veleroNS),
+		client.MatchingLabels(labels),
+	}
+
+	if err := v.reconciler.Client.List(v.ctx, backupList, listOpts...); err != nil {
+		v.log.Error(err, "Failed to list velero backups for cleanup")
+
+		return nil, err
+	}
+
+	return backupList, nil
+}
+
+// deleteVeleroBackups deletes backup CRs. S3 data is preserved because Ramen creates
+// Backup CRs without finalizers and BackupSyncPeriod is disabled in BSL configuration.
+// The backupList is already filtered by label selector to contain only backups owned by this VRG.
+func (v *VRGInstance) deleteVeleroBackups(backupList *velero.BackupList) error {
+	deletedCount := 0
+	errorCount := 0
+
+	for i := range backupList.Items {
+		backup := &backupList.Items[i]
+		backupName := backup.GetName()
+
+		if err := v.reconciler.Client.Delete(v.ctx, backup); err != nil {
+			if !k8serrors.IsNotFound(err) {
+				v.log.Error(err, "Failed to delete backup CR", "backup", backupName)
+
+				errorCount++
+
+				continue
+			}
+			// Already deleted - idempotent
+			v.log.Info("Backup CR already deleted", "backup", backupName)
+		}
+
+		v.log.Info("Successfully deleted backup CR",
+			"backup", backupName,
+			"vrgOwner", v.instance.GetNamespace()+"/"+v.instance.GetName())
+
+		deletedCount++
+	}
+
+	v.log.Info("Velero backup cleanup completed",
+		"vrgName", v.instance.GetName(),
+		"deleted", deletedCount,
+		"errors", errorCount,
+		"total", len(backupList.Items))
+
+	if errorCount > 0 {
+		return fmt.Errorf("failed to delete %d out of %d backup CRs", errorCount, len(backupList.Items))
 	}
 
 	return nil
