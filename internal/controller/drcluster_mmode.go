@@ -76,7 +76,7 @@ func (u *drclusterInstance) mModeActivationsRequired() (map[string]ramen.Storage
 			return nil, err
 		}
 
-		vrgNamespace, err := selectVRGNamespace(u.client, u.log, drpcCollection.drpc, placementObj)
+		vrgNamespace, err := SelectVRGNamespace(u.client, u.log, drpcCollection.drpc, placementObj)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +121,7 @@ func (u *drclusterInstance) getVRGs(drpcCollection DRPCAndPolicy) (map[string]*r
 		return nil, err
 	}
 
-	vrgNamespace, err := selectVRGNamespace(u.client, u.log, drpcCollection.drpc, placementObj)
+	vrgNamespace, err := SelectVRGNamespace(u.client, u.log, drpcCollection.drpc, placementObj)
 	if err != nil {
 		return nil, err
 	}
