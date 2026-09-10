@@ -8,7 +8,7 @@ toolchain go1.26.1
 
 require (
 	github.com/aymanbagabas/go-udiff v0.4.1
-	github.com/ramendr/ramen/api v0.0.0-20250313143647-8dd671566929
+	github.com/ramendr/ramen/api v0.1.0-rc1
 	github.com/ramendr/recipe v0.0.0-20250507125257-0295a01da567
 	github.com/spf13/viper v1.19.0
 	go.uber.org/zap v1.27.0
