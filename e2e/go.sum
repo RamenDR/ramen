@@ -186,8 +186,8 @@ github.com/prometheus/common v0.62.0 h1:xasJaQlnWAeyHdUBeGjXmutelfJHWMRr+Fg4QszZ
 github.com/prometheus/common v0.62.0/go.mod h1:vyBcEuLSvWos9B1+CyL7JZ2up+uFzXhkqml0W5zIY1I=
 github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0learggepc=
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
-github.com/ramendr/ramen/api v0.0.0-20250313143647-8dd671566929 h1:yW5QWX4InhtZJd2KhBS57/1uIpRpFSMbg58Ac7wfKpo=
-github.com/ramendr/ramen/api v0.0.0-20250313143647-8dd671566929/go.mod h1:ZRq9Ep/AMWPB9U8bi2mxmcU5nYnmfuK5OY2NVwj4xdA=
+github.com/ramendr/ramen/api v0.1.0-rc1 h1:qTZ5nU1N7KiM7ht+e4RdTpvsOxbjXQUPj5PRTJchpnQ=
+github.com/ramendr/ramen/api v0.1.0-rc1/go.mod h1:F6Iuq5ywxI4TJL2VvoJNQvn2cMWOHOdysbaoeT9RMig=
 github.com/ramendr/recipe v0.0.0-20250507125257-0295a01da567 h1:QRcHe6GTJAgLK7zgF6ivwZ6B0SFe1tONbA7VMQMWjMM=
 github.com/ramendr/recipe v0.0.0-20250507125257-0295a01da567/go.mod h1:dGXrk743fq6VG8u6lflEce7ITM7d/9xSBeAbI2RXl9s=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
