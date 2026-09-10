@@ -154,6 +154,13 @@ def configure_mirroring(cluster, peer_info):
         )
         kubectl.apply("--filename=-", input=yaml_str, context=cluster)
 
+    for interval in VRC_INTERVALS:
+        template = _template("vgrc.yaml")
+        yaml_str = template.substitute(
+            cluster=cluster, pool=POOL_NAME, scname="rook-ceph-block", interval=interval
+        )
+        kubectl.apply("--filename=-", input=yaml_str, context=cluster)
+
     print(f"Apply rbd mirror to cluster '{cluster}'")
     kubectl.apply(f"--kustomize={_DATA_DIR}", context=cluster)
 

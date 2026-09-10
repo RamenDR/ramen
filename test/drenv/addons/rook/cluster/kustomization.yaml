@@ -29,3 +29,7 @@ patches:
           enabled: true
           periodicity: daily
           maxLogSize: 50M
+      # Custom Ceph image with RBD group mirroring (consistency groups) support.
+      - op: replace
+        path: /spec/cephVersion/image
+        value: ghcr.io/nikhil-ladha/rbd-group-mirroring:latest
