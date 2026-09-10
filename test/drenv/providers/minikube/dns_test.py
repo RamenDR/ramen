@@ -16,6 +16,10 @@ requires_linux = pytest.mark.skipif(
     platform.system() != "Linux",
     reason="requires Linux",
 )
+requires_not_darwin = pytest.mark.skipif(
+    platform.system() == "Darwin",
+    reason="requires an OS other than Darwin (macOS)",
+)
 
 NetworkExtension = networkextension.NetworkExtension
 
@@ -50,16 +54,33 @@ def test_servers_static_container(driver, caplog):
     assert f"static dns mode not supported for driver '{driver}'" in caplog.text
 
 
-@pytest.mark.parametrize("driver", ["vfkit", "kvm2", "docker", "podman"])
-@pytest.mark.parametrize("active", [True, False])
-def test_servers_auto(driver, active, monkeypatch):
-    provider = FakeNetworkExtension(NetworkExtension(active=active, enabled=True))
+@requires_darwin
+@pytest.mark.parametrize(
+    "test",
+    [
+        dict(driver="vfkit", active=True, servers=list(dns.SERVERS)),
+        dict(driver="vfkit", active=False, servers=[]),
+        dict(driver="kvm2", active=True, servers=list(dns.SERVERS)),
+        dict(driver="kvm2", active=False, servers=[]),
+        dict(driver="docker", active=True, servers=[]),
+        dict(driver="docker", active=False, servers=[]),
+        dict(driver="podman", active=True, servers=[]),
+        dict(driver="podman", active=False, servers=[]),
+    ],
+)
+def test_servers_auto_darwin(test, monkeypatch):
+    provider = FakeNetworkExtension(
+        NetworkExtension(active=test["active"], enabled=True)
+    )
     monkeypatch.setattr(networkextension, "list_extensions", provider.list_extensions)
-    profile = {"name": "test", "driver": driver}
-    expected = []
-    if platform.system() == "Darwin" and active and driver in ("vfkit", "kvm2"):
-        expected = ["8.8.8.8", "1.1.1.1"]
-    assert dns.servers(profile, "auto") == expected
+    profile = {"name": "test", "driver": test["driver"]}
+    assert dns.servers(profile, "auto") == test["servers"]
+
+
+@requires_not_darwin
+@pytest.mark.parametrize("driver", ["vfkit", "kvm2", "docker", "podman"])
+def test_servers_auto_not_darwin(driver):
+    assert dns.servers({"name": "test", "driver": driver}, "auto") == []
 
 
 def test_servers_invalid_mode():

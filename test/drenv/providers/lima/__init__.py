@@ -66,6 +66,9 @@ def exists(profile):
 def start(profile, verbose=False, timeout=None, local_registry=False, dns_mode="auto"):
     start = time.monotonic()
     logging.info("[%s] Starting lima cluster", profile["name"])
+    logging.debug(
+        "[%s] Ignoring dns mode '%s' for lima cluster", profile["name"], dns_mode
+    )
 
     existing = True
     if not exists(profile):

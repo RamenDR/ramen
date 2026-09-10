@@ -28,6 +28,9 @@ def exists(profile):
 def start(profile, verbose=False, timeout=None, local_registry=False, dns_mode="auto"):
     start = time.monotonic()
     logging.info("[%s] Checking external cluster status", profile["name"])
+    logging.debug(
+        "[%s] Ignoring dns mode '%s' for external cluster", profile["name"], dns_mode
+    )
 
     # Fail fast if cluster is not configured, we cannot recover from this.
     status = cluster.status(profile["name"])
