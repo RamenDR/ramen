@@ -111,6 +111,11 @@ jobs:
       - name: Checkout ramen
         uses: actions/checkout@v6
 
+      - name: Setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - name: Setup python
         uses: actions/setup-python@v6
         with:
