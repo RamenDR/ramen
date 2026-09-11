@@ -41,7 +41,7 @@ List of exactly two DRCluster resource names that participate in this DR policy.
 
 - Must contain exactly 2 DRCluster resource names
 - DRCluster resources must exist on the hub cluster (see
-  [DRCluster](drcluster-crd.md))
+  [DRCluster](dr-cluster.md))
 - Immutable after creation
 
 **Example:**
@@ -288,12 +288,13 @@ kubectl get drpolicy <name> -o yaml
 annotations, or replication isn't configured.
 
 **For details on required labels and annotations, see
-[DRClusterConfig](drclusterconfig-crd.md).**
+[DRClusterConfig](dr-cluster-config.md).**
 
 ## Related Resources
 
-- [DRPlacementControl](drpc-crd.md) - References DRPolicy for application DR
-- [DRCluster](drcluster-crd.md) - Represents managed clusters in the policy
-- [VolumeReplicationGroup](vrg-crd.md) - Created by DRPC, uses policy
-  configuration
-- [Configuration Guide](configure.md) - How to configure Ramen with DRPolicy
+- [DRPlacementControl](dr-placement-control.md) - References DRPolicy for
+  application DR
+- [DRCluster](dr-cluster.md) - Represents managed clusters in the policy
+- [VolumeReplicationGroup](volume-replication-group.md) - Created by DRPC, uses
+  policy configuration
+- [Configuration Guide](../configure.md) - How to configure Ramen with DRPolicy
