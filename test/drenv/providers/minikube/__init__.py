@@ -84,11 +84,21 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False, timeout=_START_TIMEOUT, local_registry=False):
+def start(
+    profile,
+    verbose=False,
+    timeout=_START_TIMEOUT,
+    local_registry=False,
+    dns_mode="auto",
+):
     start = time.monotonic()
     logging.info("[%s] Starting minikube cluster", profile["name"])
 
     args = []
+
+    dns_servers = dns.servers(profile, dns_mode)
+    if dns_servers:
+        args.extend(("--dns-servers", ",".join(dns_servers)))
 
     if profile["driver"]:
         args.extend(("--driver", profile["driver"]))
@@ -157,15 +167,13 @@ def start(profile, verbose=False, timeout=_START_TIMEOUT, local_registry=False):
     )
 
 
-def configure(profile, existing=False, dns_mode="auto"):
+def configure(profile, existing=False):
     """
     Load configuration done in setup() before the minikube cluster was
     started.
 
     Must be called after the cluster is started, before running any addon.
     """
-    dns.configure(sys.modules[__name__], profile, dns_mode)
-
     if not existing:
         _copy_registry_mirrors(profile["name"])
         _configure_containerd(profile)
