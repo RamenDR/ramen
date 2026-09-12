@@ -1008,7 +1008,12 @@ func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace stri
 		return "", fmt.Errorf("missing storageID for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
-	return util.GenerateCombinedName(pvcNamespace, storageID), nil
+	// Include VRG name to ensure CG label is unique per VRG in the same namespace.
+	// This prevents PVCs from different VRGs in the same namespace from being
+	// grouped into the same consistency group in granular VM DR scenarios.
+	vrgIdentifier := pvcNamespace + "-" + v.instance.GetName()
+
+	return util.GenerateCombinedName(vrgIdentifier, storageID), nil
 }
 
 func (v *VRGInstance) updateReplicationClassList() error {
