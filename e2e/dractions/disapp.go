@@ -13,6 +13,7 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
+// nolint:funlen
 func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 	w := ctx.Workload()
 	d := ctx.Deployer()
@@ -59,6 +60,15 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 
 	// wait for drpc ready
 	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	secondary, err := getTargetCluster(ctx, ctx.Env().Hub, drPolicyName, cluster.Name)
+	if err != nil {
+		return err
+	}
+
+	if err := validateVRGs(ctx, cluster, secondary); err != nil {
 		return err
 	}
 
@@ -121,6 +131,10 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	if err := waitDRPCReady(ctx, managementNamespace, name); err != nil {
+		return err
+	}
+
+	if err := validateVRGs(ctx, targetCluster, currentCluster); err != nil {
 		return err
 	}
 
