@@ -143,6 +143,21 @@ func updateVRGDestinationInfoAvailable(drpc *rmn.DRPlacementControl,
 		"destination info availability", "waiting for destination info", "destination info")
 }
 
+// updateDRPCReplicationHealthyCondition copies VRG ReplicationHealthy onto DRPC as its own
+// condition so CSI Replicating status and message are visible on the hub. The condition
+// is omitted when the VRG does not report it.
+func updateDRPCReplicationHealthyCondition(drpc *rmn.DRPlacementControl, vrg *rmn.VolumeReplicationGroup) {
+	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeReplicationHealthy)
+	if condition == nil {
+		meta.RemoveStatusCondition(&drpc.Status.Conditions, rmn.ConditionReplicationHealthy)
+
+		return
+	}
+
+	addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionReplicationHealthy, drpc.Generation,
+		condition.Status, condition.Reason, condition.Message)
+}
+
 // updateVRGDataReadyAsPrimary is a helper function to process VRG DataReady when VRG is Primary and update DRPC
 // Protected condition
 //   - Returns a bool that is true if status was updated, and false otherwise

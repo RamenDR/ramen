@@ -70,6 +70,10 @@ const (
 	// Indicates destination volume info is available from the VolumeReplication resource.
 	// Only set when VRs report this condition; absent means not applicable.
 	VRGConditionTypeDestinationInfoAvailable = "DestinationInfoAvailable"
+
+	// Visibility mirror of the VR/VGR Replicating condition (status, reason, CSI message).
+	// Left unset when the VR does not report Replicating.
+	VRGConditionTypeReplicationHealthy = "ReplicationHealthy"
 )
 
 // VRG condition reasons
