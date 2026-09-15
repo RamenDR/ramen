@@ -89,6 +89,15 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
+	secondary, err := getTargetCluster(ctx, ctx.Env().Hub, drPolicyName, cluster.Name)
+	if err != nil {
+		return err
+	}
+
+	if err := validateVRGs(ctx, cluster, secondary); err != nil {
+		return err
+	}
+
 	if err = deployers.WaitWorkloadHealth(ctx, cluster); err != nil {
 		return err
 	}
@@ -265,6 +274,10 @@ func failoverRelocate(
 	}
 
 	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	if err := validateVRGs(ctx, targetCluster, currentCluster); err != nil {
 		return err
 	}
 
