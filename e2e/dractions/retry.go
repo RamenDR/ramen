@@ -109,6 +109,74 @@ func getTargetCluster(
 	return ctx.Env().GetCluster(targetClusterName)
 }
 
+// validateVRGState waits until the primary cluster VRG is primary/Primary and
+// the secondary cluster VRG is secondary/Secondary.
+func validateVRGState(ctx types.TestContext) error {
+	log := ctx.Logger()
+	start := time.Now()
+	name := ctx.Name()
+	namespace := vrgNamespace(ctx)
+
+	primary, err := util.GetCurrentCluster(ctx, ctx.ManagementNamespace(), name)
+	if err != nil {
+		return err
+	}
+
+	secondary, err := getTargetCluster(ctx, ctx.Env().Hub, ctx.Config().DRPolicy, primary.Name)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("Waiting until vrg \"%s/%s\" is primary/Primary in cluster %q "+
+		"and secondary/Secondary in cluster %q",
+		namespace, name, primary.Name, secondary.Name)
+
+	for {
+		primaryVRG, primaryErr := getVRG(ctx, primary, namespace, name)
+		secondaryVRG, secondaryErr := getVRG(ctx, secondary, namespace, name)
+
+		if primaryErr == nil && secondaryErr == nil &&
+			vrgHasState(primaryVRG, ramen.Primary, ramen.PrimaryState) &&
+			vrgHasState(secondaryVRG, ramen.Secondary, ramen.SecondaryState) {
+			elapsed := time.Since(start)
+			log.Debugf("vrg \"%s/%s\" is primary/Primary in cluster %q "+
+				"and secondary/Secondary in cluster %q in %.3f seconds",
+				namespace, name, primary.Name, secondary.Name, elapsed.Seconds())
+
+			return nil
+		}
+
+		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
+			return fmt.Errorf("vrg \"%s/%s\" not ready: %s, %s: %w",
+				namespace, name,
+				vrgClusterStatus(primary.Name, primaryVRG, primaryErr, "primary/Primary"),
+				vrgClusterStatus(secondary.Name, secondaryVRG, secondaryErr, "secondary/Secondary"),
+				err)
+		}
+	}
+}
+
+func vrgHasState(vrg *ramen.VolumeReplicationGroup, spec ramen.ReplicationState, state ramen.State) bool {
+	return vrg.Spec.ReplicationState == spec && vrg.Status.State == state
+}
+
+func vrgClusterStatus(clusterName string, vrg *ramen.VolumeReplicationGroup, err error, expected string) string {
+	if err != nil {
+		return fmt.Sprintf("cluster %q: %s", clusterName, err)
+	}
+
+	return fmt.Sprintf("cluster %q is %s/%s (expected %s)",
+		clusterName, vrg.Spec.ReplicationState, vrg.Status.State, expected)
+}
+
+func vrgNamespace(ctx types.TestContext) string {
+	if ctx.Deployer().IsDiscovered() {
+		return ctx.ManagementNamespace()
+	}
+
+	return ctx.AppNamespace()
+}
+
 // nolint:unparam
 func waitDRPCProgression(
 	ctx types.TestContext,
