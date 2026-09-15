@@ -24,7 +24,7 @@ COPY internal/ internal/
 # Build
 RUN CGO_ENABLED=0 GOOS=linux go build -a -o manager cmd/main.go
 
-FROM registry.access.redhat.com/ubi8/ubi-minimal
+FROM registry.access.redhat.com/ubi9/ubi-minimal
 WORKDIR /
 COPY --from=builder /workspace/manager .
 
