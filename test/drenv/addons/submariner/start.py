@@ -9,7 +9,7 @@ from drenv import cluster as drenv_cluster
 from drenv import kubectl
 from drenv import subctl
 
-VERSION = "devel"
+VERSION = "0.24.1"
 
 NAMESPACE = "submariner-operator"
 
