@@ -1681,7 +1681,16 @@ func (v *VRGInstance) reconcileAsPrimary() {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
 
-	if !v.result.Requeue && v.isVMRecipeProtection() {
+	// INITIAL DEPLOYMENT: Catch misconfigurations early (e.g., VMs not matching PVCs via
+	// labels/selectors) before starting DR replication. Block kubeObjectsProtectPrimary()
+	// if validation fails to prevent backing up invalid state to S3.
+	//
+	// DR ACTIONS (failover/relocate): Skip this check to allow old primary to complete
+	// backup operations. Aborting here would leave S3 in an inconsistent state,
+	// and prevent the new primary from restoring complete backup data. VM conflict checks
+	// are intentionally suppressed while a DR action is in progress.
+	if !v.result.Requeue && v.isVMRecipeProtection() &&
+		!v.IsDRActionInProgress() {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.result.Requeue = true
 		}
