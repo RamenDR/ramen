@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout base branch
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Install PyYAML
       run: pip install pyyaml
@@ -78,7 +78,7 @@ jobs:
 
     steps:
     - name: Checkout PR
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         allow-unsafe-pr-checkout: true  # See security section above
