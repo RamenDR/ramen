@@ -11,6 +11,7 @@ from drenv import kubectl
 
 PACKAGE_DIR = Path(__file__).parent
 
+BUILTIN_MGR_POOL = "builtin-mgr"
 POOL_NAMES = ["replicapool", "replicapool-2"]
 
 
@@ -37,6 +38,13 @@ def deploy(cluster):
         )
         kubectl.apply("--filename=-", input=yaml_str, context=cluster)
 
+    # RADOS pool IDs are assigned in create order. CSI volumeHandles
+    # embed the replica pool ID, and RBD failover restores the source
+    # handle, so both clusters need the same replica pool IDs. Since
+    # Rook 1.20, .mgr is created around the same time as user pools,
+    # so wait until .mgr has an ID before creating replica pools.
+    wait_until_pool_has_id(cluster, BUILTIN_MGR_POOL)
+
     print("Creating RBD pools")
     for pool in POOL_NAMES:
         template = _template("replica-pool.yaml")
@@ -47,6 +55,30 @@ def deploy(cluster):
     template = _template("snapshot-class.yaml")
     yaml_str = template.substitute(cluster=cluster, scname="rook-ceph-block")
     kubectl.apply("--filename=-", input=yaml_str, context=cluster)
+
+
+def wait_until_pool_has_id(cluster, name):
+    print(f"Waiting until cephblockpool 'rook-ceph/{name}' exists")
+    kubectl.wait(
+        f"cephblockpool/{name}",
+        "--for=create",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    print(f"Waiting until cephblockpool 'rook-ceph/{name}' has a poolID")
+    kubectl.wait(
+        f"cephblockpool/{name}",
+        "--for=jsonpath={.status.poolID}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    pool_id = kubectl.get(
+        f"cephblockpool/{name}",
+        "--output=jsonpath={.status.poolID}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+    print(f"cephblockpool 'rook-ceph/{name}' poolID={pool_id}")
 
 
 def wait(cluster):

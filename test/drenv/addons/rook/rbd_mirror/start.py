@@ -14,7 +14,7 @@ from drenv import ceph
 from drenv import commands
 from drenv import kubectl
 
-from .config import POOL_NAME, PACKAGE_DIR
+from .config import POOL_NAME, POOL_NAMES, PACKAGE_DIR
 
 VRC_INTERVALS = ["1m", "5m"]
 _DATA_DIR = PACKAGE_DIR / "start-data"
@@ -30,6 +30,8 @@ def start(cluster1, cluster2, debug=False):
     else:
         disable_debug_logs(cluster1)
         disable_debug_logs(cluster2)
+
+    check_matching_pool_ids(cluster1, cluster2)
 
     cluster1_info = fetch_secret_info(cluster1)
     cluster2_info = fetch_secret_info(cluster2)
@@ -50,6 +52,44 @@ def start(cluster1, cluster2, debug=False):
     wait_until_pool_mirroring_is_healthy(cluster2)
 
     print("Mirroring was setup successfully")
+
+
+def pool_id(cluster, pool):
+    return kubectl.get(
+        f"cephblockpool/{pool}",
+        "--output=jsonpath={.status.poolID}",
+        "--namespace=rook-ceph",
+        context=cluster,
+    )
+
+
+def check_matching_pool_ids(cluster1, cluster2):
+    """
+    Fail drenv start if replica pool RADOS IDs are missing or differ.
+
+    Precondition for rbd-mirror setup: replica pool IDs are already
+    set by the pool addon. Only replicapool and replicapool-2 are
+    checked. CSI volumeHandles embed that ID, and RBD failover
+    restores the source handle, so dest must have the same replica
+    pool ID.
+
+    The pool addon waits for .mgr to have an ID before creating replica
+    pools so both clusters more likely get the same IDs. An empty ID
+    should not happen after waiting for the pool to become ready.
+    """
+    for pool in POOL_NAMES:
+        id1 = pool_id(cluster1, pool)
+        id2 = pool_id(cluster2, pool)
+        if not id1 or not id2:
+            raise RuntimeError(
+                f"cephblockpool {pool} missing poolID: "
+                f"{cluster1}={id1!r} {cluster2}={id2!r}"
+            )
+        if id1 != id2:
+            raise RuntimeError(
+                f"cephblockpool {pool} poolIDs differ: "
+                f"{cluster1}={id1} {cluster2}={id2}"
+            )
 
 
 def log_blocklist(cluster):
