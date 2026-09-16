@@ -30,6 +30,7 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 
 		available := conditionMet(drpc.Status.Conditions, ramen.ConditionAvailable)
 		peerReady := conditionMet(drpc.Status.Conditions, ramen.ConditionPeerReady)
+		protected := conditionMet(drpc.Status.Conditions, ramen.ConditionProtected)
 
 		// Not sure if checking for progression completed is needed.
 		// Ideally, conditions should be enough.
@@ -38,6 +39,7 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 
 		if available &&
 			peerReady &&
+			protected &&
 			progressionCompleted &&
 			drpc.Status.LastGroupSyncTime != nil {
 			elapsed := time.Since(start)
@@ -49,8 +51,8 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
 			return fmt.Errorf("drpc not ready in cluster %q"+
-				" (Available: %v, PeerReady: %v, ProgressionCompleted: %v, lastGroupSyncTime: %v): %w",
-				hub.Name, available, peerReady, progressionCompleted, drpc.Status.LastGroupSyncTime, err)
+				" (Available: %v, PeerReady: %v, Protected: %v, ProgressionCompleted: %v, lastGroupSyncTime: %v): %w",
+				hub.Name, available, peerReady, protected, progressionCompleted, drpc.Status.LastGroupSyncTime, err)
 		}
 	}
 }
