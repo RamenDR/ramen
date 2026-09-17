@@ -3333,6 +3333,31 @@ func (v *VRGInstance) aggregateVolRepDestinationInfoAvailableCondition() *metav1
 }
 
 // Checks and requeues reconciler of VM resource cleanup.
+// ensureSecondaryState orchestrates cleanup of resources when VRG is in secondary state.
+// This wrapper function ensures proper requeue behavior for both velero backup cleanup and
+// VM-specific resource cleanup. Returns true if requeue is needed.
+func (v *VRGInstance) ensureSecondaryState() bool {
+	// Clean up velero backup CRs owned by this VRG while preserving S3 backup data.
+	// This applies to ALL discovered apps (vm-recipe and others) to prevent stale backup
+	// CRs from accumulating on secondary clusters while ensuring the backup data remains
+	// available for future recovery operations.
+	if err := v.cleanupVeleroBackupsForSecondary(); err != nil {
+		v.log.Error(err, "Failed to cleanup velero backups for secondary, will requeue")
+		// Requeue on cleanup failure to retry - don't proceed to status update with stale CRs
+		return true
+	}
+
+	// VM-recipe specific cleanup and conflict detection
+	return v.HandleSecondaryConflictsAndCleanup()
+}
+
+// HandleSecondaryConflictsAndCleanup manages VM cleanup and conflict detection for VRG in secondary state.
+// For VM-recipe protection, this function:
+//  1. Checks for cross-cluster resource conflicts (e.g., VMs running on multiple clusters)
+//  2. When no DR action is in progress, sets appropriate AutoCleanup conditions
+//  3. When DR action is in progress (relocate/failover), performs automated VM cleanup if feasible
+//
+// Returns true if requeue is needed (VM cleanup in progress), false otherwise.
 func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
 	if !v.isVMRecipeProtection() {
 		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Status.ObservedGeneration,
