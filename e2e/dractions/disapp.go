@@ -62,6 +62,10 @@ func EnableProtectionDiscoveredApps(ctx types.TestContext) error {
 		return err
 	}
 
+	if err := validateVRGState(ctx); err != nil {
+		return err
+	}
+
 	if err = deployers.WaitWorkloadHealth(ctx, cluster); err != nil {
 		return err
 	}
@@ -121,6 +125,10 @@ func failoverRelocateDiscoveredApps(
 	}
 
 	if err := waitDRPCReady(ctx, managementNamespace, name); err != nil {
+		return err
+	}
+
+	if err := validateVRGState(ctx); err != nil {
 		return err
 	}
 

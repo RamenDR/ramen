@@ -36,6 +36,22 @@ func getDRPC(ctx types.TestContext, namespace, name string) (*ramen.DRPlacementC
 	return drpc, nil
 }
 
+func getVRG(
+	ctx types.TestContext,
+	cluster *types.Cluster,
+	namespace, name string,
+) (*ramen.VolumeReplicationGroup, error) {
+	vrg := &ramen.VolumeReplicationGroup{}
+	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
+
+	err := cluster.Client.Get(ctx.Context(), key, vrg)
+	if err != nil {
+		return nil, err
+	}
+
+	return vrg, nil
+}
+
 func createDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
 	log := ctx.Logger()
 	hub := ctx.Env().Hub
