@@ -1482,6 +1482,15 @@ func (v *VRGInstance) updateVR(pvc *corev1.PersistentVolumeClaim, volRep *volrep
 ) (bool, bool, error) {
 	const requeue = true
 
+	// Ensure the created-by-ramen label is present. VRs created by older ramen
+	// versions predate this label and would otherwise never be labeled, since the
+	// steady-state path below returns before issuing any update.
+	if requeueForLabel, err := v.ensureCreatedByRamenLabel(volRep, log); err != nil {
+		return requeue, false, err
+	} else if requeueForLabel {
+		return requeue, false, nil
+	}
+
 	// If state is already as desired, check the status
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
 		log.Info("VolumeReplication and VolumeReplicationGroup state and autoresync match. Proceeding to status check")
@@ -1515,6 +1524,27 @@ func (v *VRGInstance) updateVR(pvc *corev1.PersistentVolumeClaim, volRep *volrep
 	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
 
 	return !requeue, false, nil
+}
+
+// ensureCreatedByRamenLabel adds the created-by-ramen label to the given resource
+// if it is missing and persists the change. It returns true when an update was
+// issued (caller should requeue) so that the reconcile works from a fresh object.
+func (v *VRGInstance) ensureCreatedByRamenLabel(obj client.Object, log logr.Logger) (bool, error) {
+	if !rmnutil.AddLabel(obj, rmnutil.CreatedByRamenLabel, "true") {
+		return false, nil
+	}
+
+	if err := v.reconciler.Update(v.ctx, obj); err != nil {
+		log.Error(err, "Failed to add created-by-ramen label",
+			"name", obj.GetName(), "namespace", obj.GetNamespace())
+
+		return false, fmt.Errorf("failed to add created-by-ramen label to resource (%s/%s), %w",
+			obj.GetNamespace(), obj.GetName(), err)
+	}
+
+	log.Info("Added created-by-ramen label", "name", obj.GetName(), "namespace", obj.GetNamespace())
+
+	return true, nil
 }
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
