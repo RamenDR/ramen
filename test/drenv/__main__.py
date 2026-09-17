@@ -807,8 +807,9 @@ def start_cluster(profile, hooks=(), args=None, **options):
         verbose=True,
         timeout=args.timeout,
         local_registry=args.local_registry,
+        dns_mode=args.dns_mode,
     )
-    provider.configure(profile, existing=existing, dns_mode=args.dns_mode)
+    provider.configure(profile, existing=existing)
 
     if existing:
         restart_failed_deployments(profile)
