@@ -2439,7 +2439,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		Type:               rmn.ConditionPeerReady,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
+		Status:             metav1.ConditionFalse,
 		LastTransitionTime: time,
 		Message:            message,
 	})
