@@ -3277,8 +3277,44 @@ func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
 
-	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+	if d.arePeerVRGsSecondary() {
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+	} else {
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionFalse, rmn.ReasonProgressing,
+			"Waiting for VRG on peer cluster to transition to Secondary")
+	}
+}
+
+// arePeerVRGsSecondary checks if the VRG on peer clusters has transitioned to Secondary state.
+// Returns false if the VRG does not exist, is unreachable, or has not yet reported Secondary status.
+func (d *DRPCInstance) arePeerVRGsSecondary() bool {
+	homeCluster := d.instance.Spec.PreferredCluster
+
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+		if clusterName == homeCluster {
+			continue
+		}
+
+		vrg, ok := d.vrgs[clusterName]
+		if !ok || vrg == nil {
+			d.log.Info("VRG not found on peer cluster", "cluster", clusterName)
+
+			return false
+		}
+
+		if vrg.Spec.ReplicationState != rmn.Secondary ||
+			vrg.Status.State != rmn.SecondaryState ||
+			vrg.Status.ObservedGeneration != vrg.Generation {
+			d.log.Info(fmt.Sprintf("VRG on %s has not transitioned to secondary yet. "+
+				"Spec-State/Status-State %s/%s", clusterName, vrg.Spec.ReplicationState, vrg.Status.State))
+
+			return false
+		}
+	}
+
+	return true
 }
 
 func (d *DRPCInstance) setStatusInitiating() {
