@@ -496,8 +496,21 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
 	}
 
-	// Restore original cluster as primary and clean up test failover cluster
-	return d.ensureActionCompleted(lastAppCluster)
+	// Update VRG on test cluster to Secondary to initiate cleanup
+	// This is required for the VRG to transition from Primary to Secondary state
+	d.log.Info("Setting VRG to Secondary on test failover cluster", "cluster", testFailoverCluster)
+
+	if _, err := d.updateVRGState(testFailoverCluster, rmn.Secondary); err != nil {
+		d.log.Error(err, "Failed to update VRG state to Secondary on test cluster")
+
+		return false, err
+	}
+
+	// Requeue to monitor cleanup progress
+	// Once VRG actually transitions to Secondary state, cleanup will be complete
+	// and the flow will proceed to executeAction() which routes to the appropriate handler
+	// based on current action (RunInitialDeployment/RunFailover/RunRelocate)
+	return true, nil
 }
 
 func (d *DRPCInstance) executeAction() (bool, error) {

@@ -348,28 +348,22 @@ func (v *VRGInstance) getRSSpecForPVC(pvc corev1.PersistentVolumeClaim,
 func (v *VRGInstance) reconcileVolSyncAsSecondary() bool {
 	v.log.Info("Reconcile VolSync as Secondary", "RDSpec", v.instance.Spec.VolSync.RDSpec)
 
-	for idx := range v.volRepPVCs {
-		pvc := &v.volRepPVCs[idx]
-		log := logWithPvcName(v.log, pvc)
+	// This might be a case where we lose the RDSpec temporarily,
+	// so we don't know if workload status is truly inactive.
+	idx := 0
 
-		if !v.isPVCReadyForSecondary(pvc, log) {
-			return true // requeue
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if !protectedPVC.ProtectedByVolSync {
+			v.instance.Status.ProtectedPVCs[idx] = protectedPVC
+			idx++
 		}
 	}
 
-	// If we are secondary, and RDSpec is not set, then we don't want to have any PVC
-	// flagged as a VolSync PVC.
-	if v.instance.Spec.VolSync.RDSpec == nil {
-		// This might be a case where we lose the RDSpec temporarily,
-		// so we don't know if workload status is truly inactive.
-		idx := 0
+	v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
+	v.log.Info("Protected PVCs left", "ProtectedPVCs", v.instance.Status.ProtectedPVCs)
 
-		for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
-			if !protectedPVC.ProtectedByVolSync {
-				v.instance.Status.ProtectedPVCs[idx] = protectedPVC
-				idx++
-			}
-		}
+	if requeue := v.updateWorkloadActivityAsSecondary(); requeue {
+		v.log.Info("Workload is still active, requeueing for VolSync reconciliation as Secondary")
 
 		v.instance.Status.ProtectedPVCs = v.instance.Status.ProtectedPVCs[:idx]
 		names := make([]string, 0, len(v.instance.Status.ProtectedPVCs))
