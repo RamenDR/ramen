@@ -263,6 +263,8 @@ func resetToggleUIDChecks() {
 
 var fakeSecondaryFor string
 
+var fakeUntransitionedSecondaryFor string
+
 /*func setFakeSecondary(clusterName string) {
 	fakeSecondaryFor = clusterName
 }*/
@@ -382,7 +384,12 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 	case rmn.Primary:
 		vrg.Status.State = rmn.PrimaryState
 	case rmn.Secondary:
-		vrg.Status.State = rmn.SecondaryState
+		if fakeUntransitionedSecondaryFor == managedCluster {
+			// Simulate a secondary VRG that hasn't transitioned yet (Status.State stays empty)
+			vrg.Status.State = ""
+		} else {
+			vrg.Status.State = rmn.SecondaryState
+		}
 	default:
 		vrg.Status.State = rmn.UnknownState
 	}
@@ -889,6 +896,7 @@ func createVRGMW(name, namespace, homeCluster string) {
 	Expect(err).To(Succeed())
 }
 
+//nolint:unparam
 func updateManifestWorkStatus(clusterNamespace, vrgNamespace, mwType, workType string) {
 	manifestLookupKey := types.NamespacedName{
 		Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(vrgNamespace), mwType),
@@ -2231,6 +2239,61 @@ var _ = Describe("DRPlacementControl Reconciler", func() {
 		})
 		Specify("delete drclusters when using Placement", func() {
 			deleteDRClustersAsync()
+		})
+	})
+	Context("DRPlacementControl PeerReady reports False when secondary VRG has not transitioned", func() {
+		var placement *clrapiv1beta1.Placement
+
+		Specify("DRClusters", func() {
+			populateDRClusters()
+		})
+		When("An Application is deployed while the secondary VRG has not transitioned", func() {
+			It("Should deploy to East1ManagedCluster with PeerReady=False", func() {
+				By("Setting up untransitioned secondary on West1ManagedCluster")
+
+				fakeUntransitionedSecondaryFor = West1ManagedCluster
+
+				By("Initial Deployment")
+
+				var placementObj client.Object
+
+				placementObj, _ = InitialDeploymentAsync(
+					DefaultDRPCNamespace, UserPlacementName, East1ManagedCluster, UsePlacementWithSubscription)
+				placement = placementObj.(*clrapiv1beta1.Placement)
+				Expect(placement).NotTo(BeNil())
+
+				verifyVRGManifestWorkCreatedAsPrimary(placement.GetNamespace(), East1ManagedCluster)
+				updateManifestWorkStatus(East1ManagedCluster, placement.GetNamespace(), "vrg", ocmworkv1.WorkApplied)
+				verifyUserPlacementRuleDecision(placement.GetName(), placement.GetNamespace(), East1ManagedCluster)
+				verifyDRPCStatusPreferredClusterExpectation(placement.GetNamespace(), rmn.Deployed)
+				waitForCompletion(string(rmn.Deployed))
+
+				By("Verifying PeerReady is False because secondary VRG has not transitioned")
+				Eventually(func() metav1.ConditionStatus {
+					latestDRPC := getLatestDRPC(DefaultDRPCNamespace)
+
+					_, condition := getDRPCCondition(&latestDRPC.Status, rmn.ConditionPeerReady)
+					if condition == nil {
+						return metav1.ConditionUnknown
+					}
+
+					return condition.Status
+				}, timeout, interval).Should(Equal(metav1.ConditionFalse))
+			})
+		})
+		Specify("Cleanup after PeerReady test", func() {
+			fakeUntransitionedSecondaryFor = ""
+
+			deleteUserPlacement()
+			deleteDRPC()
+			waitForCompletion("deleted")
+			Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(1))       // DRCluster
+			Expect(getManagedClusterViewCount(East1ManagedCluster)).Should(Equal(0)) // NS + VRG MCV
+			ensureNamespaceMWsDeletedFromAllClusters(DefaultDRPCNamespace)
+			deleteDRPolicyAsync()
+			ensureDRPolicyIsDeleted(AsyncDRPolicyName)
+			deleteDRClustersAsync()
+			Expect(getManifestWorkCount(East1ManagedCluster)).Should(Equal(0))
 		})
 	})
 	Context("DRPlacementControl Reconciler Sync DR", func() {
