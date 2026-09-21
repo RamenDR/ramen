@@ -140,12 +140,6 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	return d.executeAction()
 }
 
-// isInCleanupProgression returns true if DRPC is in cleanup progression states
-func (d *DRPCInstance) isInCleanupProgression() bool {
-	return d.instance.Status.Progression == rmn.ProgressionCleaningUp ||
-		d.instance.Status.Progression == rmn.ProgressionWaitOnUserToCleanUp
-}
-
 // processTestFailoverFlowIfEnabled is the entry point for test failover lifecycle management.
 // It validates dryRun configuration, adds annotation when entering test failover,
 // and routes to promotion/revert handlers when exiting.
@@ -187,10 +181,11 @@ func (d *DRPCInstance) processTestFailoverFlowIfEnabled() (bool, error) {
 		d.instance.Spec.FailoverCluster != lastAppCluster {
 		// Check if annotation already exists to avoid unnecessary updates
 		if !rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
-			// Add test failover annotation
+			// Add test failover annotation with test cluster name
+			// This preserves the test cluster name for revert/promotion handlers
 			// Note: We don't update last-action annotation during dryRun,
 			// so it naturally preserves the pre-test state for revert validation
-			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
+			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, d.instance.Spec.FailoverCluster)
 
 			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
 				return false, fmt.Errorf("failed to add test failover annotation: %w", err)
@@ -293,26 +288,29 @@ func getPeerClusterName(drClusters []rmn.DRCluster, currentCluster string) (stri
 // detectPromotionOrRevert determines if user wants to promote test failover to real failover
 // or revert to original state, then routes to the appropriate handler.
 func (d *DRPCInstance) detectPromotionOrRevert() (bool, error) {
-	// LastAppDeploymentCluster now contains the test cluster (updated during dryRun)
-	// Find the peer cluster, which is the original cluster before the test
-	currentTestCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+	// Read test cluster name from annotation (stable across all reconciles)
+	testCluster := d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation]
+	if testCluster == "" {
+		return false, fmt.Errorf("test failover annotation exists but cluster name is empty")
+	}
 
-	originalCluster, err := getPeerClusterName(d.drClusters, currentTestCluster)
+	// Find the original cluster (peer of test cluster)
+	originalCluster, err := getPeerClusterName(d.drClusters, testCluster)
 	if err != nil {
 		return false, err
 	}
 
 	// Determine if this is promotion or revert
-	// Promotion: failoverCluster still points to current test cluster (user wants to keep it)
-	isPromotion := d.instance.Spec.FailoverCluster == currentTestCluster &&
+	// Promotion: failoverCluster still points to test cluster (user wants to keep it)
+	isPromotion := d.instance.Spec.FailoverCluster == testCluster &&
 		d.instance.Spec.Action == rmn.ActionFailover &&
 		!d.instance.Spec.DryRun
 
 	if isPromotion {
-		return d.handlePromotion(currentTestCluster, originalCluster)
+		return d.handlePromotion(testCluster, originalCluster)
 	}
 
-	return d.handleRevert(currentTestCluster, originalCluster)
+	return d.handleRevert(testCluster, originalCluster)
 }
 
 // validateTestFailoverRevertScenario validates user correctly set spec to revert to original state.
@@ -424,8 +422,16 @@ func (d *DRPCInstance) handlePromotion(testFailoverCluster, lastAppCluster strin
 	return false, nil
 }
 
-// handleRevert handles reverting a test failover and reverting to original state.
-// It validates the revert scenario, cleans up test failover state, and restores original status.
+// isInCleanupProgression returns true if DRPC is in cleanup progression states
+func (d *DRPCInstance) isInCleanupProgression() bool {
+	return d.instance.Status.Progression == rmn.ProgressionCleaningUp ||
+		d.instance.Status.Progression == rmn.ProgressionWaitOnUserToCleanUp
+}
+
+// handleRevert reverts a completed test failover back to the original DR state.
+// It validates that the user's spec matches the pre-test state, transitions the test
+// cluster VRG to Secondary, and removes the test failover annotation once safe to do so.
+// Returns (true, nil) to requeue while monitoring VRG transition to Secondary.
 //
 //nolint:cyclop
 func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) (bool, error) {
@@ -433,83 +439,61 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 		"testCluster", testFailoverCluster,
 		"originalCluster", lastAppCluster)
 
-	// Validate user correctly set spec to original state and get derived phase
 	derivedDRState, err := validateTestFailoverRevertScenario(d.instance, d.drClusters)
 	if err != nil {
-		d.log.Error(err, "Revert validation failed")
+		d.log.Error(err, "Test failover revert validation failed")
 
 		return false, err
 	}
 
-	d.log.Info("Revert validation passed", "derivedDRState", derivedDRState)
+	d.log.V(1).Info("Test failover revert validation passed", "derivedDRState", derivedDRState)
 
 	d.setDRState(derivedDRState)
 
-	// Check if cleanup is complete by checking if we're in cleanup progression states
+	// Restore LastAppDeploymentCluster early so discovered app UI can show correct cleanup instructions
+	rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster)
+
+	// Cleanup progression: monitor VRG on testCluster until it transitions to Secondary
 	if d.isInCleanupProgression() {
-		// Cleanup in progress - check if VRG is cleaned up on test failover cluster
 		if d.ensureVRGIsSecondaryOnCluster(testFailoverCluster) {
-			// Cleanup complete - restore original status
-			d.log.Info("VRG cleanup complete, restoring original status",
-				"savedLastAction", d.instance.GetAnnotations()[DRPCLastAction],
-				"derivedDRState", derivedDRState)
+			// VRG is Secondary — safe to remove the test failover annotation.
+			// cleanupTestFailoverAnnotation persists the removal; the next reconcile
+			// will skip this block and proceed to executeAction().
+			d.log.Info("VRG confirmed Secondary, removing test failover annotation",
+				"cluster", testFailoverCluster)
 
-			d.setProgression(rmn.ProgressionCompleted)
-
-			// Update LastAppDeploymentCluster back to original cluster now that cleanup is verified
-			rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, lastAppCluster)
-
-			// Clean up test failover annotation
 			if err := d.cleanupTestFailoverAnnotation(testFailoverCluster); err != nil {
 				return false, err
 			}
 
-			d.log.Info("Revert complete - restored LastAppDeploymentCluster to original cluster",
-				"originalCluster", lastAppCluster)
+			d.log.Info("Test failover revert complete")
 
-			return false, nil
+			return true, nil
 		}
 
-		// Cleanup still in progress
-		d.log.Info("VRG cleanup in progress", "cluster", testFailoverCluster)
+		// VRG transition to Secondary is in progress; requeue to poll again
+		d.log.V(1).Info("Waiting for VRG to reach Secondary state on test cluster", "cluster", testFailoverCluster)
 
 		return true, nil
 	}
 
-	// Not in cleanup progression yet - initiate cleanup
-	d.log.Info("Initiating cleanup on test failover cluster", "cluster", testFailoverCluster)
-
-	// Set appropriate progression state based on app type
-	// For discovered apps: user must manually clean up, so set WaitOnUserToCleanUp
-	// For managed apps (AppSet): ACM handles cleanup, so set CleaningUp
+	// Initial revert: set progression and initiate VRG Secondary transition
 	if isDiscoveredApp(d.instance) {
 		d.setDiscoveredAppGCProgression(testFailoverCluster)
 	} else {
 		d.setProgression(rmn.ProgressionCleaningUp)
 	}
 
-	// Remove "RetainedForFailover" entry for original cluster to prevent duplicates
-	// During dryRun, the original cluster was marked as "RetainedForFailover"
-	// We must remove this before ensureActionCompleted() rebuilds PlacementDecision
-	// This applies to both managed and discovered apps (matches EnsureCleanup behavior)
-	if err := d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, lastAppCluster); err != nil {
-		d.log.Error(err, "Failed to remove original cluster RetainedForFailover entry, continuing with revert")
-	}
-
-	// Update VRG on test cluster to Secondary to initiate cleanup
-	// This is required for the VRG to transition from Primary to Secondary state
-	d.log.Info("Setting VRG to Secondary on test failover cluster", "cluster", testFailoverCluster)
-
 	if _, err := d.updateVRGState(testFailoverCluster, rmn.Secondary); err != nil {
-		d.log.Error(err, "Failed to update VRG state to Secondary on test cluster")
+		d.log.Error(err, "Failed to initiate VRG Secondary transition on test cluster",
+			"cluster", testFailoverCluster)
 
 		return false, err
 	}
 
-	// Requeue to monitor cleanup progress
-	// Once VRG actually transitions to Secondary state, cleanup will be complete
-	// and the flow will proceed to executeAction() which routes to the appropriate handler
-	// based on current action (RunInitialDeployment/RunFailover/RunRelocate)
+	d.log.Info("Initiated VRG Secondary transition on test cluster, monitoring until confirmed",
+		"cluster", testFailoverCluster)
+
 	return true, nil
 }
 
