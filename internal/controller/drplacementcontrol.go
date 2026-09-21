@@ -320,26 +320,10 @@ func (d *DRPCInstance) detectPromotionOrRevert() (bool, error) {
 //nolint:cyclop // Complexity necessary for validating multiple revert scenarios
 func validateTestFailoverRevertScenario(
 	drpc *rmn.DRPlacementControl,
-	drClusters []rmn.DRCluster,
+	originalCluster string,
 ) (rmn.DRState, error) {
-	// Read saved state from annotations
-	// Note: savedLastAction is preserved during dryRun
-	// Note: savedLastAppCluster now contains the TEST cluster (updated during dryRun)
+	// Read saved action from annotation (preserved during dryRun)
 	savedLastAction := rmn.DRAction(drpc.GetAnnotations()[DRPCLastAction])
-	savedLastAppCluster := drpc.GetAnnotations()[LastAppDeploymentCluster]
-
-	// Validate we have the saved state
-	if savedLastAppCluster == "" {
-		return "", fmt.Errorf(
-			"revert validation failed: saved state not found (missing last app deployment cluster)")
-	}
-
-	// Since LastAppDeploymentCluster was updated during dryRun to the test cluster,
-	// we need to find the peer cluster, which is the original cluster before the test
-	originalCluster, err := getPeerClusterName(drClusters, savedLastAppCluster)
-	if err != nil {
-		return "", fmt.Errorf("revert validation failed: %w", err)
-	}
 
 	switch savedLastAction {
 	case rmn.ActionFailover:
@@ -439,7 +423,7 @@ func (d *DRPCInstance) handleRevert(testFailoverCluster, lastAppCluster string) 
 		"testCluster", testFailoverCluster,
 		"originalCluster", lastAppCluster)
 
-	derivedDRState, err := validateTestFailoverRevertScenario(d.instance, d.drClusters)
+	derivedDRState, err := validateTestFailoverRevertScenario(d.instance, lastAppCluster)
 	if err != nil {
 		d.log.Error(err, "Test failover revert validation failed")
 
