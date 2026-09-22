@@ -760,7 +760,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		if d.instance.Spec.DryRun && d.instance.Spec.Action == rmn.ActionFailover {
+		if d.instance.Spec.DryRun {
 			d.setProgression(rmn.ProgressionTestingFailover)
 
 			if err := d.ensurePlacement(failoverCluster); err != nil {
@@ -1392,6 +1392,8 @@ func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
 		return !done, err
 	}
 
+	// Ensure promoted (if needed)
+	d.ensurePromoted(srcCluster)
 	// Cleanup and setup VolSync if enabled
 	err = d.ensureCleanupAndSecondaryReplicationSetup(srcCluster)
 	if err != nil {
@@ -1403,6 +1405,10 @@ func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
 	d.setActionDuration()
 
 	return done, nil
+}
+
+func (d *DRPCInstance) ensurePromoted(srcCluster string) error {
+	return d.cleanupTestFailoverAnnotation(srcCluster)
 }
 
 func (d *DRPCInstance) ensureCleanupAndSecondaryReplicationSetup(srcCluster string) error {
@@ -2681,6 +2687,15 @@ func (d *DRPCInstance) cleanupSecondaries(clusterToSkip string) error {
 //nolint:cyclop
 func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool, error) {
 	peerReady := true
+	// derivedDRState, err := validateTestFailoverRevertScenario(d.instance, lastAppCluster)
+	// if err != nil {
+	// 	d.log.Error(err, "Test failover revert validation failed")
+
+	// 	return false, err
+	// }
+	// if err := d.cleanupTestFailoverAnnotation(clusterName); err != nil {
+	// 	return false, err
+	// }
 
 	justUpdated, err := d.updateVRGState(clusterName, rmn.Secondary)
 	if err != nil {
@@ -2698,6 +2713,20 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 		}
 
 		return !peerReady, nil
+	}
+
+	// TODO: REFACTOR this block
+	// Delete DRPC test failover annotation
+	// This ensures setVRGAnnotations() won't find the annotation and re-add it to VRG
+	delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
+
+	// Note: LastAppDeploymentCluster has already been updated by the revert/promotion handlers
+	// after cleanup verification (revert) or immediately (promotion)
+
+	d.log.Info("Cleaned up test failover state", "cluster", clusterName)
+
+	if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+		return !peerReady, fmt.Errorf("failed to remove DRPC annotations: %w", err)
 	}
 
 	// IFF just updated or MCV is reporting no VRG, no need to use MCV to check if the state has been
@@ -2886,6 +2915,10 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 		// Turn off the final sync flags
 		vrg.Spec.PrepareForFinalSync = false
 		vrg.Spec.RunFinalSync = false
+
+		// Set annotation to "false" instead of deleting it
+		// ManifestWork controller doesn't sync deletions, but it does sync value changes
+		delete(vrg.Annotations, DRPCTestFailoverDryRunAnnotation)
 	}
 
 	d.setVRGAction(vrg)
