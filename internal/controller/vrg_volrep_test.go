@@ -3264,6 +3264,40 @@ func (v *vrgTest) deleteVolReps() {
 	}
 }
 
+func (v *vrgTest) setVolGroupRepStatus(volGroupKey types.NamespacedName,
+	options promoteOptions,
+) volrep.VolumeGroupReplication {
+	volGroup := volrep.VolumeGroupReplication{}
+
+	// Retry updating the VGR here because it can race with the VGR controller.
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := apiReader.Get(context.TODO(), volGroupKey, &volGroup); err != nil {
+			return err
+		}
+
+		volGroupRepStatus := volrep.VolumeGroupReplicationStatus{
+			VolumeReplicationStatus: volrep.VolumeReplicationStatus{
+				Conditions:         v.generateVRConditions(volGroup.Generation, options),
+				ObservedGeneration: volGroup.Generation,
+				State:              volrep.PrimaryState,
+				Message:            "volume is marked primary",
+			},
+		}
+
+		if options.ValidatedFailed {
+			volGroupRepStatus.State = volrep.UnknownState
+			volGroupRepStatus.Message = "precondition failed ..."
+		}
+
+		volGroup.Status = volGroupRepStatus
+
+		return k8sClient.Status().Update(context.TODO(), &volGroup)
+	})
+	Expect(err).NotTo(HaveOccurred(), "failed to update the status of VolGroupRep %s", volGroupKey.String())
+
+	return volGroup
+}
+
 // nolint: dupl
 func (v *vrgTest) promoteVolGroupRepsAndDo(options promoteOptions, do func(int, int)) {
 	By("Promoting VolumeGroupReplication resources " + v.namespace)
@@ -3282,28 +3316,7 @@ func (v *vrgTest) promoteVolGroupRepsAndDo(options promoteOptions, do func(int, 
 		}
 		v.ensureVolumeGroupReplicationContentForTesting(volGroupKey)
 
-		volGroup := volrep.VolumeGroupReplication{}
-		err = k8sClient.Get(context.TODO(), volGroupKey, &volGroup)
-		Expect(err).NotTo(HaveOccurred(), "failed to re-get VolGroupRep %s", volGroupKey.String())
-
-		volGroupRepStatus := volrep.VolumeGroupReplicationStatus{
-			VolumeReplicationStatus: volrep.VolumeReplicationStatus{
-				Conditions:         v.generateVRConditions(volGroup.Generation, options),
-				ObservedGeneration: volGroup.Generation,
-				State:              volrep.PrimaryState,
-				Message:            "volume is marked primary",
-			},
-		}
-
-		if options.ValidatedFailed {
-			volGroupRepStatus.State = volrep.UnknownState
-			volGroupRepStatus.Message = "precondition failed ..."
-		}
-
-		volGroup.Status = volGroupRepStatus
-
-		err = k8sClient.Status().Update(context.TODO(), &volGroup)
-		Expect(err).NotTo(HaveOccurred(), "failed to update the status of VolGroupRep %s", volGroup.Name)
+		volGroup := v.setVolGroupRepStatus(volGroupKey, options)
 
 		volrepKey := types.NamespacedName{
 			Name:      volGroup.Name,
