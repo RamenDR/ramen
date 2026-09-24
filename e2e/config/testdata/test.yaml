@@ -38,3 +38,13 @@ tests:
   - deployer: appset
     workload: deploy
     pvcspec: cephfs
+  # Tests for single S3 store configurations
+  # Discovered apps with RBD workload using S3 store for velero backups
+  - deployer: disapp
+    workload: deploy
+    pvcspec: rbd
+    group: single-s3-store
+  - deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+    group: single-s3-store
