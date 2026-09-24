@@ -21,15 +21,23 @@ func s3StoreAccessorsGet(
 	objectStorerGet func(string) (ObjectStorer, ramen.S3StoreProfile, error),
 	log logr.Logger,
 ) []s3StoreAccessor {
-	s3StoreAccessors := make([]s3StoreAccessor, 0, len(s3ProfileNames))
-
-	for _, s3ProfileName := range s3ProfileNames {
-		if s3ProfileName == NoS3StoreAvailable {
-			log.Info("Kube object protection store dummy")
-
-			continue
+	// Filter out empty profile names (no S3 store configured)
+	s3Profiles := make([]string, 0, len(s3ProfileNames))
+	for _, profile := range s3ProfileNames {
+		if profile != "" {
+			s3Profiles = append(s3Profiles, profile)
 		}
+	}
 
+	if len(s3Profiles) == 0 {
+		log.Info("Kube object protection store dummy")
+
+		return []s3StoreAccessor{}
+	}
+
+	s3StoreAccessors := make([]s3StoreAccessor, 0, len(s3Profiles))
+
+	for _, s3ProfileName := range s3Profiles {
 		objectStorer, s3StoreProfile, err := objectStorerGet(s3ProfileName)
 		if err != nil {
 			log.Error(err, "Kube object protection store inaccessible", "name", s3ProfileName)

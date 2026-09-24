@@ -56,9 +56,6 @@ const (
 	openshiftDROpsNamespace                           = "openshift-dr-ops"
 )
 
-// FIXME
-const NoS3StoreAvailable = "NoS3"
-
 var ControllerType ramendrv1alpha1.ControllerType
 
 // LeaderElectionResourceName returns the leader election lease name for the
