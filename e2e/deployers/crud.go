@@ -4,9 +4,7 @@
 package deployers
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,8 +23,6 @@ import (
 
 const (
 	AppLabelKey = "app"
-
-	fMode = 0o600
 )
 
 func CreateManagedClusterSetBinding(ctx types.TestContext, name, namespace string) error {
@@ -433,45 +429,4 @@ func DeleteApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 	log.Debugf("Deleted applicationset \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
 
 	return nil
-}
-
-type CombinedData map[string]interface{}
-
-func CreateKustomizationFile(ctx types.TestContext, dir string) error {
-	w := ctx.Workload()
-	config := ctx.Config()
-	yamlData := `resources:
-- ` + config.Repo.URL + `/` + w.GetPath() + `?ref=` + w.GetBranch()
-
-	var yamlContent CombinedData
-
-	err := yaml.Unmarshal([]byte(yamlData), &yamlContent)
-	if err != nil {
-		return err
-	}
-
-	patch := w.Kustomize()
-
-	var jsonContent CombinedData
-
-	err = json.Unmarshal([]byte(patch), &jsonContent)
-	if err != nil {
-		return err
-	}
-
-	// Merge JSON content into YAML content
-	for key, value := range jsonContent {
-		yamlContent[key] = value
-	}
-
-	// Convert the combined content back to YAML
-	combinedYAML, err := yaml.Marshal(&yamlContent)
-	if err != nil {
-		return err
-	}
-
-	// Write the combined content to a new YAML file
-	outputFile := dir + "/kustomization.yaml"
-
-	return os.WriteFile(outputFile, combinedYAML, fMode)
 }
