@@ -843,6 +843,15 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 
 	log.Info(fmt.Sprintf("Update VolumeGroupReplication %s/%s", volRep.Namespace, volRep.Name))
 
+	// Ensure the created-by-ramen label is present. VGRs created by older ramen
+	// versions predate this label and would otherwise never be labeled, since the
+	// steady-state path below returns before issuing any update.
+	if requeueForLabel, err := v.ensureCreatedByRamenLabel(volRep, log); err != nil {
+		return requeue, false, err
+	} else if requeueForLabel {
+		return requeue, false, nil
+	}
+
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
 		log.Info("VolumeGroupReplication and VolumeReplicationGroup state match. Proceeding to status check")
 
