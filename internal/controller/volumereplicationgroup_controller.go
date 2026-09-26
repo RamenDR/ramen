@@ -471,17 +471,18 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	defer log.Info("Exiting reconcile loop")
 
 	v := VRGInstance{
-		reconciler:        r,
-		ctx:               ctx,
-		log:               log,
-		instance:          &ramendrv1alpha1.VolumeReplicationGroup{},
-		volRepPVCs:        []corev1.PersistentVolumeClaim{},
-		volSyncPVCs:       []corev1.PersistentVolumeClaim{},
-		replClassList:     &volrep.VolumeReplicationClassList{},
-		grpReplClassList:  &volrep.VolumeGroupReplicationClassList{},
-		namespacedName:    req.NamespacedName.String(),
-		objectStorers:     make(map[string]cachedObjectStorer),
-		storageClassCache: make(map[string]*storagev1.StorageClass),
+		reconciler:                r,
+		ctx:                       ctx,
+		log:                       log,
+		instance:                  &ramendrv1alpha1.VolumeReplicationGroup{},
+		volRepPVCs:                []corev1.PersistentVolumeClaim{},
+		volSyncPVCs:               []corev1.PersistentVolumeClaim{},
+		replClassList:             &volrep.VolumeReplicationClassList{},
+		grpReplClassList:          &volrep.VolumeGroupReplicationClassList{},
+		namespacedName:            req.NamespacedName.String(),
+		objectStorers:             make(map[string]cachedObjectStorer),
+		storageClassCache:         make(map[string]*storagev1.StorageClass),
+		secondaryCleanupSucceeded: false,
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -563,26 +564,27 @@ type cachedObjectStorer struct {
 }
 
 type VRGInstance struct {
-	reconciler           *VolumeReplicationGroupReconciler
-	ctx                  context.Context
-	log                  logr.Logger
-	instance             *ramendrv1alpha1.VolumeReplicationGroup
-	savedInstanceStatus  ramendrv1alpha1.VolumeReplicationGroupStatus
-	ramenConfig          *ramendrv1alpha1.RamenConfig
-	recipeElements       util.RecipeElements
-	volRepPVCs           []corev1.PersistentVolumeClaim
-	volSyncPVCs          []corev1.PersistentVolumeClaim
-	replClassList        *volrep.VolumeReplicationClassList
-	grpReplClassList     *volrep.VolumeGroupReplicationClassList
-	storageClassCache    map[string]*storagev1.StorageClass
-	vrgObjectProtected   *metav1.Condition
-	kubeObjectsProtected *metav1.Condition
-	vrcUpdated           bool
-	namespacedName       string
-	volSyncHandler       *volsync.VSHandler
-	objectStorers        map[string]cachedObjectStorer
-	s3StoreAccessors     []s3StoreAccessor
-	result               ctrl.Result
+	reconciler                *VolumeReplicationGroupReconciler
+	ctx                       context.Context
+	log                       logr.Logger
+	instance                  *ramendrv1alpha1.VolumeReplicationGroup
+	savedInstanceStatus       ramendrv1alpha1.VolumeReplicationGroupStatus
+	ramenConfig               *ramendrv1alpha1.RamenConfig
+	recipeElements            util.RecipeElements
+	volRepPVCs                []corev1.PersistentVolumeClaim
+	volSyncPVCs               []corev1.PersistentVolumeClaim
+	replClassList             *volrep.VolumeReplicationClassList
+	grpReplClassList          *volrep.VolumeGroupReplicationClassList
+	storageClassCache         map[string]*storagev1.StorageClass
+	vrgObjectProtected        *metav1.Condition
+	kubeObjectsProtected      *metav1.Condition
+	vrcUpdated                bool
+	namespacedName            string
+	volSyncHandler            *volsync.VSHandler
+	objectStorers             map[string]cachedObjectStorer
+	s3StoreAccessors          []s3StoreAccessor
+	result                    ctrl.Result
+	secondaryCleanupSucceeded bool // Tracks if secondary cleanup (velero backups, VMs) succeeded
 }
 
 // struct with pv with volrepclass and volsync
@@ -1813,6 +1815,19 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 		return v.result
 	}
 
+	// If requeue is needed (e.g., velero backup cleanup failed or VM cleanup
+	// in progress), skip the status update to prevent transitioning the VRG
+	// to Secondary state — which reduces reconcile frequency — while stale
+	// Backup CRs are still present. VolRep/VolSync demotion proceeds on this
+	// reconcile since those operations are idempotent and don't depend on
+	// backup cleanup; only the status promotion is deferred to the next
+	// reconcile when cleanup succeeds.
+	if result.Requeue {
+		v.log.Info("Secondary reconciliation incomplete, requeuing without status update")
+
+		return result
+	}
+
 	return v.updateVRGConditionsAndStatus(result)
 }
 
@@ -2022,7 +2037,8 @@ func (v *VRGInstance) updateStatusStateForSecondary() {
 	}
 
 	if dataProtectedCondition.Status == metav1.ConditionTrue &&
-		dataProtectedCondition.ObservedGeneration == v.instance.Generation {
+		dataProtectedCondition.ObservedGeneration == v.instance.Generation &&
+		v.secondaryCleanupSucceeded {
 		v.instance.Status.State = ramendrv1alpha1.SecondaryState
 
 		return
