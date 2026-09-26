@@ -77,6 +77,64 @@ func ListVMsByLabelSelector(
 	return foundVMs, nil
 }
 
+// DiscoverVMsByRecipeLabelSelector discovers VMs matching custom recipe label selectors.
+// This uses a FIXED label key (ramendr.openshift.io/k8s-resource-selector) and matches
+// VMs where the label value is IN the provided labelSelector array.
+//
+// Used for custom recipe patterns that specify K8S_RESOURCE_SELECTOR in RecipeParameters.
+// NOT used for vm-recipe (which has its own validation flow via ListVMsByLabelSelector).
+//
+// Returns full VM objects with deduplication across selector values.
+func DiscoverVMsByRecipeLabelSelector(
+	ctx context.Context,
+	k8sclient client.Client,
+	logger logr.Logger,
+	labelSelector []string,
+	namespaces []string,
+) ([]virtv1.VirtualMachine, error) {
+	var foundVMs []virtv1.VirtualMachine
+
+	seenVMs := make(map[types.NamespacedName]struct{}) // Deduplicate across selector values
+
+	for _, ns := range namespaces {
+		for _, ls := range labelSelector {
+			// Custom recipe pattern: fixed label key, value from selector array
+			matchLabels := map[string]string{
+				core.VMLabelSelector: ls,
+			}
+
+			listOptions := []client.ListOption{
+				client.InNamespace(ns),
+				client.MatchingLabels(matchLabels),
+			}
+
+			vmList := &virtv1.VirtualMachineList{}
+			if err := k8sclient.List(ctx, vmList, listOptions...); err != nil {
+				return nil, fmt.Errorf("failed to list VMs with label %s=%s in namespace %s: %w",
+					core.VMLabelSelector, ls, ns, err)
+			}
+
+			for _, vm := range vmList.Items {
+				vmKey := types.NamespacedName{
+					Namespace: vm.Namespace,
+					Name:      vm.Name,
+				}
+				// Deduplicate VMs (in case multiple selector values match the same VM)
+				if _, seen := seenVMs[vmKey]; !seen {
+					foundVMs = append(foundVMs, vm)
+					seenVMs[vmKey] = struct{}{}
+				}
+			}
+
+			logger.Info(
+				fmt.Sprintf("VMs with label %s=%s in NS[%s]: %d matches",
+					core.VMLabelSelector, ls, ns, len(vmList.Items)))
+		}
+	}
+
+	return foundVMs, nil
+}
+
 func ListVMsByVMNamespace(
 	ctx context.Context,
 	k8sclient client.Client,
@@ -116,6 +174,30 @@ func ListVMsByVMNamespace(
 	}
 
 	return foundVMs, nil
+}
+
+// ListAllVMsInNamespaces lists all VirtualMachine resources across the given namespaces
+// without any filtering. Returns all VMs regardless of labels or static IP configuration.
+// Used for discovering VMs that may have static IPs in namespace-level or custom recipe protection.
+func ListAllVMsInNamespaces(
+	ctx context.Context,
+	k8sclient client.Client,
+	log logr.Logger,
+	namespaces []string,
+) ([]virtv1.VirtualMachine, error) {
+	var allVMs []virtv1.VirtualMachine
+
+	for _, ns := range namespaces {
+		vmList := &virtv1.VirtualMachineList{}
+		if err := k8sclient.List(ctx, vmList, client.InNamespace(ns)); err != nil {
+			return nil, fmt.Errorf("failed to list VMs in namespace %s: %w", ns, err)
+		}
+
+		log.Info("Found VMs in namespace", "namespace", ns, "count", len(vmList.Items))
+		allVMs = append(allVMs, vmList.Items...)
+	}
+
+	return allVMs, nil
 }
 
 // IsVMDeletionInProgress returns true if any listed KubeVirt VM within the given protected NS is in deletion state.
