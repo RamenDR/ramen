@@ -337,7 +337,10 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
 
 	const inUse bool = true
+
 	// Check if any pod definitions exist referencing the PVC
+	v.log.Info("Trace 2")
+
 	inUseByPod, err := rmnutil.IsPVCInUseByPod(v.ctx, v.reconciler.Client, log, pvcNamespacedName, false)
 	if err != nil || inUseByPod {
 		msg := operation + " failed as PVC is potentially in use by a pod"
@@ -358,6 +361,8 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 
 		return inUse
 	}
+
+	v.log.Info("Trace 3")
 
 	return !inUse
 }
