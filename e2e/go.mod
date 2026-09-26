@@ -19,7 +19,7 @@ require (
 	kubevirt.io/api v1.5.2
 	open-cluster-management.io/api v0.15.0
 	open-cluster-management.io/multicloud-operators-channel v0.15.0
-	open-cluster-management.io/multicloud-operators-subscription v0.15.0
+	open-cluster-management.io/multicloud-operators-subscription v0.16.0
 	sigs.k8s.io/controller-runtime v0.21.0
 	sigs.k8s.io/yaml v1.4.0
 )
@@ -78,6 +78,7 @@ require (
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	kubevirt.io/containerized-data-importer-api v1.60.3-0.20241105012228-50fbed985de9 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
+	open-cluster-management.io/managed-serviceaccount v0.5.0 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
