@@ -482,9 +482,9 @@ func (v *VRGInstance) resetCGLabelValue(pvc *corev1.PersistentVolumeClaim) (bool
 		return reset, nil
 	}
 
-	err := rmnutil.NewResourceUpdater(pvc).AddLabel(rmnutil.ConsistencyGroupLabel, "").Update(v.ctx, v.reconciler.Client)
+	err := v.updatePVCLabel(pvc, rmnutil.ConsistencyGroupLabel, "")
 	if err != nil {
-		return !reset, fmt.Errorf("error (%s) updating PVC labels", err)
+		return !reset, err
 	}
 
 	return !reset, nil

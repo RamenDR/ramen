@@ -972,9 +972,7 @@ func (v *VRGInstance) addVolRepConsistencyGroupLabel(pvc *corev1.PersistentVolum
 	}
 
 	// Add label for PVC, showing that this PVC is part of consistency group
-	return util.NewResourceUpdater(pvc).
-		AddLabel(util.ConsistencyGroupLabel, groupReplicationID).
-		Update(v.ctx, v.reconciler.Client)
+	return v.updatePVCLabel(pvc, util.ConsistencyGroupLabel, groupReplicationID)
 }
 
 func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim) error {
@@ -984,9 +982,32 @@ func (v *VRGInstance) addConsistencyGroupLabel(pvc *corev1.PersistentVolumeClaim
 	}
 
 	// Add a CG label to indicate that this PVC belongs to a consistency group.
-	return util.NewResourceUpdater(pvc).
-		AddLabel(util.ConsistencyGroupLabel, cgLabelVal).
+	return v.updatePVCLabel(pvc, util.ConsistencyGroupLabel, cgLabelVal)
+}
+
+func (v *VRGInstance) updatePVCLabel(pvc *corev1.PersistentVolumeClaim, key, value string) error {
+	current := ""
+	if labels := pvc.GetLabels(); labels != nil {
+		current = labels[key]
+	}
+
+	writtenBy := fmt.Sprintf("VolumeReplicationGroup %s/%s", v.instance.GetNamespace(), v.instance.GetName())
+
+	err := util.NewResourceUpdater(pvc).
+		AddLabel(key, value).
 		Update(v.ctx, v.reconciler.Client)
+	if err != nil {
+		return fmt.Errorf("failed to update pvc %s/%s label %s: %s by %s: %w",
+			pvc.GetNamespace(), pvc.GetName(), key, value, writtenBy, err)
+	}
+
+	if current != value {
+		v.log.Info(fmt.Sprintf("Updated pvc %s/%s label %s: %s by %s",
+			pvc.GetNamespace(), pvc.GetName(), key, value, writtenBy),
+			"reconciler", "VolumeReplicationGroup")
+	}
+
+	return nil
 }
 
 func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace string) (string, error) {
