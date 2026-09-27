@@ -393,7 +393,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	protectedPVC.ProtectedByVolSync = false
 	protectedPVC.StorageClassName = pvc.Spec.StorageClassName
-	protectedPVC.Labels = pvc.Labels
+	protectedPVC.Labels = PruneLabels(pvc.Labels)
 	protectedPVC.AccessModes = pvc.Spec.AccessModes
 	protectedPVC.Resources = pvc.Spec.Resources
 	protectedPVC.VolumeMode = pvc.Spec.VolumeMode

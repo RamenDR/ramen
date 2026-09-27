@@ -400,6 +400,9 @@ func GetTmpPVCNameForFinalSync(pvcName string) string {
 
 // SyncPVCLabels synchronizes labels from ProtectedPVC to PVC.
 // It simply adds/updates labels without removing ones that are deleted from ProtectedPVC.
+// The consistency-group label is not copied. Its value is the local cluster storage id, and the
+// VRG on this cluster is the only writer. Copying the peer cluster's value overwrites that label
+// on every reconcile.
 // Note: Kubernetes handles labels differently from annotations. Label values are limited to
 // 63 characters, so using the same pattern as in the SyncPVCAnnotations will eventually cause
 // it to break.
@@ -409,6 +412,10 @@ func SyncPVCLabels(pvc *corev1.PersistentVolumeClaim, protectedLabels map[string
 	}
 
 	for key, val := range protectedLabels {
+		if key == ConsistencyGroupLabel {
+			continue
+		}
+
 		pvc.Labels[key] = val
 	}
 }
