@@ -63,7 +63,10 @@ spec:
             readOnly: false
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2024-08-29T01-40-52Z
+          # pgsty/silo is a drop-in replacement for minio, which was
+          # archived and its images removed from public registries.
+          # https://github.com/pgsty/silo
+          image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
           imagePullPolicy: IfNotPresent
           resources:
             limits:
