@@ -162,28 +162,27 @@ func (d *DRPCInstance) processTestFailoverFlowIfEnabled() (bool, error) {
 			return false, err
 		}
 
-		// Validate failover cluster is different from current deployment cluster
-		lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
-		if d.instance.Spec.FailoverCluster == lastAppCluster {
-			err := fmt.Errorf(
-				"dryRun failover target cannot be the same as current deployment cluster: %s",
-				lastAppCluster)
-			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
+		// // Validate failover cluster is different from current deployment cluster
+		// lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+		// if d.instance.Spec.FailoverCluster == lastAppCluster {
+		// 	err := fmt.Errorf(
+		// 		"dryRun failover target cannot be the same as current deployment cluster: %s",
+		// 		lastAppCluster)
+		// 	d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
 
-			return false, err
-		}
+		// 	return false, err
+		// }
 	}
 	// Add dry-run annotation when entering test failover
 	// Validate failover cluster is different from current deployment cluster
 	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
 	if d.instance.Spec.DryRun &&
 		d.instance.Spec.Action == rmn.ActionFailover &&
-		d.instance.Spec.FailoverCluster != "" &&
-		d.instance.Spec.FailoverCluster != lastAppCluster {
+		d.instance.Spec.FailoverCluster != "" {
 		// Check if annotation already exists to avoid unnecessary updates
 		if !rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
 			// Add test failover annotation
-			// Note: We don't update last-action/last-app-deployment-cluster annotations during dryRun,
+			// Note: We don't update last-action annotations during dryRun,
 			// so they naturally preserve the pre-test state for revert validation
 			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
 
@@ -203,21 +202,21 @@ func (d *DRPCInstance) processTestFailoverFlowIfEnabled() (bool, error) {
 	// Detect dryRun exit:
 	// 1. progression is TestingFailover and dryRun becomes false, OR
 	// 2. dryRun is false and we still have the dryRun annotation (cleanup in progress)
-	if (d.instance.Status.Progression == rmn.ProgressionTestingFailover && !d.instance.Spec.DryRun) ||
-		(!d.instance.Spec.DryRun && rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation)) {
-		d.log.Info("Detected dryRun exit - routing to promotion or revert handler")
+	// if (d.instance.Status.Progression == rmn.ProgressionTestingFailover && !d.instance.Spec.DryRun) ||
+	// 	(!d.instance.Spec.DryRun && rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation)) {
+	// 	d.log.Info("Detected dryRun exit - routing to promotion or revert handler")
 
-		// Detect if user wants promotion or revert, then route to appropriate handler
-		needsCleanup, err := d.detectPromotionOrRevert()
-		if err != nil {
-			return false, err
-		}
+	// 	// Detect if user wants promotion or revert, then route to appropriate handler
+	// 	needsCleanup, err := d.detectPromotionOrRevert()
+	// 	if err != nil {
+	// 		return false, err
+	// 	}
 
-		if needsCleanup {
-			// Requeue to continue cleanup process
-			return false, nil
-		}
-	}
+	// 	if needsCleanup {
+	// 		// Requeue to continue cleanup process
+	// 		return false, nil
+	// 	}
+	// }
 
 	return true, nil
 }
@@ -488,7 +487,7 @@ func (d *DRPCInstance) executeAction() (bool, error) {
 
 //nolint:funlen
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
-	d.log.Info("Running initial deployment")
+	d.log.Info("Running initial deployment- v7")
 
 	const done = true
 
@@ -514,8 +513,14 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return d.ensureInitialDeployActionCompleted(homeCluster)
 	}
 
-	// Ensure that initial deployment is complete
-	if !deployed || !d.isUserPlRuleUpdated(homeCluster) {
+	// Check for test failover abort BEFORE checking placement update
+	// During abort, placement is still on failoverCluster, so isUserPlRuleUpdated would be false
+	// This would incorrectly trigger startDeploying instead of cleanup
+	if deployed && rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+		d.log.Info("Test failover revert detected, initiate cleanup")
+		// Fall through to ensureCleanupAndSecondaryReplicationSetup below
+	} else if !deployed || !d.isUserPlRuleUpdated(homeCluster) {
+		// Ensure that initial deployment is complete
 		d.setStatusInitiating()
 
 		_, err := d.startDeploying(homeCluster, homeClusterNamespace)
@@ -531,8 +536,10 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
-	// If we get here, the deployment is successful
-	err := d.finalizeInitialDeployment(homeCluster, clusterName)
+	// If we get here, the deployment is successful (normal case or test failover abort)
+
+	d.setDRState(rmn.Deployed)
+	err := d.ensureCleanupAndSecondaryReplicationSetup(homeCluster)
 	if err != nil {
 		return !done, err
 	}
@@ -548,7 +555,6 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 
 	// Update our 'well known' preferred placement
 	d.updatePreferredDecision()
-	d.setDRState(rmn.Deployed)
 
 	d.setConditionOnInitialDeploymentCompletion()
 
@@ -1408,7 +1414,18 @@ func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
 }
 
 func (d *DRPCInstance) ensurePromoted(srcCluster string) error {
+	if rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+		d.log.Info("Test failover promotion detected")
+	}
+
 	return d.cleanupTestFailoverAnnotation(srcCluster)
+	// // Only cleanup test failover annotation if it exists (test failover promotion scenario)
+	// // During normal relocate/failover, this annotation won't exist, so skip
+	// if _, exists := d.instance.Annotations[DRPCTestFailoverDryRunAnnotation]; exists {
+	// 	return d.cleanupTestFailoverAnnotation(srcCluster)
+	// }
+
+	// return nil
 }
 
 func (d *DRPCInstance) ensureCleanupAndSecondaryReplicationSetup(srcCluster string) error {
@@ -1925,8 +1942,9 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 		d.userPlacement.GetName(), homeCluster))
 
 	added := false
+	
+	added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
 	if !d.instance.Spec.DryRun {
-		added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
 		// Also update last-action annotation to track the current action
 		added = rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action)) || added
 	}
@@ -2678,8 +2696,20 @@ func (d *DRPCInstance) cleanupSecondaries(clusterToSkip string) error {
 		}
 	}
 
+	// At this point, all peers are Secondary (loop above verified it)
+	// Set PeerReady to Success
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+
+	// If test failover annotation exists, remove it now that cleanup is complete
+	if rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+		delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
+		d.log.Info("Test failover cleanup complete, removed annotation")
+
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			return fmt.Errorf("failed to remove test failover annotation: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -2715,19 +2745,7 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 		return !peerReady, nil
 	}
 
-	// TODO: REFACTOR this block
-	// Delete DRPC test failover annotation
-	// This ensures setVRGAnnotations() won't find the annotation and re-add it to VRG
-	delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
-
-	// Note: LastAppDeploymentCluster has already been updated by the revert/promotion handlers
-	// after cleanup verification (revert) or immediately (promotion)
-
-	d.log.Info("Cleaned up test failover state", "cluster", clusterName)
-
-	if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-		return !peerReady, fmt.Errorf("failed to remove DRPC annotations: %w", err)
-	}
+	// Don't delete annotation here - it will be removed after cleanup completes in cleanupSecondaries()
 
 	// IFF just updated or MCV is reporting no VRG, no need to use MCV to check if the state has been
 	// applied. Wait for the next round of reconcile.
@@ -2916,8 +2934,7 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 		vrg.Spec.PrepareForFinalSync = false
 		vrg.Spec.RunFinalSync = false
 
-		// Set annotation to "false" instead of deleting it
-		// ManifestWork controller doesn't sync deletions, but it does sync value changes
+		// Delete test failover annotation when transitioning VRG to Secondary
 		delete(vrg.Annotations, DRPCTestFailoverDryRunAnnotation)
 	}
 
