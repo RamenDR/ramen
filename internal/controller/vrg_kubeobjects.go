@@ -6,6 +6,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/hooks"
 	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
@@ -149,14 +151,20 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	// requeue with a delay if the time for the next capture has not yet arrived
-	if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
-		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
-			"interval", interval)
-		delaySetIfLess(result, delay, v.log)
-		v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
+	// requeue with a delay if the time for the next capture has not yet arrived,
+	// unless the VM list in VM-recipe has been updated (out-of-band capture).
+	if !v.isProtectedVMsListUpdated() {
+		if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
+			v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
+				"interval", interval)
+			delaySetIfLess(result, delay, v.log)
+			v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
-		return
+			return
+		}
+	} else {
+		log.Info("Protected VMs list in VM-recipe updated; triggering immediate kube objects capture instead of delaying",
+			"currentVMs", vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList])
 	}
 
 	// before starting a new capture, delete the previous one with the same number
@@ -172,6 +180,71 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName,
 		namePrefix, veleroNamespaceName, interval, generation,
 		kubeobjects.RequestsMapKeyedByName(requests), log)
+}
+
+// isProtectedVMsListUpdated checks if the list of protected Virtual Machines in the
+// VM recipe parameters has changed since the last acknowledged capture.
+// It returns true if there is a mismatch (e.g. newly onboarded workloads), which triggers
+// an immediate, out-of-band capture instead of delaying for the configured interval.
+// It does NOT update lastSeenProtectedVMsList; call acknowledgeProtectedVMsList only after
+// a capture completes successfully.
+func (v *VRGInstance) isProtectedVMsListUpdated() bool {
+	vrg := v.instance
+	if !v.isVMRecipeProtection() || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
+		return false
+	}
+
+	vmNamespaceList := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	if len(vmNamespaceList) == 0 {
+		return false
+	}
+
+	protectedNamespace := vmNamespaceList[0]
+	cacheKey := v.protectedVMsCacheKey(protectedNamespace)
+
+	currentVMs := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	lastSeenVal, ok := v.reconciler.lastSeenProtectedVMsList.Load(cacheKey)
+	lastSeenVMs, ok2 := lastSeenVal.([]string)
+
+	return !ok || !ok2 || !stringSlicesEqualIgnoreOrder(currentVMs, lastSeenVMs)
+}
+
+// acknowledgeProtectedVMsList records the current VM list as the last successfully captured
+// baseline. Must only be called after kubeObjectsCaptureComplete confirms all capture
+// requests completed successfully.
+func (v *VRGInstance) acknowledgeProtectedVMsList() {
+	vrg := v.instance
+	if !v.isVMRecipeProtection() || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
+		return
+	}
+
+	vmNamespaceList := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	if len(vmNamespaceList) == 0 {
+		return
+	}
+
+	protectedNamespace := vmNamespaceList[0]
+	cacheKey := v.protectedVMsCacheKey(protectedNamespace)
+	currentVMs := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	v.reconciler.lastSeenProtectedVMsList.Store(cacheKey, currentVMs)
+}
+
+// stringSlicesEqual compares two string slices for equality after sorting them,
+// ensuring order differences do not trigger false positive changes.
+func stringSlicesEqualIgnoreOrder(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	aCopy := slices.Clone(a)
+	bCopy := slices.Clone(b)
+
+	slices.Sort(aCopy)
+	slices.Sort(bCopy)
+
+	return slices.Equal(aCopy, bCopy)
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
@@ -565,6 +638,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	}
 
 	v.reconciler.recipeRetries.Store(v.namespacedName, 0)
+	v.acknowledgeProtectedVMsList()
 	v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
@@ -1527,4 +1601,8 @@ func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
 	}
 
 	return metav1.Time{}
+}
+
+func (v *VRGInstance) protectedVMsCacheKey(protectedNamespace string) string {
+	return v.instance.Namespace + "/" + v.instance.Name + "/" + protectedNamespace
 }
