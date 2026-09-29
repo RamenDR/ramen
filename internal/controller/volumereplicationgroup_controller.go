@@ -51,18 +51,19 @@ import (
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
-	APIReader               client.Reader
-	Log                     logr.Logger
-	ObjStoreGetter          ObjectStoreGetter
-	Scheme                  *runtime.Scheme
-	eventRecorder           *util.EventReporter
-	kubeObjects             kubeobjects.RequestsManager
-	RateLimiter             *workqueue.TypedRateLimiter[reconcile.Request]
-	veleroCRsAreWatched     bool
-	recipeRetries           sync.Map
-	excludedResourcesMgr    *velero.ExcludedResourcesManager
-	excludedResourcesMutex  sync.RWMutex
-	cachedExcludedResources []string
+	APIReader                client.Reader
+	Log                      logr.Logger
+	ObjStoreGetter           ObjectStoreGetter
+	Scheme                   *runtime.Scheme
+	eventRecorder            *util.EventReporter
+	kubeObjects              kubeobjects.RequestsManager
+	RateLimiter              *workqueue.TypedRateLimiter[reconcile.Request]
+	veleroCRsAreWatched      bool
+	recipeRetries            sync.Map
+	lastSeenProtectedVMsList sync.Map
+	excludedResourcesMgr     *velero.ExcludedResourcesManager
+	excludedResourcesMutex   sync.RWMutex
+	cachedExcludedResources  []string
 }
 
 // SetupWithManager sets up the controller with the Manager.
