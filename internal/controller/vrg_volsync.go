@@ -246,6 +246,12 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		return true
 	}
 
+	if isCGEnabled && pvc.Spec.StorageClassName == nil {
+		v.log.Info("PVC has no storage class name. We'll retry later.", "pvcName", pvc.Name)
+
+		return true // requeue
+	}
+
 	*finalSyncPrepared = true
 
 	if isCGEnabled {
@@ -275,7 +281,7 @@ func (v *VRGInstance) reconcilePVCAsVolSyncPrimary(pvc corev1.PersistentVolumeCl
 		)
 
 		rgs, finalSyncComplete, err := cephfsCGHandler.CreateOrUpdateReplicationGroupSource(
-			pvc.Namespace, v.instance.Spec.RunFinalSync,
+			pvc.Namespace, *pvc.Spec.StorageClassName, v.instance.Spec.RunFinalSync,
 		)
 		if err != nil {
 			v.log.Info("Failed to CreateOrUpdateReplicationGroupSource", "err", err)
@@ -342,15 +348,19 @@ func (v *VRGInstance) buildProtectedPVCForPVC(
 		return nil, false, true
 	}
 
-	err := util.NewResourceUpdater(&pvc).
-		AddFinalizer(volsync.PVCFinalizerProtected).
-		AddLabel(util.LabelOwnerNamespaceName, v.instance.Namespace).
-		AddLabel(util.LabelOwnerName, v.instance.Name).
-		Update(v.ctx, v.reconciler.Client)
-	if err != nil {
-		v.log.Info(fmt.Sprintf("Unable to add finalizer for PVC. We'll retry later. %v", err))
+	// If PVC is already being deleted, Kubernetes rejects adding new finalizers.
+	// Do not attempt to add finalizer or block reconciliation.
+	if !util.ResourceIsDeleted(&pvc) {
+		err := util.NewResourceUpdater(&pvc).
+			AddFinalizer(volsync.PVCFinalizerProtected).
+			AddLabel(util.LabelOwnerNamespaceName, v.instance.Namespace).
+			AddLabel(util.LabelOwnerName, v.instance.Name).
+			Update(v.ctx, v.reconciler.Client)
+		if err != nil {
+			v.log.Info(fmt.Sprintf("Unable to add finalizer for PVC. We'll retry later. %v", err))
 
-		return nil, true, false // requeue
+			return nil, true, false // requeue
+		}
 	}
 
 	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
