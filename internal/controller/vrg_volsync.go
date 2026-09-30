@@ -298,7 +298,7 @@ func (v *VRGInstance) buildProtectedPVCForPVC(
 		ProtectedByVolSync: true,
 		StorageClassName:   pvc.Spec.StorageClassName,
 		Annotations:        PruneAnnotations(pvc.GetAnnotations()),
-		Labels:             pvc.Labels,
+		Labels:             PruneLabels(pvc.Labels),
 		AccessModes:        pvc.Spec.AccessModes,
 		Resources:          pvc.Spec.Resources,
 		VolumeMode:         pvc.Spec.VolumeMode,
