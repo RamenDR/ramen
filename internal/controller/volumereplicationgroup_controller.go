@@ -2959,6 +2959,24 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 	return result
 }
 
+// PruneLabels copies labels and drops labels that are meaningful only on the
+// cluster where the PVC lives. The consistency-group value is
+// <namespace>-<this cluster's storage id> for CephFS, so the peer must not
+// receive it. Each cluster writes its own consistency-group label onto the local PVC.
+func PruneLabels(pvcLabels map[string]string) map[string]string {
+	result := make(map[string]string, len(pvcLabels))
+
+	for key, value := range pvcLabels {
+		if key == util.ConsistencyGroupLabel {
+			continue
+		}
+
+		result[key] = value
+	}
+
+	return result
+}
+
 func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 	cur := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeAutoCleanup)
 	if !v.isVMRecipeProtection() ||
