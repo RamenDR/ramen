@@ -87,15 +87,15 @@ environment.
 
    ```
    curl --fail --silent --show-error --location --output velero.tar.gz \
-       https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
-   tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
+       https://github.com/vmware-tanzu/velero/releases/download/v1.18.4/velero-v1.18.4-linux-amd64.tar.gz
+   tar xf velero.tar.gz --strip 1 velero-v1.18.4-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
    velero version
    ```
 
    For more info see
-   [Velero Basic Install](https://velero.io/docs/v1.16/basic-install/)
+   [Velero Basic Install](https://velero.io/docs/v1.18/basic-install/)
 
 1. Install `helm` tool - on Fedora you can use:
 
