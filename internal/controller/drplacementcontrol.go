@@ -910,7 +910,10 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting failover")
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionFalse, rmn.ReasonNotStarted,
-		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
+		fmt.Sprintf("Failover in progress to cluster %q", d.instance.Spec.FailoverCluster))
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionProtected, d.instance.Generation,
+		metav1.ConditionFalse, rmn.ReasonProtectedProgressing,
+		fmt.Sprintf("Waiting for workload protection on cluster %q", d.instance.Spec.FailoverCluster))
 	d.setProgression(rmn.ProgressionCheckingFailoverPrerequisites)
 
 	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
@@ -3331,6 +3334,9 @@ func (d *DRPCInstance) setStatusInitiating() {
 
 	d.instance.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
 	d.instance.Status.ActionDuration = nil
+	d.instance.Status.LastGroupSyncTime = nil
+	d.instance.Status.LastGroupSyncDuration = nil
+	d.instance.Status.LastGroupSyncBytes = nil
 }
 
 func (d *DRPCInstance) setActionDuration() {
