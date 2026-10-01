@@ -9,6 +9,6 @@ spec:
   drClusters:
   - $cluster1
   - $cluster2
-  schedulingInterval: $interval
+  schedulingInterval: ""
   replicationClassSelector: {}
   volumeSnapshotClassSelector: {}
