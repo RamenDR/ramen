@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/viper"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/validation"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -99,11 +100,7 @@ func (a *Deployer) Equal(b *Deployer) bool {
 		return false
 	}
 
-	if a.Recipe != nil && b.Recipe != nil {
-		if *a.Recipe != *b.Recipe {
-			return false
-		}
-	} else if a.Recipe != b.Recipe {
+	if !ptr.Equal(a.Recipe, b.Recipe) {
 		return false
 	}
 
