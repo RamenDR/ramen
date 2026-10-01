@@ -8,3 +8,9 @@ Source: https://github.com/RamenDR/ramen
 # Files: src/*
 # Copyright: $YEAR $NAME <$CONTACT>
 # License: ...
+
+# Documentation site files that cannot carry an SPDX header inline.
+Files: website/go.mod website/go.sum website/package.json website/package-lock.json
+ website/assets/icons/logo.svg website/static/favicon.svg
+Copyright: The RamenDR authors
+License: Apache-2.0

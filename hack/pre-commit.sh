@@ -69,7 +69,11 @@ run_mdformat() {
     detected_version=$("${tool}" --version | cut -d' ' -f2)
     check_version "${detected_version}" "${required_version}" "${tool}"
 
-    (get_files ".*\.md$" | xargs -0 -r "${tool}" --check) 2>&1 | tee -a "${OUTPUTS_FILE}"
+    # Skip Hugo content files (website/content): they carry YAML front matter and
+    # template shortcodes that mdformat cannot parse (it rewrites front matter
+    # into Markdown headings and reflows shortcodes).
+    (get_files ".*\.md$" | grep --null-data -zv '^website/content/' \
+        | xargs -0 -r "${tool}" --check) 2>&1 | tee -a "${OUTPUTS_FILE}"
     echo
     echo
 }
