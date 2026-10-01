@@ -100,9 +100,9 @@ TOOLS = [
     },
     {
         "name": "velero",
-        "version": "v1.16.1",
+        "version": "v1.18.4",
         "url": "https://github.com/vmware-tanzu/velero/releases/download/{version}/velero-{version}-{goos}-{goarch}.tar.gz",
-        "digest": "0a576053cd051268aee40a3ebc9fbf8f72c4fa6a03792100d9009c50367e795f",
+        "digest": "e520c17d8997e1c9d0a28ae013592e4473ca3bd82cb3acd132e51286263f74bf",
         "member": "velero-{version}-{goos}-{goarch}/velero",
         "verify": ["velero", "version", "--client-only"],
     },
