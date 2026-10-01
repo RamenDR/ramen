@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Project pages site served at https://ramendr.github.io/ramen/
+# The CI deploy job overrides baseURL with the real Pages URL.
+baseURL = "https://ramendr.github.io/ramen/"
+title = "Ramen"
+
+# Language / i18n
+contentDir = "content/en"
+defaultContentLanguage = "en"
+enableRobotsTXT = true
+enableGitInfo = true
+
+# Markdown rendering
+[markup]
+  [markup.goldmark.renderer]
+    unsafe = true          # allow raw HTML in the existing docs
+  [markup.highlight]
+    style = "tango"
+    lineNos = false
+    noClasses = false
+  [markup.tableOfContents]
+    startLevel = 2
+    endLevel = 3
+
+# ---------------------------------------------------------------------------
+# Modules: Docsy theme + mount the repo's existing docs as the content source
+# so docs/ stays the single source of truth (no duplication, no sync step).
+# ---------------------------------------------------------------------------
+[module]
+  proxy = "direct"
+  [[module.imports]]
+    path = "github.com/google/docsy"
+  [[module.imports]]
+    path = "github.com/google/docsy/dependencies"
+
+  # Site content. content/en/docs/ is generated from the repo's ../docs by
+  # `go run ./tools/gendocs` (see website/README.md) — keeping docs/ as the
+  # single source of truth while giving Hugo the front matter it needs.
+  [[module.mounts]]
+    source = "content/en"
+    target = "content"
+
+  # Images referenced by the docs are copied into static/docs/ by the gendocs
+  # generator (only the ones actually linked), then served from here.
+
+  # Site's own static assets, theme assets (navbar logo) and layout overrides.
+  [[module.mounts]]
+    source = "static"
+    target = "static"
+  [[module.mounts]]
+    source = "assets"
+    target = "assets"
+  [[module.mounts]]
+    source = "layouts"
+    target = "layouts"
+
+# ---------------------------------------------------------------------------
+# Docsy parameters
+# ---------------------------------------------------------------------------
+[params]
+  copyright = "The RamenDR authors"
+  github_repo = "https://github.com/RamenDR/ramen"
+  github_branch = "main"
+  # Generated content lives at content/en/docs/ but mirrors the repo's docs/
+  # layout. Docsy builds its View/Edit/Create links from the working-dir-relative
+  # file path, so strip the content/en/ prefix to land on the real source file
+  # (content/en/docs/install.md -> docs/install.md). github_subdir stays empty.
+  path_base_for_github_subdir = { from = "content/en/", to = "" }
+  offlineSearch = true
+  prism_syntax_highlighting = false
+
+  [params.ui]
+    breadcrumb_disable = false
+    navbar_logo = true
+    sidebar_menu_compact = false
+    sidebar_search_disable = false
+    showLightDarkModeMenu = true
+
+  [params.links]
+    [[params.links.user]]
+      name = "GitHub"
+      url = "https://github.com/RamenDR/ramen"
+      icon = "fab fa-github"
+      desc = "Source, issues and discussions"
+    [[params.links.developer]]
+      name = "open-cluster-management"
+      url = "https://open-cluster-management.io/"
+      icon = "fas fa-cubes"
+      desc = "The OCM project Ramen extends"
+
+# ---------------------------------------------------------------------------
+# Top navigation
+# ---------------------------------------------------------------------------
+[[menu.main]]
+  name = "Documentation"
+  weight = 10
+  url = "/docs/"
+[[menu.main]]
+  name = "GitHub"
+  weight = 20
+  url = "https://github.com/RamenDR/ramen"
+  pre = "<i class='fab fa-github'></i>"

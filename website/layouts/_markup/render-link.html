@@ -1,0 +1,13 @@
+{{- /* SPDX-License-Identifier: Apache-2.0 */ -}}
+{{- /*
+  The gendocs generator already resolves cross-doc links to site-absolute
+  /docs/... URLs (or GitHub URLs). Here we only prefix the GitHub Pages project
+  subpath for internal links. relURL ignores the subpath for paths with a
+  leading slash, so trim it first. Remote and in-page links pass through.
+*/ -}}
+{{- $dest := .Destination -}}
+{{- $href := $dest -}}
+{{- if not (or (hasPrefix $dest "http://") (hasPrefix $dest "https://") (hasPrefix $dest "mailto:") (hasPrefix $dest "#")) -}}
+  {{- $href = strings.TrimPrefix "/" $dest | relURL -}}
+{{- end -}}
+<a href="{{ $href }}"{{ with .Title }} title="{{ . }}"{{ end }}>{{ .Text | safeHTML }}</a>
