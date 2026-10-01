@@ -3200,3 +3200,84 @@ func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementCo
 	// in the same namespace — this is explicitly supported, skip the conflict check.
 	return true
 }
+
+func (r *DRPlacementControlReconciler) switchClusterDecisionRetainFailover(
+	ctx context.Context,
+	placement interface{},
+	cluster string,
+) error {
+	switch obj := placement.(type) {
+	case *plrv1.PlacementRule:
+		return r.switchPlacementRuleClusterDecisionRetainFailover(ctx, obj, cluster)
+	case *clrapiv1beta1.Placement:
+		return r.switchPlacementClusterDecisionRetainFailover(ctx, obj, cluster)
+	default:
+		return fmt.Errorf("failed to find Placement or PlacementRule")
+	}
+}
+
+func (r *DRPlacementControlReconciler) switchPlacementRuleClusterDecisionRetainFailover(
+	ctx context.Context,
+	placement *plrv1.PlacementRule,
+	cluster string,
+) error {
+	return nil
+}
+
+
+// switchPlacementClusterDecisionRetainFailover updates decisions so that the reason
+// PlacementDecisionReasonFailoverRetained is removed from clusterName (reverting it to clusterName),
+// and applied to any other cluster decisions.
+func (r *DRPlacementControlReconciler) switchPlacementClusterDecisionRetainFailover(
+	ctx context.Context,
+	placement *clrapiv1beta1.Placement,
+	cluster string,
+) error {
+	plDecision, err := r.getPlacementDecisionFromPlacement(placement)
+	if err != nil {
+		return err
+	}
+
+	if plDecision == nil {
+		return nil
+	}
+
+	updated := false
+
+	for idx := range plDecision.Status.Decisions {
+		d := &plDecision.Status.Decisions[idx]
+
+		if d.ClusterName == cluster {
+			// If the target cluster currently has RetainedForFailover, revert it back to cluster name
+			if d.Reason == PlacementDecisionReasonFailoverRetained {
+				d.Reason = d.ClusterName
+				updated = true
+			}
+		} else {
+			// All other clusters receive RetainedForFailover
+			if d.Reason != PlacementDecisionReasonFailoverRetained {
+				d.Reason = PlacementDecisionReasonFailoverRetained
+				updated = true
+			}
+		}
+	}
+
+	if !updated {
+		return nil
+	}
+
+	if err := r.Status().Update(ctx, plDecision); err != nil {
+		return fmt.Errorf(
+			"failed to update placementDecision status to switch retained failover reason (%w)",
+			err,
+		)
+	}
+
+	r.Log.Info(
+		"Updated PlacementDecision to switch retained failover cluster decision",
+		"ActiveCluster", cluster,
+		"PlacementDecision", plDecision.Status.Decisions,
+	)
+
+	return nil
+}
