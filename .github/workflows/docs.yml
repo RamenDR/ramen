@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Build the documentation site (website/) and deploy it to GitHub Pages.
+# Requires Settings -> Pages -> Source = "GitHub Actions" (admin, one-time).
+---
+name: Documentation
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - website/**
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - docs/**
+      - website/**
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Allow one concurrent deployment; let a newer push supersede an in-flight run.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # enableGitInfo needs history for last-modified dates
+
+      - name: Scan docs content for unsafe HTML/JS
+        # Markdown renders with goldmark unsafe=true, so raw HTML in a merged
+        # doc becomes live HTML on the site. Fail fast on obvious XSS vectors
+        # in contributor-authored content (docs/ and website/content/). This
+        # is a tripwire, not a sandbox: PR review remains the real control.
+        run: |
+          set -euo pipefail
+          handlers='error|load|click|mouseover|mouseenter|focus|blur'
+          handlers="$handlers|submit|change|input|keydown|keyup|toggle"
+          handlers="$handlers|wheel|scroll|drag|copy|paste|contextmenu"
+          pattern="(<script|javascript:|[[:space:]]on($handlers)[[:space:]]*=)"
+          # Skip docs/ dirs gendocs never publishes (diagram/logo sources).
+          skip=(--exclude-dir=diagrams --exclude-dir=artwork
+                --exclude-dir=superpowers)
+          if grep -rniE --include='*.md' --include='*.html' "${skip[@]}" \
+              "$pattern" docs website/content; then
+            echo "::error::Potential unsafe HTML/JS in docs content above."
+            exit 1
+          fi
+          echo "No unsafe HTML/JS patterns found in docs content."
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: website/go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Hugo
+        # Third-party action pinned to a full commit SHA (v3.2.1) so a
+        # hijacked tag cannot inject code into the build/deploy job.
+        uses: peaceiris/actions-hugo@2752ce1d29631191ea3f27c23495fa06139a5b78
+        with:
+          hugo-version: 0.167.0
+          extended: true
+
+      - name: Configure Pages
+        id: pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+
+      - name: Install Node dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Generate content from docs/
+        working-directory: website
+        run: go run ./tools/gendocs
+
+      - name: Build with Hugo
+        working-directory: website
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url || 'http://localhost' }}
+        run: hugo --minify --gc --baseURL "${BASE_URL}/"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/public
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write      # to deploy to Pages
+      id-token: write  # verify the deployment came from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

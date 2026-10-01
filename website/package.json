@@ -1,0 +1,16 @@
+{
+  "name": "ramen-website",
+  "version": "0.1.0",
+  "description": "Documentation site for the Ramen project (Hugo + Docsy)",
+  "license": "Apache-2.0",
+  "private": true,
+  "scripts": {
+    "build": "hugo --minify --gc",
+    "serve": "hugo server"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "postcss-cli": "^11.0.0"
+  }
+}
