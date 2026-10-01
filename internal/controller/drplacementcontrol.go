@@ -230,8 +230,8 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// This would incorrectly trigger startDeploying instead of cleanup
 	if deployed && rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
 		d.log.Info("Test failover revert detected, initiate cleanup")
-		err:= d.reconciler.switchClusterDecisionRetainFailover(d.ctx, d.userPlacement, homeCluster)
-		if err != nil{
+		err := d.reconciler.switchClusterDecisionRetainFailover(d.ctx, d.userPlacement, homeCluster)
+		if err != nil {
 			return !done, err
 		}
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
@@ -1614,18 +1614,6 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
 		d.userPlacement.GetName(), homeCluster))
 
-	added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
-	if !d.instance.Spec.DryRun {
-		// Also update last-action annotation to track the current action
-		added = rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action)) || added
-	}
-
-	if added {
-		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-			return err
-		}
-	}
-
 	newPD := &clrapiv1beta1.ClusterDecision{
 		ClusterName: homeCluster,
 		Reason:      reason,
@@ -1996,23 +1984,14 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 func (d *DRPCInstance) setVRGAnnotations(vrg *rmn.VolumeReplicationGroup, homeCluster string) {
 	// Create base annotations that are always present
 	vrg.ObjectMeta.Annotations = map[string]string{
-		DestinationClusterAnnotationKey:       homeCluster,
-		DRPCUIDAnnotation:                     string(d.instance.UID),
-		rmnutil.IsCGEnabledAnnotation:         d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
-		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
-		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
-		rmnutil.EnableDiffAnnotation:          d.instance.GetAnnotations()[rmnutil.EnableDiffAnnotation],
+		DestinationClusterAnnotationKey:                              homeCluster,
+		DRPCUIDAnnotation:                                            string(d.instance.UID),
+		rmnutil.IsCGEnabledAnnotation:                                d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
+		rmnutil.IsSubmarinerEnabledAnnotation:                        d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+		rmnutil.UseVolSyncAnnotation:                                 d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		rmnutil.EnableDiffAnnotation:                                 d.instance.GetAnnotations()[rmnutil.EnableDiffAnnotation],
+		vrg.ObjectMeta.Annotations[DRPCTestFailoverDryRunAnnotation]: d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation],
 	}
-
-	// Only set test failover annotation on the failover cluster during active test failover
-	// This annotation is used by VRG controller to enable AutoResync during test failover
-	if homeCluster == d.instance.Spec.FailoverCluster &&
-		d.instance.Spec.DryRun &&
-		d.instance.Spec.Action == rmn.ActionFailover {
-		vrg.ObjectMeta.Annotations[DRPCTestFailoverDryRunAnnotation] = DRPCTestFailoverDryRunAnnotationValueTrue
-	}
-	// Note: We don't set it on other clusters or when not in test failover
-	// The cleanupTestFailoverAnnotation() function handles cleanup by removing from DRPC and setting to "false" on VRG
 
 	// Propagate global VGR label to VRG for consensus checks.
 	if d.hasGlobalVGRLabel() {
@@ -2065,6 +2044,22 @@ func (d *DRPCInstance) updateMoverConfig(vrg *rmn.VolumeReplicationGroup) {
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {
+	added := false
+	if value, ok := d.instance.GetAnnotations()[LastAppDeploymentCluster]; !ok || value != homeCluster {
+		added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	}
+	
+	if !d.instance.Spec.DryRun {
+		// Also update last-action annotation to track the current action
+		added = rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action)) || added
+	}
+
+	if added {
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			return err
+		}
+	}
+
 	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
 	if clusterDecision.ClusterName == "" ||
 		homeCluster != clusterDecision.ClusterName {
@@ -2604,11 +2599,11 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 		vrg.Spec.PrepareForFinalSync = false
 		vrg.Spec.RunFinalSync = false
 
-		if vrg.Annotations[DRPCTestFailoverDryRunAnnotation] == DRPCTestFailoverDryRunAnnotationValueTrue {
-			vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
-		}
+		// if vrg.Annotations[DRPCTestFailoverDryRunAnnotation] == DRPCTestFailoverDryRunAnnotationValueTrue {
+		// 	vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
+		// }
 	}
-	
+
 	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
 		return false, err
