@@ -2168,10 +2168,10 @@ func (v *VRGInstance) updateVRGAutoCleanupCondition() {
 	}
 }
 
-// updateVRGConditions updates four summary conditions VRGConditionTypeDataReady,
-// VRGConditionTypeClusterDataProtected, VRGConditionTypeDataProtected and
-// VRGConditionTypeDestinationInfoAvailable, at the VRG level based on the
-// corresponding PVC level conditions in the VRG:
+// updateVRGConditions updates five summary conditions VRGConditionTypeDataReady,
+// VRGConditionTypeClusterDataProtected, VRGConditionTypeDataProtected,
+// VRGConditionTypeDestinationInfoAvailable and VRGConditionTypeReplicationHealthy,
+// at the VRG level based on the corresponding PVC level conditions in the VRG:
 //
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
@@ -2204,6 +2204,10 @@ func (v *VRGInstance) updateVRGConditions() {
 
 	if destInfoCond := v.aggregateVolRepDestinationInfoAvailableCondition(); destInfoCond != nil {
 		v.logAndSetConditions(VRGConditionTypeDestinationInfoAvailable, destInfoCond)
+	}
+
+	if replicationHealthyCond := v.aggregateVolRepReplicationHealthyCondition(); replicationHealthyCond != nil {
+		v.logAndSetConditions(VRGConditionTypeReplicationHealthy, replicationHealthyCond)
 	}
 
 	v.updateVRGLastGroupSyncTime()

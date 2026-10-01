@@ -77,6 +77,11 @@ const (
 	// on the cluster it is expected to be available on.
 	ConditionProtected = "Protected"
 
+	// ReplicationHealthy is a visibility copy of VRG ReplicationHealthy (VR/VGR Replicating
+	// status, reason, and CSI message). It is absent when the VRG does not report that
+	// condition.
+	ConditionReplicationHealthy = "ReplicationHealthy"
+
 	// GlobalActionConsensus condition indicates whether all DRPCs sharing the same global VGR label
 	// agree on the DR action and target cluster.
 	ConditionGlobalAction = "GlobalAction"
