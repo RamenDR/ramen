@@ -902,9 +902,17 @@ func (d *DRPCInstance) checkClusterFenced(cluster string, drClusters []rmn.DRClu
 	return false, fmt.Errorf("failed to get the fencing status for the cluster %s", cluster)
 }
 
-func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
-	const done = true
-	// Make sure we record the state that we are failing over
+// recordFailoverStart records that a failover is starting (phase, Available
+// and PeerReady conditions, initial progression) and, on the transition into
+// FailingOver, persists the DRPC status before returning. Persisting before
+// acting is the contract: the orchestration that follows promotes the peer
+// cluster's VRG through its ManifestWork, and an observer — or a hub that
+// restarts mid-action — must never find a promoted peer beside a stale
+// stable phase. Requeues already in FailingOver record nothing new and skip
+// the write.
+func (d *DRPCInstance) recordFailoverStart() error {
+	transitioned := d.instance.Status.Phase != rmn.FailingOver
+
 	d.setDRState(rmn.FailingOver)
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Starting failover")
@@ -912,6 +920,20 @@ func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
 		metav1.ConditionFalse, rmn.ReasonNotStarted,
 		fmt.Sprintf("Started failover to cluster %q", d.instance.Spec.FailoverCluster))
 	d.setProgression(rmn.ProgressionCheckingFailoverPrerequisites)
+
+	if !transitioned {
+		return nil
+	}
+
+	return d.reconciler.updateDRPCStatus(d.ctx, d.instance, d.userPlacement, d.log, d.vrgs)
+}
+
+func (d *DRPCInstance) switchToFailoverCluster() (bool, error) {
+	const done = true
+	// Record and persist that we are failing over before acting on it.
+	if err := d.recordFailoverStart(); err != nil {
+		return !done, fmt.Errorf("failed to record failover start: %w", err)
+	}
 
 	curHomeCluster := d.getCurrentHomeClusterName(d.instance.Spec.FailoverCluster, d.drClusters)
 	if curHomeCluster == "" {
