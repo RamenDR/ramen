@@ -24,7 +24,9 @@ import (
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,6 +43,7 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -96,6 +99,50 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 	}
 }
 
+// hubManagerCacheOptions returns cache.Options that restrict the controller-runtime
+// cache for high-cardinality, cluster-wide resource kinds that scale with the number
+// of ManagedClusters imported on the hub (Secret, ManagedClusterView, ManifestWork).
+//
+// Without this scoping, the default cache fully lists/watches every object of these
+// kinds across every namespace in the cluster -- including objects owned by unrelated
+// ACM components -- which can exceed the hub operator's memory limit on hubs managing
+// many ManagedClusters (see OOMKill investigation).
+//
+// ConfigMap is intentionally left unscoped here: DRPlacementControlReconciler watches
+// admin-authored, unlabeled "network-mapping" ConfigMaps that can live in any
+// application namespace, so neither a namespace nor a label selector can safely scope
+// it today.
+func hubManagerCacheOptions() cache.Options {
+	ramenLabelSelector := labels.SelectorFromSet(labels.Set{rmnutil.CreatedByRamenLabel: "true"})
+
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			// DRPolicyReconciler.secretMapFunc and DRClusterReconciler.drClusterSecretMapFunc
+			// only ever act on Secrets in RamenOperatorNamespace(); the S3 credential Secret
+			// they reference is read via the uncached APIReader, so it is unaffected by this.
+			//
+			// cache.AllNamespaces is a fallback informer for every other namespace, scoped by
+			// ramenLabelSelector: it exists for the VolSync PSK replication Secret, which lives
+			// in the DRPC's own (arbitrary) namespace but is always labeled CreatedByRamenLabel
+			// (see volsync.generateNewVolSyncReplicationSecret). controller-runtime automatically
+			// excludes RamenOperatorNamespace() from this fallback's scope, so there's no overlap.
+			&corev1.Secret{}: {
+				Namespaces: map[string]cache.Config{
+					controllers.RamenOperatorNamespace(): {},
+					cache.AllNamespaces:                  {LabelSelector: ramenLabelSelector},
+				},
+			},
+			// Every ManagedClusterView ramen creates is labeled CreatedByRamenLabel; MCVs
+			// created by other ACM components are never read by ramen.
+			&viewv1beta1.ManagedClusterView{}: {Label: ramenLabelSelector},
+			// Every ManifestWork ramen creates is labeled CreatedByRamenLabel; this avoids
+			// caching the (often large) ManifestWorks other ACM components create per
+			// managed cluster (klusterlet, addons, policies, etc).
+			&ocmworkv1.ManifestWork{}: {Label: ramenLabelSelector},
+		},
+	}
+}
+
 func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
 	ctrlOptions := ctrl.Options{
@@ -104,6 +151,10 @@ func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig
 		Metrics:                controllers.MetricsServerOptions(metricsAddr),
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       controllers.LeaderElectionResourceName(controllers.ControllerType),
+	}
+
+	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
+		ctrlOptions.Cache = hubManagerCacheOptions()
 	}
 
 	c, err := client.New(restCfg, client.Options{Scheme: scheme})
