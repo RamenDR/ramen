@@ -18,7 +18,7 @@ def deploy(cluster):
     print("Deploying olm crds")
 
     path = _cache.get(str(PACKAGE_DIR / "start-data" / "crds"), CRDS_CACHE_KEY)
-    kubectl.apply("--filename", path, context=cluster)
+    kubectl.apply("--filename", path, server_side=True, context=cluster)
 
     print("Waiting until cdrs are established")
     kubectl.wait(
@@ -32,7 +32,7 @@ def deploy(cluster):
     path = _cache.get(
         str(PACKAGE_DIR / "start-data" / "operators"), OPERATORS_CACHE_KEY
     )
-    kubectl.apply("--filename", path, context=cluster)
+    kubectl.apply("--filename", path, server_side=True, context=cluster)
 
 
 def wait(cluster):

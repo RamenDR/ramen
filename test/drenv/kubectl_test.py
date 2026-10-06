@@ -56,13 +56,33 @@ def test_exec(tmpenv):
 def test_apply(tmpenv, capsys):
     kubectl.apply(f"--filename={example.DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()
-    assert out.strip() == "deployment.apps/example-deployment serverside-applied"
+    assert out.strip() == "deployment.apps/example-deployment unchanged"
 
 
 @pytest.mark.cluster
-@pytest.mark.parametrize("server_side", [None, True])
-def test_apply_server_side(tmpenv, tmp_path, server_side):
-    name = f"test-apply-server-side-{server_side}".lower()
+def test_apply_server_side(tmpenv, tmp_path):
+    name = "test-apply-server-side"
+    resource = f"configmap/{name}"
+    manifest = tmp_path / "configmap.yaml"
+    manifest.write_text(f"""\
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {name}
+""")
+
+    kubectl.apply(f"--filename={manifest}", server_side=True, context=tmpenv.profile)
+    try:
+        annotations = _get_annotations(resource, tmpenv.profile)
+        assert LAST_APPLIED_CONFIGURATION not in annotations
+    finally:
+        kubectl.delete(resource, context=tmpenv.profile)
+
+
+@pytest.mark.cluster
+@pytest.mark.parametrize("server_side", [None, False])
+def test_apply_client_side(tmpenv, tmp_path, server_side):
+    name = f"test-apply-client-side-{server_side}".lower()
     resource = f"configmap/{name}"
     manifest = tmp_path / "configmap.yaml"
     manifest.write_text(f"""\
@@ -74,26 +94,6 @@ metadata:
 
     kwargs = {} if server_side is None else {"server_side": server_side}
     kubectl.apply(f"--filename={manifest}", **kwargs, context=tmpenv.profile)
-    try:
-        annotations = _get_annotations(resource, tmpenv.profile)
-        assert LAST_APPLIED_CONFIGURATION not in annotations
-    finally:
-        kubectl.delete(resource, context=tmpenv.profile)
-
-
-@pytest.mark.cluster
-def test_apply_client_side(tmpenv, tmp_path):
-    name = "test-apply-client-side"
-    resource = f"configmap/{name}"
-    manifest = tmp_path / "configmap.yaml"
-    manifest.write_text(f"""\
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {name}
-""")
-
-    kubectl.apply(f"--filename={manifest}", server_side=False, context=tmpenv.profile)
     try:
         annotations = _get_annotations(resource, tmpenv.profile)
         assert LAST_APPLIED_CONFIGURATION in annotations

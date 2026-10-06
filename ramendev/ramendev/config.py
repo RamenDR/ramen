@@ -80,7 +80,6 @@ def create_ramen_config_map(cluster, yaml):
     command.info("Updating ramen config map in cluster '%s'", cluster)
     kubectl.apply(
         "--filename=-",
-        force_conflicts=True,
         input=yaml,
         context=cluster,
         log=command.debug,

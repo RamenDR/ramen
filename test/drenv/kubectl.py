@@ -93,7 +93,7 @@ def exec(*args, context=None):
 
 def apply(
     *args,
-    server_side=True,
+    server_side=False,
     force_conflicts=False,
     input=None,
     context=None,
@@ -102,8 +102,10 @@ def apply(
     """
     Run kubectl apply ... logging progress messages.
 
-    Server-side apply is enabled by default to avoid the large
-    last-applied-configuration annotation created by client-side apply.
+    Client-side apply is the default to avoid conflicts with fields managed by
+    other operators. Callers can opt into server-side apply when required to
+    avoid the large last-applied-configuration annotation, and explicitly
+    enable force_conflicts when they intend to take ownership of those fields.
     """
     args = list(args)
     for flag in _apply_flags(args):
