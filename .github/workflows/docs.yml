@@ -60,7 +60,7 @@ jobs:
           echo "No unsafe HTML/JS patterns found in docs content."
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: website/go.mod
 
