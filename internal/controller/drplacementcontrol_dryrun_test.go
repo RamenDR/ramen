@@ -172,7 +172,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 					}
 
 					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
-				}, timeout, interval).Should(Equal("true"))
+				}, timeout, interval).Should(Equal(East1ManagedCluster))
 			})
 		})
 
@@ -374,7 +374,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 					}
 
 					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
-				}, timeout, interval).Should(Equal("true"))
+				}, timeout, interval).Should(Equal(West1ManagedCluster))
 
 				// Promote: Change dryRun to false (keeping failoverCluster)
 				Eventually(func() error {
@@ -419,7 +419,7 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 					}
 
 					return latest.GetAnnotations()["drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"]
-				}, timeout, interval).Should(Equal("true"))
+				}, timeout, interval).Should(Equal(West1ManagedCluster))
 
 				// Revert: Change dryRun to false and revert spec
 				Eventually(func() error {

@@ -73,3 +73,4 @@ out/
 
 # macOS system files
 .DS_Store
+*_REMOVED.md

@@ -1864,6 +1864,7 @@ func (v *VRGInstance) resetInitialStatusAsSecondary() bool {
 	)
 
 	if update {
+		v.updateVRGConditions()
 		v.updateVRGStatus(v.result)
 	}
 
