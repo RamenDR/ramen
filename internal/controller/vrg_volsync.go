@@ -43,13 +43,16 @@ func (v *VRGInstance) restorePVsAndPVCsForVolSync() (int, error) {
 		// as this would result in incorrect information.
 		rdSpec.ProtectedPVC.Conditions = nil
 
-		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
-		if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
-			v.log.Info("The CG label from the primary cluster found in RDSpec", "Label", cgLabelVal)
-			// Get the CG label value for this cluster
+		if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
+			// Get the CG label value for this cluster.
+			var cgLabelVal string
+
 			cgLabelVal, err = v.getCGLabelValue(rdSpec.ProtectedPVC.StorageClassName,
 				rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 			if err == nil {
+				v.log.Info("Restoring PVC with the local consistency-group label",
+					"PVC", rdSpec.ProtectedPVC.Name, "Label", cgLabelVal)
+
 				cephfsCGHandler := cephfscg.NewVSCGHandler(
 					v.ctx, v.reconciler.Client, v.instance,
 					&metav1.LabelSelector{MatchLabels: map[string]string{util.ConsistencyGroupLabel: cgLabelVal}},
@@ -517,10 +520,8 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 	for index := range v.instance.Spec.VolSync.RDSpec {
 		rdSpec := v.instance.Spec.VolSync.RDSpec[index]
 
-		cgLabelVal, ok := rdSpec.ProtectedPVC.Labels[util.ConsistencyGroupLabel]
-		if ok && util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
-			v.log.Info("RDSpec contains the CG label from the primary cluster", "Label", cgLabelVal)
-			// Get the CG label value for this cluster
+		if util.IsCGEnabledForVolSync(v.ctx, v.reconciler.APIReader) {
+			// Get the CG label value for this cluster.
 			cgLabelVal, err := v.getCGLabelValue(rdSpec.ProtectedPVC.StorageClassName,
 				rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
 			if err != nil {
@@ -528,6 +529,9 @@ func (v *VRGInstance) reconcileCGMembership() (map[string]struct{}, bool, error)
 
 				return rdSpecsUsingCG, true, err
 			}
+
+			v.log.Info("Adding RDSpec to the local consistency group",
+				"PVC", rdSpec.ProtectedPVC.Name, "Label", cgLabelVal)
 
 			key := fmt.Sprintf("%s-%s", rdSpec.ProtectedPVC.Namespace, rdSpec.ProtectedPVC.Name)
 			rdSpecsUsingCG[key] = struct{}{}
