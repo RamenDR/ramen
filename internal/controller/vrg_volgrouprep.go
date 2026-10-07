@@ -1011,7 +1011,8 @@ func (v *VRGInstance) deleteVGR(vrNamespacedName types.NamespacedName, log logr.
 		return nil
 	}
 
-	v.log.Info("Deleted VolumeGroupReplication resource %s/%s", vrNamespacedName.Namespace, vrNamespacedName.Name)
+	v.log.Info(fmt.Sprintf("Deleted VolumeGroupReplication resource %s/%s",
+		vrNamespacedName.Namespace, vrNamespacedName.Name))
 
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, cr, log)
 }

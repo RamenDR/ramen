@@ -1007,7 +1007,7 @@ func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace stri
 
 	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
 	if !ok {
-		v.log.Info("Missing storageID for PVC %s/%s", pvcNamespace, pvcName)
+		v.log.Info(fmt.Sprintf("Missing storageID for PVC %s/%s", pvcNamespace, pvcName))
 
 		return "", fmt.Errorf("missing storageID for PVC %s/%s", pvcNamespace, pvcName)
 	}
