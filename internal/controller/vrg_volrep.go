@@ -3359,7 +3359,7 @@ func (v *VRGInstance) ensureSecondaryState() bool {
 //
 // Returns true if requeue is needed (VM cleanup in progress), false otherwise.
 func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
-	if !v.isVMRecipeProtection() {
+	if !rmnutil.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
 		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Status.ObservedGeneration,
 			metav1.ConditionFalse,
 			VRGConditionReasonUnused, "AutoCleanup is not applicable for protection schemes other than vm-recipe.")
