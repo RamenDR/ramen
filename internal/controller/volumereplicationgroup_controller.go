@@ -1682,7 +1682,7 @@ func (v *VRGInstance) reconcileAsPrimary() {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
 
-	if !v.result.Requeue && v.isVMRecipeProtection() {
+	if !v.result.Requeue && util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.result.Requeue = true
 		}
@@ -2147,7 +2147,7 @@ func (v *VRGInstance) updateVRGAutoCleanupCondition() {
 		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
 			metav1.ConditionFalse, VRGConditionReasonUnused,
 			"Automated Cleanup not applicable: GitOps manages the application's resource lifecycle.")
-	case !v.isVMRecipeProtection():
+	case !util.IsVMRecipe(v.instance.Spec.KubeObjectProtection):
 		// all other discovered apps protection except vm-recipe
 		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
 			metav1.ConditionFalse, VRGConditionReasonUnused,
@@ -2810,7 +2810,7 @@ func (v *VRGInstance) PriortizePrimaryClusterDataConflictCondition(
 func (v *VRGInstance) aggregateVMNoClusterDataConflictCondition() *metav1.Condition {
 	var msg string
 
-	if v.isVMRecipeProtection() {
+	if util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.log.Error(err, "this discrepancy indicates that the current label selector does not "+
 				"accurately reflect the intended set of protected VMs")
@@ -2838,16 +2838,6 @@ func (v *VRGInstance) clusterDataConflict(msg string, status metav1.ConditionSta
 	}
 
 	return nil
-}
-
-func (v *VRGInstance) isVMRecipeProtection() bool {
-	if v.instance.Spec.KubeObjectProtection != nil && v.instance.Spec.KubeObjectProtection.RecipeRef != nil {
-		if v.instance.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (v *VRGInstance) aggregateVolRepClusterDataConflictCondition() *metav1.Condition {
@@ -2979,7 +2969,7 @@ func PruneLabels(pvcLabels map[string]string) map[string]string {
 
 func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 	cur := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeAutoCleanup)
-	if !v.isVMRecipeProtection() ||
+	if !util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) ||
 		len(v.volSyncPVCs) > 0 {
 		return cur
 	}

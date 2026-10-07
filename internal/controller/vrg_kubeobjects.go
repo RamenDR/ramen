@@ -190,7 +190,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 // a capture completes successfully.
 func (v *VRGInstance) isProtectedVMsListUpdated() bool {
 	vrg := v.instance
-	if !v.isVMRecipeProtection() || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
+	if !util.IsVMRecipe(vrg.Spec.KubeObjectProtection) || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
 		return false
 	}
 
@@ -215,7 +215,7 @@ func (v *VRGInstance) isProtectedVMsListUpdated() bool {
 // requests completed successfully.
 func (v *VRGInstance) acknowledgeProtectedVMsList() {
 	vrg := v.instance
-	if !v.isVMRecipeProtection() || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
+	if !util.IsVMRecipe(vrg.Spec.KubeObjectProtection) || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
 		return
 	}
 

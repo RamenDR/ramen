@@ -13,6 +13,7 @@ import (
 	virtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/core"
 )
 
@@ -37,6 +38,14 @@ type VMStaticIPInfo struct {
 	// PrimaryAddresses holds the parsed interface→[]IP mapping from the
 	// annotation on the primary cluster. This is the source for translation.
 	PrimaryAddresses map[string][]string
+}
+
+// IsVMRecipe reports whether the given KubeObjectProtectionSpec references
+// the built-in VM recipe.
+func IsVMRecipe(kop *ramendrv1alpha1.KubeObjectProtectionSpec) bool {
+	return kop != nil &&
+		kop.RecipeRef != nil &&
+		kop.RecipeRef.Name == core.VMRecipeName
 }
 
 func ListVMsByLabelSelector(
