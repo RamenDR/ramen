@@ -2520,7 +2520,8 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 		return nil
 	}
 
-	v.log.Info("Deleted VolumeReplication resource %s/%s", vrNamespacedName.Namespace, vrNamespacedName.Name)
+	v.log.Info(fmt.Sprintf("Deleted VolumeReplication resource %s/%s",
+		vrNamespacedName.Namespace, vrNamespacedName.Name))
 
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, cr, log)
 }

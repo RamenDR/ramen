@@ -209,6 +209,8 @@ test-kubeobjects: ## Run kubeobjects tests.
 test-cephfs-cg: generate manifests envtest ## Run util-pvc tests.
 	 go test ./internal/controller/util -coverprofile cover.out  -ginkgo.focus CephfsCg
 
+test-dryrun: generate manifests envtest ## Run DryRun tests.
+	 go test ./internal/controller -coverprofile cover.out  -ginkgo.focus DryRun
 
 test-drenv: ## Run drenv tests.
 	$(MAKE) -C test
