@@ -31,6 +31,10 @@ const (
 	recoversPath = path + "restores/"
 )
 
+// ErrRestoreCompletedWithZeroResources is returned when a restore completes successfully
+// but restores 0 items, which may indicate a Velero planning issue
+var ErrRestoreCompletedWithZeroResources = errors.New("restore completed with 0 resources restored")
+
 type (
 	BackupRequest  struct{ backup *velero.Backup }
 	RestoreRequest struct{ restore *velero.Restore }
@@ -320,6 +324,11 @@ func restoreStatusProcess(
 
 	switch restore.Status.Phase {
 	case velero.RestorePhaseCompleted:
+		// Verify that resources were actually restored
+		if restore.Status.Progress == nil || restore.Status.Progress.ItemsRestored == 0 {
+			return ErrRestoreCompletedWithZeroResources
+		}
+
 		return nil
 	case velero.RestorePhaseNew,
 		velero.RestorePhaseInProgress,

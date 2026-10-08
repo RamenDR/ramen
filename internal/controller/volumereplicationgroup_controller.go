@@ -3128,3 +3128,41 @@ func (v *VRGInstance) classifyVMStaticIP(
 
 	return info, nil
 }
+
+// isSingleGroupRestore determines if the VRG is configured to protect VirtualMachine resources.
+// Returns true for:
+// 1. vm-recipe: Explicitly protects VMs
+// 2. Discovered application protection at namespace level with label selector
+// Note: Custom recipes are deliberately ignored. Determines namespace level protection based on VRG spec.
+func (v *VRGInstance) isSingleGroupRestore() bool {
+	// Check if using vm-recipe - always protects VMs
+	if util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
+		v.log.Info("VRG is using vm-recipe - VMs are being protected")
+
+		return true
+	}
+
+	// Check for namespace-level protection (not custom recipe)
+	if v.isNamespaceScopedVMProtection() {
+		v.log.Info("VRG is using namespace-level protection with label selector - likely protecting VMs")
+
+		return true
+	}
+
+	return false
+}
+
+// isNamespaceLevelVMProtection returns true when VM protection is configured
+// through protected namespaces and a kube object selector, and is not using
+// a custom recipe.
+func (v *VRGInstance) isNamespaceScopedVMProtection() bool {
+	namespaces := v.instance.Spec.ProtectedNamespaces
+	if namespaces == nil || len(*namespaces) == 0 {
+		return false
+	}
+
+	kop := v.instance.Spec.KubeObjectProtection
+
+	return kop != nil && kop.KubeObjectSelector != nil &&
+		v.instance.Spec.KubeObjectProtection.RecipeRef == nil
+}
