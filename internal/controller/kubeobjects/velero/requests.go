@@ -339,6 +339,11 @@ func restoreStatusProcess(
 
 	switch restore.Status.Phase {
 	case velero.RestorePhaseCompleted:
+		// Verify that resources were actually restored
+		if restore.Status.Progress == nil || restore.Status.Progress.ItemsRestored == 0 {
+			return errors.New("restore completed with 0 resources restored")
+		}
+
 		return nil
 	case velero.RestorePhaseNew,
 		velero.RestorePhaseInProgress,
