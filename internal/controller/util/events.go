@@ -44,6 +44,12 @@ const (
 	// EventReasonVrgUploadFailed is used when VRG fails to upload VRG object
 	EventReasonVrgUploadFailed = "VrgUploadFailed"
 
+	// EventReasonVolumeAttributesClassValidationFailed is used when Ramen could not confirm whether
+	// a VolumeAttributesClass referenced by a PVC restored during failover/relocate exists on this
+	// cluster - whether because it genuinely doesn't exist, or because the lookup itself failed
+	// (RBAC, API errors, etc).
+	EventReasonVolumeAttributesClassValidationFailed = "VolumeAttributesClassValidationFailed"
+
 	// EventReasonPrimarySuccess is an event generated when VRG is successfully
 	// processed as Primary.
 	EventReasonPrimarySuccess = "PrimaryVRGProcessSuccess"

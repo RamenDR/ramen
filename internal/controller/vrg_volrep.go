@@ -1753,6 +1753,27 @@ func (v *VRGInstance) getStorageClassFromSCName(scName *string) (*storagev1.Stor
 	return storageClass, nil
 }
 
+// getVolumeAttributesClassFromVACName returns the named VolumeAttributesClass resource from an
+// instance cache if available, or fetches it from the API server and stores it in an instance
+// cache before returning it. Unlike getStorageClassFromSCName, a lookup failure here is not fatal
+// to callers: a VolumeAttributesClass (QoS class) missing on the target cluster must not block
+// restore/failover, it should only be surfaced to the user (see validateVolumeAttributesClassForRestore).
+func (v *VRGInstance) getVolumeAttributesClassFromVACName(vacName *string) (*storagev1.VolumeAttributesClass, error) {
+	if vac, ok := v.vacCache[*vacName]; ok {
+		return vac, nil
+	}
+
+	vac := &storagev1.VolumeAttributesClass{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *vacName}, vac); err != nil {
+		return nil, fmt.Errorf("failed to get the volumeattributesclass with name %s (%w)",
+			*vacName, err)
+	}
+
+	v.vacCache[*vacName] = vac
+
+	return vac, nil
+}
+
 // getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
 // returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
 // server and stores it in an instance cache before returning the StorageClass
@@ -2595,7 +2616,7 @@ func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3Pro
 
 	v.volRepPVCs = append(v.volRepPVCs, pvcList...)
 
-	return restoreClusterDataObjects(v, pvcList, "PVC", cleanupPVCForRestore, v.validateExistingPVC)
+	return restoreClusterDataObjects(v, pvcList, "PVC", v.cleanupPVCForRestore, v.validateExistingPVC)
 }
 
 // checkPVClusterData returns an error if there are PVs in the input pvList
@@ -2996,14 +3017,41 @@ func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, s
 	pv.Spec.CSI.VolumeAttributes[clusterIDKey] = clusterID
 }
 
-func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
+func (v *VRGInstance) cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 	pvc.ObjectMeta.Annotations = PruneAnnotations(pvc.GetAnnotations())
 	pvc.ObjectMeta.Finalizers = []string{}
 	pvc.ObjectMeta.ResourceVersion = ""
 	pvc.ObjectMeta.OwnerReferences = nil
 	pvc.ObjectMeta.UID = ""
 
+	v.validateVolumeAttributesClassForRestore(pvc)
+
 	return nil
+}
+
+// validateVolumeAttributesClassForRestore checks, for RDR (Async) and MDR (Sync/Metro) alike,
+// whether the VolumeAttributesClass (QoS class) referenced by a PVC being restored exists on
+// this (target/failover) cluster. If it does not, Ramen must not fail the restore or block
+// failover/relocate on account of it: the PVC will still bind correctly to its PV, and only the
+// QoS attributes will not be (re)applied until the class is created on this cluster. Instead, the
+// gap is only logged and reported as a Kubernetes Event, so it is visible to the user without
+// affecting VRG status.
+func (v *VRGInstance) validateVolumeAttributesClassForRestore(pvc *corev1.PersistentVolumeClaim) {
+	vacName := pvc.Spec.VolumeAttributesClassName
+	if vacName == nil || *vacName == "" {
+		return
+	}
+
+	if _, err := v.getVolumeAttributesClassFromVACName(vacName); err != nil {
+		msg := fmt.Sprintf(
+			"Could not confirm VolumeAttributesClass %q referenced by PVC %s/%s exists on this cluster; "+
+				"QoS attributes may not be applied: %s",
+			*vacName, pvc.Namespace, pvc.Name, err.Error())
+		v.log.Info(msg)
+
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance,
+			corev1.EventTypeWarning, rmnutil.EventReasonVolumeAttributesClassValidationFailed, msg)
+	}
 }
 
 // Follow this logic to update VRG (and also ProtectedPVC) conditions for VolRep

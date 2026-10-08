@@ -290,6 +290,7 @@ rules:
   - storage.k8s.io
   resources:
   - volumeattachments
+  - volumeattributesclasses
   verbs:
   - get
   - list
