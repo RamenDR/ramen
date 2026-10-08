@@ -61,7 +61,7 @@ var (
 	ErrWaitForAppResourceRestoreToComplete = errors.New("waiting for App resources to be restored")
 	ErrWaitForVolSyncDestRepToComplete     = errors.New("waiting for VolSync RD to complete")
 	ErrWaitForSourceCluster                = errors.New("waiting for primary to provide Protected PVCs")
-	ErrWaitForVolSyncManifestWorkCreation  = errors.New("waiting for VolSync ManifestWork to be created")
+	ErrWaitForVolSyncManifestWorkCreation  = errors.New("waiting for secondary ManifestWork to be created")
 	ErrWaitForVolSyncRDInfoAvailability    = errors.New("waiting for VolSync RDInfo")
 )
 
@@ -2409,7 +2409,15 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 
 	// IFF just updated or MCV is reporting no VRG, no need to use MCV to check if the state has been
 	// applied. Wait for the next round of reconcile.
-	if justUpdated || d.vrgs[clusterName] == nil {
+	if justUpdated {
+		return !peerReady, nil
+	}
+
+	if d.vrgs[clusterName] == nil {
+		if d.instance.Spec.Action == "" {
+			return peerReady, nil
+		}
+
 		return !peerReady, nil
 	}
 
