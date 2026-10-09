@@ -70,6 +70,11 @@ const (
 	// Indicates destination volume info is available from the VolumeReplication resource.
 	// Only set when VRs report this condition; absent means not applicable.
 	VRGConditionTypeDestinationInfoAvailable = "DestinationInfoAvailable"
+
+	// NonConsistencyGroupDeprecated is True while any volume is protected by
+	// VolumeReplication without a consistency group. The condition is removed
+	// once every such volume uses a consistency group.
+	VRGConditionTypeNonConsistencyGroupDeprecated = "NonConsistencyGroupDeprecated"
 )
 
 // VRG condition reasons
