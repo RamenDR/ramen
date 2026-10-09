@@ -16,6 +16,21 @@ JSONPATH_NEWLINE = '{"\\n"}'
 # distinguishable for rollout() (only "status" supports --timeout).
 _DEFAULT_TIMEOUT = sentinel.Duration(300)
 
+_APPLY_FLAGS_WITH_VALUE = frozenset(
+    ("-f", "--filename", "-k", "--kustomize", "--template")
+)
+
+
+def _apply_flags(args):
+    """Yield flags while skipping values consumed by preceding options."""
+    previous = None
+    for arg in args:
+        if previous in _APPLY_FLAGS_WITH_VALUE:
+            previous = None
+            continue
+        previous = arg
+        yield arg
+
 
 def version(context=None, output=None):
     """
@@ -76,10 +91,34 @@ def exec(*args, context=None):
     return _run("exec", *args, context=context)
 
 
-def apply(*args, input=None, context=None, log=print):
+def apply(
+    *args,
+    server_side=False,
+    force_conflicts=False,
+    input=None,
+    context=None,
+    log=print,
+):
     """
     Run kubectl apply ... logging progress messages.
+
+    Client-side apply is the default to avoid conflicts with fields managed by
+    other operators. Callers can opt into server-side apply when required to
+    avoid the large last-applied-configuration annotation, and explicitly
+    enable force_conflicts when they intend to take ownership of those fields.
     """
+    args = list(args)
+    for flag in _apply_flags(args):
+        if flag == "--server-side" or flag.startswith("--server-side="):
+            raise ValueError("use server_side argument instead of --server-side flag")
+        if flag == "--force-conflicts" or flag.startswith("--force-conflicts="):
+            raise ValueError(
+                "use force_conflicts argument instead of --force-conflicts flag"
+            )
+    if server_side:
+        args.append("--server-side=true")
+    if force_conflicts:
+        args.append("--force-conflicts")
     _watch("apply", *args, input=input, context=context, log=log)
 
 
