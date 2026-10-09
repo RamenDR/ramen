@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for creating clusters for migration testing. The clusters have
+# rook ceph storage but no ramen.
+---
+name: "migration-clusters"
+
+templates:
+  - name: "dr-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.cri.v1.runtime:
+          device_ownership_from_security_context: true
+    network: "$network"
+    cpus: 4
+    memory: "8g"
+    extra_disks: 1
+    disk_size: "50g"
+    workers:
+      - addons:
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-toolbox
+          - name: rook-pool
+          - name: rook-cephfs
+      - addons:
+          - name: csi-addons
+          - name: olm
+      - addons:
+          - name: odf-external-snapshotter
+          - name: external-snapshotter
+
+profiles:
+  - name: "dr1"
+    template: "dr-cluster"
+  - name: "dr2"
+    template: "dr-cluster"
