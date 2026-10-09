@@ -584,6 +584,9 @@ type VRGInstance struct {
 	objectStorers        map[string]cachedObjectStorer
 	s3StoreAccessors     []s3StoreAccessor
 	result               ctrl.Result
+	// selectedNonCGVolRep is set for this reconcile when PVC classification
+	// chooses VolumeReplication because the peer is not grouping.
+	selectedNonCGVolRep bool
 }
 
 // struct with pv with volrepclass and volsync
@@ -1100,6 +1103,9 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 		for _, replicationClass := range v.replClassList.Items {
 			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
+				// No peer class is present, so this match is individual VolumeReplication.
+				v.useNonConsistencyGroupVolRep(false)
+
 				replicationClassMatchFound = true
 
 				break
@@ -1134,7 +1140,10 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		if peerClass.ReplicationID != "" {
 			replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
 			if replicationClass != nil {
-				// label VolRep PVCs if peerClass.grouping is enabled
+				// Grouping comes from the peer class discovered for this StorageClass.
+				// False selects individual VolumeReplication; true selects a consistency group.
+				v.useNonConsistencyGroupVolRep(peerClass.Grouping)
+
 				if peerClass.Grouping {
 					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
 						return fmt.Errorf("failed to label PVC %s/%s for consistency group (%w)",
@@ -2175,6 +2184,8 @@ func (v *VRGInstance) updateVRGAutoCleanupCondition() {
 //
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
+// NonConsistencyGroupDeprecated is set or removed here from the VolumeReplication
+// protection path. It is not merged from per-PVC conditions.
 func (v *VRGInstance) updateVRGConditions() {
 	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
 	if v.instance.Spec.Sync == nil {
@@ -2209,6 +2220,7 @@ func (v *VRGInstance) updateVRGConditions() {
 	v.updateVRGLastGroupSyncTime()
 	v.updateVRGLastGroupSyncDuration()
 	v.updateLastGroupSyncBytes()
+	v.reconcileNonConsistencyGroupDeprecation(time.Now())
 }
 
 func (v *VRGInstance) vrgReadyStatus(reason string) *metav1.Condition {
