@@ -136,17 +136,6 @@ fmt: golangci-bin ## Run golangci-lint and mdformat formatting on the codebase.
 	cd api && ../testbin/golangci-lint fmt
 	git ls-files -z '*.md' | xargs -0 mdformat
 
-.PHONY: create-rdr-env
-create-rdr-env: drenv-prereqs ## Create a new rdr environment.
-	./hack/dev-env.sh create
-
-destroy-rdr-env: drenv-prereqs ## Destroy the existing rdr environment.
-	./hack/dev-env.sh destroy
-
-.PHONY: drenv-prereqs
-drenv-prereqs: ## Check the prerequisites for the drenv tool.
-	./hack/check-drenv-prereqs.sh
-
 ##@ Tests
 
 test: generate manifests envtest ## Run all the tests.
