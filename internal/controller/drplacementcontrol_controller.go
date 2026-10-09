@@ -1652,6 +1652,12 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		drpc.Status.ResourceConditions.ResourceMeta.PVCGroups = vrg.Status.PVCGroups
 	}
 
+	// Failover start still inspects the old primary. Do not copy its lastGroupSyncTime
+	// or Protected=True over the nil/False values set when failover began.
+	if drpc.Spec.Action == rmn.ActionFailover && clusterName != drpc.Spec.FailoverCluster {
+		return
+	}
+
 	if vrg.Status.LastGroupSyncTime != nil || drpc.Spec.Action != rmn.ActionRelocate {
 		drpc.Status.LastGroupSyncTime = vrg.Status.LastGroupSyncTime
 		drpc.Status.LastGroupSyncDuration = vrg.Status.LastGroupSyncDuration
