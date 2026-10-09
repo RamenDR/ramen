@@ -170,7 +170,7 @@ kubectl config use-context <hub-cluster-context>
 Install the operator using OLM:
 
 ```bash
-kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/hub?ref=main"
+kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/hub?ref=v0.1.0"
 ```
 
 This creates:
@@ -208,7 +208,7 @@ kubectl config use-context <managed-cluster-context>
 Install the catalog source:
 
 ```bash
-kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=main"
+kubectl apply -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=v0.1.0"
 ```
 
 The DR Cluster operator will be installed automatically during configuration.
@@ -297,7 +297,7 @@ back the installation.
 **Remove hub operator:**
 
 ```bash
-kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/hub?ref=main"
+kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/hub?ref=v0.1.0"
 ```
 
 **Note:** This will remove the operators but not the CRDs. To remove CRDs:
@@ -311,7 +311,7 @@ kubectl delete crd drclusters.ramendr.openshift.io
 **Remove catalog source in all managed clusters:**
 
 ```bash
-kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=main"
+kubectl delete -k "https://github.com/RamenDR/ramen/config/olm-install/base?ref=v0.1.0"
 ```
 
 ## Development Installation

@@ -14,4 +14,4 @@ configurations:
 images:
 - name: ramen-operator-catalog
   newName: quay.io/ramendr/ramen-operator-catalog
-  newTag: canary
+  newTag: v0.1.0

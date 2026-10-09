@@ -10,4 +10,4 @@ spec:
   name: ramen-hub-operator
   source: ramen-catalog
   sourceNamespace: ramen-system
-  startingCSV: ramen-hub-operator.v0.0.1
+  startingCSV: ramen-hub-operator.v0.1.0
