@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"reflect"
 	"time"
 
@@ -135,14 +138,39 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	s3Endpoint := s3StoreProfile.S3CompatibleEndpoint
 	s3Region := s3StoreProfile.S3Region
 
-	// Create an S3 client session
-	s3Session, err := session.NewSession(&aws.Config{
+	// Create AWS config
+	awsConfig := &aws.Config{
 		Credentials: credentials.NewStaticCredentials(string(accessID),
 			string(secretAccessKey), ""),
 		Endpoint:         aws.String(s3Endpoint),
 		Region:           aws.String(s3Region),
 		S3ForcePathStyle: aws.Bool(true),
-	})
+	}
+
+	// If CA certificates are provided, create a custom HTTP client with them
+	if len(s3StoreProfile.CACertificates) > 0 {
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(s3StoreProfile.CACertificates) {
+			return nil, s3StoreProfile, fmt.Errorf("failed to parse CA certificates for %s for caller %s",
+				s3Endpoint, callerTag)
+		}
+
+		tlsConfig := &tls.Config{
+			RootCAs:    caCertPool,
+			MinVersion: tls.VersionTLS12,
+		}
+
+		httpClient := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			},
+		}
+
+		awsConfig.HTTPClient = httpClient
+	}
+
+	// Create an S3 client session
+	s3Session, err := session.NewSession(awsConfig)
 	if err != nil {
 		return nil, s3StoreProfile, fmt.Errorf("failed to create new session for %s for caller %s, %w",
 			s3Endpoint, callerTag, err)
