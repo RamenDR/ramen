@@ -12,7 +12,7 @@ replace github.com/ramendr/ramen/api => ./api
 replace open-cluster-management.io/governance-policy-propagator => github.com/open-cluster-management-io/governance-policy-propagator v0.18.1-0.20260403131942-dbfc1c7d6ec5
 
 require (
-	github.com/aws/aws-sdk-go v1.55.5
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/backube/volsync v0.11.0
 	github.com/csi-addons/kubernetes-csi-addons v0.14.1-0.20260528060322-2ed0ef956bd4
 	github.com/go-logr/logr v1.4.3
