@@ -109,6 +109,7 @@ func EnableProtection(ctx types.TestContext) error {
 
 // remove DRPC
 // update placement annotation
+// For non-discovered apps, verify the user Placement predicate selects the cluster the workload is running on
 func DisableProtection(ctx types.TestContext) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
@@ -134,6 +135,13 @@ func DisableProtection(ctx types.TestContext) error {
 
 	if err := waitForProtectionResourcesDelete(ctx); err != nil {
 		return err
+	}
+
+	// The Placement of a discovered app is deleted with the DRPC, so there is no predicate to validate.
+	if cluster != nil && !ctx.Deployer().IsDiscovered() {
+		if err := validatePlacementPredicate(ctx, cluster); err != nil {
+			return err
+		}
 	}
 
 	// If the cluster is not nil, the workload exists and its health is validated.
