@@ -9,3 +9,5 @@
 !internal/
 !LICENSE
 !config/
+# Temporary build context created by "opm index add" (make catalog-build).
+!index_build_tmp*
