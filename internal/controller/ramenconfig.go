@@ -518,15 +518,25 @@ func applyDrClusterOperatorFromSubscription(
 	cfg *ramendrv1alpha1.RamenConfig,
 ) {
 	const (
-		hubSubstring     = "-hub-"
-		clusterSubstring = "-cluster-"
+		hubSubstring       = "-hub-"
+		clusterSubstring   = "-cluster-"
+		drClusterSubstring = "-dr-cluster-"
 	)
+
+	// On OpenShift the dr-cluster package drops "dr" from its name, since the
+	// operator name already contains it (odr-hub-operator and
+	// odr-cluster-operator). Elsewhere it is ramen-hub-operator and
+	// ramen-dr-cluster-operator.
+	drClusterReplacement := drClusterSubstring
+	if sub.Namespace == openshiftOperatorsNamespace {
+		drClusterReplacement = clusterSubstring
+	}
 
 	spec := sub.Spec
 	dco := &cfg.DrClusterOperator
 
 	dco.ChannelName = spec.Channel
-	dco.PackageName = strings.Replace(spec.Package, hubSubstring, clusterSubstring, 1)
+	dco.PackageName = strings.Replace(spec.Package, hubSubstring, drClusterReplacement, 1)
 	dco.CatalogSourceName = spec.CatalogSource
 	dco.CatalogSourceNamespaceName = spec.CatalogSourceNamespace
 	csvName := sub.Status.CurrentCSV
@@ -535,7 +545,7 @@ func applyDrClusterOperatorFromSubscription(
 		csvName = spec.StartingCSV
 	}
 
-	dco.ClusterServiceVersionName = strings.Replace(csvName, hubSubstring, clusterSubstring, 1)
+	dco.ClusterServiceVersionName = strings.Replace(csvName, hubSubstring, drClusterReplacement, 1)
 }
 
 func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader client.Reader,
