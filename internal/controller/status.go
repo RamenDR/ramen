@@ -74,6 +74,11 @@ const (
 	// Visibility mirror of the VR/VGR Replicating condition (status, reason, CSI message).
 	// Left unset when the VR does not report Replicating.
 	VRGConditionTypeReplicationHealthy = "ReplicationHealthy"
+
+	// NonConsistencyGroupDeprecated is True while any volume is protected by
+	// VolumeReplication without a consistency group. The condition is removed
+	// once every such volume uses a consistency group.
+	VRGConditionTypeNonConsistencyGroupDeprecated = "NonConsistencyGroupDeprecated"
 )
 
 // VRG condition reasons
