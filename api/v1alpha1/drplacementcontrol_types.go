@@ -81,6 +81,11 @@ const (
 	// agree on the DR action and target cluster.
 	ConditionGlobalAction = "GlobalAction"
 
+	// NonConsistencyGroupDeprecated is True while the workload's VolumeReplicationGroup
+	// protects any volume with VolumeReplication and no consistency group. The condition
+	// is removed once every such volume uses a consistency group.
+	ConditionNonConsistencyGroupDeprecated = "NonConsistencyGroupDeprecated"
+
 	// NetworkMappingLoaded condition indicates whether the network-mapping ConfigMap was
 	// successfully loaded for this DRPC.
 	//
