@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
-	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -191,12 +190,7 @@ func (RequestsManager) RecoverRequestCreate(
 	ctx context.Context,
 	k8sclient client.Client,
 	log logr.Logger,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	captureName string,
@@ -206,27 +200,18 @@ func (RequestsManager) RecoverRequestCreate(
 	annotations map[string]string,
 ) (kubeobjects.RecoverRequest, error) {
 	log.Info("Kube objects recover",
-		"s3 url", s3Url,
-		"s3 bucket", s3BucketName,
-		"s3 region", s3RegionName,
-		"s3 key prefix", s3KeyPrefix,
-		"secret key ref", secretKeyRef,
-		"CA certificates", caCertificates,
+		"s3 url", loc.S3URL,
+		"s3 bucket", loc.Bucket,
+		"s3 region", loc.Region,
+		"s3 key prefix", loc.KeyPrefix,
+		"secret key ref", loc.SecretKeyRef,
+		"CA certificates", loc.CACertificates,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"recover name", recoverName,
 		"label set", labels,
 		"annotations", annotations,
 	)
-
-	loc := kubeobjects.StorageLocation{
-		S3URL:          s3Url,
-		Bucket:         s3BucketName,
-		Region:         s3RegionName,
-		KeyPrefix:      s3KeyPrefix,
-		SecretKeyRef:   secretKeyRef,
-		CACertificates: caCertificates,
-	}
 
 	restore, err := restoreRealCreate(
 		objectWriter{ctx: ctx, Client: k8sclient, log: log},
@@ -357,12 +342,7 @@ func (RequestsManager) ProtectRequestCreate(
 	ctx context.Context,
 	k8sclient client.Client,
 	log logr.Logger,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
 	captureName string,
@@ -370,28 +350,18 @@ func (RequestsManager) ProtectRequestCreate(
 	annotations map[string]string,
 ) (kubeobjects.ProtectRequest, error) {
 	log.Info("Kube objects protect",
-		"s3 url", s3Url,
-		"s3 bucket", s3BucketName,
-		"s3 region", s3RegionName,
-		"s3 key prefix", s3KeyPrefix,
-		"secret key ref", secretKeyRef,
-		"CA certificates", caCertificates,
+		"s3 url", loc.S3URL,
+		"s3 bucket", loc.Bucket,
+		"s3 region", loc.Region,
+		"s3 key prefix", loc.KeyPrefix,
+		"secret key ref", loc.SecretKeyRef,
+		"CA certificates", loc.CACertificates,
 		"source namespaces", objectsSpec.IncludedNamespaces,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"label set", labels,
 		"annotations", annotations,
 	)
-
-	loc := kubeobjects.StorageLocation{
-		S3URL:          s3Url,
-		Bucket:         s3BucketName,
-		Region:         s3RegionName,
-		KeyPrefix:      s3KeyPrefix,
-		SecretKeyRef:   secretKeyRef,
-		CACertificates: caCertificates,
-	}
-
 	backup, err := backupRequestCreate(
 		objectWriter{ctx: ctx, Client: k8sclient, log: log},
 		loc,
