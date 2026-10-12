@@ -265,6 +265,19 @@ func validateClusters(config *Config) error {
 		return fmt.Errorf("failed to find c2 cluster in configuration")
 	}
 
+	// Ensure no two clusters share the same kubeconfig path.
+	seen := make(map[string]string)
+
+	for _, name := range slices.Sorted(maps.Keys(config.Clusters)) {
+		kubeconfig := config.Clusters[name].Kubeconfig
+		if other, exists := seen[kubeconfig]; exists {
+			return fmt.Errorf("clusters %q and %q use the same kubeconfig path %q",
+				other, name, kubeconfig)
+		}
+
+		seen[kubeconfig] = name
+	}
+
 	return nil
 }
 
