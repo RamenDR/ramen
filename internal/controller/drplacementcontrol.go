@@ -1992,7 +1992,12 @@ func (d *DRPCInstance) setVRGAnnotations(vrg *rmn.VolumeReplicationGroup, homeCl
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 		rmnutil.EnableDiffAnnotation:          d.instance.GetAnnotations()[rmnutil.EnableDiffAnnotation],
-		DRPCTestFailoverDryRunAnnotation:      d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation],
+	}
+
+	if d.instance.Spec.DryRun && homeCluster == d.instance.Spec.FailoverCluster {
+		vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation]
+	} else {
+		vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
 	}
 
 	// Propagate global VGR label to VRG for consensus checks.
