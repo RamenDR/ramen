@@ -551,6 +551,60 @@ func TestContextName(t *testing.T) {
 	})
 }
 
+func TestValidateClusters(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *Config
+		valid  bool
+	}{
+		{
+			name: "valid",
+			config: &Config{
+				Clusters: map[string]Cluster{
+					"hub": {Kubeconfig: "hub/config"},
+					"c1":  {Kubeconfig: "dr1/config"},
+					"c2":  {Kubeconfig: "dr2/config"},
+				},
+			},
+			valid: true,
+		},
+		{
+			name: "duplicate managed clusters",
+			config: &Config{
+				Clusters: map[string]Cluster{
+					"hub": {Kubeconfig: "hub/config"},
+					"c1":  {Kubeconfig: "dr1/config"},
+					"c2":  {Kubeconfig: "dr1/config"},
+				},
+			},
+			valid: false,
+		},
+		{
+			name: "duplicate hub and managed cluster",
+			config: &Config{
+				Clusters: map[string]Cluster{
+					"hub": {Kubeconfig: "hub/config"},
+					"c1":  {Kubeconfig: "hub/config"},
+					"c2":  {Kubeconfig: "dr2/config"},
+				},
+			},
+			valid: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateClusters(tt.config)
+			if tt.valid && err != nil {
+				t.Errorf("valid config %+v, failed: %s", tt.config.Clusters, err)
+			}
+
+			if !tt.valid && err == nil {
+				t.Errorf("invalid config %+v, did not fail", tt.config.Clusters)
+			}
+		})
+	}
+}
+
 func marshal(t *testing.T, obj any) []byte {
 	t.Helper()
 
