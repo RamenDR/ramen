@@ -219,14 +219,18 @@ func (RequestsManager) RecoverRequestCreate(
 		"annotations", annotations,
 	)
 
+	loc := kubeobjects.StorageLocation{
+		S3URL:          s3Url,
+		Bucket:         s3BucketName,
+		Region:         s3RegionName,
+		KeyPrefix:      s3KeyPrefix,
+		SecretKeyRef:   secretKeyRef,
+		CACertificates: caCertificates,
+	}
+
 	restore, err := restoreRealCreate(
 		objectWriter{ctx: ctx, Client: k8sclient, log: log},
-		s3Url,
-		s3BucketName,
-		s3RegionName,
-		s3KeyPrefix,
-		secretKeyRef,
-		caCertificates,
+		loc,
 		recoverSpec,
 		requestNamespaceName,
 		captureName,
@@ -241,12 +245,7 @@ func (RequestsManager) RecoverRequestCreate(
 
 func restoreRealCreate(
 	w objectWriter,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	backupName string,
@@ -258,8 +257,7 @@ func restoreRealCreate(
 	backupRequest, ok := captureRequest.(BackupRequest)
 	if !ok {
 		_, err := backupRequestCreate(
-			w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-			caCertificates,
+			w, loc,
 			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
 			requestNamespaceName, backupName,
 			labels,
@@ -384,14 +382,19 @@ func (RequestsManager) ProtectRequestCreate(
 		"label set", labels,
 		"annotations", annotations,
 	)
+
+	loc := kubeobjects.StorageLocation{
+		S3URL:          s3Url,
+		Bucket:         s3BucketName,
+		Region:         s3RegionName,
+		KeyPrefix:      s3KeyPrefix,
+		SecretKeyRef:   secretKeyRef,
+		CACertificates: caCertificates,
+	}
+
 	backup, err := backupRequestCreate(
 		objectWriter{ctx: ctx, Client: k8sclient, log: log},
-		s3Url,
-		s3BucketName,
-		s3RegionName,
-		s3KeyPrefix,
-		secretKeyRef,
-		caCertificates,
+		loc,
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		requestNamespaceName,
 		captureName,
@@ -503,12 +506,7 @@ type objectWriter struct {
 
 func backupRequestCreate(
 	w objectWriter,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	backupSpec velero.BackupSpec,
 	requestsNamespaceName string,
 	requestName string,
@@ -522,14 +520,7 @@ func backupRequestCreate(
 		},
 	}
 
-	err := w.bslCreateOrUpdate(s3Url,
-		s3BucketName,
-		s3RegionName,
-		s3KeyPrefix,
-		secretKeyRef,
-		caCertificates,
-		labels,
-		backupLocation)
+	err := w.bslCreateOrUpdate(loc, labels, backupLocation)
 	if err != nil {
 		w.log.Error(err, "")
 

@@ -7,21 +7,17 @@ import (
 	"fmt"
 
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
-	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
-func (w objectWriter) bslCreateOrUpdate(s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+func (w objectWriter) bslCreateOrUpdate(
+	loc kubeobjects.StorageLocation,
 	labels map[string]string,
 	backupLocation *velero.BackupStorageLocation,
 ) error {
@@ -32,18 +28,18 @@ func (w objectWriter) bslCreateOrUpdate(s3Url string,
 			Provider: "aws",
 			StorageType: velero.StorageType{
 				ObjectStorage: &velero.ObjectStorageLocation{
-					Bucket: s3BucketName,
-					Prefix: s3KeyPrefix + path,
-					CACert: caCertificates,
+					Bucket: loc.Bucket,
+					Prefix: loc.KeyPrefix + path,
+					CACert: loc.CACertificates,
 				},
 			},
 			Config: map[string]string{
-				"region":            s3RegionName,
+				"region":            loc.Region,
 				"s3ForcePathStyle":  "true",
-				"s3Url":             s3Url,
+				"s3Url":             loc.S3URL,
 				"checksumAlgorithm": "",
 			},
-			Credential: secretKeyRef,
+			Credential: loc.SecretKeyRef,
 			// Disable Velero's backup-sync for this BSL.  Ramen explicitly manages the
 			// Backup CR lifecycle (delete after each cycle); if sync were enabled Velero
 			// would re-create deleted Backup CRs from S3, confusing the capture-resume logic
