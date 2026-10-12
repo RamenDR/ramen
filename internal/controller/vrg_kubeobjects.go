@@ -499,6 +499,19 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	return allEssentialStepsFailed, nil
 }
 
+// kubeObjectsStorageLocation returns the location in this S3 store where kube
+// objects protect and recover requests are kept under keyPrefix.
+func (s s3StoreAccessor) kubeObjectsStorageLocation(keyPrefix string) kubeobjects.StorageLocation {
+	return kubeobjects.StorageLocation{
+		S3URL:          s.S3CompatibleEndpoint,
+		Bucket:         s.S3Bucket,
+		Region:         s.S3Region,
+		KeyPrefix:      keyPrefix,
+		SecretKeyRef:   s.VeleroNamespaceSecretKeyRef,
+		CACertificates: s.CACertificates,
+	}
+}
+
 func (v *VRGInstance) kubeObjectsGroupCapture(
 	result *ctrl.Result,
 	captureGroup kubeobjects.CaptureSpec,
@@ -517,8 +530,7 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 
 			if _, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
-				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
+				s3StoreAccessor.kubeObjectsStorageLocation(pathName),
 				captureSpec, veleroNamespaceName, requestName,
 				labels, annotations,
 			); err != nil {
@@ -820,9 +832,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 
 			return v.reconciler.kubeObjects.RecoverRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
-				s3StoreAccessor.VeleroNamespaceSecretKeyRef,
-				s3StoreAccessor.CACertificates,
+				s3StoreAccessor.kubeObjectsStorageLocation(pathName),
 				recoverGroup, v.veleroNamespaceName(),
 				captureName, captureRequest,
 				recoverName,
