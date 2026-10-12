@@ -45,6 +45,17 @@ func RequestsMapKeyedByName(requestsStruct Requests) map[string]Request {
 
 type RequestProcessingError struct{ string }
 
+// StorageLocation identifies the S3 object store that protect and recover
+// requests read from and write to.
+type StorageLocation struct {
+	S3URL          string
+	Bucket         string
+	Region         string
+	KeyPrefix      string
+	SecretKeyRef   *corev1.SecretKeySelector
+	CACertificates []byte
+}
+
 type CaptureSpec struct {
 	//+optional
 	Name string `json:"name,omitempty"`
