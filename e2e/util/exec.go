@@ -32,3 +32,30 @@ func RunCommand(ctx context.Context, command string, args ...string) error {
 
 	return nil
 }
+
+// KubectlKustomize runs "kubectl kustomize url" and returns the rendered manifests.
+// When the command fails with a non-empty stderr, that stderr is included in the returned error.
+func KubectlKustomize(ctx context.Context, url string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "kubectl", "kustomize", url)
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, commandError(ctx, err)
+	}
+
+	return out, nil
+}
+
+// commandError prefers the context error when the context ended the command. A non-empty stderr from an
+// *exec.ExitError is included so callers can see why kubectl failed.
+func commandError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+		return fmt.Errorf("%w: stderr=%q", err, ee.Stderr)
+	}
+
+	return err
+}
