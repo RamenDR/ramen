@@ -257,7 +257,7 @@ func restoreRealCreate(
 ) (*velero.Restore, error) {
 	backupRequest, ok := captureRequest.(BackupRequest)
 	if !ok {
-		_, _, err := backupRequestCreate(
+		_, err := backupRequestCreate(
 			w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
 			caCertificates,
 			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
@@ -384,7 +384,7 @@ func (RequestsManager) ProtectRequestCreate(
 		"label set", labels,
 		"annotations", annotations,
 	)
-	_, backup, err := backupRealCreate(
+	backup, err := backupRequestCreate(
 		objectWriter{ctx: ctx, Client: k8sclient, log: log},
 		s3Url,
 		s3BucketName,
@@ -392,7 +392,7 @@ func (RequestsManager) ProtectRequestCreate(
 		s3KeyPrefix,
 		secretKeyRef,
 		caCertificates,
-		objectsSpec,
+		getBackupSpecFromObjectsSpec(objectsSpec),
 		requestNamespaceName,
 		captureName,
 		labels,
@@ -400,30 +400,6 @@ func (RequestsManager) ProtectRequestCreate(
 	)
 
 	return BackupRequest{backup}, err
-}
-
-func backupRealCreate(
-	w objectWriter,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
-	objectsSpec kubeobjects.Spec,
-	requestNamespaceName string,
-	captureName string,
-	labels map[string]string,
-	annotations map[string]string,
-) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	return backupRequestCreate(
-		w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-		caCertificates,
-		getBackupSpecFromObjectsSpec(objectsSpec),
-		requestNamespaceName, captureName,
-		labels,
-		annotations,
-	)
 }
 
 func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
@@ -538,7 +514,7 @@ func backupRequestCreate(
 	requestName string,
 	labels map[string]string,
 	annotations map[string]string,
-) (*velero.BackupStorageLocation, *velero.Backup, error) {
+) (*velero.Backup, error) {
 	backupLocation := &velero.BackupStorageLocation{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: requestsNamespaceName,
@@ -557,11 +533,11 @@ func backupRequestCreate(
 	if err != nil {
 		w.log.Error(err, "")
 
-		return backupLocation, nil, err
+		return nil, err
 	}
 	// Check BSL availability before creating backup
 	if err := w.checkBSLAvailability(backupLocation); err != nil {
-		return backupLocation, nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",
+		return nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",
 			backupLocation.Namespace, backupLocation.Name, err)
 	}
 
@@ -569,7 +545,7 @@ func backupRequestCreate(
 	backupSpec.SnapshotVolumes = new(bool)
 	backupRequest := backupRequest(requestsNamespaceName, requestName, backupSpec, labels, annotations)
 
-	return backupLocation, backupRequest, w.Create(w.ctx, backupRequest)
+	return backupRequest, w.Create(w.ctx, backupRequest)
 }
 
 // backupRequestDelete deletes only the Backup CR, leaving the BSL alive for reuse
