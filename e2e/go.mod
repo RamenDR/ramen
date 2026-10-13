@@ -18,7 +18,7 @@ require (
 	k8s.io/kubectl v0.33.2
 	kubevirt.io/api v1.5.2
 	open-cluster-management.io/api v0.15.0
-	open-cluster-management.io/multicloud-operators-channel v0.15.0
+	open-cluster-management.io/multicloud-operators-channel v0.16.0
 	open-cluster-management.io/multicloud-operators-subscription v0.16.0
 	sigs.k8s.io/controller-runtime v0.21.0
 	sigs.k8s.io/yaml v1.4.0
