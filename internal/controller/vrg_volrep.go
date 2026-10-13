@@ -1779,10 +1779,10 @@ func (v *VRGInstance) validateVolumeAttributeClassExists(vacName *string) error 
 // server and stores it in an instance cache before returning the StorageClass
 func (v *VRGInstance) getStorageClass(pvc *corev1.PersistentVolumeClaim) (*storagev1.StorageClass, error) {
 	scName := pvc.Spec.StorageClassName
-	if scName == nil {
-		v.log.Info(fmt.Sprintf("missing StorageClass name for pvc (%s)", pvc.GetName()))
+	if scName == nil || *scName == "" {
+		v.log.Info(fmt.Sprintf("missing StorageClass name for pvc (%s/%s)", pvc.GetNamespace(), pvc.GetName()))
 
-		return nil, fmt.Errorf("missing StorageClass name for pvc (%s)", pvc.GetName())
+		return nil, fmt.Errorf("missing StorageClass name for pvc (%s/%s)", pvc.GetNamespace(), pvc.GetName())
 	}
 
 	return v.getStorageClassFromSCName(scName)
