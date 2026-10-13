@@ -1124,13 +1124,6 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		return err
 	}
 
-	if peerClass == nil {
-		msg := fmt.Sprintf("peerClass matching storageClass %s not found for async PVC", storageClass.GetName())
-		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonPeerClassNotFound, msg)
-
-		return errors.New(msg)
-	}
-
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
 
 	if !pvcEnabledForVolSync {
@@ -1282,8 +1275,6 @@ func (v *VRGInstance) findVolSnapClass(storageClass *storagev1.StorageClass,
 		if matched {
 			return &snapshotClass, nil
 		}
-
-		continue
 	}
 
 	return nil, nil
