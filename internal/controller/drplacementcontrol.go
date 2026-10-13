@@ -199,7 +199,7 @@ func (d *DRPCInstance) executeAction() (bool, error) {
 
 //nolint:funlen,cyclop
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
-	d.log.Info("Running initial deployment- v11")
+	d.log.Info("Running initial deployment")
 
 	const done = true
 
