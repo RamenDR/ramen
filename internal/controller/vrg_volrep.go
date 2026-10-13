@@ -3348,7 +3348,12 @@ func (v *VRGInstance) ensureSecondaryState() bool {
 	}
 
 	// VM-recipe specific cleanup and conflict detection
-	return v.HandleSecondaryConflictsAndCleanup()
+	vmCleanupRequeue := v.HandleSecondaryConflictsAndCleanup()
+
+	// Cleanup succeeded only if we're not requeuing for VM cleanup
+	v.secondaryCleanupSucceeded = !vmCleanupRequeue
+
+	return vmCleanupRequeue
 }
 
 // HandleSecondaryConflictsAndCleanup manages VM cleanup and conflict detection for VRG in secondary state.
