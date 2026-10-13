@@ -2669,7 +2669,17 @@ func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3Pro
 
 	v.volRepPVCs = append(v.volRepPVCs, pvcList...)
 
-	return restoreClusterDataObjects(v, pvcList, "PVC", v.cleanupPVCForRestore, v.validateExistingPVC)
+	return restoreClusterDataObjects(v, pvcList, "PVC",
+		func(pvc *corev1.PersistentVolumeClaim) error {
+			if err := cleanupPVCForRestore(pvc); err != nil {
+				return err
+			}
+
+			v.validateVolumeAttributesClassForRestore(pvc)
+
+			return nil
+		},
+		v.validateExistingPVC)
 }
 
 // checkPVClusterData returns an error if there are PVs in the input pvList
@@ -3070,14 +3080,12 @@ func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, s
 	pv.Spec.CSI.VolumeAttributes[clusterIDKey] = clusterID
 }
 
-func (v *VRGInstance) cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
+func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 	pvc.ObjectMeta.Annotations = PruneAnnotations(pvc.GetAnnotations())
 	pvc.ObjectMeta.Finalizers = []string{}
 	pvc.ObjectMeta.ResourceVersion = ""
 	pvc.ObjectMeta.OwnerReferences = nil
 	pvc.ObjectMeta.UID = ""
-
-	v.validateVolumeAttributesClassForRestore(pvc)
 
 	return nil
 }
