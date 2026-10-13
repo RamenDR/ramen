@@ -11,7 +11,7 @@ require (
 	github.com/ramendr/ramen/api v0.1.0
 	github.com/ramendr/recipe v0.0.0-20250507125257-0295a01da567
 	github.com/spf13/viper v1.21.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.28.0
 	k8s.io/api v0.33.2
 	k8s.io/apimachinery v0.33.2
 	k8s.io/client-go v0.33.2
