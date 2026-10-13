@@ -1208,7 +1208,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	if len(pvcList.Items) != (len(v.volRepPVCs) + len(v.volSyncPVCs)) {
-		return fmt.Errorf("no PVCs are procted")
+		return fmt.Errorf("no PVCs are protected")
 	}
 
 	return nil
@@ -1268,12 +1268,12 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 
 func (v *VRGInstance) findVolSnapClass(storageClass *storagev1.StorageClass,
 ) (*snapv1.VolumeSnapshotClass, error) {
-	SnaphotClasses, err := v.volSyncHandler.GetVolumeSnapshotClasses()
+	snapshotClasses, err := v.volSyncHandler.GetVolumeSnapshotClasses()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, snapshotClass := range SnaphotClasses {
+	for _, snapshotClass := range snapshotClasses {
 		sIDFromSnapClass := snapshotClass.GetLabels()[StorageIDLabel]
 
 		matched := sIDFromSnapClass == storageClass.GetLabels()[StorageIDLabel] &&
@@ -2785,9 +2785,9 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 		return vmConflictCondition
 	}
 
-	// Priortize the resource conflict condition on Primary cluster
+	// Prioritize the resource conflict condition on Primary cluster
 	if vmResourceConflict && pvcResourceConflict {
-		return v.PriortizePrimaryClusterDataConflictCondition(vmConflictCondition, pvcConflictCondition)
+		return v.PrioritizePrimaryClusterDataConflictCondition(vmConflictCondition, pvcConflictCondition)
 	}
 
 	if vmResourceConflict {
@@ -2797,7 +2797,7 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 	return pvcConflictCondition
 }
 
-func (v *VRGInstance) PriortizePrimaryClusterDataConflictCondition(
+func (v *VRGInstance) PrioritizePrimaryClusterDataConflictCondition(
 	vmConflictCondition, pvcConflictCondition *metav1.Condition,
 ) *metav1.Condition {
 	if vmConflictCondition.Reason == pvcConflictCondition.Reason {
