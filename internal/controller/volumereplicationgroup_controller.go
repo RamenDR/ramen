@@ -894,7 +894,7 @@ func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaim
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
 
-		storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
+		storageClass, err := v.getStorageClass(pvc)
 		if err != nil {
 			return false, err
 		}
@@ -998,11 +998,9 @@ func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace stri
 		return "", fmt.Errorf("missing storage class name for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
-	storageClass := &storagev1.StorageClass{}
-	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
-		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
-
-		return "", fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+	storageClass, err := v.getStorageClassFromSCName(scName)
+	if err != nil {
+		return "", err
 	}
 
 	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
@@ -1077,9 +1075,8 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
-		scName := pvc.Spec.StorageClassName
 
-		storageClass, err := v.validateAndGetStorageClass(scName, pvc)
+		storageClass, err := v.getStorageClass(pvc)
 		if err != nil {
 			return err
 		}
@@ -1180,9 +1177,8 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
-		scName := pvc.Spec.StorageClassName
 
-		storageClass, err := v.validateAndGetStorageClass(scName, pvc)
+		storageClass, err := v.getStorageClass(pvc)
 		if err != nil {
 			return err
 		}
@@ -1278,20 +1274,6 @@ func (v *VRGInstance) findVolSnapClass(storageClass *storagev1.StorageClass,
 	}
 
 	return nil, nil
-}
-
-func (v *VRGInstance) validateAndGetStorageClass(scName *string, pvc *corev1.PersistentVolumeClaim,
-) (*storagev1.StorageClass, error) {
-	if scName == nil || *scName == "" {
-		return nil, fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
-	}
-
-	storageClass := &storagev1.StorageClass{}
-	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
-		return nil, fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
-	}
-
-	return storageClass, nil
 }
 
 func (v *VRGInstance) findPeerClassMatchingSC(
