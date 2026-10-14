@@ -138,9 +138,9 @@ TOOLS = [
     },
     {
         "name": "kubectl-gather",
-        "version": "v0.14.0",
-        "url": "https://github.com/nirs/kubectl-gather/releases/download/{version}/kubectl-gather-{version}-{goos}-{goarch}",
-        "digest": "73f6d50843f2c0b42b3d1685df4743adac7c0d2d690229be7b3ee9506ead5684",
+        "version": "v0.15.0",
+        "url": "https://github.com/nirs/kubectl-gather/releases/download/{version}/kubectl-gather-{goos}-{goarch}",
+        "digest": "dddaeedec653e8a71b20fdd77d7f4baa1902c43254b684d10e5bb962e28937d9",
         "verify": ["kubectl-gather", "--version"],
     },
 ]
