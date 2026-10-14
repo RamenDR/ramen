@@ -169,19 +169,19 @@ environment.
 
    ```
    bash -o pipefail <<'EOF'
-   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
    os="$(uname | tr '[:upper:]' '[:lower:]')"
    machine="$(uname -m)"
    if [ "$machine" = "aarch64" ]; then machine="arm64"; fi
    if [ "$machine" = "x86_64" ]; then machine="amd64"; fi
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-$os-$machine
+   curl --fail --silent --show-error --location --output kubectl-gather \
+       https://github.com/nirs/kubectl-gather/releases/latest/download/kubectl-gather-$os-$machine
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    EOF
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.11.0 or later is required. For more info see
+   kubectl-gather version v0.15.0 or later is required. For more info see
    [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ## Setup on macOS 26+
@@ -249,19 +249,19 @@ environment.
 
    ```
    bash -o pipefail <<'EOF'
-   tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
    os="$(uname | tr '[:upper:]' '[:lower:]')"
    machine="$(uname -m)"
    if [ "$machine" = "aarch64" ]; then machine="arm64"; fi
    if [ "$machine" = "x86_64" ]; then machine="amd64"; fi
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-$os-$machine
+   curl --fail --silent --show-error --location --output kubectl-gather \
+       https://github.com/nirs/kubectl-gather/releases/latest/download/kubectl-gather-$os-$machine
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
    EOF
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.11.0 or later is required. For more info see
+   kubectl-gather version v0.15.0 or later is required. For more info see
    [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 ### Migrating from lima
