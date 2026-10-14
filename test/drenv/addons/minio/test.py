@@ -3,7 +3,7 @@
 
 import hashlib
 
-from drenv import mc
+from drenv import mcli
 
 from .config import BUCKET, PACKAGE_DIR
 
@@ -21,19 +21,19 @@ def test(cluster):
     target = f"{cluster}/{BUCKET}/drenv/addons/minio/test"
 
     print(f"Copying minio.yaml to {target}")
-    mc.cp(str(_TEST_FILE), target)
+    mcli.cp(str(_TEST_FILE), target)
 
     print("cluster s3 store contents:")
-    print(mc.ls(cluster, recursive=True))
+    print(mcli.ls(cluster, recursive=True))
 
     print(f"Getting {target} data")
-    data = mc.cat(target)
+    data = mcli.cat(target)
 
     print(f"Removing {target}")
-    mc.rm(target)
+    mcli.rm(target)
 
     print("cluster s3 store contents:")
-    print(mc.ls(cluster, recursive=True))
+    print(mcli.ls(cluster, recursive=True))
 
     print("Comparing checksums")
     c2 = hashlib.sha256(data).hexdigest()

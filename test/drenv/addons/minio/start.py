@@ -4,7 +4,7 @@
 import time
 
 from drenv import kubectl
-from drenv import mc
+from drenv import mcli
 from drenv import minio
 
 from .config import BUCKET, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, PACKAGE_DIR
@@ -12,7 +12,7 @@ from .config import BUCKET, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, PACKAGE_DIR
 
 def start(cluster):
     """
-    Deploy minio, set up mc alias, and create the bucket.
+    Deploy minio, set up mcli alias, and create the bucket.
     """
     deploy(cluster)
     wait(cluster)
@@ -42,9 +42,9 @@ def wait(cluster):
         print(f"Waiting until minio service is available (attempt {i}/{attempts})")
         minio.wait_for_service(cluster)
 
-        print(f"Setting mc alias {cluster} (attempt {i}/{attempts})")
+        print(f"Setting mcli alias {cluster} (attempt {i}/{attempts})")
         try:
-            mc.set_alias(
+            mcli.set_alias(
                 cluster,
                 minio.service_url(cluster),
                 MINIO_ACCESS_KEY,
@@ -60,8 +60,8 @@ def wait(cluster):
             delay *= 2
         else:
             elapsed = time.monotonic() - start_time
-            print(f"Set mc alias in {elapsed:.2f} seconds")
+            print(f"Set mcli alias in {elapsed:.2f} seconds")
             break
 
     print(f"Creating bucket '{cluster}/{BUCKET}'")
-    mc.mb(f"{cluster}/{BUCKET}", ignore_existing=True)
+    mcli.mb(f"{cluster}/{BUCKET}", ignore_existing=True)

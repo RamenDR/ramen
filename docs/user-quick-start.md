@@ -202,18 +202,25 @@ clusters. *Ramen* makes this easy using minikube, but you need enough resources:
    For more info see
    [virtctl install](https://kubevirt.io/quickstart_minikube/#virtctl)
 
-1. Install `mc` tool
+1. Install `mcli` tool
 
    ```
-   curl --fail --silent --show-error --location --output mc \
-       https://dl.min.io/client/mc/release/linux-amd64/mc
-   sudo install mc /usr/local/bin
-   rm mc
-   mc --version
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://github.com/pgsty/mc/releases/download/RELEASE.2026-09-16T00-00-00Z/mcli_20260916000000.0.0_linux_amd64.tar.gz \
+       | tar xzf - mcli'
+   sudo install mcli /usr/local/bin
+   rm mcli
+   mcli --version
    ```
 
    For more info see
-   [MinIO Client Quickstart](https://min.io/docs/minio/linux/reference/minio-mc.html#quickstart)
+   [Silo Client (mcli / mc)](https://silo.pgsty.com/reference/minio-mc/)
+
+   **NOTE**: If you have the old `mc` installed, remove it:
+
+   ```
+   sudo rm -f /usr/local/bin/mc
+   ```
 
 1. Install `kustomize` tool
 
