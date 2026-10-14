@@ -33,7 +33,7 @@ def run(args):
 
         wait_for_secret_propagation(env["hub"], env["clusters"], args)
         wait_for_dr_clusters(env["hub"], env["clusters"], args)
-        wait_for_dr_policy(env["hub"], args)
+        wait_for_dr_policy(env["hub"], env.get("topology"))
 
         # ramen-ops namespace is created by the drpolicy controller. It should
         # exist when the dr policy is validated.
@@ -88,17 +88,17 @@ def create_ramen_ops_binding(cluster):
 
 
 def create_hub_dr_resources(hub, clusters, topology):
+    c1, c2 = clusters[0], clusters[1]
     command.info("Creating dr-clusters for %s", topology)
     template = drenv.template(command.resource(f"{topology}/dr-clusters.yaml"))
-    yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
+    yaml = template.substitute(cluster1=c1, cluster2=c2)
     kubectl.apply("--filename=-", input=yaml, context=hub, log=command.debug)
 
-    for interval in command.DRPOLICY_INTERVALS:
-        command.info("Creating dr-policy-%s for %s", interval, topology)
-        template = drenv.template(command.resource(f"{topology}/dr-policy.yaml"))
-        yaml = template.substitute(
-            cluster1=clusters[0], cluster2=clusters[1], interval=interval
-        )
+    policy_path = command.resource(f"{topology}/dr-policy.yaml")
+    for spec in command.dr_policy_template(topology):
+        command.info("Creating %s for %s", spec["policy_name"], topology)
+        template = drenv.template(policy_path)
+        yaml = template.substitute(cluster1=c1, cluster2=c2, **spec)
         kubectl.apply("--filename=-", input=yaml, context=hub, log=command.debug)
 
 
@@ -147,11 +147,12 @@ def wait_for_dr_clusters(hub, clusters, args):
     )
 
 
-def wait_for_dr_policy(hub, args):
-    for interval in command.DRPOLICY_INTERVALS:
-        command.info("Waiting until dr-policy-%s is validated", interval)
+def wait_for_dr_policy(hub, topology):
+    for spec in command.dr_policy_template(topology):
+        resource = f"drpolicy/{spec['policy_name']}"
+        command.info("Waiting until %s is validated", resource)
         kubectl.wait(
-            f"drpolicy/dr-policy-{interval}",
+            resource,
             "--for=condition=Validated",
             context=hub,
             log=command.debug,

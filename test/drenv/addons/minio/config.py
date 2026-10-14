@@ -10,4 +10,4 @@ MINIO_ACCESS_KEY = "minio"
 MINIO_SECRET_KEY = "minio123"
 
 # Used by ramen and velero.
-BUCKET = "bucket"
+BUCKET_PREFIX = "bucket"

@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for testing a storage cluster and a client cluster using
+# Rook external storage.
+---
+name: "storage-and-client"
+
+templates:
+  - name: "client-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.grpc.v1.cri:
+          device_ownership_from_security_context: true
+    network: "$network"
+    cpus: 4
+    memory: "5g"
+    feature_gates:
+      - StatefulSetAutoDeletePVC=true
+    workers:
+      - addons:
+          - name: olm
+          - name: csi-addons
+          - name: rook-operator
+          - name: odf-external-snapshotter
+  - name: "storage-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.grpc.v1.cri:
+          device_ownership_from_security_context: true
+    network: "$network"
+    cpus: 4
+    memory: "6g"
+    extra_disks: 1
+    disk_size: "50g"
+    feature_gates:
+      - StatefulSetAutoDeletePVC=true
+    workers:
+      - addons:
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-toolbox
+          - name: rook-pool
+      - addons:
+          - name: olm
+          - name: odf-external-snapshotter
+          - name: csi-addons
+
+profiles:
+  - name: "storage-cluster"
+    template: "storage-cluster"
+  - name: "client"
+    template: "client-cluster"
+
+workers:
+  - addons:
+      - name: rook-external-cluster
+        args: ["client", "storage-cluster"]
+      - name: minio
+        args: ["client"]

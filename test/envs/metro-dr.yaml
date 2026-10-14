@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Environment for testing Metro-DR.
+---
+name: "metro-dr"
+
+ramen:
+  hub: hub
+  clusters: [dr1, dr2]
+  storage_cluster: storage-cluster
+  topology: metro-dr
+  features:
+    volsync: false
+
+templates:
+  - name: "dr-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.grpc.v1.cri:
+          device_ownership_from_security_context: true
+    network: "$network"
+    cpus: 4
+    memory: "5g"
+    workers:
+      - addons:
+          - name: ocm-cluster
+            args: ["$name", "hub"]
+          - name: olm
+          - name: csi-addons
+          - name: rook-operator
+          - name: odf-external-snapshotter
+  - name: "hub-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    network: "$network"
+    cpus: 2
+    memory: "4g"
+    workers:
+      - addons:
+          - name: ocm-hub
+          - name: ocm-controller
+          - name: olm
+  - name: "storage-cluster"
+    driver: "$vm"
+    container_runtime: containerd
+    containerd:
+      plugins:
+        io.containerd.grpc.v1.cri:
+          device_ownership_from_security_context: true
+    network: "$network"
+    cpus: 4
+    memory: "6g"
+    extra_disks: 1
+    disk_size: "50g"
+    workers:
+      - addons:
+          - name: rook-operator
+          - name: rook-cluster
+          - name: rook-toolbox
+          - name: rook-pool
+      - addons:
+          - name: olm
+          - name: odf-external-snapshotter
+          - name: csi-addons
+
+profiles:
+  - name: "dr1"
+    template: "dr-cluster"
+  - name: "dr2"
+    template: "dr-cluster"
+  - name: "hub"
+    template: "hub-cluster"
+  - name: "storage-cluster"
+    template: "storage-cluster"
+
+workers:
+  - addons:
+      - name: rook-external-cluster
+        args: ["dr1", "storage-cluster"]
+      - name: rook-external-cluster
+        args: ["dr2", "storage-cluster"]
+      - name: minio
+        args: ["dr1"]
+      - name: minio
+        args: ["dr2"]
+  - addons:
+      - name: argocd
+        args: ["hub", "dr1", "dr2"]
+  - addons:
+      - name: volsync
+        args: ["dr1", "dr2", "skip-test"]
