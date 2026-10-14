@@ -6,23 +6,23 @@ from drenv import commands
 
 def set_alias(cluster, url, access_key, secret_key):
     """
-    Set mc alias for cluster.
+    Set mcli alias for cluster.
     """
-    commands.run("mc", "alias", "set", cluster, url, access_key, secret_key)
+    commands.run("mcli", "alias", "set", cluster, url, access_key, secret_key)
 
 
 def remove_alias(cluster):
     """
-    Remove mc alias for cluster.
+    Remove mcli alias for cluster.
     """
-    commands.run("mc", "alias", "remove", cluster)
+    commands.run("mcli", "alias", "remove", cluster)
 
 
 def mb(*targets, ignore_existing=False):
     """
     Create one of more buckets
     """
-    cmd = ["mc", "mb"]
+    cmd = ["mcli", "mb"]
     if ignore_existing:
         cmd.append("--ignore-existing")
     cmd.extend(targets)
@@ -33,28 +33,28 @@ def cp(*args):
     """
     Copy one or more soruces to target.
     """
-    commands.run("mc", "cp", *args)
+    commands.run("mcli", "cp", *args)
 
 
 def rm(*targets):
     """
     Remove one or more targets.
     """
-    commands.run("mc", "rm", *targets)
+    commands.run("mcli", "rm", *targets)
 
 
 def cat(*targets):
     """
     Concatenate one or more targets.
     """
-    return commands.run("mc", "cat", *targets, decode=False)
+    return commands.run("mcli", "cat", *targets, decode=False)
 
 
 def ls(*targets, recursive=False):
     """
     List objects and buckets.
     """
-    cmd = ["mc", "ls"]
+    cmd = ["mcli", "ls"]
     if recursive:
         cmd.append("--recursive")
     cmd.extend(targets)

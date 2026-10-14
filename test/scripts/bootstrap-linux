@@ -122,6 +122,14 @@ TOOLS = [
         "verify": ["virtctl", "version", "--client"],
     },
     {
+        "name": "mcli",
+        "version": "RELEASE.2026-09-16T00-00-00Z",
+        "url": "https://github.com/pgsty/mc/releases/download/{version}/mcli_20260916000000.0.0_{goos}_{goarch}.tar.gz",
+        "digest": "4ba2814fd5507fbe6b4d237c359750b9119d28d7217495fa5b48002fcbd397ef",
+        "member": "mcli",
+        "verify": ["mcli", "--version"],
+    },
+    {
         "name": "kustomize",
         "version": "v5.8.1",
         "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F{version}/kustomize_{version}_{goos}_{goarch}.tar.gz",

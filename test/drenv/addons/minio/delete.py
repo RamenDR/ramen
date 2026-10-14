@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-from drenv import mc
+from drenv import mcli
 
 
 def delete(cluster):
     """
-    Remove the mc alias for the cluster.
+    Remove the mcli alias for the cluster.
     """
-    print(f"Removing mc alias {cluster}")
-    mc.remove_alias(cluster)
+    print(f"Removing mcli alias {cluster}")
+    mcli.remove_alias(cluster)
