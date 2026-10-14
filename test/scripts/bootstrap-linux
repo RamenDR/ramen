@@ -122,13 +122,6 @@ TOOLS = [
         "verify": ["virtctl", "version", "--client"],
     },
     {
-        "name": "mc",
-        "version": "RELEASE.2025-08-13T08-35-41Z",
-        "url": "https://dl.min.io/client/mc/release/{goos}-{goarch}/archive/mc.{version}",
-        "digest": "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891",
-        "verify": ["mc", "--version"],
-    },
-    {
         "name": "kustomize",
         "version": "v5.8.1",
         "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F{version}/kustomize_{version}_{goos}_{goarch}.tar.gz",
