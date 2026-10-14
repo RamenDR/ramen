@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -20,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
@@ -82,6 +84,11 @@ const (
 	NetworkFencePrefix = "network-fence"
 )
 
+type DRClusterMetrics struct {
+	InvalidCIDRsDetectedMetrics
+	UndetectedCIDRsFoundMetrics
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// ensure next line is not greater than 120 columns
@@ -91,8 +98,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if !ok {
 				return []reconcile.Request{}
 			}
-
-			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering DRPC (%s/%s)", drpc.Name, drpc.Namespace))
 
 			return filterDRPC(drpc)
 		}))
@@ -106,8 +111,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return []reconcile.Request{}
 			}
 
-			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering ManifestWork (%s/%s)", mw.Name, mw.Namespace))
-
 			return filterDRClusterMW(mw)
 		}))
 
@@ -119,8 +122,6 @@ func (r *DRClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			if !ok {
 				return []reconcile.Request{}
 			}
-
-			ctrl.Log.Info(fmt.Sprintf("DRCluster: Filtering MCV (%s/%s)", mcv.Name, mcv.Namespace))
 
 			return filterDRClusterMCV(mcv)
 		}))
@@ -362,9 +363,9 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// TODO: Validate managedCluster name? and also ensure it is not deleted!
 	// TODO: Setup views for storage class and VRClass to read and report IDs
 	log := r.Log.WithValues("drc", req.NamespacedName.Name, "rid", util.GetRID())
-	log.Info("reconcile enter")
+	log.Info("Entering reconcile loop")
 
-	defer log.Info("reconcile exit")
+	defer log.Info("Exiting reconcile loop")
 
 	drcluster := &ramen.DRCluster{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drcluster); err != nil {
@@ -399,11 +400,9 @@ func (r *DRClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // potentially unreachable. Fencing is to request fencing this cluster using another, hence this cluster may fail
 // other live validation checks, but we still need to process the fence request.
 //
-//nolint:cyclop
+//nolint:cyclop,funlen
 func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.Result, error) {
 	var requeue bool
-
-	u.log.Info("create/update")
 
 	_, ramenConfig, err := ConfigMapGet(u.ctx, r.APIReader)
 	if err != nil {
@@ -418,10 +417,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy: %w", u.validatedSetFalseAndUpdate("DrClustersDeployFailed", err))
 	}
 
-	if err = validateCIDRsFormat(u.object, u.log); err != nil {
-		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
-			u.validatedSetFalseAndUpdate(ReasonValidationFailed, err))
-	}
+	drclusterMetrics := createDRClusterMetricsInstance(u.object)
 
 	requeue, err = u.clusterFenceHandle()
 	if err != nil {
@@ -443,6 +439,12 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 			"failed to ensure DRClusterConfig: %w",
 			u.validatedSetFalseAndUpdate("DRClusterConfigInProgress", err),
 		)
+	}
+
+	if err = u.validateCIDRs(drclusterMetrics, u.log,
+		&u.object.Status.Conditions, u.object.Generation); err != nil {
+		return ctrl.Result{}, fmt.Errorf("drclusters CIDRs validate: %w",
+			u.validatedSetFalseAndUpdate(ReasonValidationFailed, errors.New("CIDRs validation failed")))
 	}
 
 	setDRClusterValidatedCondition(&u.object.Status.Conditions, u.object.Generation, "Validated the cluster")
@@ -495,6 +497,162 @@ func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluste
 	return nil
 }
 
+func createDRClusterMetricsInstance(drcluster *ramen.DRCluster) DRClusterMetrics {
+	cidrMetricLabels := DRClusterCIDRsMetricLabels(drcluster)
+	invalidCIDRsDetectedMetrics := NewInvalidCIDRsDetectedMetric(cidrMetricLabels)
+	undetectedCIDRsFoundMetrics := NewUndetectedCIDRsFoundMetric(cidrMetricLabels)
+
+	return DRClusterMetrics{
+		InvalidCIDRsDetectedMetrics: invalidCIDRsDetectedMetrics,
+		UndetectedCIDRsFoundMetrics: undetectedCIDRsFoundMetrics,
+	}
+}
+
+// validateCIDRs validates the CIDRs configured in DRCluster.Spec against CIDRs detected by
+// the storage provisioner in DRClusterConfig StorageAccessDetails. Validation is skipped if
+// no CIDRs are configured, as non-MDR setups do not use network fencing.
+//
+// Terminology:
+//   - detected:     CIDRs in DRClusterConfig StorageAccessDetails, auto-detected by the storage provisioner
+//   - undetected:   CIDRs in DRCluster.Spec not present in StorageAccessDetails (additional, allowed)
+//   - unconfigured: CIDRs detected by the storage provisioner but not configured in DRCluster.Spec
+//     (these cause a validation error)
+//
+// Validation is skipped if DRClusterConfig is not found or StorageAccessDetails is empty.
+func (u *drclusterInstance) validateCIDRs(
+	metrics DRClusterMetrics, log logr.Logger,
+	conditions *[]metav1.Condition, observedGeneration int64,
+) error {
+	// clear stale metrics from previous reconcile; each check sets its metric on error
+	metrics.InvalidCIDRsDetected.Set(0)
+	metrics.UndetectedCIDRsFound.Set(0)
+
+	// non-MDR setups do not configure CIDRs; skip validation
+	if len(u.object.Spec.CIDRs) == 0 {
+		meta.RemoveStatusCondition(conditions, ramen.DRClusterConditionTypeCIDRsValidated)
+
+		return nil
+	}
+
+	// validate CIDR format before checking against detected CIDRs
+	err := validateCIDRsFormat(u.object, log, metrics.InvalidCIDRsDetectedMetrics)
+	if err != nil {
+		setCIDRsValidatedConditionInvalidFormat(conditions, observedGeneration, err.Error())
+		log.Error(err, "CIDRs format validation failed")
+
+		return err
+	}
+
+	// fetch CIDRs detected by the storage provisioner; nil means data not yet available
+	cidrsFromDRCC, err := u.getCIDRSFromDRCC()
+	if err != nil {
+		return err
+	}
+
+	if cidrsFromDRCC == nil {
+		return nil
+	}
+
+	cidrsFromDRCluster := sets.NewString(u.object.Spec.CIDRs...)
+
+	// check for unconfigured CIDRs
+	err = checkDetectedCIDRsConfigured(cidrsFromDRCC, cidrsFromDRCluster,
+		conditions, observedGeneration, metrics.InvalidCIDRsDetectedMetrics)
+	if err != nil {
+		log.Error(err, "CIDRs validation failed")
+
+		return err
+	}
+
+	// check for undetected CIDRs
+	undetectedCIDRsFound := checkUndetectedCIDRsFound(cidrsFromDRCC, cidrsFromDRCluster,
+		conditions, observedGeneration, metrics.UndetectedCIDRsFoundMetrics)
+	if !undetectedCIDRsFound {
+		// all detected CIDRs are configured and no undetected CIDRs found
+		setCIDRsValidatedConditionSucceeded(conditions, observedGeneration, "All detected CIDRs are configured")
+	}
+
+	return nil
+}
+
+// getCIDRSFromDRCC returns the CIDRs detected by the storage provisioner from DRClusterConfig
+// StorageAccessDetails. The return value has three meanings:
+//   - nil: DRClusterConfig not found, or ConfigurationProcessed is not yet True — data is not
+//     ready; a ManagedClusterView/ManifestWork watch triggers reconciliation when it is.
+//   - empty set: ConfigurationProcessed is True but no storage CIDRs were detected — the
+//     provisioner found no NetworkFenceClasses in the managed cluster.
+//   - non-empty set: CIDRs detected by the storage provisioner in StorageAccessDetails.
+func (u *drclusterInstance) getCIDRSFromDRCC() (sets.String, error) {
+	drcConfig, err := u.getDRCCFromCluster(u.object)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	// if StorageAccessDetails is empty, check ConfigurationProcessed to determine if the provisioner
+	// has completed its scan. If not yet processed, return nil to retry later.
+	// If processed, return an empty set.
+	if len(drcConfig.Status.StorageAccessDetails) == 0 {
+		processed := meta.FindStatusCondition(drcConfig.Status.Conditions,
+			ramen.DRClusterConfigConfigurationProcessed)
+		if processed == nil || processed.Status != metav1.ConditionTrue {
+			return nil, nil
+		}
+
+		return sets.NewString(), nil
+	}
+
+	cidrsFromDRCC := sets.NewString()
+
+	for _, sAD := range drcConfig.Status.StorageAccessDetails {
+		cidrsFromDRCC = cidrsFromDRCC.Insert(sAD.CIDRs...)
+	}
+
+	return cidrsFromDRCC, nil
+}
+
+// checkDetectedCIDRsConfigured checks that all CIDRs detected by the storage provisioner
+// are configured in DRCluster.Spec. Owns the InvalidCIDRsDetected metric.
+func checkDetectedCIDRsConfigured(
+	cidrsFromDRCC, cidrsFromDRCluster sets.String,
+	conditions *[]metav1.Condition, observedGeneration int64,
+	metrics InvalidCIDRsDetectedMetrics,
+) error {
+	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
+	if len(unconfiguredCIDRs) > 0 {
+		msg := fmt.Sprintf("detected CIDRs not configured: %s", strings.Join(unconfiguredCIDRs, ", "))
+		setCIDRsValidatedConditionDetectedCIDRsUnconfigured(conditions, observedGeneration, msg)
+		metrics.InvalidCIDRsDetected.Set(1)
+
+		return fmt.Errorf("%s", msg)
+	}
+
+	return nil
+}
+
+// checkUndetectedCIDRsFound checks if DRCluster has CIDRs not detected by the storage provisioner.
+// Owns the UndetectedCIDRsFound metric. Returns true if undetected CIDRs were found.
+func checkUndetectedCIDRsFound(
+	cidrsFromDRCC, cidrsFromDRCluster sets.String,
+	conditions *[]metav1.Condition, observedGeneration int64,
+	metrics UndetectedCIDRsFoundMetrics,
+) bool {
+	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
+	if len(undetectedCIDRs) > 0 {
+		setCIDRsValidatedConditionUndetectedCIDRsFound(conditions, observedGeneration,
+			fmt.Sprintf("warning: CIDRs not detected by storage provisioner: %s",
+				strings.Join(undetectedCIDRs, ", ")))
+		metrics.UndetectedCIDRsFound.Set(1)
+
+		return true
+	}
+
+	return false
+}
+
 func validateS3Profile(ctx context.Context, apiReader client.Reader,
 	objectStoreGetter ObjectStoreGetter,
 	drcluster *ramen.DRCluster, listKeyPrefix string, log logr.Logger,
@@ -519,6 +677,10 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 		return "s3ConnectionFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
 
+	if err := objectStore.HeadBucket(); err != nil {
+		return "s3BucketNotFound", fmt.Errorf("%s: %w", s3ProfileName, err)
+	}
+
 	if _, err := objectStore.ListKeys(listKeyPrefix); err != nil {
 		return "s3ListFailed", fmt.Errorf("%s: %w", s3ProfileName, err)
 	}
@@ -526,7 +688,7 @@ func s3ProfileValidate(ctx context.Context, apiReader client.Reader,
 	return "", nil
 }
 
-func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
+func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger, metrics InvalidCIDRsDetectedMetrics) error {
 	// validate the CIDRs format
 	invalidCidrs := []string{}
 
@@ -539,7 +701,9 @@ func validateCIDRsFormat(drcluster *ramen.DRCluster, log logr.Logger) error {
 	}
 
 	if len(invalidCidrs) > 0 {
-		return fmt.Errorf("invalid CIDRs specified %s", strings.Join(invalidCidrs, ", "))
+		metrics.InvalidCIDRsDetected.Set(1)
+
+		return fmt.Errorf("invalid CIDRs format specified %s", strings.Join(invalidCidrs, ", "))
 	}
 
 	return nil
@@ -564,6 +728,10 @@ func (r DRClusterReconciler) processDeletion(u *drclusterInstance) (ctrl.Result,
 			return ctrl.Result{Requeue: true}, nil
 		}
 	}
+
+	cidrMetricLabels := DRClusterCIDRsMetricLabels(u.object)
+	DeleteInvalidCIDRsDetectedMetric(cidrMetricLabels)
+	DeleteUndetectedCIDRsFoundMetric(cidrMetricLabels)
 
 	if err := u.finalizerRemove(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("finalizer remove update: %w", err)
@@ -618,8 +786,6 @@ func (u *drclusterInstance) statusUpdate() error {
 
 		return nil
 	}
-
-	u.log.Info(fmt.Sprintf("Nothing to update (%s/%s)", u.object.Name, u.object.Namespace))
 
 	return nil
 }
@@ -684,13 +850,22 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 
 	util.AddLabel(&drcConfig, util.CreatedByRamenLabel, "true")
 
-	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	err = u.ensureNoDuplicateSchedules(&drcConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	// Ensure that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate schedule from
-	// another DRPolicy
+	return &drcConfig, nil
+}
+
+// ensureNoDuplicateSchedules ensures that schedules are not duplicated by, storing them in "added" to avoid adding a duplicate
+// schedule from another DRPolicy
+func (u *drclusterInstance) ensureNoDuplicateSchedules(drcConfig *ramen.DRClusterConfig) error {
+	drpolicies, err := util.GetAllDRPolicies(u.ctx, u.reconciler.APIReader)
+	if err != nil {
+		return err
+	}
+
 	added := map[string]bool{}
 
 	for idx := range drpolicies.Items {
@@ -717,7 +892,7 @@ func (u *drclusterInstance) generateDRClusterConfig() (*ramen.DRClusterConfig, e
 		}
 	}
 
-	return &drcConfig, nil
+	return nil
 }
 
 // TODO:
@@ -831,13 +1006,13 @@ func (u *drclusterInstance) findMatchingNFClasses(
 		for _, sc := range storageClasses {
 			storageID := sc.GetLabels()[StorageIDLabel]
 
-			nfClassAnnoations, ok := nfc.GetAnnotations()[StorageIDLabel]
+			nfClassAnnotations, ok := nfc.GetAnnotations()[StorageIDLabel]
 			if !ok {
 				continue
 			}
 
 			if sc.Provisioner == nfc.Spec.Provisioner &&
-				slices.Contains(strings.Split(nfClassAnnoations, ","), storageID) {
+				slices.Contains(strings.Split(nfClassAnnotations, ","), storageID) {
 				nfClasses = append(nfClasses, nfc.GetName())
 			}
 		}
@@ -850,14 +1025,24 @@ func (u *drclusterInstance) findMatchingNFClasses(
 	return nfClasses
 }
 
+// getDRCCFromCluster retrieves the DRClusterConfig for the given DRCluster
+func (u *drclusterInstance) getDRCCFromCluster(cluster *ramen.DRCluster) (*ramen.DRClusterConfig, error) {
+	annotations := make(map[string]string)
+	annotations[DRClusterNameAnnotation] = cluster.GetName()
+
+	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(cluster.GetName(), annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	return drcConfig, nil
+}
+
 // getNFClassesFromDRClusterConfig retrieves the DRClusterConfig for the given DRCluster
 // and extracts StorageClasses and NetworkFenceClass resources to process network fencing
 func (u *drclusterInstance) getNFClassesFromDRClusterConfig(cluster *ramen.DRCluster,
 ) ([]string, error) {
-	annotations := make(map[string]string)
-	annotations[AllDRPolicyAnnotation] = cluster.GetName()
-
-	drcConfig, err := u.reconciler.MCVGetter.GetDRClusterConfigFromManagedCluster(cluster.GetName(), annotations)
+	drcConfig, err := u.getDRCCFromCluster(cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -898,15 +1083,42 @@ func (u *drclusterInstance) clusterFence() (bool, error) {
 
 	nfClasses, err := u.getNFClassesFromDRClusterConfig(&peerCluster)
 	if err != nil {
-		return true, fmt.Errorf("faled to get NetworkFenceClasses: %w", err)
+		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
 	}
 
+	// If not fencing yet, create ALL ManifestWorks for all NetworkFenceClasses
+	if !u.isFencingOrFenced() {
+		u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
+
+		for _, nfClass := range nfClasses {
+			if err := u.createNFManifestWork(u.object, &peerCluster, u.log, nfClass); err != nil {
+				setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
+					fmt.Sprintf("NetworkFence ManifestWork creation failed: %v", err))
+
+				return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s: %w",
+					peerCluster.Name, u.object.Name, err)
+			}
+		}
+
+		setDRClusterFencingCondition(&u.object.Status.Conditions, u.object.Generation,
+			"ManifestWork for NetworkFence fence operation created")
+		u.setDRClusterPhase(ramen.Fencing)
+		// just created fencing resources. Requeue and then check.
+		return true, nil
+	}
+
+	// Already fencing, check ALL NetworkFence statuses
 	for _, nfClass := range nfClasses {
-		reque, err := u.fenceClusterOnCluster(&peerCluster, nfClass)
+		err := u.checkFenceStatus(&peerCluster, nfClass)
 		if err != nil {
-			return reque, err
+			return true, err
 		}
 	}
+
+	// All NetworkFences succeeded
+	setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation,
+		"Cluster successfully fenced")
+	u.advanceToNextPhase()
 
 	return false, nil
 }
@@ -934,80 +1146,56 @@ func (u *drclusterInstance) clusterUnfence() (bool, error) {
 			u.object.Name, err)
 	}
 
-	processUnfence := func(networkFenceClassName string) (bool, error) {
-		requeue, err := u.unfenceClusterOnCluster(&peerCluster, networkFenceClassName)
-		if err != nil {
-			return requeue, fmt.Errorf("unfence operation to unfence cluster %s on cluster %s failed: %w",
-				u.object.Name, peerCluster.Name, err)
-		}
-
-		if requeue {
-			u.log.Info("requing as cluster unfence operation is not complete")
-
-			return requeue, nil
-		}
-
-		return false, nil
-	}
-
 	nfClasses, err := u.getNFClassesFromDRClusterConfig(&peerCluster)
 	if err != nil {
-		return true, fmt.Errorf("faled to get NetworkFenceClasses: %w", err)
+		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
 	}
 
+	// If not unfencing yet, create ALL ManifestWorks for all NetworkFenceClasses
+	if !u.isUnfencingOrUnfenced() {
+		u.log.Info(fmt.Sprintf("initiating the cluster unfence from the cluster %s", peerCluster.Name))
+
+		for _, nfClass := range nfClasses {
+			if err := u.createNFManifestWork(u.object, &peerCluster, u.log, nfClass); err != nil {
+				setDRClusterUnfencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
+					fmt.Sprintf("NetworkFence ManifestWork for unfence failed: %v", err))
+
+				return true, fmt.Errorf("failed to generate NetworkFence MW on cluster %s to unfence %s: %w",
+					peerCluster.Name, u.object.Name, err)
+			}
+		}
+
+		setDRClusterUnfencingCondition(&u.object.Status.Conditions, u.object.Generation,
+			"ManifestWork for NetworkFence unfence operation created")
+		u.setDRClusterPhase(ramen.Unfencing)
+		// just created unfencing resources. Requeue and then check.
+		return true, nil
+	}
+
+	// Already unfencing, check ALL NetworkFence statuses
 	for _, nfClass := range nfClasses {
-		requeue, err := processUnfence(nfClass)
-		if requeue || err != nil {
-			return requeue, err
+		err := u.checkUnfenceStatus(&peerCluster, nfClass)
+		if err != nil {
+			return true, err
 		}
 	}
+
+	// All NetworkFences succeeded
+	setDRClusterUnfencedCondition(&u.object.Status.Conditions, u.object.Generation,
+		"Cluster successfully unfenced")
+	u.advanceToNextPhase()
 
 	// once this cluster is unfenced. Clean the fencing resource.
 	return u.cleanClusters([]ramen.DRCluster{*u.object, peerCluster})
 }
 
-// if the fencing CR (via MCV) exists; then
-//
-//	if the status of fencing CR shows fenced
-//	   return dontRequeue, nil
-//	else
-//	   return requeue, error
-//	endif
-//
-// else
-//
-//	Create the fencing CR MW with Fenced state
-//	return requeue, nil
-//
-// endif
-func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
+func (u *drclusterInstance) checkFenceStatus(peerCluster *ramen.DRCluster,
 	networkFenceClassName string,
-) (bool, error) {
-	if !u.isFencingOrFenced() {
-		u.log.Info(fmt.Sprintf("initiating the cluster fence from the cluster %s", peerCluster.Name))
-
-		if err := u.createNFManifestWork(u.object, peerCluster, u.log, networkFenceClassName); err != nil {
-			setDRClusterFencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-				fmt.Sprintf("NetworkFence ManifestWork creation failed: %v", err))
-
-			u.log.Info(fmt.Sprintf("Failed to generate NetworkFence MW on cluster %s to unfence %s",
-				peerCluster.Name, u.object.Name))
-
-			return true, fmt.Errorf("failed to create the NetworkFence MW on cluster %s to fence %s: %w",
-				peerCluster.Name, u.object.Name, err)
-		}
-
-		setDRClusterFencingCondition(&u.object.Status.Conditions, u.object.Generation,
-			"ManifestWork for NetworkFence fence operation created")
-		u.setDRClusterPhase(ramen.Fencing)
-		// just created fencing resource. Requeue and then check.
-		return true, nil
-	}
-
+) error {
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
-	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name, networkFenceClassName,
 		u.object.Namespace, peerCluster.Name, annotations)
 	if err != nil {
 		// dont update the status or conditions. Return requeue, nil as
@@ -1015,11 +1203,11 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
 		// created in the manged cluster or MCV for it might not have been
 		// created yet. This assumption is because, drCluster does not delete
 		// the NetworkFence resource as part of fencing.
-		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w)", err)
+		return fmt.Errorf("failed to get NetworkFence using MCV (error: %w)", err)
 	}
 
 	if nf.Spec.FenceState != csiaddonsv1alpha1.FenceState(u.object.Spec.ClusterFence) {
-		return true, fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
+		return fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
 			u.object.Spec.ClusterFence)
 	}
 
@@ -1029,70 +1217,31 @@ func (u *drclusterInstance) fenceClusterOnCluster(peerCluster *ramen.DRCluster,
 
 		u.log.Info("Fencing operation not successful", "cluster", u.object.Name)
 
-		return true, fmt.Errorf("fencing operation result not successful")
+		return fmt.Errorf("fencing operation result not successful")
 	}
 
-	setDRClusterFencedCondition(&u.object.Status.Conditions, u.object.Generation,
-		"Cluster successfully fenced")
-	u.advanceToNextPhase()
-
-	return false, nil
+	return nil
 }
 
-// if the fencing CR (via MCV) exist; then
-//
-//	if the status of fencing CR shows unfenced
-//	   return dontRequeue, nil
-//	else
-//	   return requeue, error
-//	endif
-//
-// else
-//
-//	Create the fencing CR MW with Unfenced state
-//	return requeue, nil
-//
-// endif
-func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster,
+// checkUnfenceStatus checks the status of a NetworkFence unfence resource via ManagedClusterView
+func (u *drclusterInstance) checkUnfenceStatus(peerCluster *ramen.DRCluster,
 	networkFenceClassName string,
-) (bool, error) {
-	if !u.isUnfencingOrUnfenced() {
-		u.log.Info(fmt.Sprintf("initiating the cluster unfence from the cluster %s", peerCluster.Name))
-
-		if err := u.createNFManifestWork(u.object, peerCluster, u.log, networkFenceClassName); err != nil {
-			setDRClusterUnfencingFailedCondition(&u.object.Status.Conditions, u.object.Generation,
-				"NeworkFence ManifestWork for unfence failed")
-
-			u.log.Info(fmt.Sprintf("Failed to generate NetworkFence MW on cluster %s to unfence %s",
-				peerCluster.Name, u.object.Name))
-
-			return true, fmt.Errorf("failed to generate NetworkFence MW on cluster %s to unfence %s",
-				peerCluster.Name, u.object.Name)
-		}
-
-		setDRClusterUnfencingCondition(&u.object.Status.Conditions, u.object.Generation,
-			"ManifestWork for NetworkFence unfence operation created")
-		u.setDRClusterPhase(ramen.Unfencing)
-
-		// just created NetworkFence resource to unfence. Requeue and then check.
-		return true, nil
-	}
-
+) error {
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.Name
 
-	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name,
+	nf, err := u.reconciler.MCVGetter.GetNFFromManagedCluster(u.object.Name, networkFenceClassName,
 		u.object.Namespace, peerCluster.Name, annotations)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return u.requeueIfNFMWExists(peerCluster)
 		}
 
-		return true, fmt.Errorf("failed to get NetworkFence using MCV (error: %w", err)
+		return fmt.Errorf("failed to get NetworkFence using MCV (error: %w", err)
 	}
 
 	if nf.Spec.FenceState != csiaddonsv1alpha1.FenceState(u.object.Spec.ClusterFence) {
-		return true, fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
+		return fmt.Errorf("fence state in the NetworkFence resource is not changed to %v yet",
 			u.object.Spec.ClusterFence)
 	}
 
@@ -1102,29 +1251,25 @@ func (u *drclusterInstance) unfenceClusterOnCluster(peerCluster *ramen.DRCluster
 
 		u.log.Info("Unfencing operation not successful", "cluster", u.object.Name)
 
-		return true, fmt.Errorf("un operation result not successful")
+		return fmt.Errorf("un operation result not successful")
 	}
 
-	setDRClusterUnfencedCondition(&u.object.Status.Conditions, u.object.Generation,
-		"Cluster successfully unfenced")
-	u.advanceToNextPhase()
-
-	return false, nil
+	return nil
 }
 
-func (u *drclusterInstance) requeueIfNFMWExists(peerCluster *ramen.DRCluster) (bool, error) {
+func (u *drclusterInstance) requeueIfNFMWExists(peerCluster *ramen.DRCluster) error {
 	_, mwErr := u.mwUtil.FindManifestWorkByType(util.MWTypeNF, peerCluster.Name)
 	if mwErr != nil {
 		if k8serrors.IsNotFound(mwErr) {
 			u.log.Info("NetworkFence and MW for it not found. Cleaned")
 
-			return false, nil
+			return nil
 		}
 
-		return true, fmt.Errorf("failed to get MW for NetworkFence %w", mwErr)
+		return fmt.Errorf("failed to get MW for NetworkFence %w", mwErr)
 	}
 
-	return true, fmt.Errorf("NetworkFence not found. But MW still exists")
+	return fmt.Errorf("NetworkFence not found. But MW still exists")
 }
 
 // We are here means following things have been confirmed.
@@ -1166,10 +1311,27 @@ func (u *drclusterInstance) cleanClusters(clusters []ramen.DRCluster) (bool, err
 func (u *drclusterInstance) removeFencingCR(cluster ramen.DRCluster) (bool, error) {
 	u.log.Info(fmt.Sprintf("cleaning the cluster fence resource from the cluster %s", cluster.Name))
 
-	err := u.mwUtil.DeleteManifestWork(fmt.Sprintf(util.ManifestWorkNameFormat,
-		u.object.Name, cluster.Name, util.MWTypeNF), cluster.Name)
+	// Get NFCs to determine which ManifestWorks to delete
+	nfClasses, err := u.getNFClassesFromDRClusterConfig(&cluster)
 	if err != nil {
-		return true, fmt.Errorf("failed to delete NetworkFence resource from cluster %s", cluster.Name)
+		return true, fmt.Errorf("failed to get NetworkFenceClasses: %w", err)
+	}
+
+	// Delete ManifestWork for each NetworkFenceClass
+	for _, nfClass := range nfClasses {
+		name := u.object.Name
+		// Append NFC name to match the naming pattern used during creation
+		if nfClass != "" {
+			name += "-" + nfClass
+		}
+
+		mwName := fmt.Sprintf(util.ManifestWorkNameFormat, name, cluster.Name, util.MWTypeNF)
+
+		err := u.mwUtil.DeleteManifestWork(mwName, cluster.Name)
+		if err != nil {
+			return true, fmt.Errorf("failed to delete NetworkFence MW %s from cluster %s: %w",
+				mwName, cluster.Name, err)
+		}
 	}
 
 	return false, nil
@@ -1505,6 +1667,50 @@ func setDRClusterCleaningFailedCondition(conditions *[]metav1.Condition, observe
 	util.SetStatusCondition(conditions, metav1.Condition{
 		Type:               ramen.DRClusterConditionTypeClean,
 		Reason:             DRClusterConditionReasonCleanError,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionSucceeded(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonCIDRsValidationSucceeded,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionUndetectedCIDRsFound(
+	conditions *[]metav1.Condition, observedGeneration int64, message string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonUndetectedCIDRsFound,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionDetectedCIDRsUnconfigured(
+	conditions *[]metav1.Condition, observedGeneration int64, message string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonDetectedCIDRsUnconfigured,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
+}
+
+func setCIDRsValidatedConditionInvalidFormat(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               ramen.DRClusterConditionTypeCIDRsValidated,
+		Reason:             ramen.ReasonInvalidCIDRsFormat,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionFalse,
 		Message:            message,

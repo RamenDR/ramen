@@ -7,25 +7,24 @@ SPDX-License-Identifier: Apache-2.0
 
 ## Usage Description
 
-ManagedClusterViews are created on a hub cluster and return information about
-a resource on a managed cluster.
+ManagedClusterViews are created on a hub cluster and return information about a
+resource on a managed cluster.
 
 Examples for use are in this directory.
 
 ## Requirements
 
-* [multicloud-operators-foundation](https://github.com/
-  open-cluster-management/multicloud-operators-foundation) needs to be
-  installed in order to make this resource work.
-* System in use contains a hub cluster and managed cluster
+- \[multicloud-operators-foundation\](https://github.com/
+  open-cluster-management/multicloud-operators-foundation) needs to be installed
+  in order to make this resource work.
+- System in use contains a hub cluster and managed cluster
 
 ## How to use
 
-The example below shows how to create a ManagedClusterView on a hub cluster.
-The MCV looks for a VolumeReplicationGroup named
-'volumereplicationgroup-sample-1' on managedcluster 'cluster1'.
-The comments are to give context for the other ways to specify a resource,
-along with required/optional components:
+The example below shows how to create a ManagedClusterView on a hub cluster. The
+MCV looks for a VolumeReplicationGroup named 'volumereplicationgroup-sample-1'
+on managedcluster 'cluster1'. The comments are to give context for the other
+ways to specify a resource, along with required/optional components:
 
 ```yaml
 apiVersion: view.open-cluster-management.io/v1beta1

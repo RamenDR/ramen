@@ -14,11 +14,6 @@ import (
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 )
 
-const (
-	defaultTimeoutValue = 300
-	defaultOnErrorValue = "fail"
-)
-
 type NameSelectorType string
 
 const (
@@ -83,9 +78,15 @@ func getFilteredObjectsBasedOnTypeAndNameSelector(objList client.ObjectList, nam
 		objs = filterDeployments(v.Items, nameSelector)
 	case *appsv1.StatefulSetList:
 		objs = filterStatefulSets(v.Items, nameSelector)
+	case *appsv1.DaemonSetList:
+		objs = filterDaemonSets(v.Items, nameSelector)
 	}
 
 	return objs
+}
+
+func filterDaemonSets(objs []appsv1.DaemonSet, nameSelector string) []client.Object {
+	return filterObjectsSameAsNameSelector(toPointerSlice(objs), nameSelector)
 }
 
 func filterStatefulSets(objs []appsv1.StatefulSet, nameSelector string) []client.Object {
@@ -117,6 +118,8 @@ func filterObjectsSameAsNameSelector[T client.Object](objs []T, nameSelector str
 }
 
 // Based on the type of resource, slice of objects is returned.
+//
+//nolint:cyclop
 func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 	objs := make([]client.Object, 0)
 
@@ -136,6 +139,10 @@ func getObjectsBasedOnType(objList client.ObjectList) []client.Object {
 	case *appsv1.StatefulSetList:
 		for _, ss := range v.Items {
 			objs = append(objs, &ss)
+		}
+	case *appsv1.DaemonSetList:
+		for _, ds := range v.Items {
+			objs = append(objs, &ds)
 		}
 	}
 
@@ -160,6 +167,8 @@ func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, nameSelector strin
 		objs = getMatchingDeployments(v, re)
 	case *appsv1.StatefulSetList:
 		objs = getMatchingStatefulSets(v, re)
+	case *appsv1.DaemonSetList:
+		objs = getMatchingDaemonSets(v, re)
 	}
 
 	return objs
@@ -206,37 +215,6 @@ func isValidRegex(nameSelector string) bool {
 	return err == nil
 }
 
-func getOpHookOnError(hook *kubeobjects.HookSpec) string {
-	if hook.Op.OnError != "" {
-		return hook.Op.OnError
-	} else if hook.OnError != "" {
-		return hook.OnError
-	}
-
-	// Default to fail if not specified
-	return defaultOnErrorValue
-}
-
-func getChkHookTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Chk.Timeout != 0 {
-		return hook.Chk.Timeout
-	} else if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
-}
-
-func getOpHookTimeoutValue(hook *kubeobjects.HookSpec) int {
-	if hook.Op.Timeout != 0 {
-		return hook.Op.Timeout
-	} else if hook.Timeout != 0 {
-		return hook.Timeout
-	}
-	// 300s is the default value for timeout
-	return defaultTimeoutValue
-}
-
 func getMatchingUnstructedObjs(uList *unstructured.UnstructuredList, re *regexp.Regexp) []client.Object {
 	return getRegexMatchingObjects(toPointerSlice(uList.Items), re)
 }
@@ -251,6 +229,10 @@ func getMatchingDeployments(dList *appsv1.DeploymentList, re *regexp.Regexp) []c
 
 func getMatchingStatefulSets(ssList *appsv1.StatefulSetList, re *regexp.Regexp) []client.Object {
 	return getRegexMatchingObjects(toPointerSlice(ssList.Items), re)
+}
+
+func getMatchingDaemonSets(dsList *appsv1.DaemonSetList, re *regexp.Regexp) []client.Object {
+	return getRegexMatchingObjects(toPointerSlice(dsList.Items), re)
 }
 
 func getRegexMatchingObjects[T client.Object](items []T, re *regexp.Regexp) []client.Object {

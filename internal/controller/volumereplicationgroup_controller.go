@@ -51,15 +51,19 @@ import (
 // VolumeReplicationGroupReconciler reconciles a VolumeReplicationGroup object
 type VolumeReplicationGroupReconciler struct {
 	client.Client
-	APIReader           client.Reader
-	Log                 logr.Logger
-	ObjStoreGetter      ObjectStoreGetter
-	Scheme              *runtime.Scheme
-	eventRecorder       *util.EventReporter
-	kubeObjects         kubeobjects.RequestsManager
-	RateLimiter         *workqueue.TypedRateLimiter[reconcile.Request]
-	veleroCRsAreWatched bool
-	recipeRetries       sync.Map
+	APIReader                client.Reader
+	Log                      logr.Logger
+	ObjStoreGetter           ObjectStoreGetter
+	Scheme                   *runtime.Scheme
+	eventRecorder            *util.EventReporter
+	kubeObjects              kubeobjects.RequestsManager
+	RateLimiter              *workqueue.TypedRateLimiter[reconcile.Request]
+	veleroCRsAreWatched      bool
+	recipeRetries            sync.Map
+	lastSeenProtectedVMsList sync.Map
+	excludedResourcesMgr     *velero.ExcludedResourcesManager
+	excludedResourcesMutex   sync.RWMutex
+	cachedExcludedResources  []string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -84,7 +88,7 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(r.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 			RateLimiter:             rateLimiter,
 		}).
 		For(&ramendrv1alpha1.VolumeReplicationGroup{},
@@ -114,6 +118,11 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	if !ramenConfig.VolSync.Disabled {
 		r.Log.Info("VolSync enabled; adding owns and watches")
+
+		if err := util.EnsureLocalVGSAPI(context.TODO(), r.APIReader); err != nil {
+			return fmt.Errorf("VolSync is enabled but VolumeGroupSnapshot API is unavailable: %w", err)
+		}
+
 		ctrlBuilder = r.addVolsyncOwnsAndWatches(ctrlBuilder)
 	} else {
 		r.Log.Info("VolSync disabled; don't own volsync resources")
@@ -123,6 +132,13 @@ func (r *VolumeReplicationGroupReconciler) SetupWithManager(
 
 	if !ramenConfig.KubeObjectProtection.Disabled {
 		ctrlBuilder = r.addKubeObjectsOwnsAndWatches(ctrlBuilder)
+
+		// Initialize the excluded resources manager for kube object protection
+		r.excludedResourcesMgr = velero.NewExcludedResourcesManager(
+			r.Client,
+			RamenOperatorNamespace(),
+			r.Log.WithName("excluded-resources"),
+		)
 	} else {
 		r.Log.Info("Kube object protection disabled; don't watch kube objects requests")
 	}
@@ -154,6 +170,30 @@ func (r *VolumeReplicationGroupReconciler) configMapFun(
 ) []reconcile.Request {
 	log := ctrl.Log.WithName("configmap").WithName("VolumeReplicationGroup")
 
+	// Handle default-excluded-resources ConfigMap
+	if configmap.GetName() == velero.DefaultExcludedResourcesConfigMapName &&
+		configmap.GetNamespace() == RamenOperatorNamespace() {
+		log.Info("Update in default-excluded-resources ConfigMap, reloading")
+
+		// Reload the excluded resources
+		if r.excludedResourcesMgr != nil {
+			if excludedResources, err := r.excludedResourcesMgr.ReloadExcludedResources(ctx); err != nil {
+				log.Error(err, "Failed to reload excluded resources")
+			} else {
+				// Update the cached excluded resources in the reconciler
+				r.excludedResourcesMutex.Lock()
+				r.cachedExcludedResources = excludedResources
+				r.excludedResourcesMutex.Unlock()
+				log.Info("Updated cached excluded resources", "count", len(excludedResources))
+			}
+		}
+
+		// No need to reconcile all VRGs for this change
+		// The new exclusions will be used in the next backup
+		return []reconcile.Request{}
+	}
+
+	// Handle ramen operator config ConfigMap
 	if configmap.GetName() != DrClusterOperatorConfigMapName || configmap.GetNamespace() != RamenOperatorNamespace() {
 		return []reconcile.Request{}
 	}
@@ -192,7 +232,8 @@ func pvcPredicateFunc() predicate.Funcs {
 	pvcPredicate := predicate.Funcs{
 		// NOTE: Create predicate is retained, to help with logging the event
 		CreateFunc: func(e event.CreateEvent) bool {
-			log.Info("Create event for PersistentVolumeClaim")
+			o := e.Object
+			log.Info("Create event for PVC", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -203,6 +244,7 @@ func pvcPredicateFunc() predicate.Funcs {
 
 				return false
 			}
+
 			newPVC, ok := e.ObjectNew.DeepCopyObject().(*corev1.PersistentVolumeClaim)
 			if !ok {
 				log.Info("Failed to deep copy newer PersistentVolumeClaim")
@@ -210,13 +252,13 @@ func pvcPredicateFunc() predicate.Funcs {
 				return false
 			}
 
-			log.Info("Update event for PersistentVolumeClaim")
+			log.Info("Update event for PVC", "namespace", oldPVC.GetNamespace(), "name", oldPVC.GetName())
 
 			return updateEventDecision(oldPVC, newPVC, log)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			o := e.Object
-			log.Info("PVC Delete", "namespace", o.GetNamespace(), "name", o.GetName())
+			log.Info("Delete event for PVC", "namespace", o.GetNamespace(), "name", o.GetName())
 
 			return true
 		},
@@ -348,7 +390,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 		// this. If not found, then reconcile request would not be sent
 		selector, err := metav1.LabelSelectorAsSelector(&pvcSelector.LabelSelector)
 		if err != nil {
-			log1.Error(err, "Failed to get the label selector from VolumeReplicationGroup")
+			log1.Error(err, "Failed to convert PVC label selector", "vrg", vrg.Name)
 
 			continue
 		}
@@ -381,22 +423,31 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch;create;update
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattributesclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;update;delete
+// +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources/finalizers,verbs=update
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=multicluster.x-k8s.io,resources=serviceexports,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=multicluster.x-k8s.io,resources=serviceimports,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;create;patch;update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=recipes,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=list;watch;get;create;patch;update
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups="kubevirt.io",resources=virtualmachines,verbs=get;list;watch;patch;update;delete
@@ -433,6 +484,7 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 		namespacedName:    req.NamespacedName.String(),
 		objectStorers:     make(map[string]cachedObjectStorer),
 		storageClassCache: make(map[string]*storagev1.StorageClass),
+		vacCache:          make(map[string]*storagev1.VolumeAttributesClass),
 	}
 
 	// Fetch the VolumeReplicationGroup instance
@@ -463,6 +515,8 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 				"Please install velero/oadp and restart the operator", v.instance.Namespace, v.instance.Name)
 	}
 
+	r.ensureExcludedResourcesCM(ctx, ramenConfig, log)
+
 	v.volSyncHandler = volsync.NewVSHandler(ctx, r.Client, log, v.instance,
 		v.instance.Spec.Async, cephFSCSIDriverNameOrDefault(v.ramenConfig),
 		volSyncDestinationCopyMethodOrDefault(v.ramenConfig), adminNamespaceVRG)
@@ -484,6 +538,28 @@ func (r *VolumeReplicationGroupReconciler) Reconcile(ctx context.Context, req ct
 	return res, nil
 }
 
+func (r *VolumeReplicationGroupReconciler) ensureExcludedResourcesCM(ctx context.Context,
+	ramenConfig *ramendrv1alpha1.RamenConfig, log logr.Logger,
+) {
+	// Ensure default-excluded-resources ConfigMap exists on first reconciliation
+	if !ramenConfig.KubeObjectProtection.Disabled && r.excludedResourcesMgr != nil {
+		r.excludedResourcesMutex.RLock()
+		needsInit := len(r.cachedExcludedResources) == 0
+		r.excludedResourcesMutex.RUnlock()
+
+		if needsInit {
+			if excludedResources, err := r.excludedResourcesMgr.EnsureConfigMap(ctx); err != nil {
+				log.Error(err, "Failed to ensure excluded resources ConfigMap")
+			} else {
+				r.excludedResourcesMutex.Lock()
+				r.cachedExcludedResources = excludedResources
+				r.excludedResourcesMutex.Unlock()
+				log.Info("Initialized excluded resources from ConfigMap", "count", len(excludedResources))
+			}
+		}
+	}
+}
+
 type cachedObjectStorer struct {
 	storer ObjectStorer
 	err    error
@@ -502,6 +578,7 @@ type VRGInstance struct {
 	replClassList        *volrep.VolumeReplicationClassList
 	grpReplClassList     *volrep.VolumeGroupReplicationClassList
 	storageClassCache    map[string]*storagev1.StorageClass
+	vacCache             map[string]*storagev1.VolumeAttributesClass
 	vrgObjectProtected   *metav1.Condition
 	kubeObjectsProtected *metav1.Condition
 	vrcUpdated           bool
@@ -542,6 +619,9 @@ const (
 	// VolumeGroupReplicationClass label
 	GroupReplicationIDLabel = "ramendr.openshift.io/groupreplicationid"
 
+	// VolumeGroupReplicationClass global label
+	GlobalReplicationLabel = "ramendr.openshift.io/global"
+
 	// Maintenance mode label
 	MModesLabel = "ramendr.openshift.io/maintenancemodes"
 
@@ -581,7 +661,19 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 		return v.invalid(err, "Failed to get recipe", false)
 	}
 
-	v.log.Info("Recipe", "elements", v.recipeElements)
+	captureNames := make([]string, 0, len(v.recipeElements.CaptureWorkflow))
+
+	for _, step := range v.recipeElements.CaptureWorkflow {
+		captureNames = append(captureNames, step.Name)
+	}
+
+	v.log.Info("Recipe",
+		"namespaces", v.recipeElements.PvcSelector.NamespaceNames,
+		"captureSteps", captureNames,
+		"recoverSteps", len(v.recipeElements.RecoverWorkflow),
+		"captureFailOn", v.recipeElements.CaptureFailOn,
+		"restoreFailOn", v.recipeElements.RestoreFailOn,
+	)
 
 	if err := v.updatePVCList(); err != nil {
 		return v.invalid(err, "Failed to process list of PVCs to protect", true)
@@ -599,6 +691,8 @@ func (v *VRGInstance) processVRG() ctrl.Result {
 	if err := v.addFinalizer(vrgFinalizerName); err != nil {
 		return v.dataError(err, "Failed to add finalizer to VolumeReplicationGroup", true)
 	}
+
+	v.updateVRGAutoCleanupCondition()
 
 	switch {
 	case v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary:
@@ -747,7 +841,7 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 	}
 
 	if offloaded {
-		return nil
+		return v.processGloballyOffloadedPVCs(pvcList)
 	}
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
@@ -1000,8 +1094,6 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 }
 
 func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim) {
-	v.log.Info("separating PVC using only sc provisioner")
-
 	replicationClassMatchFound := false
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1027,8 +1119,6 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alpha1.PeerClass,
 	storageClass *storagev1.StorageClass, pvc *corev1.PersistentVolumeClaim,
 ) error {
-	v.log.Info("separate PVC using peerClasses")
-
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
 		return err
@@ -1260,13 +1350,15 @@ func (v *VRGInstance) findPeerClassMatchingSC(
 }
 
 // finalizeVRG cleans up managed resources and removes the VRG finalizer for resource deletion
+//
+//nolint:cyclop,funlen
 func (v *VRGInstance) processForDeletion() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup for deletion")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
 
-	if err := v.disownPVCs(); err != nil {
-		v.log.Info("Disowning PVCs failed", "error", err)
+	if err := v.undoPVRetentionForVolSyncPVCs(); err != nil {
+		v.log.Info("Undoing PV retention for VolSync PVCs failed", "error", err)
 
 		return ctrl.Result{Requeue: true}
 	}
@@ -1293,11 +1385,24 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return v.result
 	}
 
+	if v.hasGlobalVGRLabel() {
+		if v.deleteGlobalVGR() {
+			return ctrl.Result{Requeue: true}
+		}
+	}
+
 	result := ctrl.Result{}
 	if err := v.kubeObjectsProtectionDelete(&result); err != nil {
 		v.log.Info("Kube objects protection deletion failed", "error", err)
 
 		return result
+	}
+
+	// Delete the static IP ResourceModifier ConfigMap if it was created.
+	if err := v.deleteResourceModifierCM(v.ctx, v.veleroNamespaceName()); err != nil {
+		v.log.Info("ResourceModifier ConfigMap deletion failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
 	}
 
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
@@ -1396,6 +1501,12 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 	v.log.Info("Entering processing VolumeReplicationGroup as Primary")
 
 	defer v.log.Info("Exiting processing VolumeReplicationGroup")
+
+	// Reset global VGR secondary readiness condition; only meaningful when Secondary.
+	if v.hasGlobalVGRLabel() {
+		v.setGlobalSecondaryCondition(metav1.ConditionTrue,
+			VRGConditionReasonUnused, "Not applicable when Primary")
+	}
 
 	v.resetKubeObjectsCaptureStatusIfRequired()
 
@@ -1574,7 +1685,7 @@ func (v *VRGInstance) reconcileAsPrimary() {
 		vrg.Status.PrepareForFinalSyncComplete = finalSyncPrepared.volSync
 	}
 
-	if !v.result.Requeue && v.isVMRecipeProtection() {
+	if !v.result.Requeue && util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.result.Requeue = true
 		}
@@ -1687,12 +1798,6 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 
 	v.instance.Status.LastGroupSyncTime = nil
 
-	if v.resetInitialStatusAsSecondary() {
-		v.result.Requeue = true
-
-		return v.result
-	}
-
 	result := v.reconcileAsSecondary()
 
 	// If requeue is false, then VRG was successfully processed as Secondary.
@@ -1704,30 +1809,26 @@ func (v *VRGInstance) processAsSecondary() ctrl.Result {
 			util.EventReasonSecondarySuccess, "Secondary Success")
 	}
 
+	// IMPORTANT: resetInitialStatusAsSecondary() MUST be called AFTER reconcileAsSecondary()
+	// because reconcileAsSecondary() clears v.instance.Status.Conditions.
+	if v.resetInitialStatusAsSecondary() {
+		v.result.Requeue = true
+
+		return v.result
+	}
+
 	return v.updateVRGConditionsAndStatus(result)
 }
 
 func (v *VRGInstance) reconcileAsSecondary() ctrl.Result {
 	result := ctrl.Result{}
 
-	result.Requeue = v.HandleSecondaryConflictsAndCleanup() || result.Requeue
+	result.Requeue = v.ensureSecondaryState() || result.Requeue
 	result.Requeue = v.reconcileVolSyncAsSecondary() || result.Requeue
 	result.Requeue = v.reconcileVolRepsAsSecondary() || result.Requeue
 
-	// We already have the vrg.spec.state set to Secondary, so the user has been
-	// asked to cleanup the resources and we cannot upload the kube resources
-	// here. This final sync of kube resources should happen before the user is
-	// asked to cleanup the resources. This bug will be fixed in the future
-	// after we reconcile the volsync and volrep processes to be similar.
-	// TODO: Do a final sync of kube resources at the same place where we do the
-	// final sync of the volsync resources.
-
-	// Clear the conditions only if there are no more work as secondary and the RDSpec is not empty.
-	// Note: When using VolSync, we preserve the secondary and we need the status of the VRG to be
-	// clean. In all other cases, the VRG will be deleted and we don't care about the its conditions.
-	if !result.Requeue && len(v.instance.Spec.VolSync.RDSpec) > 0 {
-		v.instance.Status.Conditions = []metav1.Condition{}
-	}
+	// Create/update the Velero ResourceModifier ConfigMap for static IP translation.
+	result.Requeue = v.staticIPResourceModifierReconcile() || result.Requeue
 
 	return result
 }
@@ -1744,6 +1845,11 @@ func (v *VRGInstance) resetInitialStatusAsSecondary() bool {
 	}
 
 	if kubeObjectsReady == nil || kubeObjectsReady.Reason != VRGConditionReasonClusterDataUnused {
+		update = true
+	}
+
+	if v.instance.Status.StaticIPDiscoveryStatus != nil {
+		v.instance.Status.StaticIPDiscoveryStatus = nil
 		update = true
 	}
 
@@ -1832,6 +1938,8 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 
 	if len(pvcGroups) > 0 {
 		v.instance.Status.PVCGroups = pvcGroups
+	} else {
+		v.instance.Status.PVCGroups = nil
 	}
 
 	v.updateStatusState()
@@ -1856,9 +1964,6 @@ func (v *VRGInstance) updateVRGStatus(result ctrl.Result) ctrl.Result {
 
 		return result
 	}
-
-	v.log.Info(fmt.Sprintf("Nothing to update VolRep pvccount (%d), VolSync pvccount(%d)",
-		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	return result
 }
@@ -2008,13 +2113,11 @@ func (v *VRGInstance) updateProtectedCGsForVolRep(pvcGroups *[]ramendrv1alpha1.G
 }
 
 func (v *VRGInstance) logAndSetConditions(conditionName string, subconditions ...*metav1.Condition) {
-	msg := fmt.Sprintf("merging %s condition", conditionName)
-	v.log.Info(msg, "subconditions", subconditions)
 	finalCondition := util.MergeConditions(util.SetStatusCondition,
 		&v.instance.Status.Conditions,
 		[]string{VRGConditionReasonUnused},
 		subconditions...)
-	msg = fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
+	msg := fmt.Sprintf("updated %s status to %s", conditionName, finalCondition.Status)
 	v.log.Info(msg, "finalCondition", finalCondition)
 }
 
@@ -2040,25 +2143,47 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 	)
 }
 
-// updateVRGConditions updates three summary conditions VRGConditionTypeDataReady,
-// VRGConditionTypeClusterDataProtected and VRGConditionDataProtected at the VRG
-// level based on the corresponding PVC level conditions in the VRG:
+func (v *VRGInstance) updateVRGAutoCleanupCondition() {
+	switch {
+	case !v.isDiscoveredApp():
+		// gitOps managed apps
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			metav1.ConditionFalse, VRGConditionReasonUnused,
+			"Automated Cleanup not applicable: GitOps manages the application's resource lifecycle.")
+	case !util.IsVMRecipe(v.instance.Spec.KubeObjectProtection):
+		// all other discovered apps protection except vm-recipe
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			metav1.ConditionFalse, VRGConditionReasonUnused,
+			"Automated cleanup is not supported for this application's protection configuration.")
+	case len(v.volSyncPVCs) > 0:
+		// discovered app with cephfs volumes
+		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+			metav1.ConditionFalse, VRGConditionReasonUnused,
+			"Automated cleanup not applicable for VMs with volumes protected by VolSync.")
+	default:
+		// discovered app with vm-recipe
+		if !v.IsDRActionInProgress() {
+			// no DR action progressing
+			setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Generation,
+				metav1.ConditionTrue, VRGConditionReasonUnused,
+				"Automated cleanup is supported, but no DR action is in progress and no cleanup is currently required.")
+		}
+	}
+}
+
+// updateVRGConditions updates five summary conditions VRGConditionTypeDataReady,
+// VRGConditionTypeClusterDataProtected, VRGConditionTypeDataProtected,
+// VRGConditionTypeDestinationInfoAvailable and VRGConditionTypeReplicationHealthy,
+// at the VRG level based on the corresponding PVC level conditions in the VRG:
 //
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	var (
-		volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
-		volSyncAutoCleanup                                                            *metav1.Condition
-	)
-
+	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
 	if v.instance.Spec.Sync == nil {
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
 
 		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
-		if len(v.volSyncPVCs) > 0 {
-			volSyncAutoCleanup = v.aggregateVolSyncAutoCleanupCondition()
-		}
 	}
 
 	v.updateVRGDataReadyCondition()
@@ -2077,8 +2202,16 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.aggregateVRGNoClusterDataConflictCondition(),
 	)
 
-	v.logAndSetConditions(VRGConditionTypeAutoCleanup, volSyncAutoCleanup,
+	v.logAndSetConditions(VRGConditionTypeAutoCleanup,
 		v.aggregateVRGAutoCleanupCondition())
+
+	if destInfoCond := v.aggregateVolRepDestinationInfoAvailableCondition(); destInfoCond != nil {
+		v.logAndSetConditions(VRGConditionTypeDestinationInfoAvailable, destInfoCond)
+	}
+
+	if replicationHealthyCond := v.aggregateVolRepReplicationHealthyCondition(); replicationHealthyCond != nil {
+		v.logAndSetConditions(VRGConditionTypeReplicationHealthy, replicationHealthyCond)
+	}
 
 	v.updateVRGLastGroupSyncTime()
 	v.updateVRGLastGroupSyncDuration()
@@ -2262,13 +2395,108 @@ func (r *VolumeReplicationGroupReconciler) VGRMapFunc(ctx context.Context, obj c
 
 	vgr, ok := obj.(*volrep.VolumeGroupReplication)
 	if !ok {
-		log.Info("map function received non-vgr resource")
+		return []reconcile.Request{}
+	}
+
+	vgrLog := log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace})
+
+	// Filter VRGs by global VGR label, if VGR exists in operator namespace.
+	if vgr.Namespace == RamenOperatorNamespace() {
+		return r.filterGlobalVGRVRGs(vgr.Name, vgrLog)
+	} else if vgr.Spec.External {
+		return r.filterVRGForOffloadedVGR(vgr, vgrLog)
+	}
+
+	return filterVRGDependentObjects(r.Client, obj, vgrLog)
+}
+
+// filterGlobalVGRVRGs enqueues all VRGs that reference the given VGR name via
+// the global VGR label, so they reconcile when the shared VGR changes.
+func (r *VolumeReplicationGroupReconciler) filterGlobalVGRVRGs(
+	vgrName string, log logr.Logger,
+) []reconcile.Request {
+	var vrgs ramendrv1alpha1.VolumeReplicationGroupList
+
+	err := r.Client.List(context.TODO(), &vrgs,
+		client.MatchingLabels{GlobalVGRLabel: vgrName},
+	)
+	if err != nil {
+		log.Error(err, "Failed to list VRGs matching global VGR label")
 
 		return []reconcile.Request{}
 	}
 
-	return filterVRGDependentObjects(r.Client, obj,
-		log.WithValues("vgr", types.NamespacedName{Name: vgr.Name, Namespace: vgr.Namespace}))
+	if len(vrgs.Items) == 0 {
+		log.V(1).Info("No VRGs matched label, skipping enqueue")
+
+		return []reconcile.Request{}
+	}
+
+	req := make([]reconcile.Request, 0, len(vrgs.Items))
+	names := make([]string, 0, len(vrgs.Items))
+
+	for idx := range vrgs.Items {
+		vrg := &vrgs.Items[idx]
+
+		req = append(req, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      vrg.Name,
+				Namespace: vrg.Namespace,
+			},
+		})
+
+		names = append(names, vrg.Namespace+"/"+vrg.Name)
+	}
+
+	log.Info("Enqueuing VRGs for shared VGR change", "vrgs", names)
+
+	return req
+}
+
+func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
+	vgr *volrep.VolumeGroupReplication, log logr.Logger,
+) []reconcile.Request {
+	req := []reconcile.Request{}
+
+	// Get VRG owner information from VGR labels
+	ownerNamespace, ownerName, ok := util.OwnerNamespaceNameAndName(vgr.GetLabels())
+	if !ok {
+		log.V(1).Info("VGR does not have owner labels, skipping")
+
+		return req
+	}
+
+	// Fetch the VRG using the owner labels
+	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
+	vrgNamespacedName := types.NamespacedName{
+		Namespace: ownerNamespace,
+		Name:      ownerName,
+	}
+
+	if err := r.Client.Get(context.TODO(), vrgNamespacedName, vrg); err != nil {
+		if k8serrors.IsNotFound(err) {
+			log.V(1).Info("VRG not found for VGR", "vrg", vrgNamespacedName)
+		} else {
+			log.Error(err, "Failed to get VRG for VGR", "vrg", vrgNamespacedName)
+		}
+
+		return req
+	}
+
+	// Compare VGR's LastSyncTime with VRG's LastGroupSyncTime
+	// If they differ, enqueue the VRG for reconciliation
+	if !reflect.DeepEqual(vgr.Status.LastSyncTime, vrg.Status.LastGroupSyncTime) {
+		req = append(req, reconcile.Request{
+			NamespacedName: vrgNamespacedName,
+		})
+
+		log.Info("Enqueuing VRG for offloaded VGR sync time change",
+			"vrg", vrgNamespacedName,
+			"vgrLastSyncTime", vgr.Status.LastSyncTime,
+			"vrgLastGroupSyncTime", vrg.Status.LastGroupSyncTime)
+	}
+
+	return req
 }
 
 func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -2276,8 +2504,6 @@ func (r *VolumeReplicationGroupReconciler) VRMapFunc(ctx context.Context, obj cl
 
 	vr, ok := obj.(*volrep.VolumeReplication)
 	if !ok {
-		log.Info("map function received non-vr resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2290,8 +2516,6 @@ func (r *VolumeReplicationGroupReconciler) RDMapFunc(ctx context.Context, obj cl
 
 	rd, ok := obj.(*volsyncv1alpha1.ReplicationDestination)
 	if !ok {
-		log.Info("map function received not a replication destination resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2304,8 +2528,6 @@ func (r *VolumeReplicationGroupReconciler) RSMapFunc(ctx context.Context, obj cl
 
 	rs, ok := obj.(*volsyncv1alpha1.ReplicationSource)
 	if !ok {
-		log.Info("map function received not a replication source resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2318,8 +2540,6 @@ func (r *VolumeReplicationGroupReconciler) RGDMapFunc(ctx context.Context, obj c
 
 	rgd, ok := obj.(*ramendrv1alpha1.ReplicationGroupDestination)
 	if !ok {
-		log.Info("map function received not a replication group destination resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2332,8 +2552,6 @@ func (r *VolumeReplicationGroupReconciler) RGSMapFunc(ctx context.Context, obj c
 
 	rgs, ok := obj.(*ramendrv1alpha1.ReplicationGroupSource)
 	if !ok {
-		log.Info("map function received not a replication group source resource")
-
 		return []reconcile.Request{}
 	}
 
@@ -2426,9 +2644,13 @@ func (v *VRGInstance) IsDRActionInProgress() bool {
 	drAction := v.instance.Spec.Action
 	desiredState := status.State
 
-	initialDeploy := len(drAction) == 0 && desiredState == ramendrv1alpha1.UnknownState
+	initialDeploy := len(drAction) == 0 && (desiredState == ramendrv1alpha1.UnknownState || desiredState == "")
 
 	if initialDeploy { // Avoid considering initial deployment as DR action in progress
+		return false
+	}
+
+	if util.ResourceIsDeleted(v.instance) { // Ignore any status change due to VRG deletion
 		return false
 	}
 
@@ -2438,9 +2660,9 @@ func (v *VRGInstance) IsDRActionInProgress() bool {
 	isRepStatePrimary := spec.ReplicationState == ramendrv1alpha1.Primary
 	switchedToPrimary := status.State == ramendrv1alpha1.PrimaryState
 
-	if (isRepStateSecondary && !switchedToSecondary) ||
-		(isRepStatePrimary && !switchedToPrimary) ||
-		v.instance.Generation != status.ObservedGeneration {
+	if ((isRepStateSecondary && !switchedToSecondary) ||
+		(isRepStatePrimary && !switchedToPrimary)) &&
+		len(v.instance.Spec.Action) > 0 {
 		return true
 	}
 
@@ -2474,6 +2696,13 @@ func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
 
 		return fmt.Errorf("mismatch between VMs in the protection spec and those matched by the " +
 			"label selector, potentially affecting failover or recovery")
+	}
+
+	// Label-selector agreement is proven. Now populate static IP discovery status.
+	if err := v.validateAndRecordStaticIPDiscovery(vmList, vmNamespace); err != nil {
+		v.log.Error(err, "Failed to validate and record static IP discovery")
+
+		return err
 	}
 
 	return nil
@@ -2588,7 +2817,7 @@ func (v *VRGInstance) PriortizePrimaryClusterDataConflictCondition(
 func (v *VRGInstance) aggregateVMNoClusterDataConflictCondition() *metav1.Condition {
 	var msg string
 
-	if v.isVMRecipeProtection() {
+	if util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
 		if err := v.validateVMsForStandaloneProtection(); err != nil {
 			v.log.Error(err, "this discrepancy indicates that the current label selector does not "+
 				"accurately reflect the intended set of protected VMs")
@@ -2618,16 +2847,6 @@ func (v *VRGInstance) clusterDataConflict(msg string, status metav1.ConditionSta
 	return nil
 }
 
-func (v *VRGInstance) isVMRecipeProtection() bool {
-	if v.instance.Spec.KubeObjectProtection != nil && v.instance.Spec.KubeObjectProtection.RecipeRef != nil {
-		if v.instance.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName {
-			return true
-		}
-	}
-
-	return false
-}
-
 func (v *VRGInstance) aggregateVolRepClusterDataConflictCondition() *metav1.Condition {
 	noClusterDataConflictCondition := &metav1.Condition{
 		Status:             metav1.ConditionTrue,
@@ -2655,8 +2874,31 @@ func (v *VRGInstance) IsSecondaryVRG() bool {
 		switchedToSecondary
 }
 
-func (v *VRGInstance) isSecondaryWithVolRepProtectedPVCs() bool {
-	return v.IsSecondaryVRG() && len(v.volRepPVCs) > 0
+// hasConflictingVolRepPVCsOnSecondary reports whether a VolRep-protected PVC on this Secondary VRG
+// is a genuine cross-cluster conflict, as opposed to a leftover still being cleaned up as part of an
+// in-flight DR transition.
+//
+// During Relocate (and Failover), the demoted source cluster reports SecondaryState as soon as its
+// VolumeReplication/VolumeGroupReplication is demoted, which happens before its PVCs are actually
+// removed: PVC deletion is held off while the VGR/VR awaits final removal. Those leftover PVCs are
+// already marked for deletion, so the secondary has not yet converged and is still in transition -
+// counting them as a conflict would surface a spurious "Protection error" until cleanup completes.
+//
+// A PVC that is present but NOT marked for deletion is not part of Ramen's cleanup and therefore
+// represents a real conflict (e.g. a workload PVC that independently matches the label selector on
+// the secondary); it is reported immediately.
+func (v *VRGInstance) hasConflictingVolRepPVCsOnSecondary() bool {
+	if !v.IsSecondaryVRG() {
+		return false
+	}
+
+	for i := range v.volRepPVCs {
+		if !util.ResourceIsDeleted(&v.volRepPVCs[i]) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition {
@@ -2664,7 +2906,7 @@ func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition 
 		return nil
 	}
 
-	if v.isSecondaryWithVolRepProtectedPVCs() {
+	if v.hasConflictingVolRepPVCsOnSecondary() {
 		return updateVRGNoClusterDataConflictCondition(
 			v.instance.Generation, metav1.ConditionFalse, VRGConditionReasonClusterDataConflictSecondary,
 			"No PVC on the secondary should match the label selector",
@@ -2679,7 +2921,6 @@ func (v *VRGInstance) validateSecondaryPVCConflictForVolRep() *metav1.Condition 
 //   - replication.storage.openshift.io
 //   - volumereplicationgroups.ramendr.openshift.io
 //   - volsync.backube
-//   - apps.open-cluster-management.io && key == ACMAppSubDoNotDeleteAnnotation
 //
 // Parameters:
 //
@@ -2707,8 +2948,23 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 			continue
 		case strings.HasPrefix(key, "volsync.backube"):
 			continue
-		case strings.HasPrefix(key, "apps.open-cluster-management.io") &&
-			key == volsync.ACMAppSubDoNotDeleteAnnotation:
+		}
+
+		result[key] = value
+	}
+
+	return result
+}
+
+// PruneLabels copies labels and drops labels that are meaningful only on the
+// cluster where the PVC lives. The consistency-group value is
+// <namespace>-<this cluster's storage id> for CephFS, so the peer must not
+// receive it. Each cluster writes its own consistency-group label onto the local PVC.
+func PruneLabels(pvcLabels map[string]string) map[string]string {
+	result := make(map[string]string, len(pvcLabels))
+
+	for key, value := range pvcLabels {
+		if key == util.ConsistencyGroupLabel {
 			continue
 		}
 
@@ -2720,7 +2976,7 @@ func PruneAnnotations(annotations map[string]string) map[string]string {
 
 func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 	cur := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeAutoCleanup)
-	if !v.isVMRecipeProtection() ||
+	if !util.IsVMRecipe(v.instance.Spec.KubeObjectProtection) ||
 		len(v.volSyncPVCs) > 0 {
 		return cur
 	}
@@ -2753,4 +3009,125 @@ func (v *VRGInstance) aggregateVRGAutoCleanupCondition() *metav1.Condition {
 	}
 
 	return &desired
+}
+
+func (v *VRGInstance) isDiscoveredApp() bool {
+	return v.instance.Spec.ProtectedNamespaces != nil && len(*v.instance.Spec.ProtectedNamespaces) > 0
+}
+
+// validateAndRecordStaticIPDiscovery validates static IP annotations and populates
+// v.instance.Status.StaticIPDiscoveryStatus using the already-fetched VM list.
+// This is called from CheckForVMConflictOnPrimary after label-selector validation.
+func (v *VRGInstance) validateAndRecordStaticIPDiscovery(vmList []string, vmNamespace []string) error {
+	infos, err := v.ValidateStaticIPNetworkMapping(vmList, vmNamespace)
+	if err != nil {
+		return fmt.Errorf("static IP validation failed: %w", err)
+	}
+
+	resources := buildDiscoveredResources(infos)
+
+	v.instance.Status.StaticIPDiscoveryStatus = &ramendrv1alpha1.StaticIPDiscoveryStatus{
+		Resources: resources,
+	}
+
+	v.log.Info("Static IP discovery complete",
+		"totalVMs", len(infos), "staticIPVMs", len(resources))
+
+	return nil
+}
+
+// ValidateStaticIPNetworkMapping inspects every protected VM in the VRG and
+// classifies each one as requiring static IP translation or not.
+//
+// This is intentionally per-VM: a single DRPC/VRG may protect a mixed group
+// where some VMs use a static IP via UDN/CUDN and others use plain pod
+// network with DHCP. Only VMs carrying the network.kubevirt.io/addresses
+// annotation need IP translation; the rest are left untouched.
+//
+// Returns (nil, nil) when no protected VM list is configured. Returns an error
+// if the protected VMs cannot be listed or if a static IP annotation is present
+// but malformed.
+
+func (v *VRGInstance) ValidateStaticIPNetworkMapping(
+	vmList []string, vmNamespaceList []string,
+) ([]util.VMStaticIPInfo, error) {
+	if len(vmList) == 0 {
+		v.log.Info("No VM list found; no VMs to classify for static IP")
+
+		return nil, fmt.Errorf("cannot perform VM network discovery: protected VM list is empty")
+	}
+
+	vms, err := util.ListVMsByVMNamespace(v.ctx, v.reconciler.Client, v.log, vmNamespaceList, vmList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list protected VMs for static IP validation: %w", err)
+	}
+
+	if len(vms) == 0 {
+		return nil, fmt.Errorf(
+			"none of the configured protected VMs were found in the protected namespaces",
+		)
+	}
+
+	v.log.Info("Classifying protected VMs for static IP translation", "count", len(vms))
+
+	results := make([]util.VMStaticIPInfo, 0, len(vms))
+
+	for i := range vms {
+		info, err := v.classifyVMStaticIP(&vms[i])
+		if err != nil {
+			return results, err
+		}
+
+		results = append(results, info)
+	}
+
+	return results, nil
+}
+
+func (v *VRGInstance) classifyVMStaticIP(
+	vm *virtv1.VirtualMachine,
+) (util.VMStaticIPInfo, error) {
+	info := util.VMStaticIPInfo{
+		VMName:    vm.Name,
+		Namespace: vm.Namespace,
+	}
+
+	if vm.Spec.Template == nil {
+		v.log.Info("VM template is nil, skipping static IP discovery",
+			"vm", vm.Name,
+			"namespace", vm.Namespace,
+		)
+
+		return info, nil
+	}
+
+	raw, ok := vm.Spec.Template.ObjectMeta.Annotations[util.VMStaticIPAnnotation]
+	if !ok {
+		v.log.Info("VM has no static IP annotation, skipping",
+			"vm", vm.Name,
+			"namespace", vm.Namespace,
+		)
+
+		return info, nil
+	}
+
+	info.HasStaticIP = true
+	info.PrimaryAddresses = util.ParseVMInterfaceAddresses(raw)
+
+	if info.PrimaryAddresses == nil {
+		return info, fmt.Errorf(
+			"VM %s/%s has malformed static IP annotation %q (invalid JSON format); "+
+				"expected format: {\"interface-name\": [\"ip-address\"]}. "+
+				"Fix the annotation value to allow IP translation",
+			vm.Namespace, vm.Name, raw,
+		)
+	}
+
+	v.log.Info("VM has static IP reservation",
+		"vm", vm.Name,
+		"namespace", vm.Namespace,
+		"interfaces", info.PrimaryAddresses,
+	)
+
+	return info, nil
 }

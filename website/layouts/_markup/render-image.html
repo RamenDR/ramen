@@ -1,0 +1,11 @@
+{{- /* SPDX-License-Identifier: Apache-2.0 */ -}}
+{{- /*
+  Images are rewritten to absolute /docs/... paths by the gendocs generator and
+  copied into static/docs/. Run them through relURL so they resolve under the
+  GitHub Pages project subpath (/ramen/). Remote and data URIs pass through.
+*/ -}}
+{{- $src := .Destination -}}
+{{- if not (or (hasPrefix $src "http://") (hasPrefix $src "https://") (hasPrefix $src "data:")) -}}
+  {{- $src = strings.TrimPrefix "/" $src | relURL -}}
+{{- end -}}
+<img src="{{ $src }}" alt="{{ .PlainText }}"{{ with .Title }} title="{{ . }}"{{ end }} loading="lazy" class="img-fluid">

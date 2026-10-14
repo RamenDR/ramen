@@ -55,6 +55,25 @@ const (
 	// Indicates no conflict in PVC and Kubernetes resource data
 	// between primary and secondary clusters.
 	VRGConditionTypeNoClusterDataConflict = "NoClusterDataConflict"
+
+	// Indicates whether all VRGs sharing the same global VGR label have
+	// reached the desired replication state.
+	VRGConditionTypeGlobalState = "GlobalState"
+
+	// Indicates whether this VRG's PVCs are not in use, allowing the shared
+	// global VGR to transition to secondary. Only applicable for global VGR VRGs.
+	VRGConditionTypeGlobalSecondary = "GlobalSecondary"
+
+	// Indicates the status of hook execution in recipes.
+	// This condition helps identify hook failures separately from other kube object protection issues.
+	VRGConditionTypeHooksReady = "HooksReady"
+	// Indicates destination volume info is available from the VolumeReplication resource.
+	// Only set when VRs report this condition; absent means not applicable.
+	VRGConditionTypeDestinationInfoAvailable = "DestinationInfoAvailable"
+
+	// Visibility mirror of the VR/VGR Replicating condition (status, reason, CSI message).
+	// Left unset when the VR does not report Replicating.
+	VRGConditionTypeReplicationHealthy = "ReplicationHealthy"
 )
 
 // VRG condition reasons
@@ -95,6 +114,18 @@ const (
 	VRGConditionReasonAutoCleanupProgressing = "Progressing"
 	VRGConditionReasonAutoCleanupNotFeasible = "NotFeasible"
 	VRGConditionReasonAutoCleanupCompleted   = "Completed"
+
+	// Global consensus reasons for GlobalState condition.
+	ConditionReasonConsensusReached    = "ConsensusReached"
+	ConditionReasonConsensusNotReached = "ConsensusNotReached"
+
+	// Global secondary transition reasons for GlobalSecondary condition.
+	VRGConditionReasonPVCsNotInUse = "PVCsNotInUse"
+	VRGConditionReasonPVCsInUse    = "PVCsInUse"
+
+	// Hook-specific condition reasons for better visibility of hook failures
+	VRGConditionReasonHookExecuted = "HookExecuted"
+	VRGConditionReasonHookFailed   = "HookFailed"
 )
 
 const (
@@ -107,62 +138,25 @@ const (
 func setVRGInitialCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
 	time := metav1.NewTime(time.Now())
 
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeDataReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeDataProtected,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeClusterDataProtected,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeKubeObjectsReady,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeNoClusterDataConflict,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
-	util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
-		Type:               VRGConditionTypeAutoCleanup,
-		Reason:             VRGConditionReasonInitializing,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionUnknown,
-		LastTransitionTime: time,
-		Message:            message,
-	})
+	for _, conditionType := range []string{
+		VRGConditionTypeDataReady,
+		VRGConditionTypeDataProtected,
+		VRGConditionTypeClusterDataReady,
+		VRGConditionTypeKubeObjectsReady,
+		VRGConditionTypeClusterDataProtected,
+		VRGConditionTypeAutoCleanup,
+		VRGConditionTypeNoClusterDataConflict,
+		VRGConditionTypeHooksReady,
+	} {
+		util.SetStatusConditionIfNotFound(conditions, metav1.Condition{
+			Type:               conditionType,
+			Reason:             VRGConditionReasonInitializing,
+			ObservedGeneration: observedGeneration,
+			Status:             metav1.ConditionUnknown,
+			LastTransitionTime: time,
+			Message:            message,
+		})
+	}
 }
 
 // sets conditions when VRG as Secondary is replicating the data with Primary.
@@ -539,4 +533,26 @@ func setVRGAutoCleanupCondition(conditions *[]metav1.Condition, observedGenerati
 		Message:            message,
 	}
 	util.SetStatusCondition(conditions, *autoCleanupCondition)
+}
+
+// sets conditions when hook execution succeeds
+func setVRGHookExecutedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeHooksReady,
+		Reason:             VRGConditionReasonHookExecuted,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+		Message:            message,
+	})
+}
+
+// sets conditions when hook execution fails
+func setVRGHookFailedCondition(conditions *[]metav1.Condition, observedGeneration int64, message string) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:               VRGConditionTypeHooksReady,
+		Reason:             VRGConditionReasonHookFailed,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+		Message:            message,
+	})
 }

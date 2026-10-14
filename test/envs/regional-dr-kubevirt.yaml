@@ -18,7 +18,7 @@ templates:
     container_runtime: containerd
     containerd:
       plugins:
-        io.containerd.grpc.v1.cri:
+        io.containerd.cri.v1.runtime:
           device_ownership_from_security_context: true
     network: "$network"
     cpus: 4
@@ -27,22 +27,22 @@ templates:
     disk_size: "50g"
     workers:
       - addons:
-          - name: external-snapshotter
           - name: rook-operator
           - name: rook-cluster
           - name: rook-toolbox
           - name: rook-pool
           - name: cdi
       - addons:
+          - name: csi-addons
           - name: ocm-cluster
             args: ["$name", "hub"]
-          - name: recipe
       - addons:
-          - name: csi-addons
-          - name: olm
+          - name: external-snapshotter
           - name: minio
           - name: velero
           - name: kubevirt
+          - name: olm
+          - name: recipe
   - name: "hub-cluster"
     driver: "$vm"
     container_runtime: containerd

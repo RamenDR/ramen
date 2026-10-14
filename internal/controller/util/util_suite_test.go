@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	placementv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	cpcv1 "open-cluster-management.io/config-policy-controller/api/v1"
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,10 +62,12 @@ var _ = BeforeSuite(func() {
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 	logf.SetLogger(testLogger)
+
 	testLog := ctrl.Log.WithName("tester")
 	testLog.Info("Starting the utils test suite", "time", time.Now())
 
 	By("Setting up KUBEBUILDER_ASSETS for envtest")
+
 	if _, set := os.LookupEnv("KUBEBUILDER_ASSETS"); !set {
 		testLog.Info("Setting up KUBEBUILDER_ASSETS for envtest")
 
@@ -78,6 +81,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	By("Bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "..", "config", "crd", "bases"),
@@ -86,11 +90,13 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
+
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
 	By("Setting up required schemes in envtest")
+
 	err = plrv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -115,10 +121,17 @@ var _ = BeforeSuite(func() {
 	err = snapv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = ocmworkv1.Install(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	By("Creating a k8s client")
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// Keep unit tests on the private VGS API even though hack/test also ships public CRDs.
+	util.ForcePrivateVGSAPIForTesting()
 
 	secretsUtil = util.SecretsUtil{
 		Client:    k8sClient,
@@ -130,6 +143,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

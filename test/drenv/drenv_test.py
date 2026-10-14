@@ -122,7 +122,7 @@ key2: value 2
 @pytest.mark.cluster
 def test_temporary_kubeconfig(tmpenv):
     orig_default_config = get_config(context=tmpenv.profile)
-    print("orig_default_config", yaml.dump(orig_default_config))
+    print("orig_default_config", yaml.safe_dump(orig_default_config))
 
     with drenv.temporary_kubeconfig("drenv-test.") as env:
         kubeconfig = env["KUBECONFIG"]
@@ -130,7 +130,7 @@ def test_temporary_kubeconfig(tmpenv):
 
         # When created both config are the same.
         temporary_config = get_config(context=tmpenv.profile, kubeconfig=kubeconfig)
-        print("temporary_config", yaml.dump(temporary_config))
+        print("temporary_config", yaml.safe_dump(temporary_config))
         assert temporary_config == orig_default_config
 
         # If we change the temporary kubeconfig, the default one is not modified.
@@ -144,7 +144,7 @@ def test_temporary_kubeconfig(tmpenv):
         )
         current_default_config = get_config(context=tmpenv.profile)
         temporary_config = get_config(context=tmpenv.profile, kubeconfig=kubeconfig)
-        print("temporary_config", yaml.dump(temporary_config))
+        print("temporary_config", yaml.safe_dump(temporary_config))
         assert current_default_config == orig_default_config
         assert temporary_config["contexts"][0]["context"]["namespace"] == "foobar"
         assert temporary_config["current-context"] == tmpenv.profile

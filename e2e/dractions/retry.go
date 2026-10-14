@@ -8,17 +8,27 @@ import (
 	"time"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/util/retry"
 
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-// drpcDoNotDeletePVCAnnotation prevents PVC deletion when VRG is deleted by disowning PVCs and reinstating OCM annotations.
-// https://github.com/RamenDR/ramen/blob/cdd609356182aa309ce46ab9e4e7623ecb478f1c/internal/controller/drplacementcontrol_controller.go#L63
-const drpcDoNotDeletePVCAnnotation = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
+type drpcReadyState struct {
+	available         metav1.ConditionStatus
+	peerReady         metav1.ConditionStatus
+	protected         metav1.ConditionStatus
+	progression       ramen.ProgressionStatus
+	lastGroupSyncTime *metav1.Time
+}
+
+func (s drpcReadyState) String() string {
+	return fmt.Sprintf(
+		"Available=%s PeerReady=%s Protected=%s Progression=%s lastGroupSyncTime=%v",
+		s.available, s.peerReady, s.protected, s.progression, s.lastGroupSyncTime)
+}
 
 func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) error {
 	log := ctx.Logger()
@@ -27,24 +37,22 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 
 	log.Debugf("Waiting until drpc \"%s/%s\" is ready in cluster %q", namespace, drpcName, hub.Name)
 
+	prev, err := getDRPCReadyState(ctx, namespace, drpcName)
+	if err != nil {
+		return err
+	}
+
+	logDRPCInitialState(log, namespace, drpcName, prev)
+
 	for {
-		drpc, err := getDRPC(ctx, namespace, drpcName)
-		if err != nil {
-			return err
-		}
-
-		available := conditionMet(drpc.Status.Conditions, ramen.ConditionAvailable)
-		peerReady := conditionMet(drpc.Status.Conditions, ramen.ConditionPeerReady)
-
 		// Not sure if checking for progression completed is needed.
 		// Ideally, conditions should be enough.
 		// see https://github.com/RamenDR/ramen/issues/1988
-		progressionCompleted := drpc.Status.Progression == ramen.ProgressionCompleted
-
-		if available &&
-			peerReady &&
-			progressionCompleted &&
-			drpc.Status.LastGroupSyncTime != nil {
+		if prev.available == metav1.ConditionTrue &&
+			prev.peerReady == metav1.ConditionTrue &&
+			prev.protected == metav1.ConditionTrue &&
+			prev.progression == ramen.ProgressionCompleted &&
+			prev.lastGroupSyncTime != nil {
 			elapsed := time.Since(start)
 			log.Debugf("drpc \"%s/%s\" is ready in cluster %q in %.3f seconds",
 				namespace, drpcName, hub.Name, elapsed.Seconds())
@@ -53,17 +61,114 @@ func waitDRPCReady(ctx types.TestContext, namespace string, drpcName string) err
 		}
 
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return fmt.Errorf("drpc not ready in cluster %q"+
-				" (Available: %v, PeerReady: %v, ProgressionCompleted: %v, lastGroupSyncTime: %v): %w",
-				hub.Name, available, peerReady, progressionCompleted, drpc.Status.LastGroupSyncTime, err)
+			return fmt.Errorf("drpc not ready in cluster %q (%s): %w", hub.Name, prev, err)
 		}
+
+		curr, err := getDRPCReadyState(ctx, namespace, drpcName)
+		if err != nil {
+			return err
+		}
+
+		logCondtionStatusChange(log, namespace, drpcName, ramen.ConditionAvailable, prev.available, curr.available)
+		logCondtionStatusChange(log, namespace, drpcName, ramen.ConditionPeerReady, prev.peerReady, curr.peerReady)
+		logCondtionStatusChange(log, namespace, drpcName, ramen.ConditionProtected, prev.protected, curr.protected)
+		logProgressionChange(log, namespace, drpcName, prev.progression, curr.progression)
+		logLastGroupSyncTimeChange(log, namespace, drpcName, prev.lastGroupSyncTime, curr.lastGroupSyncTime)
+
+		prev = curr
 	}
 }
 
-func conditionMet(conditions []metav1.Condition, conditionType string) bool {
-	condition := meta.FindStatusCondition(conditions, conditionType)
+func getDRPCReadyState(ctx types.TestContext, namespace, drpcName string) (drpcReadyState, error) {
+	drpc, err := getDRPC(ctx, namespace, drpcName)
+	if err != nil {
+		return drpcReadyState{}, err
+	}
 
-	return condition != nil && condition.Status == "True"
+	return newDRPCReadyState(drpc), nil
+}
+
+func newDRPCReadyState(drpc *ramen.DRPlacementControl) drpcReadyState {
+	state := drpcReadyState{
+		available:   conditionStatus(drpc.Status.Conditions, ramen.ConditionAvailable),
+		peerReady:   conditionStatus(drpc.Status.Conditions, ramen.ConditionPeerReady),
+		protected:   conditionStatus(drpc.Status.Conditions, ramen.ConditionProtected),
+		progression: drpc.Status.Progression,
+	}
+
+	if drpc.Status.LastGroupSyncTime != nil {
+		lastGroupSyncTime := *drpc.Status.LastGroupSyncTime
+		state.lastGroupSyncTime = &lastGroupSyncTime
+	}
+
+	return state
+}
+
+func logDRPCInitialState(log *zap.SugaredLogger, namespace, name string, state drpcReadyState) {
+	log.Debugf("drpc \"%s/%s\" state: %s", namespace, name, state)
+}
+
+func logCondtionStatusChange(
+	log *zap.SugaredLogger,
+	namespace, name, condition string,
+	previous, current metav1.ConditionStatus,
+) {
+	if previous == current {
+		return
+	}
+
+	msg := fmt.Sprintf("drpc \"%s/%s\" %q changed from %q to %q", namespace, name, condition, previous, current)
+
+	if previous == metav1.ConditionTrue {
+		log.Warnf(msg)
+	} else {
+		log.Debugf(msg)
+	}
+}
+
+func logProgressionChange(
+	log *zap.SugaredLogger,
+	namespace, name string,
+	previous, current ramen.ProgressionStatus,
+) {
+	if previous == current {
+		return
+	}
+
+	msg := fmt.Sprintf("drpc \"%s/%s\" Progression changed from %q to %q", namespace, name, previous, current)
+
+	if previous == ramen.ProgressionCompleted {
+		log.Warnf(msg)
+	} else {
+		log.Debugf(msg)
+	}
+}
+
+func logLastGroupSyncTimeChange(
+	log *zap.SugaredLogger,
+	namespace, name string,
+	previous, current *metav1.Time,
+) {
+	if previous.Equal(current) {
+		return
+	}
+
+	msg := fmt.Sprintf("drpc \"%s/%s\" lastGroupSyncTime changed from %v to %v", namespace, name, previous, current)
+
+	if current == nil {
+		log.Warnf(msg)
+	} else {
+		log.Debugf(msg)
+	}
+}
+
+func conditionStatus(conditions []metav1.Condition, conditionType string) metav1.ConditionStatus {
+	condition := meta.FindStatusCondition(conditions, conditionType)
+	if condition == nil {
+		return ""
+	}
+
+	return condition.Status
 }
 
 func waitDRPCPhase(ctx types.TestContext, namespace, name string, phase ramen.DRState) error {
@@ -145,73 +250,6 @@ func waitDRPCProgression(
 		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
 			return fmt.Errorf("drpc %q progression is not %q in cluster %q: %w",
 				name, progression, hub.Name, err)
-		}
-	}
-}
-
-func addDRPCAnnotation(ctx types.TestContext, drpcName string) error {
-	log := ctx.Logger()
-
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		drpc, err := getDRPC(ctx, ctx.ManagementNamespace(), drpcName)
-		if err != nil {
-			return err
-		}
-
-		if drpc.Annotations == nil {
-			drpc.Annotations = map[string]string{}
-		}
-
-		drpc.Annotations[drpcDoNotDeletePVCAnnotation] = "true"
-
-		if err := updateDRPC(ctx, drpc); err != nil {
-			return err
-		}
-
-		log.Debugf("Annotated drpc \"%s/%s\" with \"%s: %s\" in cluster %q",
-			ctx.ManagementNamespace(), drpcName, drpcDoNotDeletePVCAnnotation,
-			drpc.Annotations[drpcDoNotDeletePVCAnnotation], ctx.Env().Hub.Name)
-
-		return nil
-	})
-}
-
-func waitForDRPCAnnotationPropagation(ctx types.TestContext, drpcName string) error {
-	log := ctx.Logger()
-	vrgName := drpcName
-	vrgNamespace := getVRGNamespace(ctx)
-	start := time.Now()
-
-	drpc, err := getDRPC(ctx, ctx.ManagementNamespace(), drpcName)
-	if err != nil {
-		return err
-	}
-
-	preferredCluster, err := ctx.Env().GetCluster(drpc.Spec.PreferredCluster)
-	if err != nil {
-		return err
-	}
-
-	log.Debugf("Waiting for vrg \"%s/%s\" annotation \"%s: true\" in cluster %q",
-		vrgNamespace, vrgName, drpcDoNotDeletePVCAnnotation, preferredCluster.Name)
-
-	for {
-		vrg, err := getVRG(ctx, preferredCluster, vrgNamespace, vrgName)
-		if err != nil {
-			return err
-		}
-
-		if vrg.Annotations[drpcDoNotDeletePVCAnnotation] == "true" {
-			elapsed := time.Since(start)
-			log.Debugf("vrg \"%s/%s\" annotation \"%s: true\" propagated in cluster %q in %.3f seconds",
-				vrgNamespace, vrgName, drpcDoNotDeletePVCAnnotation, preferredCluster.Name, elapsed.Seconds())
-
-			return nil
-		}
-
-		if err := util.Sleep(ctx.Context(), util.RetryInterval); err != nil {
-			return fmt.Errorf("vrg \"%s/%s\" annotation \"%s: true\" not propagated in cluster %q: %w",
-				vrgNamespace, vrgName, drpcDoNotDeletePVCAnnotation, preferredCluster.Name, err)
 		}
 	}
 }

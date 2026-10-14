@@ -11,6 +11,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,6 +54,7 @@ const (
 	MWTypeVRClass   string = "vrc"
 	MWTypeVGRClass  string = "vgrc"
 	MWTypeDRCConfig string = "drcconfig"
+	MWTypeRecipe    string = "recipe"
 )
 
 type MWUtil struct {
@@ -351,11 +353,16 @@ func (mwu *MWUtil) IsManifestApplied(cluster, mwType string) bool {
 }
 
 // Namespace MW creation
-func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
+func (mwu *MWUtil) CreateOrUpdateNamespaceManifestWork(
 	name string, namespaceName string, managedClusterNamespace string,
-	annotations map[string]string,
+	annotations map[string]string, labels map[string]string,
 ) error {
-	manifest, err := mwu.GenerateManifest(Namespace(namespaceName))
+	ns := Namespace(namespaceName)
+	// Set labels and annotations on the namespace object itself
+	ns.Labels = labels
+	ns.Annotations = annotations
+
+	manifest, err := mwu.GenerateManifest(ns)
 	if err != nil {
 		return err
 	}
@@ -368,7 +375,7 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 	manifestWork := mwu.newManifestWork(
 		mwName,
 		managedClusterNamespace,
-		map[string]string{},
+		labels,
 		manifests,
 		annotations)
 
@@ -383,9 +390,54 @@ func (mwu *MWUtil) CreateOrUpdateNamespaceManifest(
 
 func Namespace(name string) *corev1.Namespace {
 	return &corev1.Namespace{
-		TypeMeta:   metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		TypeMeta: metav1.TypeMeta{Kind: "Namespace", APIVersion: "v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				CreatedByRamenLabel: "true",
+			},
+		},
 	}
+}
+
+// Recipe MW creation
+func (mwu *MWUtil) CreateOrUpdateRecipeManifestWork(
+	recipe *recipev1.Recipe, managedClusterNamespace string,
+) error {
+	manifest, err := mwu.GenerateManifest(prepareRecipeForMW(recipe))
+	if err != nil {
+		return err
+	}
+
+	manifests := []ocmworkv1.Manifest{*manifest}
+	mwName := fmt.Sprintf(ManifestWorkNameFormat, mwu.InstName, mwu.TargetNamespace, MWTypeRecipe)
+	manifestWork := mwu.newManifestWork(
+		mwName,
+		managedClusterNamespace,
+		map[string]string{
+			"recipe": recipe.Name,
+		},
+		manifests,
+		map[string]string{},
+	)
+	manifestWork.Spec.DeleteOption = &ocmworkv1.DeleteOption{
+		PropagationPolicy: ocmworkv1.DeletePropagationPolicyTypeOrphan,
+	}
+	_, err = mwu.createOrUpdateManifestWork(manifestWork, managedClusterNamespace)
+
+	return err
+}
+
+func prepareRecipeForMW(recipe *recipev1.Recipe) *recipev1.Recipe {
+	recipeCopy := &recipev1.Recipe{
+		TypeMeta:   metav1.TypeMeta{Kind: "Recipe", APIVersion: recipev1.GroupVersion.String()},
+		ObjectMeta: ObjectMetaEmbedded(&recipe.ObjectMeta),
+	}
+	recipeCopy.Spec = recipe.Spec
+
+	AddLabel(recipeCopy, CreatedByRamenLabel, "true")
+
+	return recipeCopy
 }
 
 func ExtractResourceFromManifestWork(
@@ -453,6 +505,8 @@ func (mwu *MWUtil) CreateOrUpdateDrClusterManifestWork(
 			vrgClusterRole,
 			mModeClusterRole,
 			drClusterConfigRole,
+			networkFenceClusterRole,
+			recipeClusterRole,
 		},
 		objectsToAppend...,
 	)
@@ -490,6 +544,7 @@ var (
 			Name: "open-cluster-management:klusterlet-work-sa:agent:volrepgroup-edit",
 			Labels: map[string]string{
 				ClusterRoleAggregateLabel: "true",
+				CreatedByRamenLabel:       "true",
 			},
 		},
 		Rules: []rbacv1.PolicyRule{
@@ -507,6 +562,7 @@ var (
 			Name: "open-cluster-management:klusterlet-work-sa:agent:mmode-edit",
 			Labels: map[string]string{
 				ClusterRoleAggregateLabel: "true",
+				CreatedByRamenLabel:       "true",
 			},
 		},
 		Rules: []rbacv1.PolicyRule{
@@ -524,6 +580,7 @@ var (
 			Name: "open-cluster-management:klusterlet-work-sa:agent:drclusterconfig-edit",
 			Labels: map[string]string{
 				ClusterRoleAggregateLabel: "true",
+				CreatedByRamenLabel:       "true",
 			},
 		},
 		Rules: []rbacv1.PolicyRule{
@@ -531,6 +588,42 @@ var (
 				APIGroups: []string{"ramendr.openshift.io"},
 				Resources: []string{"drclusterconfigs"},
 				Verbs:     []string{"create", "get", "list", "update", "delete"},
+			},
+		},
+	}
+
+	networkFenceClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:networkfence-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+				CreatedByRamenLabel:       "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{csiaddonsv1alpha1.GroupVersion.Group},
+				Resources: []string{"networkfences"},
+				Verbs:     []string{"create", "get", "list", "update", "delete", "watch"},
+			},
+		},
+	}
+
+	recipeClusterRole = &rbacv1.ClusterRole{
+		TypeMeta: metav1.TypeMeta{Kind: "ClusterRole", APIVersion: "rbac.authorization.k8s.io/v1"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "open-cluster-management:klusterlet-work-sa:agent:recipe-edit",
+			Labels: map[string]string{
+				ClusterRoleAggregateLabel: "true",
+				CreatedByRamenLabel:       "true",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{recipev1.GroupVersion.Group},
+				Resources: []string{"recipes"},
+				Verbs:     []string{"create", "get", "list", "update"},
 			},
 		},
 	}
@@ -586,18 +679,16 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 			return ctrlutil.OperationResultNone, fmt.Errorf("failed to fetch ManifestWork %s: %w", key, err)
 		}
 
-		mwu.Log.Info("Creating ManifestWork", "cluster", managedClusternamespace, "MW", mw)
-
 		if err := mwu.Create(mwu.Ctx, mw); err != nil {
 			return ctrlutil.OperationResultNone, err
 		}
+
+		mwu.Log.Info("Created ManifestWork", "name", mw.Name, "namespace", managedClusternamespace)
 
 		return ctrlutil.OperationResultCreated, nil
 	}
 
 	if !reflect.DeepEqual(foundMW.Spec, mw.Spec) {
-		mwu.Log.Info("Updating ManifestWork", "name", mw.Name, "namespace", foundMW.Namespace)
-
 		err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 			if err := mwu.Client.Get(mwu.Ctx, key, foundMW); err != nil {
 				return err
@@ -607,16 +698,20 @@ func (mwu *MWUtil) createOrUpdateManifestWork(
 
 			return mwu.Client.Update(mwu.Ctx, foundMW)
 		})
-		if err == nil {
-			return ctrlutil.OperationResultUpdated, nil
+		if err != nil {
+			return ctrlutil.OperationResultNone,
+				fmt.Errorf("failed to update ManifestWork %s: %w", key, err)
 		}
+
+		mwu.Log.Info("Updated ManifestWork", "name", mw.Name, "namespace", foundMW.Namespace)
+
+		return ctrlutil.OperationResultUpdated, nil
 	}
 
 	return ctrlutil.OperationResultNone, nil
 }
 
-func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations map[string]string) error {
-	mwName := mwu.BuildManifestWorkName(MWTypeNS)
+func (mwu *MWUtil) DeleteNamespaceManifestWork(mwName string, clusterName string) error {
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
@@ -633,13 +728,17 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations m
 		return nil
 	}
 
-	// check if the manifestwork has delete Option set
-	// if not set, call CreateOrUpdateNamespaceManifest such that it is
-	// updated with the delete option
 	if mw.Spec.DeleteOption == nil {
-		err = mwu.CreateOrUpdateNamespaceManifest(mwu.InstName, mwu.TargetNamespace, clusterName, annotations)
-		if err != nil {
-			mwu.Log.Info("error creating namespace via ManifestWork", "error", err, "cluster", clusterName)
+		if err := mwu.ensureOrphanDeleteOption(mwName, clusterName); err != nil {
+			if k8serrors.IsNotFound(err) {
+				// The MW was deleted without the orphan delete option, so the managed
+				// resource (user namespace) may have been deleted on the managed cluster.
+				// This should not happen but we must log it clearly for diagnosis.
+				mwu.Log.Error(nil, "ManifestWork deleted without orphan delete option",
+					"name", mwName, "namespace", clusterName)
+
+				return nil
+			}
 
 			return err
 		}
@@ -653,9 +752,56 @@ func (mwu *MWUtil) DeleteNamespaceManifestWork(clusterName string, annotations m
 	return nil
 }
 
-func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
-	mwu.Log.Info("Delete ManifestWork from", "namespace", mwNamespace, "name", mwName)
+// ensureOrphanDeleteOption sets the orphan delete option on a ManifestWork.  This is typically not needed since
+// CreateOrUpdateNamespaceManifestWork always sets the delete option, but is needed for MWs created by older versions.
+func (mwu *MWUtil) ensureOrphanDeleteOption(mwName string, clusterName string) error {
+	mw := &ocmworkv1.ManifestWork{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mwName,
+			Namespace: clusterName,
+		},
+	}
 
+	// Using a merge patch to update only the deleteOption field. The patch is applied server-side, avoiding conflicts
+	// with concurrent updates to other fields.
+	patch := client.RawPatch(types.MergePatchType,
+		[]byte(`{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}`))
+
+	if err := mwu.Client.Patch(mwu.Ctx, mw, patch); err != nil {
+		return fmt.Errorf("failed to set orphan delete option on ManifestWork %s/%s: %w", clusterName, mwName, err)
+	}
+
+	mwu.Log.Info("Patched ManifestWork delete option", "name", mwName, "namespace", clusterName)
+
+	return nil
+}
+
+func (mwu *MWUtil) DeleteRecipeManifestWork(clusterName string) error {
+	mwName := mwu.BuildManifestWorkName(MWTypeRecipe)
+	mw := &ocmworkv1.ManifestWork{}
+
+	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: clusterName}, mw)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
+	}
+
+	if ResourceIsDeleted(mw) {
+		return nil
+	}
+
+	err = mwu.DeleteManifestWork(mwName, clusterName)
+	if err != nil {
+		return fmt.Errorf("%w", err)
+	}
+
+	return nil
+}
+
+func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 	mw := &ocmworkv1.ManifestWork{}
 
 	err := mwu.Client.Get(mwu.Ctx, types.NamespacedName{Name: mwName, Namespace: mwNamespace}, mw)
@@ -667,12 +813,12 @@ func (mwu *MWUtil) DeleteManifestWork(mwName, mwNamespace string) error {
 		return fmt.Errorf("failed to retrieve manifestwork for type: %s. Error: %w", mwName, err)
 	}
 
-	mwu.Log.Info("Deleting ManifestWork", "name", mw.Name, "namespace", mwNamespace)
-
 	err = mwu.Client.Delete(mwu.Ctx, mw)
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete MW. Error %w", err)
 	}
+
+	mwu.Log.Info("Deleted ManifestWork", "name", mwName, "namespace", mwNamespace)
 
 	return nil
 }

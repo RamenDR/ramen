@@ -8,11 +8,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
+	// +kubebuilder:scaffold:imports
+	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+	publicgroupsnapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
@@ -26,6 +31,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 	virtv1 "kubevirt.io/api/core/v1"
 	ocmv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -35,6 +41,7 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -42,14 +49,15 @@ import (
 	controllers "github.com/ramendr/ramen/internal/controller"
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
-	// +kubebuilder:scaffold:imports
 	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
 var (
-	scheme     = runtime.NewScheme()
-	setupLog   = ctrl.Log.WithName("setup")
-	configFile string
+	scheme               = runtime.NewScheme()
+	setupLog             = ctrl.Log.WithName("setup")
+	metricsAddr          string
+	probeAddr            string
+	enableLeaderElection bool
 )
 
 func init() {
@@ -75,28 +83,50 @@ func configureLogOptions() *zap.Options {
 // bindFlags takes a list of functions that bind flags to variables.
 // In addition, any ramen specific flags are bound here.
 func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0.0.0.0:9289",
+		"The address the metrics endpoint binds to. Use \"0\" to disable the metrics server.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
+		"The address the probe endpoint binds to.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", true,
+		"Enable leader election for controller manager. "+
+			"Enabling this will ensure there is only one active controller manager.")
 
 	for _, f := range bindfuncs {
 		f(flag.CommandLine)
 	}
 }
 
-func buildOptions() (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
-	ctrlOptions := ctrl.Options{Scheme: scheme}
+func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig,
+) (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
+	ctrlOptions := ctrl.Options{
+		Scheme:                 scheme,
+		HealthProbeBindAddress: probeAddr,
+		Metrics:                controllers.MetricsServerOptions(metricsAddr),
+		LeaderElection:         enableLeaderElection,
+		LeaderElectionID:       controllers.LeaderElectionResourceName(controllers.ControllerType),
+	}
 
-	ramenConfig := controllers.LoadControllerConfig(configFile, setupLog)
-	controllers.LoadControllerOptions(&ctrlOptions, ramenConfig)
+	c, err := client.New(restCfg, client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create client for reading config")
+		os.Exit(1)
+	}
+
+	ramenConfig, err = controllers.CreateOrUpdateConfigMap(
+		context.Background(), c, c, ramenConfig, setupLog)
+	if err != nil {
+		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
+		os.Exit(1)
+	}
+
+	for _, warning := range controllers.DeprecatedManagerOptionWarnings(ramenConfig, &ctrlOptions) {
+		setupLog.Info(warning)
+	}
 
 	return &ctrlOptions, ramenConfig
 }
 
-func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
-	controllers.ControllerType = ramenConfig.RamenControllerType
-
+func configureController() error {
 	if !(controllers.ControllerType == ramendrv1alpha1.DRClusterType ||
 		controllers.ControllerType == ramendrv1alpha1.DRHubType) {
 		return fmt.Errorf("invalid controller type specified (%s), should be one of [%s|%s]",
@@ -106,6 +136,7 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 	setupLog.Info("controller type", "type", controllers.ControllerType)
 
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
+		utilruntime.Must(operatorsv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(plrv1.AddToScheme(scheme))
 		utilruntime.Must(ocmworkv1.AddToScheme(scheme))
 		utilruntime.Must(viewv1beta1.AddToScheme(scheme))
@@ -121,28 +152,21 @@ func configureController(ramenConfig *ramendrv1alpha1.RamenConfig) error {
 		utilruntime.Must(volsyncv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(snapv1.AddToScheme(scheme))
 		utilruntime.Must(groupsnapv1beta1.AddToScheme(scheme))
+		utilruntime.Must(publicgroupsnapv1.AddToScheme(scheme))
 		utilruntime.Must(recipe.AddToScheme(scheme))
 		utilruntime.Must(apiextensions.AddToScheme(scheme))
 		utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
 		utilruntime.Must(virtv1.AddToScheme(scheme))
 		utilruntime.Must(csiaddonsv1alpha1.AddToScheme(scheme))
+		utilruntime.Must(netattdefv1.AddToScheme(scheme))
 	}
 
 	return nil
 }
 
-func newManager(options *ctrl.Options) (ctrl.Manager, error) {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), *options)
-	if err != nil {
-		return mgr, fmt.Errorf("starting new manager failed %w", err)
-	}
-
-	return mgr, nil
-}
-
 func setupReconcilers(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
 	if controllers.ControllerType == ramendrv1alpha1.DRHubType {
-		setupReconcilersHub(mgr)
+		setupReconcilersHub(mgr, ramenConfig)
 	}
 
 	if controllers.ControllerType == ramendrv1alpha1.DRClusterType {
@@ -180,9 +204,10 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 	}
 
 	if err := (&controllers.DRClusterConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("drcc"),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Log:       ctrl.Log.WithName("drcc"),
+		APIReader: mgr.GetAPIReader(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRClusterConfig")
 		os.Exit(1)
@@ -195,7 +220,7 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			Client: mgr.GetClient(),
 			Scheme: mgr.GetScheme(),
 			Log:    ctrl.Log.WithName("rgd"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, ramenConfig); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupDestination")
 			os.Exit(1)
 		}
@@ -205,14 +230,18 @@ func setupReconcilersCluster(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.Rame
 			APIReader: mgr.GetAPIReader(),
 			Scheme:    mgr.GetScheme(),
 			Log:       ctrl.Log.WithName("rgs"),
-		}).SetupWithManager(mgr); err != nil {
+		}).SetupWithManager(mgr, ramenConfig); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ReplicationGroupSource")
 			os.Exit(1)
 		}
 	}
 }
 
-func setupReconcilersHub(mgr ctrl.Manager) {
+func setupReconcilersHub(mgr ctrl.Manager, ramenConfig *ramendrv1alpha1.RamenConfig) {
+	// Initialize all DR telemetry series to 0, so that a present-but-zero
+	// series distinguishes an idle hub from an absent operator
+	controllers.InitDRTelemetryMetrics()
+
 	if err := (&controllers.DRPolicyReconciler{
 		Client:    mgr.GetClient(),
 		APIReader: mgr.GetAPIReader(),
@@ -254,29 +283,38 @@ func setupReconcilersHub(mgr ctrl.Manager) {
 		Scheme:         mgr.GetScheme(),
 		Callback:       func(string, string) {},
 		ObjStoreGetter: controllers.S3ObjectStoreGetter(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, ramenConfig); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DRPlacementControl")
 		os.Exit(1)
 	}
 }
 
 func main() {
+	if os.Getenv("PVC_INIT") == "true" {
+		runPVCInit()
+		os.Exit(0)
+	}
+
 	logOpts := configureLogOptions()
 	bindFlags(logOpts.BindFlags)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
-	ctrlOptions, ramenConfig := buildOptions()
+	ramenConfig := controllers.LoadControllerConfig(setupLog)
 
-	if err := configureController(ramenConfig); err != nil {
+	restCfg := ctrl.GetConfigOrDie()
+
+	if err := configureController(); err != nil {
 		setupLog.Error(err, "unable to configure controller")
 		os.Exit(1)
 	}
 
-	mgr, err := newManager(ctrlOptions)
+	ctrlOptions, ramenConfig := buildOptions(restCfg, ramenConfig)
+
+	mgr, err := ctrl.NewManager(restCfg, *ctrlOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to Get new manager")
+		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
@@ -299,4 +337,24 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func runPVCInit() {
+	mountPath := os.Getenv("PVC_MOUNT_PATH")
+	if mountPath == "" {
+		fatal("PVC_MOUNT_PATH must be set when PVC_INIT=true")
+	}
+
+	for {
+		if _, err := os.Stat(mountPath); err == nil {
+			return
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func fatal(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
 }

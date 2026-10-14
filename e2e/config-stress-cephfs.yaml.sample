@@ -1,0 +1,68 @@
+# Stress test configuration for CephFS disaster recovery.
+#
+# Runs 8 CephFS applications concurrently using the discovered application
+# deployer. Useful for investigating storage performance under load, such as
+# CephFS quiesce serialization during failover.
+
+---
+repo:
+  url: "https://github.com/RamenDR/ocm-ramen-samples.git"
+  branch: main
+
+drPolicy: dr-policy-1m
+
+clusterSet: default
+
+pvcspecs:
+  - name: cephfs
+    storageclassname: rook-cephfs-fs1
+    accessmodes: ReadWriteMany
+
+deployers:
+  - name: disapp
+    type: disapp
+    description: "Discovered Application without recipe"
+
+tests:
+  - name: cephfs-1
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-2
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-3
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-4
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-5
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-6
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-7
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+  - name: cephfs-8
+    deployer: disapp
+    workload: deploy
+    pvcspec: cephfs
+
+# Uncomment and edit the following lines to set the cluster
+# kubeconfig paths for the hub and managed clusters.
+# clusters:
+#   hub:
+#     kubeconfig: hub/config
+#   c1:
+#     kubeconfig: dr1/config
+#   c2:
+#     kubeconfig: dr2/config

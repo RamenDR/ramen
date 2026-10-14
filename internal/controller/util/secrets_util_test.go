@@ -97,7 +97,8 @@ var _ = Describe("Secrets_Util", func() {
 
 		for _, cluster := range clusters {
 			found := false
-			for _, currentCluster := range currentClusters {
+
+      for _, currentCluster := range currentClusters {
 				if currentCluster == cluster {
 					found = true
 
@@ -149,6 +150,7 @@ var _ = Describe("Secrets_Util", func() {
 			secret); err != nil {
 			return false
 		}
+
 		for _, finalizer := range secret.Finalizers {
 			if finalizer == util.SecretFinalizer(format) {
 				return true
@@ -168,6 +170,7 @@ var _ = Describe("Secrets_Util", func() {
 			secret); err != nil {
 			return false
 		}
+
 		for _, finalizer := range secret.Finalizers {
 			if finalizer == util.SecretFinalizer(format) {
 				return false

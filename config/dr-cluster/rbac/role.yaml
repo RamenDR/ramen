@@ -8,8 +8,13 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumes
   verbs:
+  - create
+  - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -36,30 +41,39 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - persistentvolumes
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - pods
   verbs:
   - get
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - endpoints
+  - services
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - batch
   resources:
   - jobs
   verbs:
+  - create
+  - delete
   - get
   - list
+  - update
   - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs/status
+  verbs:
+  - get
 - apiGroups:
   - apiextensions.k8s.io
   resources:
@@ -71,6 +85,7 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
   - deployments
   - replicasets
   - statefulsets
@@ -93,10 +108,21 @@ rules:
 - apiGroups:
   - csiaddons.openshift.io
   resources:
+  - csiaddonsnodes
   - networkfenceclasses
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
@@ -147,6 +173,16 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - multicluster.x-k8s.io
+  resources:
+  - serviceimports
+  verbs:
   - get
   - list
   - patch
@@ -234,6 +270,7 @@ rules:
   resources:
   - volumesnapshots
   verbs:
+  - create
   - delete
   - get
   - list
@@ -253,6 +290,7 @@ rules:
   - storage.k8s.io
   resources:
   - volumeattachments
+  - volumeattributesclasses
   verbs:
   - get
   - list
@@ -293,6 +331,13 @@ rules:
   - update
   - watch
 - apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations/finalizers
+  - replicationsources/finalizers
+  verbs:
+  - update
+- apiGroups:
   - ""
   resources:
   - pods/exec
@@ -321,6 +366,14 @@ rules:
   - cdi.kubevirt.io
   resources:
   - datavolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - k8s.cni.cncf.io
+  resources:
+  - network-attachment-definitions
   verbs:
   - get
   - list

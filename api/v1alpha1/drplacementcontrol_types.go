@@ -76,6 +76,25 @@ const (
 	// Protected condition provides the latest available observation regarding the protection status of the workload,
 	// on the cluster it is expected to be available on.
 	ConditionProtected = "Protected"
+
+	// ReplicationHealthy is a visibility copy of VRG ReplicationHealthy (VR/VGR Replicating
+	// status, reason, and CSI message). It is absent when the VRG does not report that
+	// condition.
+	ConditionReplicationHealthy = "ReplicationHealthy"
+
+	// GlobalActionConsensus condition indicates whether all DRPCs sharing the same global VGR label
+	// agree on the DR action and target cluster.
+	ConditionGlobalAction = "GlobalAction"
+
+	// NetworkMappingLoaded condition indicates whether the network-mapping ConfigMap was
+	// successfully loaded for this DRPC.
+	//
+	// The ConfigMap is obtained from DRPolicy.Spec.NetworkMappingRef.
+	//
+	// A False value indicates that IP translation is disabled for this DRPC.
+	// DR orchestration continues without IP translation. The condition is
+	// absent when no ConfigMap is configured for the DRPC.
+	ConditionNetworkMappingLoaded = "NetworkMappingLoaded"
 )
 
 const (
@@ -112,6 +131,7 @@ const (
 	ProgressionRunningFinalSync                    = ProgressionStatus("RunningFinalSync")
 	ProgressionFinalSyncComplete                   = ProgressionStatus("FinalSyncComplete")
 	ProgressionEnsuringVolumesAreSecondary         = ProgressionStatus("EnsuringVolumesAreSecondary")
+	ProgressionWaitOnGlobalAction                  = ProgressionStatus("WaitOnGlobalAction")
 	ProgressionWaitingForResourceRestore           = ProgressionStatus("WaitingForResourceRestore")
 	ProgressionUpdatedPlacement                    = ProgressionStatus("UpdatedPlacement")
 	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
@@ -119,6 +139,7 @@ const (
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
 	ProgressionActionPaused                        = ProgressionStatus("Paused")
+	ProgressionTestingFailover                     = ProgressionStatus("TestingFailover")
 )
 
 // DRPlacementControlSpec defines the desired state of DRPlacementControl
@@ -158,11 +179,24 @@ type DRPlacementControlSpec struct {
 	// Action is either Failover or Relocate operation
 	Action DRAction `json:"action,omitempty"`
 
+	// DryRun when set to true, makes the action Failover non-destructive.
+	// The secondary is temporarily promoted to primary to verify readiness and data consistency
+	// without committing to the actual failover. Can be aborted to return to the original state.
+	// +kubebuilder:validation:Optional
+	DryRun bool `json:"dryRun,omitempty"`
+
 	// +optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 
 	// +optional
 	VolSyncSpec *VolSyncSpec `json:"volSyncSpec,omitempty"`
+
+	// RetainNamespaceSCCAcrossPeers controls whether Security Context Constraints (SCC) annotations
+	// should be retained when creating namespaces on secondary clusters during DR enablement.
+	// This flag works in conjunction with the RamenConfig flag of the same name.
+	// Both flags must be true for SCC annotations to be retained.
+	// +optional
+	RetainNamespaceSCCAcrossPeers bool `json:"retainNamespaceSCCAcrossPeers,omitempty"`
 }
 
 // PlacementDecision defines the decision made by controller
@@ -201,6 +235,12 @@ type VRGResourceMeta struct {
 	// VRG resource object
 	//+optional
 	ResourceVersion string `json:"resourceVersion,omitempty"`
+
+	// ProtectedStaticIPVMs holds the static IP discovery summary for VMs
+	// with OVN-K8s UDN/CUDN static IPs discovered on the primary cluster.
+	// Only populated when protected VMs have static IPs; omitted otherwise.
+	// +optional
+	ProtectedStaticIPVMs []DiscoveredResource `json:"protectedStaticIPVMs,omitempty"`
 }
 
 // VRGConditions represents the conditions of the resources deployed on a

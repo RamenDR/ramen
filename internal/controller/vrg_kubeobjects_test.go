@@ -16,8 +16,10 @@ import (
 var _ = Describe("VRG_KubeObjectProtection", func() {
 	const namespaceName = "my-ns"
 
-	var hook *Recipe.Hook
-	var group *Recipe.Group
+	var (
+		hook  *Recipe.Hook
+		group *Recipe.Group
+	)
 
 	BeforeEach(func() {
 		duration := 30
@@ -77,10 +79,13 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 							Namespace:     namespaceName,
 							Type:          hook.Type,
 							LabelSelector: hook.LabelSelector,
+							Essential:     hook.Essential,
 							Op: kubeobjects.Operation{
 								Name:      hook.Ops[0].Name,
 								Command:   hook.Ops[0].Command,
 								Container: hook.Ops[0].Container,
+								Timeout:   hook.Ops[0].Timeout,
+								OnError:   hook.Ops[0].OnError,
 							},
 						},
 						IsHook: true,
@@ -103,15 +108,17 @@ var _ = Describe("VRG_KubeObjectProtection", func() {
 						IncludedResources:  []string{"pod"},
 						ExcludedResources:  []string{},
 						Hook: kubeobjects.HookSpec{
-							Name:      hook.Name,
-							Type:      hook.Type,
-							Namespace: namespaceName,
-							// Timeout:       hook.Ops[0].Timeout,
+							Name:          hook.Name,
+							Type:          hook.Type,
+							Namespace:     namespaceName,
 							LabelSelector: hook.LabelSelector,
+							Essential:     hook.Essential,
 							Op: kubeobjects.Operation{
 								Name:      hook.Ops[0].Name,
 								Command:   hook.Ops[0].Command,
 								Container: hook.Ops[0].Container,
+								Timeout:   hook.Ops[0].Timeout,
+								OnError:   hook.Ops[0].OnError,
 							},
 						},
 						IsHook: true,

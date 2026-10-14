@@ -1,0 +1,125 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+from drenv import commands
+from drenv import kubectl
+from drenv import temporary_kubeconfig
+
+
+def test(hub, *clusters):
+    """
+    Test argocd by deploying and undeploying busybox on all clusters.
+    """
+    for cluster in clusters:
+        deploy_busybox(hub, cluster)
+
+    for cluster in clusters:
+        wait_until_busybox_is_healthy(hub, cluster)
+
+    for cluster in clusters:
+        undeploy_busybox(hub, cluster)
+
+    for cluster in clusters:
+        wait_until_busybox_is_deleted(hub, cluster)
+
+
+def deploy_busybox(hub, cluster):
+    print(
+        f"Deploying application busybox-{cluster} in namespace argocd-test on cluster {cluster}"
+    )
+    # Need to use KUBECONFIG env, switch to hub cluster argocd ns first,
+    # otherwise will hit argocd command bug.
+    # See https://github.com/argoproj/argo-cd/issues/14167
+    with temporary_kubeconfig("drenv-argocd-test.") as env:
+        kubeconfig = env["KUBECONFIG"]
+        kubectl.config("use-context", hub, "--kubeconfig", kubeconfig)
+        kubectl.config(
+            "set-context",
+            "--current",
+            "--namespace=argocd",
+            f"--kubeconfig={kubeconfig}",
+        )
+
+        for line in commands.watch(
+            "argocd",
+            "app",
+            "create",
+            f"busybox-{cluster}",
+            "--repo=https://github.com/RamenDR/ramen.git",
+            "--path=test/apps/busybox",
+            f"--dest-name={cluster}",
+            "--dest-namespace=argocd-test",
+            "--sync-option=CreateNamespace=true",
+            "--sync-policy=automated",
+            # Should not be needed, but without this the command is not idempotent.
+            "--upsert",
+            env=env,
+        ):
+            print(line)
+
+
+def wait_until_busybox_is_healthy(hub, cluster):
+    print(f"Waiting application busybox-{cluster} to be healthy")
+    kubectl.wait(
+        "application",
+        f"busybox-{cluster}",
+        "--for=jsonpath={.status.health.status}=Healthy",
+        "--namespace=argocd",
+        timeout=120,
+        context=hub,
+    )
+
+
+def undeploy_busybox(hub, cluster):
+    print(f"Deleting application busybox-{cluster}")
+    # Need to use KUBECONFIG env, switch to hub cluster argocd ns first,
+    # otherwise will hit argocd command bug.
+    # See https://github.com/argoproj/argo-cd/issues/14167
+    with temporary_kubeconfig("drenv-argocd-test.") as env:
+        kubeconfig = env["KUBECONFIG"]
+        kubectl.config("use-context", hub, "--kubeconfig", kubeconfig)
+        kubectl.config(
+            "set-context",
+            "--current",
+            "--namespace=argocd",
+            f"--kubeconfig={kubeconfig}",
+        )
+
+        for line in commands.watch(
+            "argocd",
+            "app",
+            "delete",
+            f"busybox-{cluster}",
+            "--yes",
+            env=env,
+        ):
+            print(line)
+
+    print(f"Deleting namespace argocd-test in cluster {cluster}")
+    kubectl.delete(
+        "namespace",
+        "argocd-test",
+        "--wait=false",
+        "--ignore-not-found",
+        context=cluster,
+    )
+
+
+def wait_until_busybox_is_deleted(hub, cluster):
+    print(f"Waiting until application busybox-{cluster} is deleted")
+    kubectl.wait(
+        "application",
+        f"busybox-{cluster}",
+        "--for=delete",
+        "--namespace=argocd",
+        timeout=60,
+        context=hub,
+    )
+    print(f"Waiting until namespace argocd-test is deleted in cluster {cluster}")
+    kubectl.wait(
+        "ns",
+        "argocd-test",
+        "--for=delete",
+        timeout=60,
+        context=cluster,
+    )

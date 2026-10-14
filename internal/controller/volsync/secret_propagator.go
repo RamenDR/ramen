@@ -216,6 +216,9 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 		"metadata": map[string]interface{}{
 			"name":      sp.DestSecretName,
 			"namespace": sp.DestSecretNamespace,
+			"labels": map[string]string{
+				util.CreatedByRamenLabel: "true",
+			},
 		},
 		"type": "Opaque",
 		"data": secretData,
@@ -250,6 +253,8 @@ func (sp *secretPropagator) getEmbeddedConfigPolicy() (*cfgpolicyv1.Configuratio
 		},
 	}
 
+	util.AddLabel(embeddedConfigPolicy, util.CreatedByRamenLabel, "true")
+
 	return embeddedConfigPolicy, nil
 }
 
@@ -263,7 +268,7 @@ func (sp *secretPropagator) reconcileSecretPropagationPlacementRule() error {
 
 	util.AddLabel(placementRule, util.CreatedByRamenLabel, "true")
 
-	clustersToApply := []plrulev1.GenericClusterReference{}
+	clustersToApply := make([]plrulev1.GenericClusterReference, 0, len(sp.DestClusters))
 	for _, clusterName := range sp.DestClusters {
 		clustersToApply = append(clustersToApply, plrulev1.GenericClusterReference{Name: clusterName})
 	}

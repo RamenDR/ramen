@@ -4,11 +4,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
-from drenv import commands
+
+from drenv.addons import sleep
 
 duration = sys.argv[1]
 
-print(f"Sleep addon waiting {duration} seconds")
-commands.run("sleep", duration)
-
-print("Sleep addon finished normally")
+sleep.start(duration)

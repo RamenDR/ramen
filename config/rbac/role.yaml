@@ -8,8 +8,24 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumes
   verbs:
+  - create
+  - get
   - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  - services
+  verbs:
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -38,17 +54,6 @@ rules:
   verbs:
   - create
   - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - persistentvolumes
-  verbs:
-  - create
   - get
   - list
   - patch
@@ -90,6 +95,7 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
   - deployments
   - replicasets
   - statefulsets
@@ -141,9 +147,18 @@ rules:
   resources:
   - jobs
   verbs:
+  - create
+  - delete
   - get
   - list
+  - update
   - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs/status
+  verbs:
+  - get
 - apiGroups:
   - cdi.kubevirt.io
   resources:
@@ -209,10 +224,21 @@ rules:
 - apiGroups:
   - csiaddons.openshift.io
   resources:
+  - csiaddonsnodes
   - networkfenceclasses
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
@@ -234,6 +260,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - k8s.cni.cncf.io
+  resources:
+  - network-attachment-definitions
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - kubevirt.io
@@ -261,6 +295,16 @@ rules:
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - multicluster.x-k8s.io
+  resources:
+  - serviceimports
+  verbs:
   - get
   - list
   - patch
@@ -369,6 +413,7 @@ rules:
   resources:
   - volumesnapshots
   verbs:
+  - create
   - delete
   - get
   - list
@@ -388,6 +433,7 @@ rules:
   - storage.k8s.io
   resources:
   - volumeattachments
+  - volumeattributesclasses
   verbs:
   - get
   - list
@@ -439,6 +485,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - volsync.backube
+  resources:
+  - replicationdestinations/finalizers
+  - replicationsources/finalizers
+  verbs:
+  - update
 - apiGroups:
   - work.open-cluster-management.io
   resources:

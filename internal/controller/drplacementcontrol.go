@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
+	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
@@ -39,13 +41,27 @@ const (
 
 	// Annotation for application namespace on the managed cluster
 	DRPCAppNamespace = "drplacementcontrol.ramendr.openshift.io/app-namespace"
+
+	// Annotation to mark test failover (dry-run) mode
+	DRPCTestFailoverDryRunAnnotation = "drplacementcontrol.ramendr.openshift.io/test-failover-dryrun"
+
+	// DRPCTestFailoverDryRunAnnotationValueTrue is the value set in the test failover annotation
+	DRPCTestFailoverDryRunAnnotationValueTrue = "true"
+
+	// Annotation for the last action performed on the DRPC
+	DRPCLastAction = "drplacementcontrol.ramendr.openshift.io/last-action"
+
+	// DRPCNetworkMappingAnnotation references a ConfigMap (by name, same namespace) that
+	// holds the bidirectional cluster-pair network subnet mappings for VM static-IP translation.
+	// Value is the ConfigMap name; namespace defaults to the DRPC namespace.
+	DRPCNetworkMappingAnnotation = "drplacementcontrol.ramendr.openshift.io/network-mapping"
 )
 
 var (
 	ErrWaitForAppResourceRestoreToComplete = errors.New("waiting for App resources to be restored")
 	ErrWaitForVolSyncDestRepToComplete     = errors.New("waiting for VolSync RD to complete")
 	ErrWaitForSourceCluster                = errors.New("waiting for primary to provide Protected PVCs")
-	ErrWaitForVolSyncManifestWorkCreation  = errors.New("waiting for VolSync ManifestWork to be created")
+	ErrWaitForVolSyncManifestWorkCreation  = errors.New("waiting for secondary ManifestWork to be created")
 	ErrWaitForVolSyncRDInfoAvailability    = errors.New("waiting for VolSync RDInfo")
 )
 
@@ -72,6 +88,8 @@ type DRPCInstance struct {
 	ramenConfig          *rmn.RamenConfig
 	mwu                  rmnutil.MWUtil
 	drType               DRType
+	requeueAfter         time.Duration
+	networkMappingRules  *NetworkMappingRules
 }
 
 func (d *DRPCInstance) startProcessing() bool {
@@ -94,7 +112,7 @@ func (d *DRPCInstance) startProcessing() bool {
 	}
 
 	if processingErr != nil {
-		d.log.Info("Process placement", "error", processingErr.Error())
+		d.log.Error(processingErr, "Failed to process placement")
 
 		return requeue
 	}
@@ -105,9 +123,69 @@ func (d *DRPCInstance) startProcessing() bool {
 	return requeue
 }
 
+//nolint:gocognit,nestif
 func (d *DRPCInstance) processPlacement() (bool, error) {
 	d.log.Info("Process DRPC Placement", "DRAction", d.instance.Spec.Action)
 
+	// Handle dryRun flow (annotation management and cleanup)
+	shouldContinue, err := d.processTestFailoverFlowIfEnabled()
+	if err != nil {
+		return false, err
+	}
+
+	if !shouldContinue {
+		return false, nil
+	}
+
+	return d.executeAction()
+}
+
+// processTestFailoverFlowIfEnabled is the entry point for test failover lifecycle management.
+// It validates dryRun configuration, adds annotation when entering test failover,
+// and routes to promotion/revert handlers when exiting.
+// Returns true if processing should continue, false if a requeue is needed.
+//
+//nolint:cyclop,gocognit,gocyclo
+func (d *DRPCInstance) processTestFailoverFlowIfEnabled() (bool, error) {
+	// Validate dryRun configuration
+	if d.instance.Spec.DryRun {
+		if d.instance.Spec.Action != rmn.ActionFailover {
+			err := fmt.Errorf("dryRun is enabled but action is not failover")
+			d.reconciler.recordFailure(d.ctx, d.instance, d.userPlacement, "ValidationFailed", err.Error(), d.log)
+
+			return false, err
+		}
+	}
+	// Add dry-run annotation when entering test failover
+	// Validate failover cluster is different from current deployment cluster
+	lastAppCluster := d.instance.GetAnnotations()[LastAppDeploymentCluster]
+	if d.instance.Spec.DryRun &&
+		d.instance.Spec.Action == rmn.ActionFailover &&
+		d.instance.Spec.FailoverCluster != "" {
+		// Check if annotation already exists to avoid unnecessary updates
+		if !rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+			// Add test failover annotation
+			// Note: We don't update last-action annotations during dryRun,
+			// so they naturally preserve the pre-test state for revert validation
+			rmnutil.AddAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation, "true")
+
+			if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+				return false, fmt.Errorf("failed to add test failover annotation: %w", err)
+			}
+
+			d.log.Info("Initiated test failover",
+				"last-action", d.instance.GetAnnotations()[DRPCLastAction],
+				"last-app-cluster", lastAppCluster)
+
+			// Requeue to pick up the persisted annotation
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (d *DRPCInstance) executeAction() (bool, error) {
 	switch d.instance.Spec.Action {
 	case rmn.ActionFailover:
 		return d.RunFailover()
@@ -119,7 +197,7 @@ func (d *DRPCInstance) processPlacement() (bool, error) {
 	return d.RunInitialDeployment()
 }
 
-//nolint:funlen
+//nolint:funlen,cyclop
 func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	d.log.Info("Running initial deployment")
 
@@ -144,17 +222,24 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 	// Check if we already deployed in the homeCluster or elsewhere
 	deployed, clusterName := d.isDeployed(homeCluster)
 	if deployed && clusterName != homeCluster {
-		err := d.ensureVRGManifestWork(clusterName)
+		return d.ensureActionTransition(homeCluster)
+	}
+
+	// Check for test failover abort BEFORE checking placement update
+	// During abort, placement is still on failoverCluster, so isUserPlRuleUpdated would be false
+	// This would incorrectly trigger startDeploying instead of cleanup
+	if deployed && rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+		d.log.Info("Test failover revert detected, initiate cleanup")
+
+		err := d.reconciler.switchClusterDecisionRetainFailover(d.ctx, d.userPlacement, homeCluster)
 		if err != nil {
 			return !done, err
 		}
 
-		// IF deployed on cluster that is not the preferred HomeCluster, then we are done
-		return done, nil
-	}
-
-	// Ensure that initial deployment is complete
-	if !deployed || !d.isUserPlRuleUpdated(homeCluster) {
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionFalse, rmn.ReasonCleaning, "Not Ready")
+	} else if !deployed || !d.isUserPlRuleUpdated(homeCluster) {
+		// Ensure that initial deployment is complete
 		d.setStatusInitiating()
 
 		_, err := d.startDeploying(homeCluster, homeClusterNamespace)
@@ -170,20 +255,25 @@ func (d *DRPCInstance) RunInitialDeployment() (bool, error) {
 		return !done, nil
 	}
 
-	err := d.ensureVRGManifestWork(clusterName)
+	// If we get here, the deployment is successful (normal case or test failover abort)
+	d.setDRState(rmn.Deployed)
+
+	_, err := d.ensureActionTransition(homeCluster)
 	if err != nil {
 		return !done, err
 	}
 
-	// If we get here, the deployment is successful
-	err = d.EnsureSecondaryReplicationSetup(homeCluster)
-	if err != nil {
-		return !done, err
+	// For discovered apps, we need to set annotations since startDeploying() was skipped
+	// (ACM already set the placement decision, so we only need to track it in annotations)
+	if isDiscoveredApp(d.instance) {
+		err = d.updateUserPlacementRule(homeCluster, homeCluster)
+		if err != nil {
+			return !done, err
+		}
 	}
 
 	// Update our 'well known' preferred placement
 	d.updatePreferredDecision()
-	d.setDRState(rmn.Deployed)
 
 	d.setConditionOnInitialDeploymentCompletion()
 
@@ -335,6 +425,8 @@ func (d *DRPCInstance) startDeploying(homeCluster, homeClusterNamespace string) 
 // 2. Else, if failover is initiated (VRG ManifestWork is create as Primary), then try again till VRG manifests itself
 // on the failover cluster
 // 3. Else, initiate failover to the desired failoverCluster (switchToFailoverCluster)
+//
+//nolint:cyclop,funlen,nestif,gocognit
 func (d *DRPCInstance) RunFailover() (bool, error) {
 	d.log.Info("Entering RunFailover", "state", d.getLastDRState())
 
@@ -359,7 +451,7 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		return !done, err
 	}
 
-	// IFF VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
+	// If VRG exists and it is primary in the failoverCluster, then ensure failover is complete and
 	// clean up and setup VolSync if needed.
 	if d.vrgExistsAndPrimary(failoverCluster) {
 		d.updatePreferredDecision()
@@ -384,19 +476,35 @@ func (d *DRPCInstance) RunFailover() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		return d.ensureFailoverActionCompleted(failoverCluster)
+		if d.instance.Spec.DryRun {
+			d.setProgression(rmn.ProgressionTestingFailover)
+
+			if err := d.ensurePlacement(failoverCluster); err != nil {
+				return !done, err
+			}
+
+			// Requeue after 1 minute to continue monitoring test failover
+			d.requeueAfter = time.Minute
+
+			return !done, nil
+		}
+
+		return d.ensureActionTransition(failoverCluster)
 	} else if yes, err := d.mwExistsAndPlacementUpdated(failoverCluster); yes || err != nil {
 		// We have to wait for the VRG to appear on the failoverCluster or
 		// in case of an error, try again later
 		return !done, err
 	}
-
-	// Use the DRPC Protected condition to check if it is true and then allow failover
-	if !d.isProtected() {
+	// For dry-run: block until workload is protected and replication is current.
+	if d.instance.Spec.DryRun && !d.dryRunReadyToFailover() {
 		return !done, nil
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() && !d.isGlobalActionInConsensus() {
+		return !done, nil
+	}
 
 	return d.switchToFailoverCluster()
 }
@@ -415,6 +523,42 @@ func (d *DRPCInstance) isProtected() bool {
 		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
 
 	return false
+}
+
+// dryRunReadyToFailover returns true when the workload is protected and replication is current,
+// meaning a dry-run test failover can safely proceed.
+func (d *DRPCInstance) dryRunReadyToFailover() bool {
+	return d.isProtected() && !d.isGroupSyncLagging()
+}
+
+// isGroupSyncLagging reports true when the most recent group sync is older than 3× the DRPolicy scheduling interval,
+// meaning replication has fallen behind and a dry-run test failover would not reflect current data.
+// Returns false if the scheduling interval cannot be parsed.
+func (d *DRPCInstance) isGroupSyncLagging() bool {
+	if d.instance.Status.LastGroupSyncTime == nil {
+		return false
+	}
+
+	intervalSecs, err := rmnutil.GetSecondsFromSchedulingInterval(d.drPolicy)
+	if err != nil {
+		return false
+	}
+
+	lag := time.Since(d.instance.Status.LastGroupSyncTime.Time.UTC())
+
+	if lag <= 3*time.Duration(intervalSecs)*time.Second {
+		return false
+	}
+
+	const msg = "cannot start dry-run failover: lastGroupSyncTime is lagging behind," +
+		" check workload and cluster replication state"
+
+	d.log.Info("Dry-run failover blocked", "reason", msg)
+
+	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
+		metav1.ConditionFalse, string(d.instance.Status.Phase), msg)
+
+	return true
 }
 
 // isValidFailoverTarget determines if the passed in cluster is a valid target to failover to. A valid failover target
@@ -890,10 +1034,14 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 			metav1.ConditionTrue, string(d.instance.Status.Phase), "Completed")
 
-		return d.ensureRelocateActionCompleted(preferredCluster)
+		return d.ensureActionTransition(preferredCluster)
 	}
 
 	d.setStatusInitiating()
+
+	if d.hasGlobalVGRLabel() && !d.isGlobalActionInConsensus() {
+		return !done, nil
+	}
 
 	// Check if current primary (that is not the preferred cluster), is ready to switch over
 	if curHomeCluster != "" && curHomeCluster != preferredCluster &&
@@ -923,24 +1071,14 @@ func (d *DRPCInstance) RunRelocate() (bool, error) {
 	return d.relocate(preferredCluster, preferredClusterNamespace, rmn.Relocating)
 }
 
-func (d *DRPCInstance) ensureRelocateActionCompleted(srcCluster string) (bool, error) {
-	d.setProgression(rmn.ProgressionCleaningUp)
-
-	return d.ensureActionCompleted(srcCluster)
-}
-
-func (d *DRPCInstance) ensureFailoverActionCompleted(srcCluster string) (bool, error) {
-	d.setProgression(rmn.ProgressionCleaningUp)
-
-	return d.ensureActionCompleted(srcCluster)
-}
-
 func isDiscoveredApp(drpc *rmn.DRPlacementControl) bool {
 	return drpc.Spec.ProtectedNamespaces != nil && len(*drpc.Spec.ProtectedNamespaces) > 0
 }
 
-func (d *DRPCInstance) ensureActionCompleted(srcCluster string) (bool, error) {
+func (d *DRPCInstance) ensureActionTransition(srcCluster string) (bool, error) {
 	const done = true
+
+	d.setProgression(rmn.ProgressionCleaningUp)
 
 	err := d.ensureVRGManifestWork(srcCluster)
 	if err != nil {
@@ -971,6 +1109,12 @@ func (d *DRPCInstance) ensureCleanupAndSecondaryReplicationSetup(srcCluster stri
 	err := d.ResetVolSyncRDOnPrimary(srcCluster)
 	if err != nil {
 		return err
+	}
+
+	err = d.ResetVMStaticIPSpecOnPrimary(srcCluster)
+	if err != nil {
+		d.log.Error(err, "Failed to reset VM static-IP configuration on primary cluster; continuing reconciliation",
+			"sourceCluster", srcCluster)
 	}
 
 	// Check if the reset has already been applied. ResetVolSyncRDOnPrimary resets the VRG
@@ -1118,10 +1262,12 @@ func (d *DRPCInstance) runFinalSync(homeCluster string) (bool, error) {
 }
 
 func (d *DRPCInstance) areMultipleVRGsPrimary() bool {
+	// Count actual primaries, excluding test failover primaries which are temporary and can coexist
+	// with the original primary during testing without being considered a conflicting state.
 	numOfPrimaries := 0
 
 	for _, vrg := range d.vrgs {
-		if isVRGPrimary(vrg) {
+		if isVRGPrimary(vrg) && !vrg.Spec.DryRun {
 			numOfPrimaries++
 		}
 	}
@@ -1470,13 +1616,6 @@ func (d *DRPCInstance) updateUserPlacementRule(homeCluster, reason string) error
 	d.log.Info(fmt.Sprintf("Updating user Placement %s homeCluster %s",
 		d.userPlacement.GetName(), homeCluster))
 
-	added := rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
-	if added {
-		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
-			return err
-		}
-	}
-
 	newPD := &clrapiv1beta1.ClusterDecision{
 		ClusterName: homeCluster,
 		Reason:      reason,
@@ -1617,7 +1756,7 @@ func equalClusterIDSlices(a, b []string) bool {
 
 // updatePeerClass conditionally updates an existing peerClass in to, with values from. If existing peerClass claims
 // a replicationID then the from should also claim a replicationID, else both should not.  Similarly existing peerClass
-// offloaded property should be the same as from. This ensures that a peerClass is updated with latest
+// offloaded and global properties should be the same as from. This ensures that a peerClass is updated with latest
 // storage/replication IDs but only if the underlying replication scheme remains unchanged.
 // If DRPC is annotated with CG values, then grouping is also updated to true.
 
@@ -1630,6 +1769,10 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 		}
 
 		if to[toIdx].Offloaded != from.Offloaded {
+			break
+		}
+
+		if to[toIdx].Global != from.Global {
 			break
 		}
 
@@ -1825,24 +1968,55 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 //   - Spec.PrepareForFinalSync
 //   - Spec.RunFinalSync
 //   - Spec.VolSync.RDSpec
+//   - Spec.StaticIPTranslationSpec
 //
 // These fields are either set during the initial creation of the VRG (e.g., name and namespace)
 // or updated as needed, such as the PrepareForFinalSync and RunFinalSync fields.
 func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeReplicationGroup, homeCluster string) {
+	d.setVRGAnnotations(vrg, homeCluster)
+	d.setVRGSpecFields(vrg)
+	d.updateVRGDRTypeSpecIfNeeded(vrg, vrgFromView)
+	d.updateMoverConfigIfNeeded(vrg)
+	// Inject static IP translation spec for secondary VRG.
+	// Reads primary VRG's discovery status and maps to target IPs from DRPC spec.
+	d.updateVRGStaticIPTranslationSpec(vrg, homeCluster)
+}
+
+// setVRGAnnotations sets all VRG annotations from DRPC
+func (d *DRPCInstance) setVRGAnnotations(vrg *rmn.VolumeReplicationGroup, homeCluster string) {
+	// Create base annotations that are always present
 	vrg.ObjectMeta.Annotations = map[string]string{
 		DestinationClusterAnnotationKey:       homeCluster,
-		DoNotDeletePVCAnnotation:              d.instance.GetAnnotations()[DoNotDeletePVCAnnotation],
 		DRPCUIDAnnotation:                     string(d.instance.UID),
-		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		rmnutil.IsCGEnabledAnnotation:         d.instance.GetAnnotations()[rmnutil.IsCGEnabledAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
+		rmnutil.EnableDiffAnnotation:          d.instance.GetAnnotations()[rmnutil.EnableDiffAnnotation],
 	}
 
+	if d.instance.Spec.DryRun && homeCluster == d.instance.Spec.FailoverCluster {
+		vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = d.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation]
+	} else {
+		vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
+	}
+
+	// Propagate global VGR label to VRG for consensus checks.
+	if d.hasGlobalVGRLabel() {
+		rmnutil.AddLabel(vrg, GlobalVGRLabel, d.globalVGRLabel())
+	}
+}
+
+// setVRGSpecFields sets VRG spec fields from DRPC
+func (d *DRPCInstance) setVRGSpecFields(vrg *rmn.VolumeReplicationGroup) {
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
 	vrg.Spec.S3Profiles = AvailableS3Profiles(d.drClusters)
 	vrg.Spec.KubeObjectProtection = d.instance.Spec.KubeObjectProtection
 	vrg.Spec.VolSync.Disabled = d.volSyncDisabled
 	d.setVRGAction(vrg)
+}
 
+// updateVRGDRTypeSpecIfNeeded updates VRG DR type spec (Sync/Async) if needed
+func (d *DRPCInstance) updateVRGDRTypeSpecIfNeeded(vrg, vrgFromView *rmn.VolumeReplicationGroup) {
 	// If vrgFromView nil, then vrg is newly generated, Sync/Async spec is updated unconditionally
 	if vrgFromView == nil {
 		switch d.drType {
@@ -1854,11 +2028,14 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 	} else {
 		d.updateVRGDRTypeSpec(vrgFromView, vrg)
 	}
+}
 
-	// Workaround for cephfs issue: FIXME:
-	// VolSync's DataMover requires the PodSecurityContext to be configured in order to successfully synchronize
-	// data for workloads that have complex Security Context Constraints (SCC) settings.
-	// Populate ReplicationSource and ReplicationDestination specs with MoverSecurityContext and MoverServiceAccount
+// updateMoverConfigIfNeeded updates mover config if VolSync is enabled
+// Workaround for cephfs issue: FIXME:
+// VolSync's DataMover requires the PodSecurityContext to be configured in order to successfully synchronize
+// data for workloads that have complex Security Context Constraints (SCC) settings.
+// Populate ReplicationSource and ReplicationDestination specs with MoverSecurityContext and MoverServiceAccount
+func (d *DRPCInstance) updateMoverConfigIfNeeded(vrg *rmn.VolumeReplicationGroup) {
 	if d.instance.Spec.VolSyncSpec != nil && d.drType == DRTypeAsync {
 		d.updateMoverConfig(vrg)
 	}
@@ -1874,6 +2051,22 @@ func (d *DRPCInstance) updateMoverConfig(vrg *rmn.VolumeReplicationGroup) {
 }
 
 func (d *DRPCInstance) ensurePlacement(homeCluster string) error {
+	added := false
+	if value, ok := d.instance.GetAnnotations()[LastAppDeploymentCluster]; !ok || value != homeCluster {
+		added = rmnutil.AddAnnotation(d.instance, LastAppDeploymentCluster, homeCluster)
+	}
+
+	if !d.instance.Spec.DryRun {
+		// Also update last-action annotation to track the current action
+		added = rmnutil.AddAnnotation(d.instance, DRPCLastAction, string(d.instance.Spec.Action)) || added
+	}
+
+	if added {
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			return err
+		}
+	}
+
 	clusterDecision := d.reconciler.getClusterDecision(d.userPlacement)
 	if clusterDecision.ClusterName == "" ||
 		homeCluster != clusterDecision.ClusterName {
@@ -1898,11 +2091,24 @@ func vrgAction(drpcAction rmn.DRAction) rmn.VRGAction {
 
 func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	action := vrgAction(d.instance.Spec.Action)
+
+	// CRITICAL: Always update DryRun if VRG action is currently Failover
+	// This ensures cleanup happens even when user removes DRPC action
+	// VRG controller needs VRG.Spec.DryRun=false to trigger snapshot cleanup
+	// Also update DryRun when VRG has dryRun set (e.g., from test failover)
+	// to ensure it's synced with DRPC spec when transitioning states
+	if vrg.Spec.Action == rmn.VRGActionFailover || vrg.Spec.DryRun {
+		vrg.Spec.DryRun = d.instance.Spec.DryRun
+	}
+
 	if action == "" {
 		return
 	}
 
 	vrg.Spec.Action = action
+	if action == rmn.VRGActionFailover {
+		vrg.Spec.DryRun = d.instance.Spec.DryRun
+	}
 }
 
 func (d *DRPCInstance) newVRG(
@@ -2029,19 +2235,7 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 			return fmt.Errorf("failed to get NS MW (%w)", err)
 		}
 
-		annotations := make(map[string]string)
-
-		annotations[DRPCNameAnnotation] = d.instance.Name
-		annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
-
-		err := d.mwu.CreateOrUpdateNamespaceManifest(d.instance.Name, d.vrgNamespace, homeCluster, annotations)
-		if err != nil {
-			return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
-		}
-
-		d.log.Info(fmt.Sprintf("Created Namespace '%s' on cluster %s", d.vrgNamespace, homeCluster))
-
-		return nil // created namespace
+		return d.createOrUpdateNamespaces(homeCluster)
 	}
 
 	// Ensure the OCM backup label does not exists, otherwise, remove it.
@@ -2057,6 +2251,68 @@ func (d *DRPCInstance) ensureNamespaceManifestWork(homeCluster string) error {
 	}
 
 	return nil
+}
+
+// createOrUpdateNamespaces creates namespace ManifestWorks on the peer
+// clusters. See deleteNamespaceManifestWorks for the symmetric delete path.
+func (d *DRPCInstance) createOrUpdateNamespaces(homeCluster string) error {
+	if !isDiscoveredApp(d.instance) {
+		return d.createOrUpdateNSForNonDiscoveredApps(homeCluster)
+	}
+
+	return d.createOrUpdateNSForDiscoveredApps(homeCluster)
+}
+
+func (d *DRPCInstance) createOrUpdateNSForDiscoveredApps(homeCluster string) error {
+	protectedNamespaces := make([]*corev1.Namespace, 0)
+
+	for _, ns := range *d.instance.Spec.ProtectedNamespaces {
+		protectedNamespace, err := d.reconciler.MCVGetter.GetNSFromManagedCluster(homeCluster, ns)
+		if err != nil {
+			d.log.Error(err, fmt.Sprintf("error getting namespace %s from managed cluster %s using MCV", ns, homeCluster))
+
+			return err
+		}
+
+		protectedNamespaces = append(protectedNamespaces, protectedNamespace)
+	}
+
+	for _, protectedNamespaceObj := range protectedNamespaces {
+		annotations, err := d.filterSCCAnnotations(protectedNamespaceObj.Annotations)
+		if err != nil {
+			return err
+		}
+
+		for _, dstCluster := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+			if homeCluster == dstCluster {
+				continue
+			}
+
+			if err := d.mwu.CreateOrUpdateNamespaceManifestWork(d.instance.Name, protectedNamespaceObj.Name, dstCluster,
+				annotations, protectedNamespaceObj.Labels); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (d *DRPCInstance) createOrUpdateNSForNonDiscoveredApps(homeCluster string) error {
+	annotations := make(map[string]string)
+
+	annotations[DRPCNameAnnotation] = d.instance.Name
+	annotations[DRPCNamespaceAnnotation] = d.instance.Namespace
+
+	err := d.mwu.CreateOrUpdateNamespaceManifestWork(d.instance.Name, d.vrgNamespace, homeCluster, annotations,
+		map[string]string{})
+	if err != nil {
+		return fmt.Errorf("failed to create namespace '%s' on cluster %s: %w", d.vrgNamespace, homeCluster, err)
+	}
+
+	d.log.Info(fmt.Sprintf("Created Namespace '%s' on cluster %s", d.vrgNamespace, homeCluster))
+
+	return nil // created namespace
 }
 
 func isVRGPrimary(vrg *rmn.VolumeReplicationGroup) bool {
@@ -2113,8 +2369,21 @@ func (d *DRPCInstance) cleanupSecondaries(clusterToSkip string) error {
 		}
 	}
 
+	// At this point, all peers are Secondary (loop above verified it)
+	// Set PeerReady to Success
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
 		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+
+	// FIXME
+	// If test failover annotation exists, remove it now that cleanup is complete
+	if rmnutil.HasAnnotation(d.instance, DRPCTestFailoverDryRunAnnotation) {
+		delete(d.instance.Annotations, DRPCTestFailoverDryRunAnnotation)
+		d.log.Info("Test failover cleanup complete, removed annotation")
+
+		if err := d.reconciler.Update(d.ctx, d.instance); err != nil {
+			return fmt.Errorf("failed to remove test failover annotation: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -2141,9 +2410,19 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 		return !peerReady, nil
 	}
 
+	// Don't delete annotation here - it will be removed after cleanup completes in cleanupSecondaries()
+
 	// IFF just updated or MCV is reporting no VRG, no need to use MCV to check if the state has been
 	// applied. Wait for the next round of reconcile.
-	if justUpdated || d.vrgs[clusterName] == nil {
+	if justUpdated {
+		return !peerReady, nil
+	}
+
+	if d.vrgs[clusterName] == nil {
+		if d.instance.Spec.Action == "" {
+			return peerReady, nil
+		}
+
 		return !peerReady, nil
 	}
 
@@ -2156,18 +2435,17 @@ func (d *DRPCInstance) cleanupSecondary(clusterName, clusterToSkip string) (bool
 		return !peerReady, nil
 	}
 
-	// This is the time to cleanup the workload from the preferredCluster.
-	// For managed apps, it will be done automatically by ACM, when we update
-	// the placement to the targetCluster. For discovered apps, we have to let
-	// the user know that they need to clean up the apps.
-	// So set the progression to wait on user to clean up.
-	// If not discovered apps, then we can set the progression to cleaning up.
-	if isDiscoveredApp(d.instance) {
-		d.setDiscoveredAppGCProgression(clusterToSkip)
-	}
-
+	// Remove placement decision to trigger workload cleanup
+	// For managed apps: ACM automatically deletes workload
+	// For discovered apps: user must manually delete workload
 	if err = d.reconciler.removeClusterDecisionForFailover(d.ctx, d.userPlacement, clusterName); err != nil {
 		return !peerReady, err
+	}
+
+	// Set progression based on app type and VRG state
+	// This must happen AFTER placement removal to ensure correct progression flow
+	if isDiscoveredApp(d.instance) {
+		d.setDiscoveredAppGCProgression(clusterToSkip)
 	}
 
 	if !d.ensureVRGIsSecondaryOnCluster(clusterName) {
@@ -2324,13 +2602,22 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	}
 
 	vrg.Spec.ReplicationState = state
-	if state == rmn.Secondary {
+
+	d.setVRGAction(vrg)
+
+	// Update optional fields including annotations to ensure proper handling during
+	// test failover cleanup (preserves annotation when DRPC still has it, removes when DRPC doesn't)
+	d.updateVRGOptionalFields(vrg, d.vrgs[clusterName], clusterName)
+
+	if state == rmn.Secondary || d.isFailoverPromotion(clusterName) {
 		// Turn off the final sync flags
 		vrg.Spec.PrepareForFinalSync = false
 		vrg.Spec.RunFinalSync = false
-	}
 
-	d.setVRGAction(vrg)
+		// if vrg.Annotations[DRPCTestFailoverDryRunAnnotation] == DRPCTestFailoverDryRunAnnotationValueTrue {
+		// 	vrg.Annotations[DRPCTestFailoverDryRunAnnotation] = "false"
+		// }
+	}
 
 	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
@@ -2340,6 +2627,12 @@ func (d *DRPCInstance) updateVRGState(clusterName string, state rmn.ReplicationS
 	d.log.Info(fmt.Sprintf("Updated VRG %s running on cluster %s to %s", vrg.Name, clusterName, state))
 
 	return true, nil
+}
+
+func (d *DRPCInstance) isFailoverPromotion(clusterName string) bool {
+	return clusterName == d.instance.Spec.FailoverCluster &&
+		d.instance.Spec.Action == rmn.ActionFailover &&
+		d.instance.Spec.DryRun == false
 }
 
 func (d *DRPCInstance) updateVRGToPrepareForFinalSync(clusterName string) error {
@@ -2360,6 +2653,10 @@ func (d *DRPCInstance) updateVRGToPrepareForFinalSync(clusterName string) error 
 
 	vrg.Spec.PrepareForFinalSync = true
 	vrg.Spec.RunFinalSync = false
+
+	// Update optional fields including annotations to ensure test failover annotation
+	// is properly removed when DRPC annotation is removed during cleanup
+	d.updateVRGOptionalFields(vrg, d.vrgs[clusterName], clusterName)
 
 	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
@@ -2390,6 +2687,10 @@ func (d *DRPCInstance) updateVRGToRunFinalSync(clusterName string) error {
 
 	vrg.Spec.RunFinalSync = true
 	vrg.Spec.PrepareForFinalSync = false
+
+	// Update optional fields including annotations to ensure test failover annotation
+	// is properly removed when DRPC annotation is removed during cleanup
+	d.updateVRGOptionalFields(vrg, d.vrgs[clusterName], clusterName)
 
 	err = d.updateManifestWork(clusterName, vrg)
 	if err != nil {
@@ -2427,6 +2728,13 @@ func (d *DRPCInstance) setDRState(nextState rmn.DRState) {
 
 		d.instance.Status.Phase = nextState
 		d.instance.Status.ObservedGeneration = d.instance.Generation
+
+		// Account the transition at the moment it happens, so that a
+		// multi-phase transition within a single reconcile cannot skip
+		// over an action phase unaccounted. Persisted by the reconciler
+		// along with the status update.
+		syncDRActionCountAnnotation(d.instance)
+
 		d.reportEvent(nextState)
 	}
 }
@@ -2700,8 +3008,44 @@ func (d *DRPCInstance) setConditionOnInitialDeploymentCompletion() {
 	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionAvailable, d.instance.Generation,
 		d.getConditionStatusForTypeAvailable(), string(d.instance.Status.Phase), "Initial deployment completed")
 
-	addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
-		metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+	if d.isSecondaryVRGReadyOnInitialDeploy() {
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionTrue, rmn.ReasonSuccess, "Ready")
+	} else {
+		addOrUpdateCondition(&d.instance.Status.Conditions, rmn.ConditionPeerReady, d.instance.Generation,
+			metav1.ConditionFalse, rmn.ReasonProgressing,
+			"Waiting for VRG on peer cluster to transition to Secondary")
+	}
+}
+
+// isSecondaryVRGReadyOnInitialDeploy checks if peer VRG is Secondary on initial deploy.
+// Returns false if missing, unreachable, or not yet in Secondary state.
+func (d *DRPCInstance) isSecondaryVRGReadyOnInitialDeploy() bool {
+	homeCluster := d.instance.Spec.PreferredCluster
+
+	for _, clusterName := range rmnutil.DRPolicyClusterNames(d.drPolicy) {
+		if clusterName == homeCluster {
+			continue
+		}
+
+		vrg, ok := d.vrgs[clusterName]
+		if !ok || vrg == nil {
+			d.log.Info("VRG not found on peer cluster", "cluster", clusterName)
+
+			return false
+		}
+
+		if vrg.Spec.ReplicationState != rmn.Secondary ||
+			vrg.Status.State != rmn.SecondaryState ||
+			vrg.Status.ObservedGeneration != vrg.Generation {
+			d.log.Info(fmt.Sprintf("VRG on %s has not transitioned to secondary yet. "+
+				"Spec-State/Status-State %s/%s", clusterName, vrg.Spec.ReplicationState, vrg.Status.State))
+
+			return false
+		}
+	}
+
+	return true
 }
 
 func (d *DRPCInstance) setStatusInitiating() {
@@ -2752,20 +3096,6 @@ func getCallerFunction(ancestorLevel int) string {
 	}
 
 	return strings.TrimPrefix(details.Name(), "github.com/ramendr/ramen/internal/controller.")
-}
-
-func (d *DRPCInstance) isVMRecipeInUse() bool {
-	if d.instance == nil ||
-		d.instance.Spec.KubeObjectProtection == nil ||
-		d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
-		return false
-	}
-
-	if d.instance.Spec.KubeObjectProtection.RecipeRef.Name != recipecore.VMRecipeName {
-		return false
-	}
-
-	return true
 }
 
 func (d *DRPCInstance) isPreparingForFinalSync(clusterName string) bool {
@@ -2849,15 +3179,29 @@ func (d *DRPCInstance) getCleanupSecondaryVRG(clusterName string) *rmn.VolumeRep
 func (d *DRPCInstance) isSourceVRGForAction(clusterName string) bool {
 	spec := d.instance.Spec
 
-	return (spec.PreferredCluster == clusterName && spec.Action == rmn.ActionRelocate) ||
-		(spec.FailoverCluster == clusterName && spec.Action == rmn.ActionFailover)
+	// Check if this is the source cluster based on the current action
+	if (spec.PreferredCluster == clusterName && spec.Action == rmn.ActionRelocate) ||
+		(spec.FailoverCluster == clusterName && spec.Action == rmn.ActionFailover) {
+		return true
+	}
+
+	// When action is empty (e.g., after dryRun revert with last-action=""), check LastAppDeploymentCluster.
+	// If the cluster being cleaned up is NOT the LastAppDeploymentCluster (source), it's the target
+	// that needs cleanup, so return true to trigger alternate VRG lookup from the source cluster.
+	if spec.Action == "" {
+		if lastCluster, ok := d.instance.GetAnnotations()[LastAppDeploymentCluster]; ok {
+			return lastCluster != clusterName
+		}
+	}
+
+	return false
 }
 
 // setDiscoveredAppGCProgression determines and sets the garbage collection progression state for
 // discovered application
 // garbage collection (GC) based on the discovered VM recipe and the VRG's auto-cleanup status.
 func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
-	if d.isVMRecipeInUse() {
+	if rmnutil.IsVMRecipe(d.instance.Spec.KubeObjectProtection) {
 		switch {
 		case d.isPreparingForFinalSync(clusterName): // for relocation only
 			d.log.V(1).Info("Setting progression - PreparingFinalSync")
@@ -2872,6 +3216,392 @@ func (d *DRPCInstance) setDiscoveredAppGCProgression(clusterName string) {
 			d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 		}
 	} else {
+		// For non-VM discovered apps, always wait for user to manually delete workload.
+		// VRG state transitions are automatic and independent of user cleanup actions.
 		d.setProgression(rmn.ProgressionWaitOnUserToCleanUp)
 	}
+}
+
+// filterSCCAnnotations conditionally removes SCC annotations based on RamenConfig and DRPC settings.
+// SCC annotations are retained only when BOTH RamenConfig.RetainNamespaceSCCAcrossPeers AND
+// DRPC.Spec.RetainNamespaceSCCAcrossPeers are true.
+// If DRPC flag is true but RamenConfig flag is false, a warning is logged.
+func (d *DRPCInstance) filterSCCAnnotations(annotations map[string]string) (map[string]string, error) {
+	ramenConfigRetain := d.ramenConfig != nil && d.ramenConfig.RetainNamespaceSCCAcrossPeers
+	drpcRetain := d.instance.Spec.RetainNamespaceSCCAcrossPeers
+
+	// Both flags must be true to retain SCC annotations
+	if ramenConfigRetain && drpcRetain {
+		d.log.Info("Retaining SCC annotations across peer clusters as both RamenConfig and DRPC flags are enabled")
+
+		return annotations, nil
+	}
+
+	// Log warning if DRPC flag is true but RamenConfig flag is false
+	if drpcRetain && !ramenConfigRetain {
+		return nil, fmt.Errorf("retainNamespaceSCCAcrossPeers is enabled in the DRPC," +
+			"but the flag is disabled in the RamenConfig")
+	}
+
+	// Default behavior: remove SCC annotations
+	filteredAnnotations := make(map[string]string)
+
+	for key, val := range annotations {
+		if !strings.Contains(key, "sa.scc") {
+			filteredAnnotations[key] = val
+		}
+	}
+
+	return filteredAnnotations, nil
+}
+
+func (d *DRPCInstance) ensureRecipeManifestWork(srcCluster, dstCluster string) error {
+	if d.instance.Spec.KubeObjectProtection == nil ||
+		d.instance.Spec.KubeObjectProtection.RecipeRef == nil {
+		return nil
+	}
+
+	// Built-in VM recipe is embedded in the VRG controller and does not need
+	// to be propagated via ManifestWork.
+	if d.instance.Spec.KubeObjectProtection.RecipeRef.Name == recipecore.VMRecipeName &&
+		d.instance.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(*d.ramenConfig) {
+		return nil
+	}
+
+	recipeName := d.instance.Spec.KubeObjectProtection.RecipeRef.Name
+	recipeNamespace := d.instance.Spec.KubeObjectProtection.RecipeRef.Namespace
+
+	// Always fetch the latest recipe from source cluster
+	recipe, err := d.reconciler.MCVGetter.GetRecipeFromManagedCluster(srcCluster, recipeName, recipeNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get recipe %s/%s in cluster %s: %w", recipeNamespace, recipeName, srcCluster, err)
+	}
+
+	// Check if recipe MW exists on destination
+	existingMW, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeRecipe, dstCluster)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get recipe MW in cluster %s: %w", dstCluster, err)
+		}
+		// MW doesn't exist, create it
+		return d.mwu.CreateOrUpdateRecipeManifestWork(recipe, dstCluster)
+	}
+
+	// MW exists, check if recipe needs update by comparing Generation or ResourceVersion
+	// Extract existing recipe from ManifestWork and compare
+	if needsUpdate, err := d.recipeNeedsUpdate(existingMW, recipe); err != nil {
+		return fmt.Errorf("failed to check if recipe needs update: %w", err)
+	} else if needsUpdate {
+		d.log.Info("Recipe has been updated, updating ManifestWork",
+			"recipe", recipeName,
+			"namespace", recipeNamespace,
+			"srcCluster", srcCluster,
+			"dstCluster", dstCluster,
+			"generation", recipe.Generation,
+			"resourceVersion", recipe.ResourceVersion)
+
+		return d.mwu.CreateOrUpdateRecipeManifestWork(recipe, dstCluster)
+	}
+
+	return nil
+}
+
+// recipeNeedsUpdate compares the recipe in the ManifestWork with the source recipe
+// Returns true if the recipe needs to be updated
+func (d *DRPCInstance) recipeNeedsUpdate(mw *ocmworkv1.ManifestWork, sourceRecipe *recipev1.Recipe) (bool, error) {
+	if mw == nil || len(mw.Spec.Workload.Manifests) == 0 {
+		return true, nil
+	}
+
+	// Extract recipe from ManifestWork
+	existingRecipe := &recipev1.Recipe{}
+	if err := rmnutil.ExtractResourceFromManifestWork(mw, existingRecipe,
+		schema.GroupVersionKind{
+			Group:   recipev1.GroupVersion.Group,
+			Version: recipev1.GroupVersion.Version,
+			Kind:    "Recipe",
+		}); err != nil {
+		return false, fmt.Errorf("failed to extract recipe from ManifestWork: %w", err)
+	}
+
+	// Compare Spec - this is the most important part
+	if !reflect.DeepEqual(existingRecipe.Spec, sourceRecipe.Spec) {
+		d.log.V(1).Info("Recipe Spec has changed", "recipe", sourceRecipe.Name)
+
+		return true, nil
+	}
+
+	// Compare Labels - only if both have labels
+	// Handle nil vs empty map equivalence
+	if !mapsEqual(existingRecipe.Labels, sourceRecipe.Labels) {
+		d.log.V(1).Info("Recipe Labels have changed", "recipe", sourceRecipe.Name)
+
+		return true, nil
+	}
+
+	// Compare Annotations - only if both have annotations
+	// Handle nil vs empty map equivalence
+	if !mapsEqual(existingRecipe.Annotations, sourceRecipe.Annotations) {
+		d.log.V(1).Info("Recipe Annotations have changed", "recipe", sourceRecipe.Name)
+
+		return true, nil
+	}
+
+	return false, nil
+}
+
+// mapsEqual compares two string maps, treating nil and empty maps as equivalent
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+
+	return reflect.DeepEqual(a, b)
+}
+
+// buildStaticIPTranslationSpec constructs the StaticIPTranslationSpec for a
+// recovery-target VRG using static IP discovery data from the source cluster
+// selected by DRPC placement intent.
+//
+// Source IPs are read from the source VRG's status.staticIPDiscovery. Target
+// IPs are either preserved (same-cluster recovery) or translated using the
+// configured network-mapping rules. The resulting translations are grouped by
+// protected resource and network.
+//
+// Returns nil when the source VRG is unavailable or when no static IP discovery
+// data has been reported.
+func (d *DRPCInstance) buildStaticIPTranslationSpec(
+	primaryCluster string,
+	homeCluster string,
+) *rmn.StaticIPTranslationSpec {
+	primaryVRG := d.vrgs[primaryCluster]
+
+	if primaryVRG == nil {
+		return nil
+	}
+
+	if primaryVRG.Status.StaticIPDiscoveryStatus == nil ||
+		len(primaryVRG.Status.StaticIPDiscoveryStatus.Resources) == 0 {
+		d.log.Info("Discovered Static IP data from primary cluster is nil")
+
+		return nil
+	}
+
+	primaryDisc := primaryVRG.Status.StaticIPDiscoveryStatus
+	sameCluster := primaryCluster == homeCluster
+
+	var resources []rmn.IPTranslationSpec
+
+	for _, pRes := range primaryDisc.Resources {
+		var networks []rmn.NetworkTranslation
+
+		for _, pNet := range pRes.Networks {
+			var addrs []rmn.AddressTranslation
+
+			nadNamespace, nadName := ParseNetworkName(pNet.NetworkName, pRes.ResourceRef.Namespace)
+			for _, srcIP := range pNet.Addresses {
+				d.log.Info("Source IP for translation", "ip", srcIP)
+
+				targetIP := srcIP
+				if !sameCluster {
+					d.log.Info("Clusters are not same, hence translation required", "primaryCluster:", primaryCluster,
+						"homeCluster:", homeCluster, "srcIP:", srcIP)
+					// derived from network mapping
+					targetIP = d.translateSourceIP(srcIP, primaryCluster, NetworkRef{nadNamespace, nadName})
+				}
+
+				d.log.Info("Updating Spec with IP", "targetIP:", targetIP)
+				addrs = append(addrs, rmn.AddressTranslation{
+					TargetIP: targetIP,
+				})
+			}
+
+			networks = append(networks, rmn.NetworkTranslation{
+				NetworkName: pNet.NetworkName,
+				Addresses:   addrs,
+			})
+		}
+
+		resources = append(resources, rmn.IPTranslationSpec{
+			ResourceRef: pRes.ResourceRef,
+			Networks:    networks,
+		})
+	}
+
+	return &rmn.StaticIPTranslationSpec{IPTranslations: resources}
+}
+
+// updateVRGStaticIPTranslationSpec sets spec.staticIPTranslationSpec on the VRG
+// being written to homeCluster. On the primary cluster the field is left nil —
+// the primary VRG only writes to status, never reads from spec for this feature.
+// On the secondary cluster, the field is populated from primary discovery + DRPC mapping.
+func (d *DRPCInstance) updateVRGStaticIPTranslationSpec(
+	vrg *rmn.VolumeReplicationGroup,
+	homeCluster string,
+) {
+	shouldInject, reason := d.shouldInjectStaticIPTranslationSpec(vrg)
+
+	if !shouldInject {
+		d.log.Info(
+			"Skipping static IP translation spec update",
+			"reason", reason,
+			"replicationState", vrg.Spec.ReplicationState,
+			"statusState", vrg.Status.State,
+			"current cluster", vrg.GetAnnotations()[DestinationClusterAnnotationKey],
+		)
+
+		return
+	}
+
+	primaryCluster := d.currentPrimaryCluster()
+
+	if primaryCluster == "" {
+		d.log.Info("No primary VRG found")
+
+		return
+	}
+
+	d.log.Info(
+		"Building StaticIPTranslationSpec from primary VRG status",
+		"sourceCluster", primaryCluster,
+		"targetCluster", homeCluster,
+	)
+
+	newSpec := d.buildStaticIPTranslationSpec(primaryCluster, homeCluster)
+	if newSpec == nil {
+		d.log.Info(
+			"No static IP discovery data available yet from primary cluster; skipping update",
+			"sourceCluster", primaryCluster,
+		)
+
+		return
+	}
+
+	if !d.setStaticIPTranslationSpec(vrg, newSpec) {
+		d.log.Info("StaticIPTranslationSpec unchanged")
+
+		return
+	}
+
+	d.log.Info(
+		"Applied StaticIPTranslationSpec to VRG",
+		"resourceCount", len(newSpec.IPTranslations),
+		"sourceCluster", primaryCluster,
+		"targetCluster", homeCluster,
+	)
+}
+
+// shouldInjectStaticIPTranslationSpec returns whether the VRG is eligible
+// for StaticIPTranslationSpec injection and, when not eligible, provides
+// the reason for skipping the update.
+func (d *DRPCInstance) shouldInjectStaticIPTranslationSpec(
+	vrg *rmn.VolumeReplicationGroup,
+) (bool, string) {
+	if !rmnutil.IsVMRecipe(d.instance.Spec.KubeObjectProtection) {
+		return false, "VM recipe not in use"
+	}
+
+	if len(d.instance.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs) == 0 {
+		return false, "VMs are not configured with static IP."
+	}
+
+	if vrg.Spec.ReplicationState != rmn.Secondary {
+		return false, "VRG replication state is not Secondary"
+	}
+
+	return true, ""
+}
+
+// ResetVMStaticIPSpecOnPrimary clears StaticIPTranslationSpec from the
+// primary VRG once recovery completes or translation injection is no longer
+// required. The translation spec is transient recovery metadata used during
+// restore on secondary clusters and should not remain configured on the
+// promoted primary after failover/relocation.
+func (d *DRPCInstance) ResetVMStaticIPSpecOnPrimary(clusterName string) error {
+	if !rmnutil.IsVMRecipe(d.instance.Spec.KubeObjectProtection) {
+		return nil
+	}
+
+	mw, err := d.mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, clusterName)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		d.log.Error(err, "failed to find VRG ManifestWork", "cluster", clusterName)
+
+		return fmt.Errorf("failed to lookup VRG ManifestWork for cluster %s (%w)",
+			clusterName, err)
+	}
+
+	d.log.Info(fmt.Sprintf("Resetting staticIPTranslationSpec VRG ownedby MW %s for cluster %s", mw.Name, clusterName))
+
+	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	if err != nil {
+		d.log.Error(err, "failed to extract VRG state")
+
+		return err
+	}
+
+	// No static-IP VMs remain; clear any previously injected translation spec
+	// to avoid stale IP mappings being applied during future restores.
+	if len(d.instance.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs) == 0 {
+		d.log.Info("VMs are not configured with static IPs.")
+
+		if !d.setStaticIPTranslationSpec(vrg, nil) {
+			return nil
+		}
+
+		return d.mwu.UpdateVRGManifestWork(vrg, mw)
+	}
+
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		d.log.Info(fmt.Sprintf("VRG %s not primary on this cluster %s", vrg.Name, mw.Namespace))
+
+		return fmt.Errorf("vrg %s is not set as primary on this cluster, %s", vrg.Name, mw.Namespace)
+	}
+
+	if vrg.Spec.StaticIPTranslationSpec == nil {
+		d.log.Info(fmt.Sprintf("StaticIPTranslationSpec for %s has already been cleared on this cluster %s",
+			vrg.Name, mw.Namespace))
+
+		return nil
+	}
+
+	vrg.Spec.StaticIPTranslationSpec = nil
+
+	return d.mwu.UpdateVRGManifestWork(vrg, mw)
+}
+
+// currentPrimaryCluster returns the cluster that DRPC currently intends to
+// be primary. The value is derived from DRPC spec/action state rather than
+// VRG status to avoid nondeterministic selection when multiple VRGs
+// temporarily report Primary during failover or relocation transitions.
+func (d *DRPCInstance) currentPrimaryCluster() string {
+	switch d.instance.Spec.Action {
+	case rmn.ActionFailover:
+		return d.instance.Spec.FailoverCluster
+
+	case rmn.ActionRelocate:
+		return d.instance.Spec.PreferredCluster
+
+	default:
+		return d.instance.Spec.PreferredCluster
+	}
+}
+
+// setStaticIPTranslationSpec updates StaticIPTranslationSpec only when the
+// desired value differs from the current value. A nil spec clears the field.
+// Returns true when the VRG spec was modified.
+func (d *DRPCInstance) setStaticIPTranslationSpec(
+	vrg *rmn.VolumeReplicationGroup,
+	spec *rmn.StaticIPTranslationSpec,
+) bool {
+	if reflect.DeepEqual(vrg.Spec.StaticIPTranslationSpec, spec) {
+		return false
+	}
+
+	vrg.Spec.StaticIPTranslationSpec = spec
+
+	return true
 }

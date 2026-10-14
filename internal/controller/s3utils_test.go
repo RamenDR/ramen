@@ -160,6 +160,10 @@ func (f *fakeObjectStorer) DeleteObjects(keys ...string) error {
 	return nil
 }
 
+func (f *fakeObjectStorer) HeadBucket() error {
+	return nil
+}
+
 func (f *fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
@@ -175,12 +179,15 @@ func (f *fakeObjectStorer) DeleteObjectsWithKeyPrefix(keyPrefix string) error {
 
 var _ = Describe("FakeObjectStorer", func() {
 	var objectStorer controllers.ObjectStorer
+
 	object := "o"
+
 	const (
 		key  = "k"
 		key1 = key + key
 		key2 = key1 + key
 	)
+
 	BeforeEach(func() {
 		objectStorer = objectStorers[objS3ProfileNumber]
 	})

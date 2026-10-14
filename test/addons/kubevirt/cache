@@ -3,9 +3,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-from drenv import cache
+from drenv.addons import kubevirt
 
-os.chdir(os.path.dirname(__file__))
-cache.refresh("operator", "addons/kubevirt-operator-1.6.0.yaml")
-cache.refresh("cr", "addons/kubevirt-cr-1.6.0.yaml")
+kubevirt.cache()

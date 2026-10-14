@@ -8,6 +8,7 @@ name: "minio"
 profiles:
   - name: c1
     driver: $vm
+    network: $network
     container_runtime: containerd
     memory: 3g
     workers:

@@ -48,7 +48,11 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 	BeforeEach(func() {
 		volumeGroupSourceHandler = cephfscg.NewVolumeGroupSourceHandler(
-			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName, testLogger,
+			k8sClient, rgs, internalController.DefaultCephFSCSIDriverName,
+			volsync.NewVSHandler(context.Background(), k8sClient, testLogger, rgs,
+				&v1alpha1.VRGAsyncSpec{}, internalController.DefaultCephFSCSIDriverName,
+				internalController.DefaultVolSyncCopyMethod, false,
+			), testLogger,
 		)
 
 		CreatePVC(appPVCName)
@@ -101,6 +105,7 @@ var _ = Describe("Volumegroupsourcehandler", func() {
 
 				Eventually(func() bool {
 					pvc := &corev1.PersistentVolumeClaim{}
+
 					err := k8sClient.Get(context.Background(), types.NamespacedName{
 						Name:      fmt.Sprintf(cephfscg.RestorePVCinCGNameFormat, "test"),
 						Namespace: "default",
@@ -443,6 +448,7 @@ func CreateVS(name string, vgsname, vgsnamespace string) {
 func UpdateVS(name string) {
 	Eventually(func() error {
 		vs := &snapv1.VolumeSnapshot{}
+
 		err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: "default"}, vs)
 		if err != nil {
 			return err

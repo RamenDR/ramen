@@ -13,7 +13,6 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
 	vsv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,6 +63,11 @@ type VolumeGroupSourceHandler interface {
 	WaitIfPVCTooNew(
 		ctx context.Context,
 	) (bool, error)
+
+	// EnsureApplicationPVCsMounted ensures all application PVCs (for this owner/RGS) that
+	// need to be mounted are mounted (e.g. via mount job) before creating a volume group snapshot.
+	// Returns (true, nil) when all are ready, (false, nil) to requeue, or (_, err) on error.
+	EnsureApplicationPVCsMounted(ctx context.Context) (bool, error)
 }
 
 type RestoredPVC struct {
@@ -83,6 +87,7 @@ type volumeGroupSourceHandler struct {
 	VolumeGroupLabel             *metav1.LabelSelector
 	VolsyncKeySecretName         string
 	DefaultCephFSCSIDriverName   string
+	VSHandler                    *volsync.VSHandler
 	Logger                       logr.Logger
 }
 
@@ -90,6 +95,7 @@ func NewVolumeGroupSourceHandler(
 	client client.Client,
 	rgs *ramendrv1alpha1.ReplicationGroupSource,
 	defaultCephFSCSIDriverName string,
+	vsHandler *volsync.VSHandler,
 	logger logr.Logger,
 ) VolumeGroupSourceHandler {
 	vrgName := rgs.GetLabels()[util.VRGOwnerNameLabel]
@@ -104,6 +110,7 @@ func NewVolumeGroupSourceHandler(
 		VolumeGroupLabel:             rgs.Spec.VolumeGroupSnapshotSource,
 		VolsyncKeySecretName:         volsync.GetVolSyncPSKSecretNameFromVRGName(vrgName),
 		DefaultCephFSCSIDriverName:   defaultCephFSCSIDriverName,
+		VSHandler:                    vsHandler,
 		Logger: logger.WithName("VolumeGroupSourceHandler").
 			WithValues("VolumeGroupSnapshotName", vgsName).
 			WithValues("VolumeGroupSnapshotNamespace", rgs.Namespace),
@@ -117,15 +124,13 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CreateOrUpdateVolumeGroupSnapshot")
 	logger.Info("Create or update volume group snapshot")
 
-	volumeGroupSnapshot := &vgsv1beta1.VolumeGroupSnapshot{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: h.VolumeGroupSnapshotNamespace,
-			Name:      h.VolumeGroupSnapshotName,
-		},
-	}
+	// Create or update VGS using the appropriate API type.
+	volumeGroupSnapshot := util.NewVolumeGroupSnapshot(
+		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace,
+	)
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, h.Client, volumeGroupSnapshot, func() error {
-		if !volumeGroupSnapshot.DeletionTimestamp.IsZero() {
+		if !volumeGroupSnapshot.GetDeletionTimestamp().IsZero() {
 			return fmt.Errorf("the volume group snapshot is being deleted, need to wait")
 		}
 
@@ -138,8 +143,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNameAnnotation, owner.GetName())
 		util.AddAnnotation(volumeGroupSnapshot, volsync.OwnerNamespaceAnnotation, owner.GetNamespace())
 
-		volumeGroupSnapshot.Spec.VolumeGroupSnapshotClassName = &h.VolumeGroupSnapshotClassName
-		volumeGroupSnapshot.Spec.Source.Selector = h.VolumeGroupLabel
+		util.SetVolumeGroupSnapshotClassName(volumeGroupSnapshot, &h.VolumeGroupSnapshotClassName)
+		util.SetVolumeGroupSnapshotSourceSelector(volumeGroupSnapshot, h.VolumeGroupLabel)
 
 		return nil
 	})
@@ -149,7 +154,8 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		return false, err
 	}
 
-	logger.Info("VolumeGroupSnapshot successfully created or updated", "operation", op, "VGSUid", volumeGroupSnapshot.UID)
+	logger.Info("VolumeGroupSnapshot successfully created or updated",
+		"operation", op, "VGSUid", volumeGroupSnapshot.GetUID())
 
 	if op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated {
 		logger.Info("VolumeGroupSnapshot was created, need to wait until it is ready to be used")
@@ -167,10 +173,9 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CleanVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
-	if err := h.Client.Get(ctx, types.NamespacedName{
-		Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace,
-	}, vgs); err != nil {
+	vgs, err := util.GetVolumeGroupSnapshot(ctx, h.Client,
+		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace)
+	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			logger.Info("Volume group snapshot was already deleted")
 
@@ -182,13 +187,13 @@ func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 		return err
 	}
 
-	if vgs.Status != nil {
+	if util.HasStatus(vgs) {
 		volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
 		if err != nil {
 			return err
 		}
 
-		logger.Info("Clean: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+		logger.Info("Clean: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.GetName())
 
 		for idx := range volumeSnapshots {
 			vs := &volumeSnapshots[idx]
@@ -257,36 +262,45 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 	logger := h.Logger.WithName("RestoreFromVolumeGroupSnapshot")
 	logger.Info("Get volume group snapshot")
 
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
-	if err := h.Client.Get(ctx,
-		types.NamespacedName{Name: h.VolumeGroupSnapshotName, Namespace: h.VolumeGroupSnapshotNamespace},
-		vgs); err != nil {
+	vgs, err := util.GetVolumeGroupSnapshot(ctx, h.Client,
+		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get volume group snapshot: %w", err)
 	}
 
-	if vgs.Status == nil || vgs.Status.ReadyToUse == nil ||
-		(vgs.Status.ReadyToUse != nil && !*vgs.Status.ReadyToUse) {
+	if !IsVGSReady(vgs) {
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
-
-	restoredPVCs := []RestoredPVC{}
 
 	volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.Name)
+	logger.Info("Restore: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.GetName())
+
+	return h.restorePVCsFromSnapshots(ctx, vgs, volumeSnapshots, owner, logger)
+}
+
+// restorePVCsFromSnapshots iterates over VolumeSnapshots owned by a VGS, restoring each to a read-only PVC.
+func (h *volumeGroupSourceHandler) restorePVCsFromSnapshots(
+	ctx context.Context,
+	vgs client.Object,
+	volumeSnapshots []vsv1.VolumeSnapshot,
+	owner metav1.Object,
+	logger logr.Logger,
+) ([]RestoredPVC, error) {
+	restoredPVCs := []RestoredPVC{}
 
 	for _, vs := range volumeSnapshots {
 		logger.Info("Get PVCName from volume snapshot",
 			"PVCName", vs.Spec.Source.PersistentVolumeClaimName, "VolumeSnapshotName", vs.Name)
 
 		pvc, err := util.GetPVC(ctx, h.Client,
-			types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vgs.Namespace})
+			types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vgs.GetNamespace()})
 		if err != nil {
 			return nil, fmt.Errorf("failed to get PVC from VGS %s: %w",
-				vgs.Namespace+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
+				vgs.GetNamespace()+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
 		}
 
 		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
@@ -470,16 +484,16 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 
 		originalPVCName := strings.TrimSuffix(restoredPVC.SourcePVCName, util.SuffixForFinalsyncPVC)
 
-		replicationSourceNamepspace := h.VolumeGroupSnapshotNamespace
+		replicationSourceNamespace := h.VolumeGroupSnapshotNamespace
 		replicationSource := &volsyncv1alpha1.ReplicationSource{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      originalPVCName,
-				Namespace: replicationSourceNamepspace,
+				Namespace: replicationSourceNamespace,
 			},
 		}
 
 		rdService, err := h.resolveRDService(originalPVCName, restoredPVC.RestoredPVCName,
-			vrg, replicationSourceNamepspace, isSubmarinerEnabled, logger)
+			vrg, replicationSourceNamespace, isSubmarinerEnabled, logger)
 		if err != nil {
 			return nil, false, err
 		}
@@ -498,6 +512,7 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			replicationSource.Spec.Trigger = &volsyncv1alpha1.ReplicationSourceTriggerSpec{
 				Manual: manual,
 			}
+			replicationSource.Spec.External = nil
 			replicationSource.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 				ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 					CopyMethod: volsyncv1alpha1.CopyMethodDirect,
@@ -505,6 +520,18 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 
 				KeySecret: &h.VolsyncKeySecretName,
 				Address:   &rdService,
+			}
+
+			moverConfigVal := util.GetRSMoverConfig(originalPVCName, replicationSourceNamespace, vrg.Spec.VolSync.MoverConfig)
+			replicationSource.Spec.RsyncTLS.MoverConfig = volsyncv1alpha1.MoverConfig{
+				MoverPodLabels: map[string]string{
+					util.CreatedByRamenLabel: "true",
+				},
+			}
+
+			if moverConfigVal != nil {
+				replicationSource.Spec.RsyncTLS.MoverConfig.MoverSecurityContext = moverConfigVal.MoverSecurityContext
+				replicationSource.Spec.RsyncTLS.MoverConfig.MoverServiceAccount = moverConfigVal.MoverServiceAccount
 			}
 
 			return nil
@@ -515,6 +542,12 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 			return nil, createdOrUpdated, err
 		}
 
+		createdOrUpdated = createdOrUpdated ||
+			(op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated)
+
+		h.VSHandler.EnsureVolSyncMoverJobLabels(originalPVCName, replicationSourceNamespace)
+		h.VSHandler.EnsureVolSyncServiceImportLabels(originalPVCName, replicationSourceNamespace)
+
 		replicationSources = append(replicationSources, &corev1.ObjectReference{
 			APIVersion: replicationSource.APIVersion,
 			Kind:       replicationSource.Kind,
@@ -523,9 +556,6 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateReplicationSourceForRestoredPVC
 		})
 
 		logger.Info("replication source successfully reconciled", "operation", op, "RestoredPVC", restoredPVC.RestoredPVCName)
-
-		createdOrUpdated = createdOrUpdated ||
-			(op == ctrlutil.OperationResultCreated || op == ctrlutil.OperationResultUpdated)
 	}
 
 	logger.Info("Replication sources are successfully created for all restored PVCs")
@@ -541,7 +571,7 @@ func (h *volumeGroupSourceHandler) resolveRDService(
 	logger logr.Logger,
 ) (string, error) {
 	if isSubmarinerEnabled {
-		return getRemoteServiceNameForRDFromPVCName(originalPVCName, rsNS), nil
+		return util.GetRemoteServiceNameForRDFromPVCName(originalPVCName, rsNS), nil
 	}
 
 	logger.Info("Non submariner", "rsspec", vrg.Spec.VolSync.RSSpec)
@@ -661,6 +691,56 @@ func (h *volumeGroupSourceHandler) WaitIfPVCTooNew(
 	h.Logger.Info("All PVCs in the group are old enough", "NumberOfPVCs", len(pvcList.Items))
 
 	return false, nil
+}
+
+func (h *volumeGroupSourceHandler) EnsureApplicationPVCsMounted(
+	ctx context.Context,
+) (bool, error) {
+	if h.VSHandler == nil || h.VolumeGroupLabel == nil {
+		return true, nil
+	}
+
+	cgLabelVal := h.VolumeGroupLabel.MatchLabels[util.ConsistencyGroupLabel]
+	if cgLabelVal == "" {
+		return true, nil
+	}
+
+	pvcList, listErr := util.ListPVCsByCGLabel(ctx, h.Client, h.VolumeGroupSnapshotNamespace,
+		cgLabelVal, h.Logger)
+	if listErr != nil {
+		h.Logger.Error(listErr, "Failed to list application PVCs for mount check")
+
+		return false, listErr
+	}
+
+	for i := range pvcList.Items {
+		pvc := &pvcList.Items[i]
+		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
+				Name:               pvc.Name,
+				Namespace:          pvc.Namespace,
+				ProtectedByVolSync: true,
+			},
+		}
+
+		ready, mountErr := h.VSHandler.EnsureMountJobForUnmountedPVC(&rsSpec)
+		if mountErr != nil {
+			h.Logger.Error(mountErr, "Failed to ensure application PVC is mounted", "pvc", pvc.Namespace+"/"+pvc.Name)
+
+			return false, mountErr
+		}
+
+		if !ready {
+			h.Logger.Info("Waiting for application PVCs to be mounted before first snapshot",
+				"pvc", pvc.Namespace+"/"+pvc.Name)
+
+			return false, nil
+		}
+
+		h.Logger.Info("Application PVC is mounted and ready for snapshot", "pvc", pvc.Namespace+"/"+pvc.Name)
+	}
+
+	return true, nil
 }
 
 func GetPVCfromStorageHandle(

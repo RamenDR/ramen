@@ -92,13 +92,6 @@ func protectedVrgListExpectIncludeOnly(protectedVrgList *ramen.ProtectedVolumeRe
 	Expect(protectedVrgList.Status.Items).To(ConsistOf(vrgsExpected))
 }
 
-func protectedVrgListExpectInclude(protectedVrgList *ramen.ProtectedVolumeReplicationGroupList,
-	vrgsExpected []ramen.VolumeReplicationGroup,
-) {
-	vrgsStatusStateUpdate(protectedVrgList.Status.Items, vrgsExpected)
-	Expect(protectedVrgList.Status.Items).To(ContainElements(vrgsExpected))
-}
-
 func vrgsStatusStateUpdate(vrgsS3, vrgsK8s []ramen.VolumeReplicationGroup) {
 	for i := range vrgsS3 {
 		vrgS3 := &vrgsS3[i]
@@ -147,6 +140,7 @@ var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
 		name0      = namePrefix + "0"
 		name1      = namePrefix + "1"
 	)
+
 	vrg := func(namespaceName, objectName string) ramen.VolumeReplicationGroup {
 		return ramen.VolumeReplicationGroup{
 			TypeMeta: metav1.TypeMeta{
@@ -171,7 +165,9 @@ var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
 		vrg(name1, name0),
 		vrg(name0, name1),
 	}
+
 	const s3ProfileNumber int = 1
+
 	objectStorer := &objectStorers[s3ProfileNumber]
 	vrgNumbersExpected := make(map[int]struct{}, len(vrgs))
 	vrgAnnotationsSet := func(number int, value string) {
@@ -202,7 +198,9 @@ var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
 		protectedVrgListRefresh(protectedVrgList)
 		protectedVrgListValidate(protectedVrgList)
 	}
+
 	var protectedVrgList *ramen.ProtectedVolumeReplicationGroupList
+
 	When("a list is created", func() {
 		It("should set its status's sample time to within a second", func() {
 			protectedVrgList = protectedVrgListCreateAndStatusWait(name0, s3ProfileNumber)
@@ -237,6 +235,7 @@ var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
 			value  = "fsda"
 			value2 = value + "1"
 		)
+
 		When("the 2nd VRG's user metadata annotation is added and list is refreshed", func() {
 			It("should report it", func() {
 				vrgAnnotationsSet(n, value)

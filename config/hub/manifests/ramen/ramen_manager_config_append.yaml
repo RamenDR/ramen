@@ -1,9 +1,0 @@
-drClusterOperator:
-  deploymentAutomationEnabled: true
-  s3SecretDistributionEnabled: true
-  channelName: alpha
-  packageName: ramen-dr-cluster-operator
-  namespaceName: ramen-system
-  catalogSourceName: ramen-catalog
-  catalogSourceNamespaceName: ramen-system
-  clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1

@@ -6,6 +6,8 @@ metadata:
 spec:
   preferredCluster: "east"
   drPolicyRef:
+    apiVersion: ramendr.openshift.io/v1alpha1
+    kind: DRPolicy
     name: drpolicy-sample
   placementRef:
     kind: PlacementRule
@@ -26,3 +28,4 @@ spec:
         includedResources: ["ConfigMap", "Secret"]
       - backupName: everything
         includedResources: ["*"]
+  retainNamespaceSCCAcrossPeers: false

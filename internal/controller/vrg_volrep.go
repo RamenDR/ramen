@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +33,16 @@ import (
 const (
 	// defaultVRCAnnotationKey is the default annotation key for VolumeReplicationClass
 	defaultVRCAnnotationKey = "replication.storage.openshift.io/is-default-class"
+	// dryRunSnapshotLabel is used to label snapshots created for dry-run
+	// so they can be easily identified and cleaned up when dry-run is reverted or promoted to a real failover.
+	dryRunSnapshotLabel = "ramendr.openshift.io/dry-run-snapshot"
+	// dryRunVRGLabel is used to identify which VRG the dry-run snapshot belongs to
+	dryRunVRGLabel = "ramendr.openshift.io/dry-run-vrg"
+
+	// destinationVolumeHandleAnnotation is used to annotate a PV with the destination
+	// volume handle before uploading to S3. During restore, this annotation is read
+	// and the PV's volumeHandle is replaced with it.
+	destinationVolumeHandleAnnotation = "ramendr.openshift.io/destination-volume-handle"
 )
 
 //nolint:gosec
@@ -59,9 +71,52 @@ func logWithPvcName(log logr.Logger, pvc *corev1.PersistentVolumeClaim) logr.Log
 
 // reconcileVolRepsAsPrimary creates/updates VolumeReplication CR for each pvc
 // from pvcList. If it fails (even for one pvc), then requeue is set to true.
-//
-//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) reconcileVolRepsAsPrimary() {
+	// Cleanup dry-run snapshots when promoting to real failover (DryRun: true → false)
+	if v.shouldCleanupDryRunSnapshots() {
+		v.log.Info("Promoting to real failover, cleaning up dry-run snapshots")
+
+		if err := cleanupDryRunSnapshots(v.ctx, v.reconciler.Client, v.log, v.instance, v.volRepPVCs); err != nil {
+			v.log.Error(err, "Failed to cleanup dry-run snapshots")
+			v.requeue()
+
+			return
+		}
+
+		v.log.Info("Dry-run snapshots cleaned up successfully, proceeding with real failover")
+	}
+
+	// Take snapshots only when all conditions are met:
+	// 1. ReplicationState is Primary
+	// 2. DryRun is true
+	// 3. Action is Failover
+	if v.instance.Status.State == ramendrv1alpha1.PrimaryState && v.shouldTakeDryRunSnapshots() {
+		v.log.Info("Dry-run conditions met, ensuring snapshots",
+			"replicationState", v.instance.Spec.ReplicationState,
+			"dryRun", v.instance.Spec.DryRun,
+			"action", v.instance.Spec.Action)
+
+		if err := v.ensureSnapshotsForDryRun(); err != nil {
+			v.log.Error(err, "Failed to take snapshots during dry-run")
+			v.requeue()
+
+			return
+		}
+
+		v.log.Info("Dry-run snapshots taken successfully")
+	}
+
+	groupPVCs := v.processPVCsAsPrimary()
+
+	v.reconcileVolGroupRepsAsPrimary(groupPVCs)
+}
+
+// processPVCsAsPrimary processes all PVCs for volume replication as primary,
+// grouping CG-enabled PVCs and handling individual VR for others.
+// Returns a map of grouped PVCs for volume group replication.
+//
+//nolint:gocognit,cyclop,funlen
+func (v *VRGInstance) processPVCsAsPrimary() map[types.NamespacedName][]*corev1.PersistentVolumeClaim {
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
 	v.log.Info(fmt.Sprintf("Reconciling VolRep as Primary. %d VolRepPVCs", len(v.volRepPVCs)))
@@ -93,10 +148,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		}
 
 		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			v.addPVCToGroupPVCs(pvc, cg, groupPVCs)
 
 			continue
 		}
@@ -110,6 +162,18 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		if err != nil {
 			log.Info("Failure in getting or creating VolumeReplication resource for PersistentVolumeClaim",
 				"errorValue", err)
+
+			continue
+		}
+
+		// Annotate the PV with the destination volume handle if available from VR status.
+		// This allows the secondary cluster to restore the PV with the correct volume handle
+		// when source and destination volume IDs differ.
+		if err := v.annotateWithDestinationVolumeHandleForVolRep(pvc); err != nil {
+			log.Error(err, fmt.Sprintf("failed to annotate PV of PVC %s with destination volume handle",
+				pvc.Name))
+
+			v.requeue()
 
 			continue
 		}
@@ -131,7 +195,7 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 		log.Info("Successfully processed VolumeReplication for PersistentVolumeClaim")
 	}
 
-	v.reconcileVolGroupRepsAsPrimary(groupPVCs)
+	return groupPVCs
 }
 
 // reconcileVolRepsAsSecondary reconciles VolumeReplication resources for the VRG as secondary
@@ -139,6 +203,20 @@ func (v *VRGInstance) reconcileVolRepsAsPrimary() {
 //nolint:gocognit,cyclop,funlen
 func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	requeue := false
+
+	// When transitioning to Secondary after a dry-run revert, cleanup snapshots first
+	// OR when staying Primary but promoting from test to real failover
+	// This happens when user sets spec.dryRun=false or removes dryRun field from DRPC spec
+	// The VRG must delete all dry-run snapshots BEFORE proceeding
+	if v.shouldCleanupDryRunSnapshots() {
+		if err := cleanupDryRunSnapshots(v.ctx, v.reconciler.Client, v.log, v.instance, v.volRepPVCs); err != nil {
+			v.log.Error(err, "Failed to cleanup dry-run snapshots")
+
+			return true // Requeue to retry cleanup
+		}
+
+		v.log.Info("Dry-run snapshots cleaned up successfully, proceeding with operation")
+	}
 
 	groupPVCs := make(map[types.NamespacedName][]*corev1.PersistentVolumeClaim)
 
@@ -148,64 +226,7 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 		pvc := &v.volRepPVCs[idx]
 		log := logWithPvcName(v.log, pvc)
 
-		// Potentially for PVCs that are not deleted, e.g Failover of STS without required auto delete options
-		if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
-			log.Info("pvc does not contain VR protection finalizer. Skipping it")
-
-			v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
-
-			continue
-		}
-
-		if err := v.updateProtectedPVCs(pvc); err != nil {
-			requeue = true
-
-			continue
-		}
-
-		requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
-		if requeueResult {
-			requeue = true
-
-			continue
-		}
-
-		if skip {
-			continue
-		}
-
-		if cg, ok := v.isCGEnabled(pvc); ok {
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
-
-			continue
-		}
-
-		vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
-		if vrMissing || requeueResult {
-			// TODO: set requeue only if required, remove PVC from status?
-			// - Will it hamper determination of secondary completion?
-			requeue = true
-
-			continue
-		}
-
-		// If VR is not ready as Secondary, we can ignore it here, either a future VR change or the requeue would
-		// reconcile it to the desired state.
-		requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
-		if requeueResult {
-			requeue = true
-
-			continue
-		}
-
-		if skip || !ready {
-			continue
-		}
-
-		if v.undoPVCFinalizersAndPVRetention(pvc, log) {
+		if v.processPVCAsSecondary(pvc, log, groupPVCs) {
 			requeue = true
 		}
 	}
@@ -213,6 +234,59 @@ func (v *VRGInstance) reconcileVolRepsAsSecondary() bool {
 	v.reconcileVolGroupRepsAsSecondary(&requeue, groupPVCs)
 
 	return requeue
+}
+
+func (v *VRGInstance) processPVCAsSecondary(
+	pvc *corev1.PersistentVolumeClaim,
+	log logr.Logger,
+	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
+) bool {
+	if !slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
+		log.Info("pvc does not contain VR protection finalizer. Skipping it")
+		v.pvcStatusDeleteIfPresent(pvc.Namespace, pvc.Name, log)
+
+		return false
+	}
+
+	if err := v.updateProtectedPVCs(pvc); err != nil {
+		return true
+	}
+
+	requeueResult, skip := v.preparePVCForVRProtection(pvc, log)
+	if requeueResult || skip {
+		return requeueResult
+	}
+
+	if cg, ok := v.isCGEnabled(pvc); ok {
+		v.addPVCToGroupPVCs(pvc, cg, groupPVCs)
+
+		return false
+	}
+
+	return v.reconcilePVCVRAsSecondary(pvc, log)
+}
+
+func (v *VRGInstance) addPVCToGroupPVCs(
+	pvc *corev1.PersistentVolumeClaim,
+	cg string,
+	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
+) {
+	vgrKey := v.vgrNamespacedName(cg, pvc.Namespace)
+	groupPVCs[vgrKey] = append(groupPVCs[vgrKey], pvc)
+}
+
+func (v *VRGInstance) reconcilePVCVRAsSecondary(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	vrMissing, requeueResult := v.reconcileMissingVR(pvc, log)
+	if vrMissing || requeueResult {
+		return true
+	}
+
+	requeueResult, ready, skip := v.reconcileVRAsSecondary(pvc, log)
+	if requeueResult || skip || !ready {
+		return requeueResult
+	}
+
+	return v.undoPVCFinalizersAndPVRetention(pvc, log)
 }
 
 // reconcileVRAsSecondary checks for PVC readiness to move to Secondary and subsequently updates the VR
@@ -638,11 +712,17 @@ func (v *VRGInstance) isPVCResizeCompleted(pvc *corev1.PersistentVolumeClaim) bo
 	requested := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 	actual := pvc.Status.Capacity[corev1.ResourceStorage]
 
-	return requested.Cmp(actual) == 0
+	return actual.Cmp(requested) >= 0
 }
 
 // Upload PV to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim, log logr.Logger) (err error) {
+	if v.instance.Spec.DryRun {
+		log.Info("Skipping upload of PV object to S3 store(s) as VRG is in dry-run mode")
+
+		return nil
+	}
+
 	if v.isArchivedAlready(pvc, log) {
 		msg := fmt.Sprintf("PV cluster data already protected for PVC %s", pvc.Name)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
@@ -651,23 +731,13 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		return nil
 	}
 
-	// If the result of above check is false, it symbolizes change in hash. To ensure PVC resize is complete,
-	// IOW underlying PV is also resized, pvc spec is compared with pvc status and wait till it is achieved
-	// and then upload to S3.
 	if !v.isPVCResizeCompleted(pvc) {
 		return fmt.Errorf("resize is in progress for pvc %s", pvc.Name)
 	}
 
-	// Error out if VRG has no S3 profiles
 	numProfilesToUpload := len(v.instance.Spec.S3Profiles)
 	if numProfilesToUpload == 0 {
-		msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
-		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
-			VRGConditionReasonUploadError, msg)
-		v.log.Info(msg)
-
-		return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles",
-			pvc.Name)
+		return v.handleNoS3ProfilesError(pvc)
 	}
 
 	s3Profiles, err := v.UploadPVandPVCtoS3Stores(pvc, log)
@@ -678,7 +748,6 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	numProfilesUploaded := len(s3Profiles)
 
 	if numProfilesUploaded != numProfilesToUpload {
-		// Merely defensive as we don't expect to reach here
 		msg := fmt.Sprintf("uploaded PV/PVC cluster data to only  %d of %d S3 profile(s): %v",
 			numProfilesUploaded, numProfilesToUpload, s3Profiles)
 		v.log.Info(msg)
@@ -705,7 +774,110 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 	return nil
 }
 
-func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim) error {
+func (v *VRGInstance) handleNoS3ProfilesError(pvc *corev1.PersistentVolumeClaim) error {
+	msg := "Error uploading PV cluster data because VRG spec has no S3 profiles"
+	v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
+		VRGConditionReasonUploadError, msg)
+	v.log.Info(msg)
+
+	return fmt.Errorf("error uploading cluster data of PV %s because VRG spec has no S3 profiles", pvc.Name)
+}
+
+// destinationInfoAvailableOrSkip inspects VRGConditionTypeDestinationInfoAvailable. If the condition is
+// missing, it logs and returns (false, nil) so the caller can skip without error. If the condition
+// is not True, it returns an error. If True, it returns (true, nil).
+func (v *VRGInstance) destinationInfoAvailableOrSkip(
+	conditions []metav1.Condition,
+	replicationResourceDescription string,
+	pvName string,
+) (available bool, err error) {
+	destInfoAvailCondition := rmnutil.FindCondition(conditions, VRGConditionTypeDestinationInfoAvailable)
+	if destInfoAvailCondition == nil {
+		v.log.Info(fmt.Sprintf("no VRGConditionTypeDestinationInfoAvailable condition found on %s for PV %s",
+			replicationResourceDescription, pvName))
+
+		return false, nil
+	}
+
+	if destInfoAvailCondition.Status != metav1.ConditionTrue {
+		v.log.Info(fmt.Sprintf("VRGConditionTypeDestinationInfoAvailable != True on %s for PV %s",
+			replicationResourceDescription, pvName))
+
+		return false, fmt.Errorf("destination info is not available for %s", replicationResourceDescription)
+	}
+
+	return true, nil
+}
+
+// applyDestinationVolumeHandleToPV sets destinationVolumeHandleAnnotation on pv when it differs
+// and persists the change. destinationVolumeHandle must be non-empty.
+// Clearing the archived annotation forces a re-upload to S3 in the same reconcile:
+// annotation-only PV updates do not bump Generation, so isArchivedAlready would otherwise
+// skip upload of the updated PV.
+func (v *VRGInstance) applyDestinationVolumeHandleToPV(
+	pv *corev1.PersistentVolume, destinationVolumeHandle string,
+) error {
+	if pv.Annotations == nil {
+		pv.Annotations = make(map[string]string)
+	}
+
+	if pv.Annotations[destinationVolumeHandleAnnotation] == destinationVolumeHandle {
+		return nil
+	}
+
+	pv.Annotations[destinationVolumeHandleAnnotation] = destinationVolumeHandle
+	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
+	v.log.Info(fmt.Sprintf("annotated PV %s with DestinationVolumeID %s", pv.Name, destinationVolumeHandle))
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		return fmt.Errorf("failed to update PersistentVolume %s with destination volume handle annotation: %w", pv.Name, err)
+	}
+
+	return nil
+}
+
+// annotateWithDestinationVolumeHandleForVolRep looks up the VolumeReplication for the PVC
+// and annotates the PV with the destination volume handle if available.
+func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolRep(pvc *corev1.PersistentVolumeClaim) error {
+	// Metro DR (Sync mode) doesn't use VolumeReplication
+	if v.instance.Spec.Sync != nil {
+		return nil
+	}
+
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		return fmt.Errorf("failed to get PV for PVC %s: %w", pvc.Name, err)
+	}
+
+	volRep := &volrep.VolumeReplication{}
+	vrNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+	if err := v.reconciler.Get(v.ctx, vrNamespacedName, volRep); err != nil {
+		v.log.Info(fmt.Sprintf("failed to get VR %s for PV %s err %s", pvc.Name, pv.Name, err))
+
+		return err
+	}
+
+	available, err := v.destinationInfoAvailableOrSkip(volRep.Status.Conditions,
+		fmt.Sprintf("VR %s", volRep.Name), pv.Name)
+	if err != nil {
+		return err
+	}
+
+	if !available {
+		return nil
+	}
+
+	if volRep.Status.DestinationVolumeID == "" {
+		return fmt.Errorf("destination volume ID is empty for VR %s", volRep.Name)
+	}
+
+	return v.applyDestinationVolumeHandleToPV(&pv, volRep.Status.DestinationVolumeID)
+}
+
+func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.PersistentVolumeClaim,
+	pv *corev1.PersistentVolume,
+) error {
 	if s3ProfileName == "" {
 		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for PVC %s", pvc.Name)
 	}
@@ -715,13 +887,7 @@ func (v *VRGInstance) UploadPVandPVCtoS3Store(s3ProfileName string, pvc *corev1.
 		return fmt.Errorf("error getting object store, failed to protect cluster data for PVC %s, %w", pvc.Name, err)
 	}
 
-	pv, err := v.getPVFromPVC(pvc)
-	if err != nil {
-		return fmt.Errorf("error getting PV for PVC, failed to protect cluster data for PVC %s to s3Profile %s, %w",
-			pvc.Name, s3ProfileName, err)
-	}
-
-	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, &pv, pvc)
+	return v.UploadPVAndPVCtoS3(s3ProfileName, objectStore, pv, pvc)
 }
 
 func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore ObjectStorer,
@@ -757,10 +923,18 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) ([]string, error) {
+	// Fetch PV once and upload the same object to every profile so buckets cannot
+	// diverge.
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		return nil, fmt.Errorf("error getting PV for PVC, failed to protect cluster data for PVC %s, %w",
+			pvc.Name, err)
+	}
+
 	succeededProfiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		err := v.UploadPVandPVCtoS3Store(s3ProfileName, pvc)
+		err := v.UploadPVandPVCtoS3Store(s3ProfileName, pvc, &pv)
 		if err != nil {
 			v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonUploadError, err.Error())
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
@@ -780,8 +954,10 @@ func (v *VRGInstance) getPVFromPVC(pvc *corev1.PersistentVolumeClaim) (corev1.Pe
 	volumeName := pvc.Spec.VolumeName
 	pvObjectKey := client.ObjectKey{Name: volumeName}
 
-	// Get PV from k8s
-	if err := v.reconciler.Get(v.ctx, pvObjectKey, &pv); err != nil {
+	// Use APIReader, not the informer cache. Destination-handle annotation is applied via
+	// Update immediately before S3 upload; a cached Get can return the pre-Update PV and
+	// upload an object missing ramendr.openshift.io/destination-volume-handle.
+	if err := v.reconciler.APIReader.Get(v.ctx, pvObjectKey, &pv); err != nil {
 		return pv, fmt.Errorf("failed to get PV %v from PVC %v, %w",
 			pvObjectKey, client.ObjectKeyFromObject(pvc), err)
 	}
@@ -829,6 +1005,7 @@ func (v *VRGInstance) cacheObjectStorer(s3ProfileName string, objectStore Object
 // TODO: Currently removes VR requests unconditionally, needs to ensure it is managed by VRG
 func (v *VRGInstance) reconcileVRsForDeletion() {
 	v.pvcsUnprotectVolRep(v.volRepPVCs)
+	v.pvcsUnprotectVolSync(v.volSyncPVCs)
 }
 
 func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
@@ -920,10 +1097,7 @@ func (v *VRGInstance) pvcsUnprotectVolRep(pvcs []corev1.PersistentVolumeClaim) {
 				cg = grID
 			}
 
-			vgrName := rmnutil.CreateVGRName(cg, v.instance.Name)
-			vgrNamespacedName := types.NamespacedName{Name: vgrName, Namespace: pvc.Namespace}
-
-			groupPVCs[vgrNamespacedName] = append(groupPVCs[vgrNamespacedName], pvc)
+			v.addPVCToGroupPVCs(pvc, cg, groupPVCs)
 
 			continue
 		}
@@ -1158,7 +1332,7 @@ func (v *VRGInstance) processVRAsPrimary(vrNamespacedName types.NamespacedName,
 		msg := "PVC in the VolumeReplicationGroup is ready for use"
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(pvc, nil)
 
 		return false, true, nil
 	}
@@ -1191,7 +1365,7 @@ func (v *VRGInstance) processVRAsSecondary(vrNamespacedName types.NamespacedName
 		v.updatePVCDataReadyCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(vrNamespacedName.Namespace, vrNamespacedName.Name, VRGConditionReasonDataProtected,
 			msg)
-		v.updatePVCLastSyncCounters(vrNamespacedName.Namespace, vrNamespacedName.Name, nil)
+		v.updatePVCLastSyncCounters(pvc, nil)
 
 		return false, true, nil
 	}
@@ -1258,14 +1432,43 @@ func (v *VRGInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	return v.updateVR(pvc, volRep, state, log)
 }
 
+// autoResync determines if automatic resynchronization should be enabled for VolumeReplication.
+// It returns true when:
+//   - The replication state is Secondary, AND
+//   - Either: test failover annotation is present (includes cleanup phase)
+//   - Or: VRG action is Failover
 func (v *VRGInstance) autoResync(state volrep.ReplicationState) bool {
 	if state != volrep.Secondary {
+		v.log.Info("AutoResync disabled: replication state is not Secondary",
+			"state", state)
+
 		return false
 	}
 
+	// Check test failover annotation FIRST (before action check)
+	// This ensures AutoResync is enabled during test failover and cleanup,
+	// even when action is restored to Relocate during cleanup
+	isTestFailover := v.instance.GetAnnotations()[DRPCTestFailoverDryRunAnnotation] ==
+		DRPCTestFailoverDryRunAnnotationValueTrue
+
+	if isTestFailover {
+		v.log.Info("AutoResync enabled for test failover/cleanup",
+			"action", v.instance.Spec.Action,
+			"reason", "test failover annotation present")
+
+		return true
+	}
+
+	// Normal behavior: only Failover action enables AutoResync
 	if v.instance.Spec.Action != ramendrv1alpha1.VRGActionFailover {
+		v.log.Info("AutoResync disabled: action is not Failover",
+			"action", v.instance.Spec.Action)
+
 		return false
 	}
+
+	v.log.Info("AutoResync enabled for failover",
+		"action", v.instance.Spec.Action)
 
 	return true
 }
@@ -1493,9 +1696,6 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 
 		return nil, fmt.Errorf("no %s found to match provisioner and schedule", objType)
 	case 1:
-		v.log.Info(fmt.Sprintf("Found %s that matches provisioner and schedule %s/%s", objType,
-			storageClass.Provisioner, v.instance.Spec.Async.SchedulingInterval))
-
 		return matchingReplicationClassList[0], nil
 	}
 
@@ -1553,6 +1753,25 @@ func (v *VRGInstance) getStorageClassFromSCName(scName *string) (*storagev1.Stor
 	return storageClass, nil
 }
 
+// validateVolumeAttributeClassExists confirms that the named VolumeAttributesClass resource
+// exists on this cluster, using an instance cache if available, or fetching it from the API
+// server and storing it in an instance cache before returning.
+func (v *VRGInstance) validateVolumeAttributeClassExists(vacName *string) error {
+	if _, ok := v.vacCache[*vacName]; ok {
+		return nil
+	}
+
+	vac := &storagev1.VolumeAttributesClass{}
+	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *vacName}, vac); err != nil {
+		return fmt.Errorf("failed to get the volumeattributesclass with name %s (%w)",
+			*vacName, err)
+	}
+
+	v.vacCache[*vacName] = vac
+
+	return nil
+}
+
 // getStorageClass inspects the PVCs being protected by this VRG instance for the passed in namespacedName, and
 // returns its corresponding StorageClass resource from an instance cache if available, or fetches it from the API
 // server and stores it in an instance cache before returning the StorageClass
@@ -1572,6 +1791,13 @@ func (v *VRGInstance) getStorageClass(pvc *corev1.PersistentVolumeClaim) (*stora
 func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep client.Object,
 	status *volrep.VolumeReplicationStatus,
 ) bool {
+	// For global VGRs with schedulingInterval "0m", the storage provider manages
+	// replication externally and does not update observedGeneration. Skip the
+	// generation check and validate based on VGR state alone.
+	if v.hasGlobalVGRLabel() && v.validateGlobalVGRStatus(volRep, pvcs, status, v.instance.Spec.ReplicationState) {
+		return true
+	}
+
 	// When the generation in the status is updated, VRG would get a reconcile
 	// as it owns VolumeReplication resource.
 	if volRep.GetGeneration() != status.ObservedGeneration {
@@ -1618,6 +1844,8 @@ func (v *VRGInstance) checkVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep
 //     deleted safely.
 //   - Primary VRG: Validated condition is checked, and if successful the Completed conditions is also checked.
 //   - Secondary VRG: Completed, Degraded and Resyncing conditions are checked and ensured healthy.
+//
+//nolint:gocognit,cyclop
 func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, volRep client.Object,
 	state ramendrv1alpha1.ReplicationState, status *volrep.VolumeReplicationStatus,
 ) bool {
@@ -1656,8 +1884,11 @@ func (v *VRGInstance) validateVRStatus(pvcs []*corev1.PersistentVolumeClaim, vol
 
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, msg)
-		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, status)
+		v.updatePVCLastSyncCounters(pvc, status)
 	}
+
+	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+	v.checkAndUpdateReplicationHealthy(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("VolumeReplication resource %s/%s is ready for use", volRep.GetName(),
 		volRep.GetNamespace()))
@@ -1757,7 +1988,7 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvcs []*corev1.Pers
 	for idx := range pvcs {
 		pvc := pvcs[idx]
 
-		v.updatePVCLastSyncCounters(pvc.Namespace, pvc.Name, nil)
+		v.updatePVCLastSyncCounters(pvc, nil)
 	}
 
 	conditionMet, _, _ := isVRConditionMet(volRep, status, volrep.ConditionResyncing, metav1.ConditionTrue)
@@ -1791,6 +2022,9 @@ func (v *VRGInstance) validateAdditionalVRStatusForSecondary(pvcs []*corev1.Pers
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 	}
+
+	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+	v.checkAndUpdateReplicationHealthy(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
@@ -1862,6 +2096,9 @@ func (v *VRGInstance) checkResyncCompletionAsSecondary(pvcs []*corev1.Persistent
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicated, msg)
 		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonDataProtected, msg)
 	}
+
+	v.checkAndUpdateDestinationInfoAvailable(pvcs, status)
+	v.checkAndUpdateReplicationHealthy(pvcs, status)
 
 	v.log.Info(fmt.Sprintf("%s (VolRep %s/%s)", msg, volRep.GetName(), volRep.GetNamespace()))
 
@@ -2022,8 +2259,113 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 	}
 }
 
-func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, status *volrep.VolumeReplicationStatus) {
+func (v *VRGInstance) updatePVCDestinationInfoAvailableCondition(pvcNamespace, pvcName, reason, message string) {
 	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
+	}
+
+	setPVCDestinationInfoAvailableCondition(protectedPVC, reason, message, v.instance.Generation)
+}
+
+func setPVCDestinationInfoAvailableCondition(protectedPVC *ramendrv1alpha1.ProtectedPVC, reason, message string,
+	observedGeneration int64,
+) {
+	status := metav1.ConditionFalse
+	if reason == VRGConditionReasonReady {
+		status = metav1.ConditionTrue
+	}
+
+	rmnutil.SetStatusCondition(&protectedPVC.Conditions, metav1.Condition{
+		Type:               VRGConditionTypeDestinationInfoAvailable,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	})
+}
+
+// checkAndUpdateDestinationInfoAvailable checks the VR's DestinationInfoAvailable condition
+// and sets the per-PVC condition accordingly. If the VR does not report this condition, no
+// per-PVC condition is set (absent = not applicable).
+func (v *VRGInstance) checkAndUpdateDestinationInfoAvailable(
+	pvcs []*corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus,
+) {
+	destInfoCond := rmnutil.FindCondition(status.Conditions, VRGConditionTypeDestinationInfoAvailable)
+	if destInfoCond == nil {
+		return
+	}
+
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		if destInfoCond.Status == metav1.ConditionTrue {
+			v.updatePVCDestinationInfoAvailableCondition(pvc.Namespace, pvc.Name,
+				VRGConditionReasonReady, "VolumeReplication destination info is available")
+		} else {
+			v.updatePVCDestinationInfoAvailableCondition(pvc.Namespace, pvc.Name,
+				VRGConditionReasonProgressing, "VolumeReplication destination info not yet available")
+		}
+	}
+}
+
+func (v *VRGInstance) updatePVCReplicationHealthyCondition(pvcNamespace, pvcName string,
+	status metav1.ConditionStatus, reason, message string,
+) {
+	protectedPVC := v.findProtectedPVC(pvcNamespace, pvcName)
+	if protectedPVC == nil {
+		protectedPVC = v.addProtectedPVC(pvcNamespace, pvcName)
+	}
+
+	rmnutil.SetStatusCondition(&protectedPVC.Conditions, metav1.Condition{
+		Type:               VRGConditionTypeReplicationHealthy,
+		Status:             status,
+		ObservedGeneration: v.instance.Generation,
+		Reason:             reason,
+		Message:            message,
+	})
+}
+
+// checkAndUpdateReplicationHealthy copies the VR Replicating condition onto each PVC
+// so a broken mirror is visible on the VRG. Nothing is set if the VR has no Replicating
+// condition.
+func (v *VRGInstance) checkAndUpdateReplicationHealthy(
+	pvcs []*corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus,
+) {
+	replicatingCond := rmnutil.FindCondition(status.Conditions, volrep.ConditionReplicating)
+	if replicatingCond == nil {
+		return
+	}
+
+	reason := VRGConditionReasonErrorUnknown
+
+	switch replicatingCond.Status {
+	case metav1.ConditionTrue:
+		reason = VRGConditionReasonReady
+	case metav1.ConditionFalse:
+		reason = VRGConditionReasonError
+	case metav1.ConditionUnknown:
+		reason = VRGConditionReasonErrorUnknown
+	}
+
+	message := replicatingCond.Message
+	if message == "" {
+		message = "VolumeReplication Replicating condition has no message"
+	}
+
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		v.updatePVCReplicationHealthyCondition(pvc.Namespace, pvc.Name, replicatingCond.Status, reason, message)
+	}
+}
+
+func (v *VRGInstance) updatePVCLastSyncCounters(pvc *corev1.PersistentVolumeClaim,
+	status *volrep.VolumeReplicationStatus,
+) {
+	protectedPVC := v.findProtectedPVC(pvc.Namespace, pvc.Name)
 	if protectedPVC == nil {
 		return
 	}
@@ -2036,6 +2378,13 @@ func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, st
 			protectedPVC.LastSyncBytes = nil
 		}
 	} else {
+		// Check if CG is enabled for this PVC
+		_, cgEnabled := v.isCGEnabled(pvc)
+
+		if cgEnabled && !v.isPVCSyncedInVGR(pvc, protectedPVC, status.LastSyncTime) {
+			return
+		}
+
 		protectedPVC.LastSyncTime = status.LastSyncTime
 		protectedPVC.LastSyncDuration = status.LastSyncDuration
 
@@ -2043,6 +2392,88 @@ func (v *VRGInstance) updatePVCLastSyncCounters(pvcNamespace, pvcName string, st
 			protectedPVC.LastSyncBytes = status.LastSyncBytes
 		}
 	}
+}
+
+// isPVCSyncedInVGR checks if a PVC should receive sync time updates from VGR.
+// It ensures:
+//  1. The PVC is in the grouped list (storage backend included it)
+//  2. The VGR sync time is newer than the PVC creation time (sync actually included this PVC)
+//  3. If the PVC has never been synced, the VGR sync time is not already recorded on
+//     other group members (the PVC joined after that sync completed)
+func (v *VRGInstance) isPVCSyncedInVGR(pvc *corev1.PersistentVolumeClaim,
+	protectedPVC *ramendrv1alpha1.ProtectedPVC,
+	vgrSyncTime *metav1.Time,
+) bool {
+	if vgrSyncTime == nil {
+		return true
+	}
+
+	if !v.pvcInGroupedList(pvc.Name) {
+		v.log.Info("Skipping sync time update for PVC not in VGR grouped list",
+			"pvc", pvc.Name)
+
+		return false
+	}
+
+	if !vgrSyncTime.After(pvc.CreationTimestamp.Time) {
+		v.log.Info("Skipping sync time update - VGR sync time is not after PVC creation",
+			"pvc", pvc.Name,
+			"pvcCreationTime", pvc.CreationTimestamp,
+			"vgrSyncTime", vgrSyncTime)
+
+		return false
+	}
+
+	if protectedPVC.LastSyncTime == nil &&
+		v.groupAlreadyHasThisSyncTime(pvc.Name, vgrSyncTime) {
+		v.log.Info("Skipping sync time update - PVC joined after this VGR sync time",
+			"pvc", pvc.Name,
+			"vgrSyncTime", vgrSyncTime)
+
+		return false
+	}
+
+	return true
+}
+
+func (v *VRGInstance) pvcInGroupedList(pvcName string) bool {
+	for _, group := range v.instance.Status.PVCGroups {
+		if slices.Contains(group.Grouped, pvcName) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// groupAlreadyHasThisSyncTime reports whether another PVC in the same Groups.Grouped
+// entry already recorded vgrSyncTime at the start of this reconcile. That means the
+// sync completed before this PVC joined. savedInstanceStatus is used so LastSyncTime
+// updates earlier in this reconcile cannot hide a later, real group sync from a
+// newly joined PVC.
+func (v *VRGInstance) groupAlreadyHasThisSyncTime(pvcName string, vgrSyncTime *metav1.Time) bool {
+	if vgrSyncTime == nil {
+		return false
+	}
+
+	for i := range v.savedInstanceStatus.ProtectedPVCs {
+		otherPVC := &v.savedInstanceStatus.ProtectedPVCs[i]
+		if otherPVC.Name == pvcName || otherPVC.LastSyncTime == nil {
+			continue
+		}
+
+		if !otherPVC.LastSyncTime.Equal(vgrSyncTime) {
+			continue
+		}
+
+		for _, group := range v.instance.Status.PVCGroups {
+			if slices.Contains(group.Grouped, pvcName) && slices.Contains(group.Grouped, otherPVC.Name) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // ensureVRDeletedFromAPIServer adds an additional step to ensure that we wait for volumereplication deletion
@@ -2238,7 +2669,17 @@ func (v *VRGInstance) restorePVCsFromObjectStore(objectStore ObjectStorer, s3Pro
 
 	v.volRepPVCs = append(v.volRepPVCs, pvcList...)
 
-	return restoreClusterDataObjects(v, pvcList, "PVC", cleanupPVCForRestore, v.validateExistingPVC)
+	return restoreClusterDataObjects(v, pvcList, "PVC",
+		func(pvc *corev1.PersistentVolumeClaim) error {
+			if err := cleanupPVCForRestore(pvc); err != nil {
+				return err
+			}
+
+			v.validateVolumeAttributesClassForRestore(pvc)
+
+			return nil
+		},
+		v.validateExistingPVC)
 }
 
 // checkPVClusterData returns an error if there are PVs in the input pvList
@@ -2281,6 +2722,36 @@ func (v *VRGInstance) checkPVClusterData(pvList []corev1.PersistentVolume) error
 	return nil
 }
 
+func handleExistingObject[
+	ObjectType any,
+	ClientObject interface {
+		*ObjectType
+		client.Object
+	},
+](
+	v *VRGInstance,
+	object *ObjectType, obj ClientObject,
+	validateExistingObject func(*ObjectType) error,
+) bool {
+	if err := validateExistingObject(object); err != nil {
+		v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
+
+		return false
+	}
+
+	// Valid object exists and it is managed by Ramen
+	// If it's a PVC, update it; otherwise just count it as restored
+	if pvc, ok := any(obj).(*corev1.PersistentVolumeClaim); ok {
+		if err := v.reconciler.Update(v.ctx, pvc); err != nil {
+			v.log.Info("Failed to update existing PVC", "name", pvc.GetName(), "error", err.Error())
+
+			return false
+		}
+	}
+
+	return true
+}
+
 func restoreClusterDataObjects[
 	ObjectType any,
 	ClientObject interface {
@@ -2311,15 +2782,9 @@ func restoreClusterDataObjects[
 
 		if err := v.reconciler.Create(v.ctx, obj); err != nil {
 			if k8serrors.IsAlreadyExists(err) {
-				err := validateExistingObject(object)
-				if err != nil {
-					v.log.Info("Object exists. Ignoring and moving to next object", "error", err.Error())
-					// ignoring any errors
-					continue
+				if handleExistingObject(v, object, obj, validateExistingObject) {
+					numRestored++
 				}
-
-				// Valid PVC exists and it is managed by Ramen
-				numRestored++
 
 				continue
 			}
@@ -2458,17 +2923,14 @@ func (v *VRGInstance) pvMatches(x, y *corev1.PersistentVolume) bool {
 		v.log.Info("PVs Name mismatch", "x", x.GetName(), "y", y.GetName())
 
 		return false
-	case x.Spec.PersistentVolumeSource.CSI == nil || y.Spec.PersistentVolumeSource.CSI == nil:
-		v.log.Info("PV(s) not managed by a CSI driver", "x", x.Spec.PersistentVolumeSource.CSI,
-			"y", y.Spec.PersistentVolumeSource.CSI)
-
-		return false
-	case x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
+	case x.Spec.PersistentVolumeSource.CSI != nil && y.Spec.PersistentVolumeSource.CSI != nil &&
+		x.Spec.PersistentVolumeSource.CSI.Driver != y.Spec.PersistentVolumeSource.CSI.Driver:
 		v.log.Info("PVs CSI drivers mismatch", "x", x.Spec.PersistentVolumeSource.CSI.Driver,
 			"y", y.Spec.PersistentVolumeSource.CSI.Driver)
 
 		return false
-	case x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
+	case x.Spec.PersistentVolumeSource.CSI != nil && y.Spec.PersistentVolumeSource.CSI != nil &&
+		x.Spec.PersistentVolumeSource.CSI.FSType != y.Spec.PersistentVolumeSource.CSI.FSType:
 		v.log.Info("PVs CSI FSType mismatch", "x", x.Spec.PersistentVolumeSource.CSI.FSType,
 			"y", y.Spec.PersistentVolumeSource.CSI.FSType)
 
@@ -2521,12 +2983,7 @@ func secretsFromSC(params map[string]string,
 	return &secretRef, exists
 }
 
-func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume) error {
-	sc, err := v.getStorageClassFromSCName(&pv.Spec.StorageClassName)
-	if err != nil {
-		return err
-	}
-
+func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume, sc *storagev1.StorageClass) error {
 	secFromSC, exists := secretsFromSC(sc.Parameters, nodeStageSecretName, nodeStageSecretNamespace)
 	if exists {
 		pv.Spec.CSI.NodeStageSecretRef = secFromSC
@@ -2576,7 +3033,51 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 		pv.Spec.ClaimRef.APIVersion = ""
 	}
 
-	return v.processPVSecrets(pv)
+	// If the PV was annotated with a destination volume handle during S3 upload,
+	// replace the CSI volumeHandle so the PV references the correct volume on
+	// this (destination) cluster.
+	if pv.Spec.CSI != nil && pv.Annotations != nil {
+		if destHandle, ok := pv.Annotations[destinationVolumeHandleAnnotation]; ok && destHandle != "" {
+			v.log.V(1).Info("Set PV volume handle from destination handle", "PV", pv.Name, "handle", destHandle)
+			pv.Spec.CSI.VolumeHandle = destHandle
+			delete(pv.Annotations, destinationVolumeHandleAnnotation)
+		}
+	}
+
+	sc, err := v.getStorageClassFromSCName(&pv.Spec.StorageClassName)
+	if err != nil {
+		return err
+	}
+
+	v.updatePVClusterIDForRestore(pv, sc)
+
+	return v.processPVSecrets(pv, sc)
+}
+
+// updatePVClusterIDForRestore sets CSI volumeAttributes.clusterID from the target
+// cluster's StorageClass parameters, when present. Skipped for sync/metro DR, where
+// updateExistingPVForSync reuses the same PV via cleanupPVForRestore.
+func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, sc *storagev1.StorageClass) {
+	if v.instance.Spec.Sync != nil {
+		return
+	}
+
+	if pv.Spec.CSI == nil {
+		return
+	}
+
+	clusterID, ok := sc.Parameters[clusterIDKey]
+	if !ok || clusterID == "" {
+		return
+	}
+
+	if pv.Spec.CSI.VolumeAttributes == nil {
+		pv.Spec.CSI.VolumeAttributes = map[string]string{}
+	}
+
+	v.log.V(1).Info("Set PV clusterID for target cluster",
+		"PV", pv.Name, "clusterID", clusterID)
+	pv.Spec.CSI.VolumeAttributes[clusterIDKey] = clusterID
 }
 
 func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
@@ -2584,8 +3085,33 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 	pvc.ObjectMeta.Finalizers = []string{}
 	pvc.ObjectMeta.ResourceVersion = ""
 	pvc.ObjectMeta.OwnerReferences = nil
+	pvc.ObjectMeta.UID = ""
 
 	return nil
+}
+
+// validateVolumeAttributesClassForRestore checks, for RDR (Async) and MDR (Sync/Metro) alike,
+// whether the VolumeAttributesClass referenced by a PVC being restored exists on this
+// (target/failover) cluster. If it does not, Ramen must not fail the restore or block
+// failover/relocate on account of it: the PVC will still bind correctly to its PV, and only the
+// attributes defined by the class will not be (re)applied until the class is created on this
+// cluster. Instead, the gap is only logged and reported as a Kubernetes Event, so it is visible
+// to the user without affecting VRG status.
+func (v *VRGInstance) validateVolumeAttributesClassForRestore(pvc *corev1.PersistentVolumeClaim) {
+	vacName := pvc.Spec.VolumeAttributesClassName
+	if vacName == nil || *vacName == "" {
+		return
+	}
+
+	if err := v.validateVolumeAttributeClassExists(vacName); err != nil {
+		msg := fmt.Sprintf(
+			"Could not confirm VolumeAttributesClass %q referenced by PVC %s/%s exists on this cluster: %s",
+			*vacName, pvc.Namespace, pvc.Name, err.Error())
+		v.log.Error(err, msg)
+
+		rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance,
+			corev1.EventTypeWarning, rmnutil.EventReasonVolumeAttributesClassValidationFailed, msg)
+	}
 }
 
 // Follow this logic to update VRG (and also ProtectedPVC) conditions for VolRep
@@ -2630,7 +3156,7 @@ func cleanupPVCForRestore(pvc *corev1.PersistentVolumeClaim) error {
 //	VRG.conditions.Available.Status = false
 //	VRG.conditions.Available.Reason = Progressing
 //
-//nolint:funlen
+//nolint:funlen,gocognit,cyclop
 func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 	if len(v.volRepPVCs) == 0 {
 		return v.vrgReadyStatus(VRGConditionReasonUnused)
@@ -2654,6 +3180,18 @@ func (v *VRGInstance) aggregateVolRepDataReadyCondition() *metav1.Condition {
 			// why treat it as an error instead of progressing?
 			v.log.Info(fmt.Sprintf("Failed to find condition %s for vrg %s/%s", VRGConditionTypeDataReady,
 				v.instance.Name, v.instance.Namespace))
+
+			break
+		}
+
+		if v.hasGlobalVGRLabel() && condition.ObservedGeneration != v.instance.Generation {
+			vrgReady = false
+			vrgProgressing = true
+
+			v.log.Info("Stale DataReady condition detected for PVC, treating as progressing",
+				"protectedPVC", protectedPVC.Name,
+				"conditionGeneration", condition.ObservedGeneration,
+				"vrgGeneration", v.instance.Generation)
 
 			break
 		}
@@ -2854,9 +3392,165 @@ func (v *VRGInstance) aggregateVolRepClusterDataProtectedCondition() *metav1.Con
 	return newVRGClusterDataProtectedCondition(v.instance.Generation, msg)
 }
 
+// aggregateVolRepDestinationInfoAvailableCondition aggregates per-PVC DestinationInfoAvailable conditions
+// into a VRG-level condition. Returns nil if no ProtectedPVC has this condition (meaning VRs don't report it).
+func (v *VRGInstance) aggregateVolRepDestinationInfoAvailableCondition() *metav1.Condition {
+	found := false
+	allReady := true
+
+	for _, protectedPVC := range v.instance.Status.ProtectedPVCs {
+		if protectedPVC.ProtectedByVolSync {
+			continue
+		}
+
+		condition := rmnutil.FindCondition(protectedPVC.Conditions, VRGConditionTypeDestinationInfoAvailable)
+		if condition == nil {
+			continue
+		}
+
+		found = true
+
+		if condition.Status != metav1.ConditionTrue {
+			allReady = false
+
+			break
+		}
+	}
+
+	if !found {
+		return nil
+	}
+
+	if allReady {
+		return &metav1.Condition{
+			Type:               VRGConditionTypeDestinationInfoAvailable,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: v.instance.Generation,
+			Reason:             VRGConditionReasonReady,
+			Message:            "Destination info is available for all VolumeReplication resources",
+		}
+	}
+
+	return &metav1.Condition{
+		Type:               VRGConditionTypeDestinationInfoAvailable,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: v.instance.Generation,
+		Reason:             VRGConditionReasonProgressing,
+		Message:            "Destination info is not yet available for one or more VolumeReplication resources",
+	}
+}
+
+// aggregateVolRepReplicationHealthyCondition builds the VRG ReplicationHealthy
+// visibility condition from ProtectedPVCs. Returns nil when none of them report it.
+// A False PVC wins over Unknown, and we keep that PVC's CSI message.
+func (v *VRGInstance) aggregateVolRepReplicationHealthyCondition() *metav1.Condition {
+	found, falsePVC, falseCond, unknownPVC, unknownCond := v.collectReplicationHealthyPVCConditions()
+	if !found {
+		return nil
+	}
+
+	if falseCond != nil {
+		return newVRGReplicationHealthyCondition(v.instance.Generation, metav1.ConditionFalse,
+			VRGConditionReasonError, replicationHealthyPVCMessage(falsePVC, falseCond))
+	}
+
+	if unknownCond != nil {
+		return newVRGReplicationHealthyCondition(v.instance.Generation, metav1.ConditionUnknown,
+			VRGConditionReasonErrorUnknown, replicationHealthyPVCMessage(unknownPVC, unknownCond))
+	}
+
+	return newVRGReplicationHealthyCondition(v.instance.Generation, metav1.ConditionTrue,
+		VRGConditionReasonReady, "VolumeReplication resources are replicating")
+}
+
+func (v *VRGInstance) collectReplicationHealthyPVCConditions() (
+	found bool,
+	falsePVC *ramendrv1alpha1.ProtectedPVC,
+	falseCond *metav1.Condition,
+	unknownPVC *ramendrv1alpha1.ProtectedPVC,
+	unknownCond *metav1.Condition,
+) {
+	for i := range v.instance.Status.ProtectedPVCs {
+		protectedPVC := &v.instance.Status.ProtectedPVCs[i]
+		if protectedPVC.ProtectedByVolSync {
+			continue
+		}
+
+		condition := rmnutil.FindCondition(protectedPVC.Conditions, VRGConditionTypeReplicationHealthy)
+		if condition == nil {
+			continue
+		}
+
+		found = true
+
+		switch condition.Status {
+		case metav1.ConditionFalse:
+			if falseCond == nil {
+				falseCond = condition
+				falsePVC = protectedPVC
+			}
+		case metav1.ConditionUnknown:
+			if unknownCond == nil {
+				unknownCond = condition
+				unknownPVC = protectedPVC
+			}
+		case metav1.ConditionTrue:
+			continue
+		}
+	}
+
+	return found, falsePVC, falseCond, unknownPVC, unknownCond
+}
+
+func newVRGReplicationHealthyCondition(observedGeneration int64, status metav1.ConditionStatus,
+	reason, message string,
+) *metav1.Condition {
+	return &metav1.Condition{
+		Type:               VRGConditionTypeReplicationHealthy,
+		Status:             status,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
+		Message:            message,
+	}
+}
+
+func replicationHealthyPVCMessage(protectedPVC *ramendrv1alpha1.ProtectedPVC, condition *metav1.Condition) string {
+	if protectedPVC == nil {
+		return condition.Message
+	}
+
+	return fmt.Sprintf("VolumeReplication for PVC %s/%s: %s",
+		protectedPVC.Namespace, protectedPVC.Name, condition.Message)
+}
+
 // Checks and requeues reconciler of VM resource cleanup.
+// ensureSecondaryState orchestrates cleanup of resources when VRG is in secondary state.
+// This wrapper function ensures proper requeue behavior for both velero backup cleanup and
+// VM-specific resource cleanup. Returns true if requeue is needed.
+func (v *VRGInstance) ensureSecondaryState() bool {
+	// Clean up velero backup CRs owned by this VRG while preserving S3 backup data.
+	// This applies to ALL discovered apps (vm-recipe and others) to prevent stale backup
+	// CRs from accumulating on secondary clusters while ensuring the backup data remains
+	// available for future recovery operations.
+	if err := v.cleanupVeleroBackupsForSecondary(); err != nil {
+		v.log.Error(err, "Failed to cleanup velero backups for secondary, will requeue")
+		// Requeue on cleanup failure to retry - don't proceed to status update with stale CRs
+		return true
+	}
+
+	// VM-recipe specific cleanup and conflict detection
+	return v.HandleSecondaryConflictsAndCleanup()
+}
+
+// HandleSecondaryConflictsAndCleanup manages VM cleanup and conflict detection for VRG in secondary state.
+// For VM-recipe protection, this function:
+//  1. Checks for cross-cluster resource conflicts (e.g., VMs running on multiple clusters)
+//  2. When no DR action is in progress, sets appropriate AutoCleanup conditions
+//  3. When DR action is in progress (relocate/failover), performs automated VM cleanup if feasible
+//
+// Returns true if requeue is needed (VM cleanup in progress), false otherwise.
 func (v *VRGInstance) HandleSecondaryConflictsAndCleanup() bool {
-	if !v.isVMRecipeProtection() {
+	if !rmnutil.IsVMRecipe(v.instance.Spec.KubeObjectProtection) {
 		setVRGAutoCleanupCondition(&v.instance.Status.Conditions, v.instance.Status.ObservedGeneration,
 			metav1.ConditionFalse,
 			VRGConditionReasonUnused, "AutoCleanup is not applicable for protection schemes other than vm-recipe.")
@@ -3132,4 +3826,297 @@ func (v *VRGInstance) skipVMCleanupVerificationCheck() ([]virtv1.VirtualMachine,
 	}
 
 	return foundVMs, false
+}
+
+// shouldTakeDryRunSnapshots checks if all conditions are met for taking dry-run snapshots
+// Conditions: ReplicationState is Primary, DryRun is true, and Action is Failover
+func (v *VRGInstance) shouldTakeDryRunSnapshots() bool {
+	return v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
+		v.instance.Spec.DryRun &&
+		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover
+}
+
+// shouldCleanupDryRunSnapshots determines if dry-run snapshots need cleanup
+// Returns true when transitioning out of dry-run mode (DryRun becomes false)
+func (v *VRGInstance) shouldCleanupDryRunSnapshots() bool {
+	// Revert scenario: transitioning to Secondary with DryRun=false
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Secondary && !v.instance.Spec.DryRun {
+		return true
+	}
+
+	// Promotion scenario: staying Primary with DryRun=false and Action=Failover
+	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary &&
+		!v.instance.Spec.DryRun &&
+		v.instance.Spec.Action == ramendrv1alpha1.VRGActionFailover {
+		return true
+	}
+
+	return false
+}
+
+func (v *VRGInstance) ensureSnapshotsForDryRun() error {
+	// Filter CephFS PVCs once at the start to avoid redundant storage class lookups
+	nonCephFSPVCs, err := v.filterNonCephFSPVCs()
+	if err != nil {
+		return fmt.Errorf("filtering non-CephFS PVCs: %w", err)
+	}
+
+	// If no PVCs need snapshots, we're done
+	if len(nonCephFSPVCs) == 0 {
+		v.log.Info("No snapshots needed - all PVCs are CephFS")
+
+		return nil
+	}
+
+	// Collect unique namespaces from non-CephFS PVCs only
+	namespaces := make(map[string]bool)
+	for _, pvc := range nonCephFSPVCs {
+		namespaces[pvc.Namespace] = true
+	}
+
+	// Build snapshot map directly while listing to avoid intermediate aggregation
+	snapshotMap := make(map[string]*snapv1.VolumeSnapshot)
+
+	// List snapshots once per unique namespace and build map
+	for namespace := range namespaces {
+		snapshots := &snapv1.VolumeSnapshotList{}
+		if err := v.reconciler.Client.List(v.ctx, snapshots,
+			client.InNamespace(namespace),
+			client.MatchingLabels{
+				dryRunSnapshotLabel: "true",
+				dryRunVRGLabel:      v.instance.Name,
+			},
+		); err != nil {
+			return fmt.Errorf("listing dry-run snapshots in namespace %s: %w", namespace, err)
+		}
+
+		// Add snapshots to map by PVC name
+		for i := range snapshots.Items {
+			snapshot := &snapshots.Items[i]
+			if snapshot.Spec.Source.PersistentVolumeClaimName != nil {
+				pvcName := *snapshot.Spec.Source.PersistentVolumeClaimName
+				snapshotMap[pvcName] = snapshot
+			}
+		}
+	}
+
+	// Check if snapshots already exist and are up-to-date
+	if v.snapshotsUpToDateFromMap(snapshotMap, nonCephFSPVCs) {
+		v.log.Info("Snapshots already exist and are up-to-date for this dry-run")
+
+		return nil
+	}
+
+	v.log.Info("Creating dry-run snapshots for PVCs", "pvcCount", len(nonCephFSPVCs))
+
+	// Create snapshots for non-CephFS PVCs only
+	return v.createSnapshotsForPVCs(nonCephFSPVCs)
+}
+
+// filterNonCephFSPVCs filters out CephFS PVCs and returns only non-CephFS PVCs
+// This avoids redundant storage class lookups during snapshot creation
+func (v *VRGInstance) filterNonCephFSPVCs() ([]*corev1.PersistentVolumeClaim, error) {
+	nonCephFSPVCs := make([]*corev1.PersistentVolumeClaim, 0, len(v.volRepPVCs))
+
+	for idx := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[idx]
+
+		storageClass, err := v.getStorageClass(pvc)
+		if err != nil {
+			v.log.Error(err, "failed to get storage class for PVC", "pvc", pvc.Name)
+
+			return nil, err
+		}
+
+		// Skip CephFS PVCs
+		if v.isCephFSProvisioner(storageClass.Provisioner) {
+			v.log.Info("Skipping CephFS PVC for dry-run snapshots",
+				"pvc", pvc.Name,
+				"provisioner", storageClass.Provisioner)
+
+			continue
+		}
+
+		nonCephFSPVCs = append(nonCephFSPVCs, pvc)
+	}
+
+	return nonCephFSPVCs, nil
+}
+
+func (v *VRGInstance) snapshotsUpToDateFromMap(
+	snapshotMap map[string]*snapv1.VolumeSnapshot,
+	nonCephFSPVCs []*corev1.PersistentVolumeClaim,
+) bool {
+	expectedSnapshotCount := len(nonCephFSPVCs)
+	totalSnapshots := len(snapshotMap)
+
+	// Check if snapshot count matches expected non-CephFS PVC count
+	if totalSnapshots != expectedSnapshotCount {
+		v.log.Info("Snapshot count mismatch",
+			"snapshotCount", totalSnapshots,
+			"expectedCount", expectedSnapshotCount)
+
+		return false
+	}
+
+	// If no snapshots are expected, they're up-to-date
+	if expectedSnapshotCount == 0 {
+		v.log.Info("No snapshots expected (all PVCs are CephFS)")
+
+		return true
+	}
+
+	// Verify each non-CephFS PVC has a corresponding snapshot
+	for _, pvc := range nonCephFSPVCs {
+		snapshot, exists := snapshotMap[pvc.Name]
+
+		if !exists {
+			v.log.Info("PVC missing snapshot", "pvc", pvc.Name)
+
+			return false
+		}
+
+		// Check if snapshot is ready
+		if snapshot.Status == nil || snapshot.Status.ReadyToUse == nil || !*snapshot.Status.ReadyToUse {
+			v.log.Info("Snapshot not ready", "snapshot", snapshot.Name, "pvc", pvc.Name)
+
+			return false
+		}
+	}
+
+	v.log.Info("All dry-run snapshots are up-to-date and ready", "count", totalSnapshots)
+
+	return true
+}
+
+// isCephFSProvisioner checks if the given provisioner is a CephFS CSI driver
+// CephFS provisioners typically contain "cephfs" in their name
+func (v *VRGInstance) isCephFSProvisioner(provisioner string) bool {
+	// Check if provisioner contains "cephfs" (case-insensitive)
+	return strings.Contains(strings.ToLower(provisioner), "cephfs")
+}
+
+func (v *VRGInstance) createSnapshotsForPVCs(pvcs []*corev1.PersistentVolumeClaim) error {
+	for _, pvc := range pvcs {
+		if err := v.createSnapshotForPVC(pvc); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) createSnapshotForPVC(pvc *corev1.PersistentVolumeClaim) error {
+	// No need to check CephFS here - already filtered in filterNonCephFSPVCs()
+	// Get VolumeSnapshotClass for this PVC using VSHandler
+	snapshotClassName, err := v.volSyncHandler.GetVolumeSnapshotClassFromPVCStorageClass(pvc.Spec.StorageClassName)
+	if err != nil {
+		v.log.Error(err, "failed to get VolumeSnapshotClass for PVC", "pvc", pvc.Name)
+
+		return err
+	}
+
+	return v.createSnapshot(pvc, snapshotClassName)
+}
+
+func (v *VRGInstance) createSnapshot(pvc *corev1.PersistentVolumeClaim, snapshotClassName string) error {
+	snapName := fmt.Sprintf("%s-snapshot", pvc.Name)
+	pvcName := pvc.Name
+	snap := &snapv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapName,
+			Namespace: pvc.Namespace,
+			Labels: map[string]string{
+				dryRunSnapshotLabel:         "true",
+				dryRunVRGLabel:              v.instance.Name,
+				rmnutil.CreatedByRamenLabel: "true",
+			},
+		},
+		Spec: snapv1.VolumeSnapshotSpec{
+			Source: snapv1.VolumeSnapshotSource{
+				PersistentVolumeClaimName: &pvcName,
+			},
+			VolumeSnapshotClassName: &snapshotClassName,
+		},
+	}
+
+	if err := v.reconciler.Client.Create(v.ctx, snap); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			v.log.Info("VolumeSnapshot already exists for PVC, skipping",
+				"snapshot", snapName, "pvc", pvc.Name)
+
+			return nil
+		}
+
+		v.log.Error(err, "failed to create VolumeSnapshot for PVC",
+			"snapshot", snapName, "pvc", pvc.Name)
+
+		return err
+	}
+
+	v.log.Info("Created VolumeSnapshot for PVC",
+		"snapshot", snapName, "pvc", pvc.Name, "snapshotClass", snapshotClassName)
+
+	return nil
+}
+
+// cleanupDryRunSnapshots deletes all snapshots with dry-run label for this specific VRG
+// This is called when a dry-run is aborted or promoted to real failover
+func cleanupDryRunSnapshots(
+	ctx context.Context,
+	c client.Client,
+	log logr.Logger,
+	instance *ramendrv1alpha1.VolumeReplicationGroup,
+	_ []corev1.PersistentVolumeClaim,
+) error {
+	log.Info("Cleaning up dry-run snapshots for VRG", "vrg", instance.Name)
+
+	deletedCount := 0
+	errorCount := 0
+
+	// List all snapshots with dry-run label for this specific VRG across all namespaces
+	snapshots := &snapv1.VolumeSnapshotList{}
+	if err := c.List(ctx, snapshots,
+		client.MatchingLabels{
+			dryRunSnapshotLabel: "true",
+			dryRunVRGLabel:      instance.Name,
+		},
+	); err != nil {
+		log.Error(err, "failed to list dry-run snapshots for cleanup", "vrg", instance.Name)
+
+		return fmt.Errorf("failed to list dry-run snapshots: %w", err)
+	}
+
+	// Early return if no snapshots to clean up
+	if len(snapshots.Items) == 0 {
+		log.Info("No dry-run snapshots found for cleanup")
+
+		return nil
+	}
+
+	// Delete each snapshot
+	for i := range snapshots.Items {
+		snapshot := &snapshots.Items[i]
+		if err := c.Delete(ctx, snapshot); err != nil {
+			if !k8serrors.IsNotFound(err) {
+				log.Error(err, "failed to delete snapshot", "snapshot", snapshot.Name, "namespace", snapshot.Namespace)
+
+				errorCount++
+
+				continue
+			}
+		}
+
+		log.Info("Deleted dry-run snapshot", "snapshot", snapshot.Name, "namespace", snapshot.Namespace)
+
+		deletedCount++
+	}
+
+	log.Info("Dry-run snapshot cleanup completed", "deleted", deletedCount, "errors", errorCount)
+
+	if errorCount > 0 {
+		return fmt.Errorf("failed to delete %d snapshots during cleanup", errorCount)
+	}
+
+	return nil
 }

@@ -89,6 +89,15 @@ func EnableProtection(ctx types.TestContext) error {
 		return err
 	}
 
+	secondary, err := getTargetCluster(ctx, ctx.Env().Hub, drPolicyName, cluster.Name)
+	if err != nil {
+		return err
+	}
+
+	if err := validateVRGs(ctx, cluster, secondary); err != nil {
+		return err
+	}
+
 	if err = deployers.WaitWorkloadHealth(ctx, cluster); err != nil {
 		return err
 	}
@@ -100,6 +109,7 @@ func EnableProtection(ctx types.TestContext) error {
 
 // remove DRPC
 // update placement annotation
+// For non-discovered apps, verify the user Placement predicate selects the cluster the workload is running on
 func DisableProtection(ctx types.TestContext) error {
 	name := ctx.Name()
 	managementNamespace := ctx.ManagementNamespace()
@@ -119,16 +129,19 @@ func DisableProtection(ctx types.TestContext) error {
 		log.Infof("Unprotecting workload in cluster %q", cluster.Name)
 	}
 
-	if err := annotateDRPCDoNotDeletePVC(ctx, name); err != nil {
-		return err
-	}
-
 	if err := deleteProtectionResources(ctx); err != nil {
 		return err
 	}
 
 	if err := waitForProtectionResourcesDelete(ctx); err != nil {
 		return err
+	}
+
+	// The Placement of a discovered app is deleted with the DRPC, so there is no predicate to validate.
+	if cluster != nil && !ctx.Deployer().IsDiscovered() {
+		if err := validatePlacementPredicate(ctx, cluster); err != nil {
+			return err
+		}
 	}
 
 	// If the cluster is not nil, the workload exists and its health is validated.
@@ -211,16 +224,8 @@ func Relocate(ctx types.TestContext) error {
 func Purge(ctx types.TestContext) error {
 	log := ctx.Logger()
 
-	cluster, err := util.GetCurrentCluster(ctx, ctx.ManagementNamespace(), ctx.Name())
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return err
-		}
-
-		log.Info("Purging workload")
-	} else {
-		log.Infof("Purging workload in cluster %q", cluster.Name)
-	}
+	// We cannot get the current cluster since the placement decision may be missing during relocate.
+	log.Info("Purging workload")
 
 	if err := deleteProtectionResources(ctx); err != nil {
 		return err
@@ -235,6 +240,17 @@ func Purge(ctx types.TestContext) error {
 	}
 
 	if err := ctx.Deployer().WaitForResourcesDelete(ctx); err != nil {
+		return err
+	}
+
+	// Delete namespaces only after the DRPC is fully deleted. We could delete them
+	// right after waitForProtectionResourcesDelete, but we keep the same order as
+	// Undeploy for consistency. See https://github.com/RamenDR/ramen/issues/2642
+	if err := ctx.Deployer().DeleteNamespaces(ctx); err != nil {
+		return err
+	}
+
+	if err := ctx.Deployer().WaitForNamespacesDelete(ctx); err != nil {
 		return err
 	}
 
@@ -266,6 +282,10 @@ func failoverRelocate(
 	}
 
 	if err := waitDRPCReady(ctx, managementNamespace, drpcName); err != nil {
+		return err
+	}
+
+	if err := validateVRGs(ctx, targetCluster, currentCluster); err != nil {
 		return err
 	}
 

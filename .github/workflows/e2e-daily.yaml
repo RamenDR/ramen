@@ -19,19 +19,19 @@ jobs:
       fail-fast: false
       matrix:
         runner:
-          - e2e-rdr-2
-          - e2e-rdr-3
+          - ramen-e2e-01
+          - ramen-e2e-02
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Create virtual environment
         run: hack/make-venv .venv
 
       - name: Refresh cache
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 2
           retry_wait_seconds: 60
@@ -41,15 +41,30 @@ jobs:
             source ../venv
             drenv cache envs/regional-dr.yaml
 
-  prune-images:
+  podman-maintenance:
     strategy:
       fail-fast: false
       matrix:
         runner:
-          - e2e-rdr-2
-          - e2e-rdr-3
+          - ramen-e2e-01
+          - ramen-e2e-02
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'RamenDR/ramen'
     steps:
+      - name: Log podman info
+        run: podman info
+
+      - name: Log containers
+        run: podman ps -a
+
+      - name: Log volumes
+        run: podman volume ls
+
+      - name: Log podman storage
+        run: podman system df
+
+      - name: Log images
+        run: podman image ls
+
       - name: Prune images
         run: podman image prune -f

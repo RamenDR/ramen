@@ -124,7 +124,7 @@ func (w *VM) Health(ctx types.TestContext, cluster *types.Cluster) error {
 			condition.Status, cluster.Name, condition.Message)
 	}
 
-	return nil
+	return checkPVCHealth(ctx, cluster, ctx.AppNamespace(), vmPVCName)
 }
 
 // Status returns the VM workload deployment status across managed clusters.

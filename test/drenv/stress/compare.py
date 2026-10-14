@@ -1,0 +1,137 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+"""
+Compare stress test results from 2 runs.
+"""
+
+import io
+import json
+import os
+import statistics
+import sys
+
+
+def command(args):
+    directories = [args.before, args.after]
+    tests = [load_test(d) for d in directories]
+    labels = extract_labels(directories)
+    report = format_comparison(tests, labels)
+    sys.stdout.write(report)
+
+
+def load_test(directory):
+    path = os.path.join(directory, "test.json")
+    with open(path) as f:
+        return json.load(f)
+
+
+def extract_labels(directories):
+    """
+    Extract labels from directory names.
+    """
+    return [os.path.basename(d.rstrip("/")) for d in directories]
+
+
+def compute_stats(test):
+    """
+    Compute statistics from test results.
+
+    Statistics are computed from successful runs only. Failed runs are excluded
+    since they may be very short (early failure) or very long (timeout).
+    """
+    results = test["results"]
+    times = [r["time"] for r in results if r["passed"]]
+
+    stats = {
+        "done": len(results),
+        "passed": len(times),
+        "failed": len(results) - len(times),
+    }
+
+    stats["rate"] = stats["passed"] / stats["done"] * 100 if stats["done"] > 0 else 0.0
+    stats["time"] = sum(r["time"] for r in results)
+
+    if times:
+        stats["mean"] = statistics.mean(times)
+        stats["median"] = statistics.median(times)
+        stats["min"] = min(times)
+        stats["max"] = max(times)
+        # Standard deviation measures variation, which is undefined for a single value.
+        if len(times) >= 2:
+            stats["stdev"] = statistics.stdev(times)
+        if len(times) >= 20:
+            stats["p95"] = statistics.quantiles(times, n=100)[94]
+
+    return stats
+
+
+def format_comparison(tests, labels):
+    """
+    Format comparison of multiple test results as markdown.
+    """
+    out = io.StringIO()
+
+    out.write("### Environment startup time\n")
+    out.write("\n")
+
+    # Header
+    out.write("| Metric |")
+    for label in labels:
+        out.write(f" {label} |")
+    out.write(" Change |\n")
+
+    # Separator
+    out.write("|--------|")
+    for _ in labels:
+        out.write("--------|")
+    out.write("--------|\n")
+
+    # Compute stats from each test
+    stats_list = [compute_stats(t) for t in tests]
+
+    # Metrics to compare
+    metrics = [
+        ("Mean", "mean"),
+        ("Median", "median"),
+        ("Min", "min"),
+        ("Max", "max"),
+        ("Std Dev", "stdev"),
+        ("p95", "p95"),
+    ]
+
+    for label, key in metrics:
+        out.write(f"| {label} |")
+        values = []
+        for stats in stats_list:
+            value = stats.get(key)
+            if value is not None:
+                out.write(f" {value:.1f} s |")
+                values.append(value)
+            else:
+                out.write(" - |")
+                values.append(None)
+
+        # Calculate change (ratio of last to first)
+        if len(values) >= 2 and values[0] is not None and values[-1] is not None:
+            if values[0] > 0:
+                change = values[-1] / values[0]
+                out.write(f" {change:.2f}x |")
+            else:
+                out.write(" - |")
+        else:
+            out.write(" - |")
+        out.write("\n")
+
+    # Run metadata
+    out.write("| Passed |")
+    for stats in stats_list:
+        out.write(f" {stats['passed']} |")
+    out.write(" - |\n")
+
+    out.write("| Failed |")
+    for stats in stats_list:
+        out.write(f" {stats['failed']} |")
+    out.write(" - |\n")
+
+    return out.getvalue()

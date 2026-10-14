@@ -1,7 +1,0 @@
-# SPDX-FileCopyrightText: The RamenDR authors
-# SPDX-License-Identifier: Apache-2.0
-
-# yamllint disable rule:line-length
----
-resources:
-  - https://raw.githubusercontent.com/rook/rook/release-1.18/deploy/examples/toolbox.yaml

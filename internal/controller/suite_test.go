@@ -14,6 +14,8 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	// +kubebuilder:scaffold:imports
+	netv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -44,6 +46,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -51,7 +54,6 @@ import (
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	testutils "github.com/ramendr/ramen/internal/controller/testutils"
 	"github.com/ramendr/ramen/internal/controller/util"
-	// +kubebuilder:scaffold:imports
 	_ "github.com/ramendr/ramen/internal/dummy"
 )
 
@@ -118,12 +120,14 @@ func createOperatorNamespace(ramenNamespace string) {
 
 var _ = BeforeSuite(func() {
 	testutils.ConfigureGinkgo()
+
 	testLogger = zap.New(zap.UseFlagOptions(&zap.Options{
 		Development: true,
 		DestWriter:  GinkgoWriter,
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}))
 	logf.SetLogger(testLogger)
+
 	testLog := ctrl.Log.WithName("tester")
 	testLog.Info("Starting the controller test suite", "time", time.Now())
 
@@ -150,6 +154,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	By("bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd", "bases"),
@@ -162,10 +167,14 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
+
 	done := make(chan interface{})
+
 	go func() {
 		defer GinkgoRecover()
+
 		cfg, err = testEnv.Start()
+
 		DeferCleanup(func() error {
 			By("tearing down the test environment")
 
@@ -173,6 +182,7 @@ var _ = BeforeSuite(func() {
 		})
 		close(done)
 	}()
+
 	Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
@@ -233,12 +243,19 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 
+	err = netv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	// Keep unit tests on the private VGS API even though hack/test also ships public CRDs.
+	util.ForcePrivateVGSAPIForTesting()
+
 	namespaceCreate(ramencontrollers.VeleroNamespaceNameDefault)
 	createOperatorNamespace(ramenNamespace)
+
 	ramenConfig = &ramendrv1alpha1.RamenConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RamenConfig",
@@ -248,7 +265,6 @@ var _ = BeforeSuite(func() {
 			LeaderElect:  new(bool),
 			ResourceName: ramencontrollers.HubLeaderElectionResourceName,
 		},
-		RamenControllerType: ramendrv1alpha1.DRHubType,
 	}
 	ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 	ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
@@ -318,13 +334,14 @@ var _ = BeforeSuite(func() {
 			objectStorers[i] = fakeObjectStorerGet(i)
 		}
 	}
+
 	s3SecretsPolicyNamesSet()
 	s3SecretsCreate()
 	s3ProfilesSecretNamespaceNameSet()
 	s3ProfilesUpdate()
 
 	options := manager.Options{Scheme: scheme.Scheme}
-	ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+	options.Metrics = metricsserver.Options{BindAddress: "0"}
 
 	Expect(err).NotTo(HaveOccurred())
 
@@ -397,11 +414,12 @@ var _ = BeforeSuite(func() {
 		ObjStoreGetter: fakeObjectStoreGetter{},
 		RateLimiter:    &rateLimiter,
 	})
-	err = drpcReconciler.SetupWithManager(k8sManager)
+	err = drpcReconciler.SetupWithManager(k8sManager, ramenConfig)
 	Expect(err).ToNot(HaveOccurred())
 
 	ctx, cancel = context.WithCancel(context.TODO())
 	DeferCleanup(cancel)
+
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -409,6 +427,7 @@ var _ = BeforeSuite(func() {
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
+
 	apiReader = k8sManager.GetAPIReader()
 	Expect(apiReader).ToNot(BeNil())
 	objectStorersSet()

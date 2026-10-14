@@ -23,7 +23,7 @@ type HookContext struct {
 }
 
 // Hook interface will help in executing the hooks based on the types.
-// Supported types are "check", "scale" and "exec". The implementor needs
+// Supported types are "check", "scale", "exec", and "job". The implementor needs
 // return the result which would be boolean and error if any.
 type HookExecutor interface {
 	Execute(log logr.Logger) error
@@ -41,6 +41,7 @@ func GetHookExecutor(ctx HookContext) (HookExecutor, error) {
 	case "exec":
 		return ExecHook{
 			Hook:           &ctx.Hook,
+			Client:         ctx.Client,
 			Reader:         ctx.Reader,
 			Scheme:         ctx.Scheme,
 			RecipeElements: ctx.RecipeElements,
@@ -51,6 +52,15 @@ func GetHookExecutor(ctx HookContext) (HookExecutor, error) {
 			Hook:   &ctx.Hook,
 			Reader: ctx.Reader,
 			Client: ctx.Client,
+		}, nil
+
+	case "job":
+		return JobHook{
+			Hook:           &ctx.Hook,
+			Client:         ctx.Client,
+			Reader:         ctx.Reader,
+			Scheme:         ctx.Scheme,
+			RecipeElements: ctx.RecipeElements,
 		}, nil
 
 	default:

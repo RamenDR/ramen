@@ -41,11 +41,7 @@ transformers:
   - kind: PrometheusRule
     path: metadata/labels
 
-# Mount the controller config file for loading manager configurations
-# through a ComponentConfig type
-patches:
-- path: ../../../default/manager_auth_proxy_patch.yaml
-- path: ../../../default/manager_config_patch.yaml
+# Metrics endpoint is protected by controller-runtime built-in auth (WithAuthenticationAndAuthorization).
 
 
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -58,8 +54,3 @@ resources:
 # uncomment the following lines to enable scraping the metrics using prometheus
 # - ../../../prometheus
 # - metrics_role_binding.yaml
-
-images:
-- name: kube-rbac-proxy
-  newName: gcr.io/kubebuilder/kube-rbac-proxy
-  newTag: v0.13.1

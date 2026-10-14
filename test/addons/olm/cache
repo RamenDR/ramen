@@ -3,9 +3,6 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-from drenv import cache
+from drenv.addons import olm
 
-os.chdir(os.path.dirname(__file__))
-cache.refresh("crds", "addons/olm-crds-0.27.yaml")
-cache.refresh("operators", "addons/olm-operators-0.27.yaml")
+olm.cache()

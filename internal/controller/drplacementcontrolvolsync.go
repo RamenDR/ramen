@@ -291,6 +291,13 @@ func (d *DRPCInstance) createOrUpdateSecondaryManifestWork(srcCluster string) (c
 					d.instance.Namespace, dstCluster)
 		}
 
+		err = d.ensureRecipeManifestWork(srcCluster, dstCluster)
+		if err != nil {
+			return ctrlutil.OperationResultNone,
+				fmt.Errorf("creating ManifestWork couldn't ensure recipe on cluster %s exists",
+					dstCluster)
+		}
+
 		annotations := make(map[string]string)
 
 		annotations[DRPCNameAnnotation] = d.instance.Name
@@ -334,6 +341,8 @@ func (d *DRPCInstance) refreshVRGSecondarySpec(srcCluster, dstCluster string) (*
 	}
 
 	dstVRG := d.newVRG(dstCluster, rmn.Secondary, nil)
+
+	// Note: setVRGAnnotations() sets the dry-run annotation on the failover cluster
 
 	if d.drType == DRTypeAsync {
 		if len(srcVRGView.Status.ProtectedPVCs) != 0 {

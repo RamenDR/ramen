@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
-	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -147,11 +146,14 @@ func (RequestsManager) ProtectRequestsDelete(
 		client.MatchingLabels(labels),
 	}
 
+	// BSLs are intentionally not deleted here, they are kept alive across capture cycles
+	// so Velero does not need to re-validate from scratch every interval.  BSLs are
+	// cleaned up only via ProtectBSLsDelete on VRG deletion.
 	if err := writer.DeleteAllOf(ctx, &velero.Backup{}, options...); err != nil {
 		return fmt.Errorf("backup requests delete: %w", err)
 	}
 
-	return writer.DeleteAllOf(ctx, &velero.BackupStorageLocation{}, options...)
+	return nil
 }
 
 func (r RequestsManager) RecoverRequestsDelete(
@@ -170,16 +172,25 @@ func (r RequestsManager) RecoverRequestsDelete(
 	return r.ProtectRequestsDelete(ctx, writer, requestNamespaceName, labels)
 }
 
-func (RequestsManager) RecoverRequestCreate(
+func (RequestsManager) ProtectBSLsDelete(
 	ctx context.Context,
 	writer client.Writer,
+	requestNamespaceName string,
+	labels map[string]string,
+) error {
+	options := []client.DeleteAllOfOption{
+		client.InNamespace(requestNamespaceName),
+		client.MatchingLabels(labels),
+	}
+
+	return writer.DeleteAllOf(ctx, &velero.BackupStorageLocation{}, options...)
+}
+
+func (RequestsManager) RecoverRequestCreate(
+	ctx context.Context,
+	k8sclient client.Client,
 	log logr.Logger,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	captureName string,
@@ -189,12 +200,11 @@ func (RequestsManager) RecoverRequestCreate(
 	annotations map[string]string,
 ) (kubeobjects.RecoverRequest, error) {
 	log.Info("Kube objects recover",
-		"s3 url", s3Url,
-		"s3 bucket", s3BucketName,
-		"s3 region", s3RegionName,
-		"s3 key prefix", s3KeyPrefix,
-		"secret key ref", secretKeyRef,
-		"CA certificates", caCertificates,
+		"s3 url", loc.S3URL,
+		"s3 bucket", loc.Bucket,
+		"s3 region", loc.Region,
+		"s3 key prefix", loc.KeyPrefix,
+		"secret key ref", loc.SecretKeyRef,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"recover name", recoverName,
@@ -203,13 +213,8 @@ func (RequestsManager) RecoverRequestCreate(
 	)
 
 	restore, err := restoreRealCreate(
-		objectWriter{ctx: ctx, Writer: writer, log: log},
-		s3Url,
-		s3BucketName,
-		s3RegionName,
-		s3KeyPrefix,
-		secretKeyRef,
-		caCertificates,
+		objectWriter{ctx: ctx, Client: k8sclient, log: log},
+		loc,
 		recoverSpec,
 		requestNamespaceName,
 		captureName,
@@ -224,12 +229,7 @@ func (RequestsManager) RecoverRequestCreate(
 
 func restoreRealCreate(
 	w objectWriter,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	recoverSpec kubeobjects.RecoverSpec,
 	requestNamespaceName string,
 	backupName string,
@@ -240,9 +240,8 @@ func restoreRealCreate(
 ) (*velero.Restore, error) {
 	backupRequest, ok := captureRequest.(BackupRequest)
 	if !ok {
-		_, _, err := backupRequestCreate(
-			w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-			caCertificates,
+		_, err := backupRequestCreate(
+			w, loc,
 			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
 			requestNamespaceName, backupName,
 			labels,
@@ -340,14 +339,9 @@ func restoreStatusProcess(
 
 func (RequestsManager) ProtectRequestCreate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	objectsSpec kubeobjects.Spec,
 	requestNamespaceName string,
 	captureName string,
@@ -355,28 +349,21 @@ func (RequestsManager) ProtectRequestCreate(
 	annotations map[string]string,
 ) (kubeobjects.ProtectRequest, error) {
 	log.Info("Kube objects protect",
-		"s3 url", s3Url,
-		"s3 bucket", s3BucketName,
-		"s3 region", s3RegionName,
-		"s3 key prefix", s3KeyPrefix,
-		"secret key ref", secretKeyRef,
-		"CA certificates", caCertificates,
+		"s3 url", loc.S3URL,
+		"s3 bucket", loc.Bucket,
+		"s3 region", loc.Region,
+		"s3 key prefix", loc.KeyPrefix,
+		"secret key ref", loc.SecretKeyRef,
 		"source namespaces", objectsSpec.IncludedNamespaces,
 		"request namespace", requestNamespaceName,
 		"capture name", captureName,
 		"label set", labels,
 		"annotations", annotations,
 	)
-
-	_, backup, err := backupRealCreate(
-		objectWriter{ctx: ctx, Writer: writer, log: log},
-		s3Url,
-		s3BucketName,
-		s3RegionName,
-		s3KeyPrefix,
-		secretKeyRef,
-		caCertificates,
-		objectsSpec,
+	backup, err := backupRequestCreate(
+		objectWriter{ctx: ctx, Client: k8sclient, log: log},
+		loc,
+		getBackupSpecFromObjectsSpec(objectsSpec),
 		requestNamespaceName,
 		captureName,
 		labels,
@@ -384,30 +371,6 @@ func (RequestsManager) ProtectRequestCreate(
 	)
 
 	return BackupRequest{backup}, err
-}
-
-func backupRealCreate(
-	w objectWriter,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
-	objectsSpec kubeobjects.Spec,
-	requestNamespaceName string,
-	captureName string,
-	labels map[string]string,
-	annotations map[string]string,
-) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	return backupRequestCreate(
-		w, s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-		caCertificates,
-		getBackupSpecFromObjectsSpec(objectsSpec),
-		requestNamespaceName, captureName,
-		labels,
-		annotations,
-	)
 }
 
 func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpec {
@@ -425,21 +388,27 @@ func getBackupSpecFromObjectsSpec(objectsSpec kubeobjects.Spec) velero.BackupSpe
 		},
 	)
 
+	// Set includeClusterResources to false if nil
+	includeClusterResources := objectsSpec.IncludeClusterResources
+	if includeClusterResources == nil {
+		falseValue := false
+		includeClusterResources = &falseValue
+	}
+
 	return velero.BackupSpec{
 		IncludedNamespaces: objectsSpec.IncludedNamespaces,
 		IncludedResources:  objectsSpec.IncludedResources,
-		// exclude VRs from Backup so VRG can create them: see https://github.com/RamenDR/ramen/issues/884
-		// exclude EndpointSlices/Endpoints to prevent Submariner conflicts: see https://github.com/RamenDR/ramen/issues/1889
-		// exclude VolumeSnapshots and VolumeGroupSnapshots from backup
-		ExcludedResources: append(objectsSpec.ExcludedResources, "volumereplications.replication.storage.openshift.io",
-			"volumegroupreplications.replication.storage.openshift.io", "replicationsources.volsync.backube",
-			"replicationdestinations.volsync.backube", "PersistentVolumeClaims", "PersistentVolumes",
-			"endpointslices.discovery.k8s.io", "endpoints", "volumesnapshots.snapshot.storage.k8s.io",
-			"volumegroupsnapshots.groupsnapshot.storage.k8s.io"),
+		// ExcludedResources are now managed via the default-excluded-resources ConfigMap
+		// and merged with recipe-level exclusions in vrg_kubeobjects.go
+		// The objectsSpec.ExcludedResources already contains the merged list:
+		// - Default exclusions from ConfigMap (bootstrapped with hardcoded defaults if not present)
+		// - Recipe group-level exclusions
+		// See: internal/controller/exclude_resources.go and vrg_kubeobjects.go:mergeExcludedResources()
+		ExcludedResources:       objectsSpec.ExcludedResources,
 		LabelSelector:           newLabelSelector,
 		OrLabelSelectors:        objectsSpec.OrLabelSelectors,
 		TTL:                     metav1.Duration{}, // TODO: set default here
-		IncludeClusterResources: objectsSpec.IncludeClusterResources,
+		IncludeClusterResources: includeClusterResources,
 		// TODO: Hooks should be handled by ramen code.
 		// Hooks:                   getBackupHooks(objectsSpec.KubeResourcesSpec.Hooks)
 		VolumeSnapshotLocations: []string{},
@@ -476,24 +445,22 @@ func backupRealStatusProcess(
 
 func (r BackupRequest) Deallocate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
 ) error {
-	return objectWriter{ctx: ctx, Writer: writer, log: log}.backupObjectsDelete(
-		&velero.BackupStorageLocation{ObjectMeta: metav1.ObjectMeta{Namespace: r.backup.Namespace, Name: r.backup.Name}},
-		r.backup,
-	)
+	// BSL is kept alive for reuse; only the Backup CR is removed.
+	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.backupRequestDelete(r.backup)
 }
 
 func (r RestoreRequest) Deallocate(
 	ctx context.Context,
-	writer client.Writer,
+	k8sclient client.Client,
 	log logr.Logger,
 ) error {
 	backupObjectMeta := metav1.ObjectMeta{Namespace: r.restore.Namespace, Name: r.restore.Spec.BackupName}
 
-	return objectWriter{ctx: ctx, Writer: writer, log: log}.restoreObjectsDelete(
-		&velero.BackupStorageLocation{ObjectMeta: backupObjectMeta},
+	// BSL is kept alive for reuse; only the Restore and Backup CRs are removed.
+	return objectWriter{ctx: ctx, Client: k8sclient, log: log}.restoreRequestDelete(
 		&velero.Backup{ObjectMeta: backupObjectMeta},
 		r.restore,
 	)
@@ -501,39 +468,35 @@ func (r RestoreRequest) Deallocate(
 
 type objectWriter struct {
 	ctx context.Context
-	client.Writer
+	client.Client
 	log logr.Logger
 }
 
 func backupRequestCreate(
 	w objectWriter,
-	s3Url string,
-	s3BucketName string,
-	s3RegionName string,
-	s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
+	loc kubeobjects.StorageLocation,
 	backupSpec velero.BackupSpec,
 	requestsNamespaceName string,
 	requestName string,
 	labels map[string]string,
 	annotations map[string]string,
-) (*velero.BackupStorageLocation, *velero.Backup, error) {
-	backupLocation := backupLocation(requestsNamespaceName, requestName,
-		s3Url, s3BucketName, s3RegionName, s3KeyPrefix, secretKeyRef,
-		caCertificates,
-		labels,
-	)
-
-	util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
-
-	if err := w.objectCreate(backupLocation); err != nil {
-		return backupLocation, nil, err
+) (*velero.Backup, error) {
+	backupLocation := &velero.BackupStorageLocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: requestsNamespaceName,
+			Name:      requestName,
+		},
 	}
 
+	err := w.bslCreateOrUpdate(loc, labels, backupLocation)
+	if err != nil {
+		w.log.Error(err, "")
+
+		return nil, err
+	}
 	// Check BSL availability before creating backup
 	if err := w.checkBSLAvailability(backupLocation); err != nil {
-		return backupLocation, nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",
+		return nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",
 			backupLocation.Namespace, backupLocation.Name, err)
 	}
 
@@ -541,30 +504,23 @@ func backupRequestCreate(
 	backupSpec.SnapshotVolumes = new(bool)
 	backupRequest := backupRequest(requestsNamespaceName, requestName, backupSpec, labels, annotations)
 
-	return backupLocation, backupRequest, w.Create(w.ctx, backupRequest)
+	return backupRequest, w.Create(w.ctx, backupRequest)
 }
 
-func (w objectWriter) backupObjectsDelete(
-	backupLocation *velero.BackupStorageLocation,
-	backup *velero.Backup,
-) error {
-	if err := w.objectDelete(backup); err != nil {
-		return err
-	}
-
-	return w.objectDelete(backupLocation)
+// backupRequestDelete deletes only the Backup CR, leaving the BSL alive for reuse
+// across capture cycles. BSLs are cleaned up via ProtectBSLsDelete on VRG deletion.
+func (w objectWriter) backupRequestDelete(backup *velero.Backup) error {
+	return w.objectDelete(backup)
 }
 
-func (w objectWriter) restoreObjectsDelete(
-	backupLocation *velero.BackupStorageLocation,
-	backup *velero.Backup,
-	restore *velero.Restore,
-) error {
+// restoreRequestDelete deletes the Restore and its Backup CR, leaving the BSL alive
+// for reuse. BSLs are cleaned up via ProtectBSLsDelete on VRG deletion.
+func (w objectWriter) restoreRequestDelete(backup *velero.Backup, restore *velero.Restore) error {
 	if err := w.objectDelete(restore); err != nil {
 		return err
 	}
 
-	return w.backupObjectsDelete(backupLocation, backup)
+	return w.backupRequestDelete(backup)
 }
 
 func (w objectWriter) objectCreate(o client.Object) error {
@@ -595,65 +551,6 @@ func (w objectWriter) objectDelete(o client.Object) error {
 	return nil
 }
 
-func isBSLAvailable(bsl velero.BackupStorageLocation) bool {
-	return bsl.Status.Phase == velero.BackupStorageLocationPhaseAvailable
-}
-
-// checkBSLStatus checks if BSL is Available
-func (w objectWriter) checkBSLStatus(
-	reader client.Reader,
-	key client.ObjectKey,
-	currentBSL *velero.BackupStorageLocation,
-	bslName string,
-) (bool, error) {
-	if err := reader.Get(w.ctx, key, currentBSL); err != nil {
-		if k8serrors.IsNotFound(err) {
-			w.log.V(1).Info("BSL not found", "bsl", bslName, "error", err)
-		} else {
-			w.log.V(1).Info("Failed to get BSL", "bsl", bslName, "error", err)
-		}
-
-		return false, err
-	}
-
-	w.log.V(1).Info("BSL status check", "bsl", bslName, "phase", currentBSL.Status.Phase)
-
-	return isBSLAvailable(*currentBSL), nil
-}
-
-// checkBSLAvailability checks if BSL is Available and returns error if not ready
-func (w objectWriter) checkBSLAvailability(bsl *velero.BackupStorageLocation) error {
-	reader, ok := w.Writer.(client.Reader)
-	if !ok {
-		return fmt.Errorf("writer does not implement client.Reader interface")
-	}
-
-	key := client.ObjectKey{
-		Namespace: bsl.Namespace,
-		Name:      bsl.Name,
-	}
-
-	currentBSL := &velero.BackupStorageLocation{}
-
-	available, err := w.checkBSLStatus(reader, key, currentBSL, bsl.Name)
-	if err != nil {
-		w.log.V(1).Info("Failed to check BSL status, will retry in next reconcile", "bsl", bsl.Name, "error", err)
-
-		return fmt.Errorf("failed to check BSL status: %w", err)
-	}
-
-	if !available {
-		w.log.Info("BSL not yet available, will retry in next reconcile", "bsl", bsl.Name,
-			"phase", currentBSL.Status.Phase)
-
-		return fmt.Errorf("BSL %s/%s not yet available", bsl.Namespace, bsl.Name)
-	}
-
-	w.log.Info("BSL is available, proceeding with backup creation", "bsl", bsl.Name)
-
-	return nil
-}
-
 func veleroTypeMeta(kind string) metav1.TypeMeta {
 	return metav1.TypeMeta{
 		APIVersion: velero.SchemeGroupVersion.String(),
@@ -664,44 +561,11 @@ func veleroTypeMeta(kind string) metav1.TypeMeta {
 func backupTypeMeta() metav1.TypeMeta  { return veleroTypeMeta("Backup") }
 func restoreTypeMeta() metav1.TypeMeta { return veleroTypeMeta("Restore") }
 
-func backupLocation(namespaceName, name string,
-	s3Url, s3BucketName, s3RegionName, s3KeyPrefix string,
-	secretKeyRef *corev1.SecretKeySelector,
-	caCertificates []byte,
-	labels map[string]string,
-) *velero.BackupStorageLocation {
-	return &velero.BackupStorageLocation{
-		TypeMeta: veleroTypeMeta("BackupStorageLocation"),
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespaceName,
-			Name:      name,
-			Labels:    labels,
-		},
-		Spec: velero.BackupStorageLocationSpec{
-			Provider: "aws",
-			StorageType: velero.StorageType{
-				ObjectStorage: &velero.ObjectStorageLocation{
-					Bucket: s3BucketName,
-					Prefix: s3KeyPrefix + path,
-					CACert: caCertificates,
-				},
-			},
-			Config: map[string]string{
-				"region":            s3RegionName,
-				"s3ForcePathStyle":  "true",
-				"s3Url":             s3Url,
-				"checksumAlgorithm": "",
-			},
-			Credential: secretKeyRef,
-		},
-	}
-}
-
 func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 	labels map[string]string,
 	annotations map[string]string,
 ) *velero.Backup {
-	return &velero.Backup{
+	backup := &velero.Backup{
 		TypeMeta: backupTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   namespaceName,
@@ -711,6 +575,10 @@ func backupRequest(namespaceName, name string, spec velero.BackupSpec,
 		},
 		Spec: spec,
 	}
+
+	util.AddLabel(backup, util.CreatedByRamenLabel, "true")
+
+	return backup
 }
 
 func restore(
@@ -720,7 +588,14 @@ func restore(
 	backupName string,
 	labels map[string]string,
 ) *velero.Restore {
-	return &velero.Restore{
+	// Set includeClusterResources to false if nil
+	includeClusterResources := recoverSpec.IncludeClusterResources
+	if includeClusterResources == nil {
+		falseValue := false
+		includeClusterResources = &falseValue
+	}
+
+	restoreObj := &velero.Restore{
 		TypeMeta: restoreTypeMeta(),
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: requestNamespaceName,
@@ -735,13 +610,18 @@ func restore(
 			LabelSelector:           recoverSpec.LabelSelector,
 			OrLabelSelectors:        recoverSpec.OrLabelSelectors,
 			RestoreStatus:           recoverSpec.RestoreStatus,
-			IncludeClusterResources: recoverSpec.IncludeClusterResources,
+			IncludeClusterResources: includeClusterResources,
 			ExistingResourcePolicy:  recoverSpec.ExistingResourcePolicy,
+			ResourceModifier:        recoverSpec.ResourceModifier,
 			// TODO: hooks?
 			// TODO: restorePVs?
 			// TODO: preserveNodePorts?
 		},
 	}
+
+	util.AddLabel(restoreObj, util.CreatedByRamenLabel, "true")
+
+	return restoreObj
 }
 
 func backupStatusLog(backup *velero.Backup, log logr.Logger) {

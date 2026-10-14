@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
@@ -57,16 +58,22 @@ const (
 	// with existing PlacementDecision resources
 	MaxPlacementDecisionConflictCount = 5
 
-	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
+	// ClusterNameLabelKey is the label OCM sets on every ManagedCluster with the cluster's name, and is the key
+	// used by a Placement predicate to select a cluster by name
+	ClusterNameLabelKey = "name"
 
-	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
-	DoNotDeletePVCAnnotationVal = "true"
+	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 
 	IsSubmarinerEnabledAnnotation    = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
 	IsSubmarinerEnabledAnnotationVal = "true"
 )
 
 var ErrInitialWaitTimeForDRPCPlacementRule = errors.New("waiting for DRPC Placement to produces placement decision")
+
+// Extend this metric to other DR progression(rmn.ProgressionState) states by adding them to the `states` slice.
+var trackedDRProgressionStates = []string{
+	string(rmn.ProgressionWaitOnUserToCleanUp),
+}
 
 // ProgressCallback of function type
 type ProgressCallback func(string, string)
@@ -81,6 +88,7 @@ type DRPlacementControlReconciler struct {
 	Callback                       ProgressCallback
 	eventRecorder                  *rmnutil.EventReporter
 	savedInstanceStatus            rmn.DRPlacementControlStatus
+	savedDRActionCount             string
 	ObjStoreGetter                 ObjectStoreGetter
 	RateLimiter                    *workqueue.TypedRateLimiter[reconcile.Request]
 	numClustersQueriedSuccessfully int
@@ -89,8 +97,8 @@ type DRPlacementControlReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 //
 //nolint:funlen
-func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return r.setupWithManagerAndAddWatchers(mgr)
+func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager, ramenConfig *rmn.RamenConfig) error {
+	return r.setupWithManagerAndAddWatchers(mgr, ramenConfig)
 }
 
 //nolint:lll
@@ -125,12 +133,20 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
-//nolint:funlen,gocognit,gocyclo,cyclop
+//nolint:funlen,gocognit,gocyclo,cyclop,maintidx
 func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("drpc", req.NamespacedName, "rid", rmnutil.GetRID())
 
 	logger.Info("Entering reconcile loop")
 	defer logger.Info("Exiting reconcile loop")
+
+	// Recompute on every reconcile, including the not-found path after a
+	// DRPC deletion, so the metrics track the cluster state
+	defer func() {
+		if err := UpdateDRTelemetryMetrics(ctx, r.Client); err != nil {
+			logger.Info("Failed to update DR telemetry metrics", "error", err)
+		}
+	}()
 
 	drpc := &rmn.DRPlacementControl{}
 
@@ -147,6 +163,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
+	r.savedDRActionCount = drpc.GetAnnotations()[DRActionCountAnnotation]
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
@@ -167,17 +184,22 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	// Emit a single summary log for the resolved user placement reference
+	if placementObj != nil {
+		switch obj := placementObj.(type) {
+		case *clrapiv1beta1.Placement:
+			logger.Info("Resolved placement reference", "kind", "Placement", "name", obj.Name, "namespace", obj.Namespace)
+		case *plrv1.PlacementRule:
+			logger.Info("Resolved placement reference", "kind", "PlacementRule", "name", obj.Name, "namespace", obj.Namespace)
+		}
+	}
+
 	if isBeingDeleted(drpc, placementObj) {
 		// DPRC depends on User PlacementRule/Placement. If DRPC or/and the User PlacementRule is deleted,
 		// then the DRPC should be deleted as well. The least we should do here is to clean up DPRC.
 		err := r.processDeletion(ctx, drpc, placementObj, logger)
 		if err != nil {
 			logger.Info(fmt.Sprintf("Error in deleting DRPC: (%v)", err))
-
-			statusErr := r.setDeletionStatusAndUpdate(ctx, drpc)
-			if statusErr != nil {
-				err = fmt.Errorf("drpc deletion failed: %w and status update failed: %w", err, statusErr)
-			}
 
 			return ctrl.Result{}, err
 		}
@@ -192,7 +214,7 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	err = r.ensureNoConflictingDRPCs(ctx, drpc, ramenConfig, logger)
+	err = r.ensureNoConflictingDRPCs(ctx, drpc, placementObj, ramenConfig, logger)
 	if err != nil {
 		r.recordFailure(ctx, drpc, placementObj, "Error", err.Error(), logger)
 
@@ -249,11 +271,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 func (r *DRPlacementControlReconciler) setDeletionStatusAndUpdate(
 	ctx context.Context, drpc *rmn.DRPlacementControl,
 ) error {
-	updated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	progressionUpdated := updateDRPCProgression(drpc, rmn.ProgressionDeleting, r.Log)
+	phaseUpdated := drpc.Status.Phase != rmn.Deleting
+
+	if progressionUpdated {
+		// Reset action timing on first transition into Deleting so START TIME reflects
+		// when deletion began.
+		drpc.Status.ActionStartTime = &metav1.Time{Time: time.Now()}
+		drpc.Status.ActionDuration = nil
+	}
+
 	drpc.Status.Phase = rmn.Deleting
 	drpc.Status.ObservedGeneration = drpc.Generation
 
-	if updated {
+	if progressionUpdated || phaseUpdated {
 		if err := r.Status().Update(ctx, drpc); err != nil {
 			return fmt.Errorf("failed to update DRPC status: (%w)", err)
 		}
@@ -276,13 +307,11 @@ func (r *DRPlacementControlReconciler) recordFailure(ctx context.Context, drpc *
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncTimeMetrics,
-	t *metav1.Time, log logr.Logger,
+	t *metav1.Time,
 ) {
 	if syncMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("Setting metric: (%s)", LastSyncTimestampSeconds))
 
 	if t == nil {
 		syncMetrics.LastSyncTime.Set(0)
@@ -294,13 +323,11 @@ func (r *DRPlacementControlReconciler) setLastSyncTimeMetric(syncMetrics *SyncTi
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMetrics *SyncDurationMetrics,
-	t *metav1.Duration, log logr.Logger,
+	t *metav1.Duration,
 ) {
 	if syncDurationMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", LastSyncDurationSeconds))
 
 	if t == nil {
 		syncDurationMetrics.LastSyncDuration.Set(0)
@@ -312,13 +339,11 @@ func (r *DRPlacementControlReconciler) setLastSyncDurationMetric(syncDurationMet
 }
 
 func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetrics *SyncDataBytesMetrics,
-	b *int64, log logr.Logger,
+	b *int64,
 ) {
 	if syncDataBytesMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", LastSyncDataBytes))
 
 	if b == nil {
 		syncDataBytesMetrics.LastSyncDataBytes.Set(0)
@@ -332,13 +357,11 @@ func (r *DRPlacementControlReconciler) setLastSyncBytesMetric(syncDataBytesMetri
 // setWorkloadProtectionMetric sets the workload protection info metric, where 0 indicates not protected and
 // 1 indicates protected
 func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProtectionMetrics *WorkloadProtectionMetrics,
-	conditions []metav1.Condition, log logr.Logger,
+	conditions []metav1.Condition,
 ) {
 	if workloadProtectionMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", WorkloadProtectionStatus))
 
 	protected := 0
 
@@ -357,13 +380,11 @@ func (r *DRPlacementControlReconciler) setWorkloadProtectionMetric(workloadProte
 // where 0 indicates consistency grouping is not enabled
 // and 1 indicates consistency grouping is enabled
 func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementControl,
-	cgEnabledMetrics *CGEnabledMetrics, log logr.Logger,
+	cgEnabledMetrics *CGEnabledMetrics,
 ) {
 	if cgEnabledMetrics == nil {
 		return
 	}
-
-	log.Info(fmt.Sprintf("setting metric: (%s)", CGEnabled))
 
 	enabled := 0
 
@@ -373,6 +394,47 @@ func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementC
 	}
 
 	cgEnabledMetrics.CGEnabled.Set(float64(enabled))
+}
+
+// setGlobalActionMetric sets the global action consensus metric for a DRPC.
+// 1 indicates consensus reached, 0 indicates blocked. Only emitted for global VGR DRPCs.
+func (r *DRPlacementControlReconciler) setGlobalActionMetric(
+	drpc *rmn.DRPlacementControl, metric *GlobalActionMetrics,
+) {
+	if metric == nil {
+		return
+	}
+
+	consensus := 0
+
+	for idx := range drpc.Status.Conditions {
+		if drpc.Status.Conditions[idx].Type == rmn.ConditionGlobalAction &&
+			drpc.Status.Conditions[idx].Status == metav1.ConditionTrue {
+			consensus = 1
+
+			break
+		}
+	}
+
+	metric.GlobalActionStatus.Set(float64(consensus))
+}
+
+func (r *DRPlacementControlReconciler) setDRProgressionStateMetric(drpc *rmn.DRPlacementControl,
+	drProgressionStateMetrics *DRProgressionStateMetrics,
+) {
+	if drProgressionStateMetrics == nil {
+		return
+	}
+
+	currentState := string(drpc.Status.Progression)
+	for _, trackedState := range trackedDRProgressionStates {
+		labels := DRProgressionStateMetricLabels(drpc, trackedState)
+		if trackedState == currentState {
+			drpcProgressionState.With(labels).Set(1)
+		} else {
+			drpcProgressionState.With(labels).Set(0)
+		}
+	}
 }
 
 //nolint:funlen
@@ -409,6 +471,8 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 
 	r.numClustersQueriedSuccessfully = cqs
 
+	networkMappingRules := r.loadNetworkMapping(ctx, drpc, drPolicy, log)
+
 	d := &DRPCInstance{
 		reconciler:      r,
 		ctx:             ctx,
@@ -429,20 +493,23 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 			InstName:        drpc.Name,
 			TargetNamespace: vrgNamespace,
 		},
+		networkMappingRules: networkMappingRules,
 	}
 
 	d.drType = DRTypeAsync
 
-	isMetro, _, err := dRPolicySupportsMetro(drPolicy, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
-	}
+	if !allVRGPeerClassesOffloaded(vrgs) {
+		isMetro, _, err := dRPolicySupportsMetro(drPolicy, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
+		}
 
-	if isMetro {
-		d.volSyncDisabled = true
-		d.drType = DRTypeSync
+		if isMetro {
+			d.volSyncDisabled = true
+			d.drType = DRTypeSync
 
-		log.Info("volsync is set to disabled")
+			log.Info("volsync is set to disabled")
+		}
 	}
 
 	if !d.volSyncDisabled && drpcInAdminNamespace(drpc, ramenConfig) {
@@ -453,6 +520,67 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	d.instance.Status.DeepCopyInto(&d.savedInstanceStatus)
 
 	return d, nil
+}
+
+// allVRGPeerClassesOffloaded returns true if every PeerClass across all VRGs
+// has its Offloaded field set to true. When true, the workload uses only
+// offloaded storage classes and should never be treated as metro DR.
+func allVRGPeerClassesOffloaded(vrgs map[string]*rmn.VolumeReplicationGroup) bool {
+	found := false
+
+	for _, vrg := range vrgs {
+		if vrg.Spec.Async != nil {
+			for i := range vrg.Spec.Async.PeerClasses {
+				if !vrg.Spec.Async.PeerClasses[i].Offloaded {
+					return false
+				}
+
+				found = true
+			}
+		}
+	}
+
+	return found
+}
+
+func (r *DRPlacementControlReconciler) loadNetworkMapping(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+	log logr.Logger,
+) *NetworkMappingRules {
+	nmMgr := NewDRPCNetworkMappingManager(r.Client, log)
+
+	networkMappingRules, err := nmMgr.LoadNetworkMapping(ctx, drpc, drPolicy)
+	if err != nil {
+		log.Error(err,
+			"Failed to load network-mapping ConfigMap; IP translation disabled",
+			"drpc", drpc.Name)
+
+		addOrUpdateCondition(
+			&drpc.Status.Conditions,
+			rmn.ConditionNetworkMappingLoaded,
+			drpc.Generation,
+			metav1.ConditionFalse,
+			"NetworkMappingLoadFailed",
+			err.Error(),
+		)
+
+		return nil
+	}
+
+	if networkMappingRules != nil {
+		addOrUpdateCondition(
+			&drpc.Status.Conditions,
+			rmn.ConditionNetworkMappingLoaded,
+			drpc.Generation,
+			metav1.ConditionTrue,
+			"NetworkMappingLoaded",
+			"Network mapping loaded successfully",
+		)
+	}
+
+	return networkMappingRules
 }
 
 func (r *DRPlacementControlReconciler) createSyncMetricsInstance(
@@ -496,6 +624,35 @@ func (r *DRPlacementControlReconciler) createCGEnabledMetricsInstance(
 	}
 }
 
+func (r *DRPlacementControlReconciler) createGlobalActionMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *GlobalActionMetrics {
+	if drpc.GetLabels()[GlobalVGRLabel] == "" {
+		return nil
+	}
+
+	hasCondition := false
+
+	for idx := range drpc.Status.Conditions {
+		if drpc.Status.Conditions[idx].Type == rmn.ConditionGlobalAction {
+			hasCondition = true
+
+			break
+		}
+	}
+
+	if !hasCondition {
+		return nil
+	}
+
+	labels := GlobalActionLabels(drpc)
+	metric := NewGlobalActionMetric(labels)
+
+	return &GlobalActionMetrics{
+		GlobalActionStatus: metric.GlobalActionStatus,
+	}
+}
+
 // isBeingDeleted returns true if either DRPC, user placement, or both are being deleted
 func isBeingDeleted(drpc *rmn.DRPlacementControl, usrPl client.Object) bool {
 	return rmnutil.ResourceIsDeleted(drpc) ||
@@ -516,11 +673,13 @@ func (r *DRPlacementControlReconciler) reconcileDRPCInstance(d *DRPCInstance, lo
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	if !d.ensureGlobalVGRLabel() {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	requeue := d.startProcessing()
-	log.Info("Finished processing", "Requeue?", requeue)
 
 	if !requeue {
-		log.Info("Done reconciling", "state", d.getLastDRState())
 		r.Callback(d.instance.Name, string(d.getLastDRState()))
 	}
 
@@ -652,6 +811,11 @@ func (r *DRPlacementControlReconciler) processDeletion(ctx context.Context,
 		return nil
 	}
 
+	// Set Deleting status when cleanup starts, not only after a cleanup failure.
+	if err := r.setDeletionStatusAndUpdate(ctx, drpc); err != nil {
+		return err
+	}
+
 	// Run finalization logic for dprc.
 	// If the finalization logic fails, don't remove the finalizer so
 	// that we can retry during the next reconciliation.
@@ -717,17 +881,17 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	}
 
 	// cleanup for VRG artifacts
-	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, placementObj, vrgNamespace); err != nil {
+	if err = r.cleanupVRGs(ctx, drPolicy, log, mwu, drpc, vrgNamespace); err != nil {
 		return err
 	}
 
-	// delete namespace manifestwork
-	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
-		annotations := make(map[string]string)
-		annotations[DRPCNameAnnotation] = drpc.Name
-		annotations[DRPCNamespaceAnnotation] = drpc.Namespace
+	if err := deleteNamespaceManifestWorks(drpc, drPolicy, mwu, vrgNamespace); err != nil {
+		return err
+	}
 
-		if err := mwu.DeleteNamespaceManifestWork(drClusterName, annotations); err != nil {
+	// delete recipe manifestwork
+	for _, drClusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
+		if err := mwu.DeleteRecipeManifestWork(drClusterName); err != nil {
 			return err
 		}
 	}
@@ -748,6 +912,40 @@ func (r *DRPlacementControlReconciler) finalizeDRPC(ctx context.Context, drpc *r
 	cgEnabledMetricLabels := CGEnabledMetricLabels(drpc)
 	DeleteCGEnabledMetric(cgEnabledMetricLabels)
 
+	for _, trackedState := range trackedDRProgressionStates {
+		labels := DRProgressionStateMetricLabels(drpc, trackedState)
+		DeleteDRPCProgressionStateMetric(labels)
+	}
+
+	globalActionLabels := GlobalActionLabels(drpc)
+	DeleteGlobalActionMetric(globalActionLabels)
+
+	return nil
+}
+
+// deleteNamespaceManifestWorks deletes namespace ManifestWorks for all
+// clusters in the DRPolicy, handling both discovered and non-discovered apps.
+// See createOrUpdateNamespaces for the symmetric create path.
+func deleteNamespaceManifestWorks(
+	drpc *rmn.DRPlacementControl,
+	drPolicy *rmn.DRPolicy,
+	mwu rmnutil.MWUtil,
+	vrgNamespace string,
+) error {
+	namespaces := []string{vrgNamespace}
+	if isDiscoveredApp(drpc) {
+		namespaces = *drpc.Spec.ProtectedNamespaces
+	}
+
+	for _, ns := range namespaces {
+		for _, clusterName := range rmnutil.DRPolicyClusterNames(drPolicy) {
+			mwName := rmnutil.ManifestWorkName(drpc.Name, ns, rmnutil.MWTypeNS)
+			if err := mwu.DeleteNamespaceManifestWork(mwName, clusterName); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -757,7 +955,6 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	log logr.Logger,
 	mwu rmnutil.MWUtil,
 	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
 	vrgNamespace string,
 ) error {
 	drClusters, err := GetDRClusters(ctx, r.Client, drPolicy)
@@ -773,12 +970,12 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 
 	// We have to ensure the secondary VRG is deleted before deleting the primary VRG. This will fail until there
 	// is no secondary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Secondary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Secondary); err != nil {
 		return err
 	}
 
 	// This will fail until there is no primary VRG in the vrgs list.
-	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, placementObj, vrgNamespace, rmn.Primary); err != nil {
+	if err := r.ensureVRGsDeleted(mwu, vrgs, drpc, vrgNamespace, rmn.Primary); err != nil {
 		return err
 	}
 
@@ -787,7 +984,7 @@ func (r *DRPlacementControlReconciler) cleanupVRGs(
 	}
 
 	// delete MCVs
-	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DRPolicyClusterNames(drPolicy)); err != nil {
+	if err := r.deleteAllManagedClusterViews(drpc, rmnutil.DRPolicyClusterNames(drPolicy), vrgNamespace); err != nil {
 		return fmt.Errorf("error in deleting MCV (%w)", err)
 	}
 
@@ -800,7 +997,6 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 	mwu rmnutil.MWUtil,
 	vrgs map[string]*rmn.VolumeReplicationGroup,
 	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
 	vrgNamespace string,
 	replicationState rmn.ReplicationState,
 ) error {
@@ -810,10 +1006,6 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 		if vrg.Spec.ReplicationState == replicationState {
 			if !ensureVRGsManagedByDRPC(r.Log, mwu, vrgs, drpc, vrgNamespace) {
 				return fmt.Errorf("%s VRG adoption in progress", replicationState)
-			}
-
-			if err := EnsureDoNotDeletePVCAnnotation(mwu, drpc, placementObj, vrg, cluster, r.Log); err != nil {
-				return fmt.Errorf("wait for annotation to propagate to the VRG. Msg: %w", err)
 			}
 
 			if err := mwu.DeleteManifestWork(mwu.BuildManifestWorkName(rmnutil.MWTypeVRG), cluster); err != nil {
@@ -832,20 +1024,50 @@ func (r *DRPlacementControlReconciler) ensureVRGsDeleted(
 }
 
 func (r *DRPlacementControlReconciler) deleteAllManagedClusterViews(
-	drpc *rmn.DRPlacementControl, clusterNames []string,
+	drpc *rmn.DRPlacementControl, clusterNames []string, vrgNamespace string,
 ) error {
 	// Only after the VRGs have been deleted, we delete the MCVs for the VRGs and the NS
 	for _, drClusterName := range clusterNames {
 		// Delete MCV for the VRG
-		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeVRG)
+		err := r.MCVGetter.DeleteVRGManagedClusterView(drpc.Name, vrgNamespace, drClusterName, rmnutil.MWTypeVRG)
 		if err != nil {
 			return fmt.Errorf("failed to delete VRG MCV %w", err)
 		}
 
-		// Delete MCV for Namespace
-		err = r.MCVGetter.DeleteNamespaceManagedClusterView(drpc.Name, drpc.Namespace, drClusterName, rmnutil.MWTypeNS)
-		if err != nil {
-			return fmt.Errorf("failed to delete namespace MCV %w", err)
+		// Delete MCVs for protected namespaces
+		if err := r.deleteProtectedNamespaceMCVs(drpc, drClusterName); err != nil {
+			return err
+		}
+
+		// Delete MCV for Recipe
+		if drpc.Spec.KubeObjectProtection != nil &&
+			drpc.Spec.KubeObjectProtection.RecipeRef != nil {
+			recipeRef := drpc.Spec.KubeObjectProtection.RecipeRef
+
+			err = r.MCVGetter.DeleteRecipeManagedClusterView(
+				recipeRef.Name, recipeRef.Namespace, drClusterName)
+			if err != nil {
+				return fmt.Errorf("failed to delete recipe MCV %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// deleteProtectedNamespaceMCVs deletes MCVs for protected namespaces. These MCVs are created by
+// createOrUpdateNSForDiscoveredApps via GetNSFromManagedCluster, named "{namespace}-ns-mcv" (e.g.,
+// "test-multi-1-ns-mcv"). Does nothing for non-discovered apps.
+func (r *DRPlacementControlReconciler) deleteProtectedNamespaceMCVs(
+	drpc *rmn.DRPlacementControl, clusterName string,
+) error {
+	if !isDiscoveredApp(drpc) {
+		return nil
+	}
+
+	for _, ns := range *drpc.Spec.ProtectedNamespaces {
+		if err := r.MCVGetter.DeleteNamespaceManagedClusterView(ns, "", clusterName, rmnutil.MWTypeNS); err != nil {
+			return fmt.Errorf("failed to delete namespace MCV for %q: %w", ns, err)
 		}
 	}
 
@@ -885,11 +1107,19 @@ func (r *DRPlacementControlReconciler) getDRPCPlacementRule(ctx context.Context,
 	return nil
 }
 
+// finalizePlacement removes the DRPC finalizer from the user PlacementRule/Placement. For a Placement, it also
+// aligns the cluster name in the "name In [...]" predicate match expressions with the cluster in its
+// PlacementDecision, so that the Placement keeps selecting the cluster the workload is running on. The predicate
+// is left alone if the Placement is itself being deleted.
 func (r *DRPlacementControlReconciler) finalizePlacement(
 	ctx context.Context,
 	placementObj client.Object,
 ) error {
 	controllerutil.RemoveFinalizer(placementObj, DRPCFinalizer)
+
+	if !rmnutil.ResourceIsDeleted(placementObj) {
+		r.alignPlacementPredicateWithDecision(placementObj)
+	}
 
 	err := r.Update(ctx, placementObj)
 	if err != nil {
@@ -897,6 +1127,52 @@ func (r *DRPlacementControlReconciler) finalizePlacement(
 	}
 
 	return nil
+}
+
+// alignPlacementPredicateWithDecision updates, in memory, the cluster name of the Placement's "name In [...]"
+// predicate to the cluster of its PlacementDecision. It does nothing for a PlacementRule, or when no cluster
+// has been decided.
+func (r *DRPlacementControlReconciler) alignPlacementPredicateWithDecision(placementObj client.Object) {
+	placement := ConvertToPlacement(placementObj)
+	if placement == nil {
+		return
+	}
+
+	clusterName := r.getClusterDecisionFromPlacement(placement).ClusterName
+	if clusterName == "" {
+		return
+	}
+
+	if syncPlacementPredicateClusterName(placement, clusterName) {
+		r.Log.Info("Updating Placement predicate to match PlacementDecision",
+			"Placement", client.ObjectKeyFromObject(placement), "Cluster", clusterName)
+	}
+}
+
+// syncPlacementPredicateClusterName sets the values of every "name In [...]" match expression found in the
+// Placement's required cluster selector predicates to the passed in cluster name. It returns true if the
+// Placement was modified, and false if all matching expressions already carried only that cluster name.
+func syncPlacementPredicateClusterName(placement *clrapiv1beta1.Placement, clusterName string) bool {
+	desired := []string{clusterName}
+	changed := false
+
+	for i := range placement.Spec.Predicates {
+		expressions := placement.Spec.Predicates[i].RequiredClusterSelector.LabelSelector.MatchExpressions
+
+		for j := range expressions {
+			expr := &expressions[j]
+			if expr.Key != ClusterNameLabelKey || expr.Operator != metav1.LabelSelectorOpIn {
+				continue
+			}
+
+			if !slices.Equal(expr.Values, desired) {
+				expr.Values = slices.Clone(desired)
+				changed = true
+			}
+		}
+	}
+
+	return changed
 }
 
 func (r *DRPlacementControlReconciler) updateAndSetOwner(
@@ -916,44 +1192,45 @@ func (r *DRPlacementControlReconciler) updateAndSetOwner(
 	return r.setDRPCOwner(ctx, drpc, usrPlacement, log)
 }
 
+// getPlacementOrPlacementRule now prefers Placement (deprecated PlRule fallback)
+// and reduces verbose info logs.
 func getPlacementOrPlacementRule(
 	ctx context.Context,
 	k8sclient client.Client,
 	drpc *rmn.DRPlacementControl,
 	log logr.Logger,
 ) (client.Object, error) {
-	log.Info("Getting user placement object", "placementRef", drpc.Spec.PlacementRef)
-
-	var usrPlacement client.Object
-
-	var err error
-
-	usrPlacement, err = getPlacementRule(ctx, k8sclient, drpc, log)
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			// PlacementRule not found. Check Placement instead
-			usrPlacement, err = getPlacement(ctx, k8sclient, drpc, log)
+	// Prefer Placement (new API) and fall back to PlacementRule only if Placement not found.
+	usrPlacement, err := getPlacement(ctx, k8sclient, drpc, log)
+	if err == nil {
+		// ensure no PlacementRule with same name exists
+		if _, prErr := getPlacementRule(ctx, k8sclient, drpc, log); prErr == nil {
+			return nil, fmt.Errorf("can't proceed. Placement and PlacementRule CR with the same name exist in the" +
+				" same namespace")
 		}
 
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Assert that there is no Placement object in the same namespace and with the same name as the PlacementRule
-		_, err = getPlacement(ctx, k8sclient, drpc, log)
-		if err == nil {
-			return nil, fmt.Errorf(
-				"can't proceed. PlacementRule and Placement CR with the same name exist on the same namespace")
-		}
+		return usrPlacement, nil
 	}
 
-	return usrPlacement, nil
+	// If not found, try PlacementRule
+	if k8serrors.IsNotFound(err) {
+		usrPlRule, prErr := getPlacementRule(ctx, k8sclient, drpc, log)
+		if prErr != nil {
+			return nil, prErr
+		}
+
+		return usrPlRule, nil
+	}
+
+	// Other errors from getPlacement should be returned
+	return nil, err
 }
 
+// getPlacementRule - remove some noisy Info logs and keep validation logic
 func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*plrv1.PlacementRule, error) {
-	log.Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
+	log.V(1).Info("Trying user PlacementRule", "usrPR", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
 
 	plRuleNamespace := drpc.Spec.PlacementRef.Namespace
 	if plRuleNamespace == "" {
@@ -961,8 +1238,8 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	}
 
 	if plRuleNamespace != drpc.Namespace {
-		return nil, fmt.Errorf("referenced PlacementRule namespace (%s)"+
-			" differs from DRPlacementControl resource namespace (%s)",
+		return nil, fmt.Errorf("referenced PlacementRule namespace (%s) differs from DRPlacementControl resource"+
+			" namespace (%s)",
 			drpc.Spec.PlacementRef.Namespace, drpc.Namespace)
 	}
 
@@ -971,7 +1248,7 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plRuleNamespace}, usrPlRule)
 	if err != nil {
-		log.Info(fmt.Sprintf("Get PlacementRule returned: %v", err))
+		log.V(1).Info("Get PlacementRule returned", "err", err)
 
 		return nil, err
 	}
@@ -985,18 +1262,19 @@ func getPlacementRule(ctx context.Context, k8sclient client.Client,
 		}
 
 		if usrPlRule.Spec.ClusterReplicas == nil || *usrPlRule.Spec.ClusterReplicas != 1 {
-			log.Info("User PlacementRule replica count is not set to 1, reconciliation will only" +
-				" schedule it to a single cluster")
+			log.V(1).Info("User PlacementRule replica count is not set to 1, reconciliation will only " +
+				"schedule it to a single cluster")
 		}
 	}
 
 	return usrPlRule, nil
 }
 
+// getPlacement - remove some noisy Info logs and keep validation logic
 func getPlacement(ctx context.Context, k8sclient client.Client,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) (*clrapiv1beta1.Placement, error) {
-	log.Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
+	log.V(1).Info("Trying user Placement", "usrP", drpc.Spec.PlacementRef.Name+"/"+drpc.Spec.PlacementRef.Namespace)
 
 	plmntNamespace := drpc.Spec.PlacementRef.Namespace
 	if plmntNamespace == "" {
@@ -1004,8 +1282,7 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 	}
 
 	if plmntNamespace != drpc.Namespace {
-		return nil, fmt.Errorf("referenced Placement namespace (%s)"+
-			" differs from DRPlacementControl resource namespace (%s)",
+		return nil, fmt.Errorf("referenced Placement namespace (%s) differs from DRPlacementControl resource namespace (%s)",
 			drpc.Spec.PlacementRef.Namespace, drpc.Namespace)
 	}
 
@@ -1014,7 +1291,7 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 	err := k8sclient.Get(ctx,
 		types.NamespacedName{Name: drpc.Spec.PlacementRef.Name, Namespace: plmntNamespace}, usrPlmnt)
 	if err != nil {
-		log.Info(fmt.Sprintf("Get Placement returned: %v", err))
+		log.V(1).Info("Get Placement returned", "err", err)
 
 		return nil, err
 	}
@@ -1027,8 +1304,8 @@ func getPlacement(ctx context.Context, k8sclient client.Client,
 		}
 
 		if usrPlmnt.Spec.NumberOfClusters == nil || *usrPlmnt.Spec.NumberOfClusters != 1 {
-			log.Info("User Placement number of clusters is not set to 1, reconciliation will only" +
-				" schedule it to a single cluster")
+			log.Info("User Placement number of clusters is not set to 1, reconciliation will only " +
+				"schedule it to a single cluster")
 		}
 	}
 
@@ -1148,13 +1425,13 @@ func (r *DRPlacementControlReconciler) clonePlacementRule(ctx context.Context,
 
 	clonedPlRule := &plrv1.PlacementRule{}
 
-	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
-
 	userPlRule.DeepCopyInto(clonedPlRule)
 
 	clonedPlRule.Name = clonedPlRuleName
 	clonedPlRule.ResourceVersion = ""
 	clonedPlRule.Spec.SchedulerName = ""
+
+	rmnutil.AddLabel(clonedPlRule, rmnutil.CreatedByRamenLabel, "true")
 
 	err := r.addClusterPeersToPlacementRule(drPolicy, clonedPlRule, log)
 	if err != nil {
@@ -1327,7 +1604,23 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	ctx context.Context, drpc *rmn.DRPlacementControl,
 	userPlacement client.Object, log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
 ) error {
-	log.Info("Updating DRPC status")
+	// Account any DR action phase transition and persist the action count
+	// annotation before the status update, so that a failed status update
+	// cannot lose an already observed transition
+	syncDRActionCountAnnotation(drpc)
+
+	if annotation := drpc.GetAnnotations()[DRActionCountAnnotation]; annotation != r.savedDRActionCount {
+		// Update refreshes drpc from the API response, which would discard
+		// the in-memory status updates that are not persisted yet
+		status := *drpc.Status.DeepCopy()
+
+		if err := r.Update(ctx, drpc); err != nil {
+			return fmt.Errorf("failed to update DRPC dr-action-count annotation: %w", err)
+		}
+
+		drpc.Status = status
+		r.savedDRActionCount = annotation
+	}
 
 	r.updateResourceCondition(ctx, drpc, userPlacement, log, vrgs)
 
@@ -1348,8 +1641,6 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 	}
 
 	if reflect.DeepEqual(r.savedInstanceStatus, drpc.Status) {
-		log.Info("No need to update DRPC Status")
-
 		return nil
 	}
 
@@ -1407,6 +1698,11 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		ProtectedPVCs:   extractProtectedPVCNames(vrg),
 	}
 
+	// only populate if primary has static IP VMs
+	if vrg.Status.StaticIPDiscoveryStatus != nil {
+		drpc.Status.ResourceConditions.ResourceMeta.ProtectedStaticIPVMs = vrg.Status.StaticIPDiscoveryStatus.Resources
+	}
+
 	drpc.Status.ResourceConditions.Conditions = assignConditionsWithConflictCheck(
 		vrgs, vrg, VRGConditionTypeNoClusterDataConflict)
 
@@ -1425,6 +1721,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	}
 
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
+	updateDRPCReplicationHealthyCondition(drpc, vrg)
 }
 
 // getVRG retrieves a VRG either from the provided map or fetches it from the managed cluster/S3 store.
@@ -1477,7 +1774,7 @@ func (r *DRPlacementControlReconciler) getVRG(
 
 // extractProtectedPVCNames extracts protected PVC names from a VRG
 func extractProtectedPVCNames(vrg *rmn.VolumeReplicationGroup) []string {
-	protectedPVCs := []string{}
+	protectedPVCs := make([]string, 0, len(vrg.Status.ProtectedPVCs))
 	for _, protectedPVC := range vrg.Status.ProtectedPVCs {
 		protectedPVCs = append(protectedPVCs, protectedPVC.Name)
 	}
@@ -1617,13 +1914,17 @@ func (r *DRPlacementControlReconciler) clusterForVRGStatus(
 func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 	drpc *rmn.DRPlacementControl, log logr.Logger,
 ) error {
-	log.Info("setting WorkloadProtectionMetrics")
-
 	workloadProtectionMetrics := r.createWorkloadProtectionMetricsInstance(drpc)
-	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions, log)
+	r.setWorkloadProtectionMetric(workloadProtectionMetrics, drpc.Status.Conditions)
 
 	cgEnabledMetrics := r.createCGEnabledMetricsInstance(drpc)
-	r.setCGEnabledMetric(drpc, cgEnabledMetrics, log)
+	r.setCGEnabledMetric(drpc, cgEnabledMetrics)
+
+	globalActionMetrics := r.createGlobalActionMetricsInstance(drpc)
+	r.setGlobalActionMetric(drpc, globalActionMetrics)
+
+	// Set progression state metric for both Metro and Regional DR
+	r.setDRProgressionStateMetric(drpc, &DRProgressionStateMetrics{})
 
 	drPolicy, err := GetDRPolicy(ctx, r.Client, drpc, log)
 	if err != nil {
@@ -1640,14 +1941,17 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		return nil
 	}
 
-	log.Info("setting SyncMetrics")
+	// Async with 0m SchedulingInterval, skip setting sync metrics
+	if drPolicy.Spec.SchedulingInterval == "0m" {
+		return nil
+	}
 
 	syncMetrics := r.createSyncMetricsInstance(drPolicy, drpc)
 
 	if syncMetrics != nil {
-		r.setLastSyncTimeMetric(&syncMetrics.SyncTimeMetrics, drpc.Status.LastGroupSyncTime, log)
-		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
-		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
+		r.setLastSyncTimeMetric(&syncMetrics.SyncTimeMetrics, drpc.Status.LastGroupSyncTime)
+		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration)
+		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes)
 	}
 
 	return nil
@@ -1903,7 +2207,8 @@ func (r *DRPlacementControlReconciler) createPlacementDecision(ctx context.Conte
 
 	rmnutil.AddLabel(plDecision, rmnutil.CreatedByRamenLabel, "true")
 
-	owner := metav1.NewControllerRef(placement, clrapiv1beta1.GroupVersion.WithKind("Placement"))
+	sgv := schema.GroupVersion{Group: clrapiv1beta1.GroupVersion.Group, Version: clrapiv1beta1.GroupVersion.Version}
+	owner := metav1.NewControllerRef(placement, sgv.WithKind("Placement"))
 	plDecision.ObjectMeta.OwnerReferences = []metav1.OwnerReference{*owner}
 
 	for index <= MaxPlacementDecisionConflictCount {
@@ -2104,10 +2409,13 @@ func getApplicationDestinationNamespace(
 	//
 	for i := range appSetList.Items {
 		appSet := &appSetList.Items[i]
-		if len(appSet.Spec.Generators) > 0 &&
-			appSet.Spec.Generators[0].ClusterDecisionResource != nil {
-			name := appSet.Spec.Generators[0].ClusterDecisionResource.LabelSelector.MatchLabels[clrapiv1beta1.PlacementLabel]
-			if name == placement.GetName() {
+
+		if appSet.Namespace != placement.GetNamespace() {
+			continue
+		}
+
+		for j := range appSet.Spec.Generators {
+			if argocdv1alpha1hack.AppSetGeneratorMatchesPlacement(&appSet.Spec.Generators[j], placement.GetName()) {
 				log.Info("Found ApplicationSet for Placement", "name", appSet.Name, "placement", placement.GetName())
 				// Retrieving the Destination.Namespace from Application.Spec requires iterating through all Applications
 				// and checking their ownerReferences, which can be time-consuming. Alternatively, we can get the same
@@ -2190,7 +2498,7 @@ func ensureDRPCConditionsInited(conditions *[]metav1.Condition, observedGenerati
 		Type:               rmn.ConditionPeerReady,
 		Reason:             string(rmn.Initiating),
 		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
+		Status:             metav1.ConditionFalse,
 		LastTransitionTime: time,
 		Message:            message,
 	})
@@ -2665,7 +2973,7 @@ func adoptOrphanVRG(
 	annotations[DRPCNamespaceAnnotation] = drpc.Namespace
 
 	// Adopt the namespace as well
-	err := mwu.CreateOrUpdateNamespaceManifest(drpc.Name, vrgNamespace, cluster, annotations)
+	err := mwu.CreateOrUpdateNamespaceManifestWork(drpc.Name, vrgNamespace, cluster, annotations, map[string]string{})
 	if err != nil {
 		log.Info("error creating namespace via ManifestWork during adoption", "error", err, "cluster", cluster)
 
@@ -2703,13 +3011,13 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 		switch k {
 		case DestinationClusterAnnotationKey:
 			fallthrough
-		case DoNotDeletePVCAnnotation:
-			fallthrough
 		case rmnutil.IsCGEnabledAnnotation:
 			fallthrough
 		case rmnutil.IsSubmarinerEnabledAnnotation:
 			fallthrough
 		case rmnutil.UseVolSyncAnnotation:
+			fallthrough
+		case rmnutil.EnableDiffAnnotation:
 			fallthrough
 		case DRPCUIDAnnotation:
 			rmnutil.AddAnnotation(vrg, k, v)
@@ -2759,15 +3067,20 @@ func drpcsProtectCommonNamespace(drpcProtectedNs []string, otherDRPCProtectedNs 
 }
 
 func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacementControl,
-	log logr.Logger,
+	placementObj client.Object, log logr.Logger,
 ) ([]string, error) {
 	if isDiscoveredApp(drpc) {
 		return *drpc.Spec.ProtectedNamespaces, nil
 	}
 
-	placementObj, err := getPlacementOrPlacementRule(context.TODO(), r.Client, drpc, log)
-	if err != nil {
-		return []string{}, err
+	var err error
+
+	// If caller did not pass a placementObj, resolve it here (quietly).
+	if placementObj == nil {
+		placementObj, err = getPlacementOrPlacementRule(context.TODO(), r.Client, drpc, log)
+		if err != nil {
+			return []string{}, err
+		}
 	}
 
 	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, placementObj)
@@ -2779,12 +3092,14 @@ func (r *DRPlacementControlReconciler) getProtectedNamespaces(drpc *rmn.DRPlacem
 }
 
 func (r *DRPlacementControlReconciler) ensureNoConflictingDRPCs(ctx context.Context,
-	drpc *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig, log logr.Logger,
+	drpc *rmn.DRPlacementControl, placementObj client.Object, ramenConfig *rmn.RamenConfig, log logr.Logger,
 ) error {
 	drpcList := &rmn.DRPlacementControlList{}
 	if err := r.Client.List(ctx, drpcList); err != nil {
 		return fmt.Errorf("failed to list DRPlacementControls (%w)", err)
 	}
+
+	checked := 0
 
 	for i := range drpcList.Items {
 		otherDRPC := &drpcList.Items[i]
@@ -2794,16 +3109,33 @@ func (r *DRPlacementControlReconciler) ensureNoConflictingDRPCs(ctx context.Cont
 			continue
 		}
 
-		if err := r.twoDRPCsConflict(ctx, drpc, otherDRPC, ramenConfig, log); err != nil {
+		checked++
+
+		// Refresh otherDRPC status to avoid stale condition issues
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: otherDRPC.Namespace, Name: otherDRPC.Name}, otherDRPC)
+		if err != nil {
+			return fmt.Errorf("failed to get other DRPC %s/%s: %w", otherDRPC.Namespace, otherDRPC.Name, err)
+		}
+
+		if err := r.twoDRPCsConflict(ctx, drpc, placementObj, otherDRPC, ramenConfig, log); err != nil {
 			return err
 		}
 	}
 
+	// Single summary log for the whole conflict-check operation
+	log.Info("Completed DRPC conflict checks", "drpc", drpc.Namespace+"/"+drpc.Name, "checkedCount", checked)
+
 	return nil
 }
 
-func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
-	drpc *rmn.DRPlacementControl, otherDRPC *rmn.DRPlacementControl, ramenConfig *rmn.RamenConfig, log logr.Logger,
+// twoDRPCsConflict compares two DRPCs for conflicts.
+func (r *DRPlacementControlReconciler) twoDRPCsConflict(
+	ctx context.Context,
+	drpc *rmn.DRPlacementControl,
+	placementObj client.Object,
+	otherDRPC *rmn.DRPlacementControl,
+	ramenConfig *rmn.RamenConfig,
+	log logr.Logger,
 ) error {
 	drpcIsInAdminNamespace := drpcInAdminNamespace(drpc, ramenConfig)
 	otherDRPCIsInAdminNamespace := drpcInAdminNamespace(otherDRPC, ramenConfig)
@@ -2823,12 +3155,12 @@ func (r *DRPlacementControlReconciler) twoDRPCsConflict(ctx context.Context,
 		return nil
 	}
 
-	drpcProtectedNamespaces, err := r.getProtectedNamespaces(drpc, log)
+	drpcProtectedNamespaces, err := r.getProtectedNamespaces(drpc, placementObj, log)
 	if err != nil {
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", drpc.Name, err)
 	}
 
-	otherDRPCProtectedNamespaces, err := r.getProtectedNamespaces(otherDRPC, log)
+	otherDRPCProtectedNamespaces, err := r.getProtectedNamespaces(otherDRPC, nil, log)
 	if err != nil {
 		return fmt.Errorf("failed to get protected namespaces for drpc: %v, %w", otherDRPC.Name, err)
 	}
@@ -2872,171 +3204,138 @@ func (r *DRPlacementControlReconciler) drpcHaveCommonClusters(ctx context.Contex
 	return drpolicyClusters.Intersection(otherDrpolicyClusters).Len() > 0, nil
 }
 
+// drpcMetaAndOtherHaveVMRecipe is a pre-check helper that encapsulates VM recipe validation
+// to keep cyclomatic complexity low.
+func (r *DRPlacementControlReconciler) drpcMetaAndOtherHaveVMRecipe(drpc *rmn.DRPlacementControl,
+	otherdrpc *rmn.DRPlacementControl,
+	ramenConfig *rmn.RamenConfig,
+) bool {
+	if drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil {
+		return false
+	}
+
+	if otherdrpc.Spec.KubeObjectProtection == nil || otherdrpc.Spec.KubeObjectProtection.RecipeRef == nil {
+		return false
+	}
+
+	if drpc.Spec.KubeObjectProtection.RecipeRef.Name != core.VMRecipeName ||
+		otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name != core.VMRecipeName {
+		return false
+	}
+
+	ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
+	if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace != ramenOpsNS ||
+		otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace != ramenOpsNS {
+		return false
+	}
+
+	return true
+}
+
 func (r *DRPlacementControlReconciler) drpcProtectVMInNS(drpc *rmn.DRPlacementControl,
 	otherdrpc *rmn.DRPlacementControl,
 	ramenConfig *rmn.RamenConfig,
 ) bool {
-	if (drpc.Spec.KubeObjectProtection == nil || drpc.Spec.KubeObjectProtection.RecipeRef == nil) ||
-		(otherdrpc.Spec.KubeObjectProtection == nil || otherdrpc.Spec.KubeObjectProtection.RecipeRef == nil) {
+	// Consolidate pre-checks in helper to keep complexity low
+	if !r.drpcMetaAndOtherHaveVMRecipe(drpc, otherdrpc, ramenConfig) {
 		return false
 	}
 
-	drpcRecipeName := drpc.Spec.KubeObjectProtection.RecipeRef.Name
-	otherDrpcRecipeName := otherdrpc.Spec.KubeObjectProtection.RecipeRef.Name
+	drpcParams := drpc.Spec.KubeObjectProtection.RecipeParameters
+	otherParams := otherdrpc.Spec.KubeObjectProtection.RecipeParameters
 
-	// Both the DRPCs are associated with vm-recipe, and protecting VM resources.
-	// Support for protecting independent VMs
-	if drpcRecipeName == core.VMRecipeName && otherDrpcRecipeName == core.VMRecipeName {
-		ramenOpsNS := RamenOperandsNamespace(*ramenConfig)
+	keys := []string{core.VMList, core.K8SLabelSelector, core.PVCLabelSelector}
 
-		if drpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS &&
-			otherdrpc.Spec.KubeObjectProtection.RecipeRef.Namespace == ramenOpsNS {
-			return !r.twoVMDRPCsConflict(drpc, otherdrpc)
+	for _, k := range keys {
+		// If any recipe parameter key has overlapping values between the two DRPCs,
+		// they are protecting the same VM resources — not independent, so return false
+		// to let the namespace-conflict check run and produce an error.
+		if sets.NewString(drpcParams[k]...).Intersection(sets.NewString(otherParams[k]...)).Len() > 0 {
+			return false
 		}
 	}
 
-	return false
+	// No overlap on any key: both DRPCs use vm-recipe and protect disjoint VMs
+	// in the same namespace — this is explicitly supported, skip the conflict check.
+	return true
 }
 
-func (r *DRPlacementControlReconciler) twoVMDRPCsConflict(drpc *rmn.DRPlacementControl,
-	otherdrpc *rmn.DRPlacementControl,
-) bool {
-	// "PROTECTED_VMS"
-	drpcVMList := sets.NewString(drpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
-	otherdrpcVMList := sets.NewString(otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.VMList]...)
-
-	vmListConflict := drpcVMList.Intersection(otherdrpcVMList)
-
-	// Mark the latest drpc as unavailable if conflicting resources found
-
-	// "K8S_RESOURCE_LIST"
-	drpcK8SLabelSelector := sets.NewString(
-		drpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
-	otherdrpcK8SLabelSelector := sets.NewString(
-		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.K8SLabelSelector]...)
-
-	k8sLabelSelectorConflict := drpcK8SLabelSelector.Intersection(otherdrpcK8SLabelSelector)
-	// "PVC_RESOURCE_LIST"
-	drpcPVCLabelSelector := sets.NewString(
-		drpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
-	otherdrpcPVCLabelSelector := sets.NewString(
-		otherdrpc.Spec.KubeObjectProtection.RecipeParameters[core.PVCLabelSelector]...)
-
-	pvcLabelSelectorConflict := drpcPVCLabelSelector.Intersection(otherdrpcPVCLabelSelector)
-
-	// Mark the latest drpc as unavailable if conflicting resources found
-	if len(vmListConflict) > 0 || len(k8sLabelSelectorConflict) > 0 || len(pvcLabelSelectorConflict) > 0 {
-		if (drpc.Status.ObservedGeneration == 0) ||
-			(drpc.Status.ObservedGeneration > 0 && otherdrpc.Status.ObservedGeneration > 0) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// EnsureDoNotDeletePVCAnnotation ensures that the "do-not-delete-pvc" annotation is propagated from the DRPC
-// resource to the VRG resource on the specified cluster. If the annotation is set on the DRPC but not yet
-// present on the VRG, this function updates the VRG ManifestWork to include the annotation. This is used to
-// prevent deletion of app PVCs during DR disabling.
-func EnsureDoNotDeletePVCAnnotation(
-	mwu rmnutil.MWUtil,
-	drpc *rmn.DRPlacementControl,
-	placementObj client.Object,
-	vrg *rmn.VolumeReplicationGroup,
+func (r *DRPlacementControlReconciler) switchClusterDecisionRetainFailover(
+	ctx context.Context,
+	placement interface{},
 	cluster string,
-	log logr.Logger,
 ) error {
-	if vrg.Spec.ReplicationState != rmn.Primary {
-		return nil // Only propagate the annotation if the VRG is in primary state
+	switch obj := placement.(type) {
+	case *plrv1.PlacementRule:
+		return r.switchPlacementRuleClusterDecisionRetainFailover(ctx, obj, cluster)
+	case *clrapiv1beta1.Placement:
+		return r.switchPlacementClusterDecisionRetainFailover(ctx, obj, cluster)
+	default:
+		return fmt.Errorf("failed to find Placement or PlacementRule")
 	}
+}
 
-	if rmnutil.ResourceIsDeleted(placementObj) {
-		return nil // Propagate the annotation only if the Placement resource is NOT being deleted
-	}
-
-	if IsRamenPlacementScheduler(placementObj) {
-		return nil // If Ramen is still the scheduler, no need to propagate the annotation
-	}
-
-	// Ramen is no longer the scheduler. We need to make sure the annotation exists; otherwise, the process will wait.
-	if drpc.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		return fmt.Errorf("do-not-delete-pvc annotation not yet applied to the DRPC")
-	}
-
-	// Check whether the annotation is already set on the VRG. If it is, no action is needed.
-	// If not, propagate the annotation to the VRG.
-	if vrg.GetAnnotations()[DoNotDeletePVCAnnotation] != DoNotDeletePVCAnnotationVal {
-		err := propagateAnnotationToVRG(mwu, cluster, DoNotDeletePVCAnnotation, DoNotDeletePVCAnnotationVal, log)
-
-		return fmt.Errorf("annotation hasn't been propagated to cluster %s (%w)", cluster, err)
-	}
-
+func (r *DRPlacementControlReconciler) switchPlacementRuleClusterDecisionRetainFailover(
+	ctx context.Context,
+	placement *plrv1.PlacementRule,
+	cluster string,
+) error {
 	return nil
 }
 
-func IsRamenPlacementScheduler(placementObj client.Object) bool {
-	switch obj := placementObj.(type) {
-	case *plrv1.PlacementRule:
-		scName := obj.Spec.SchedulerName
-		if scName == RamenScheduler {
-			return true
-		}
-	case *clrapiv1beta1.Placement:
-		if val, ok := obj.GetAnnotations()[clrapiv1beta1.PlacementDisableAnnotation]; ok && val == "true" {
-			return true
-		}
-	}
-
-	return false
-}
-
-// propagateAnnotationToVRG adds or updates a specific annotation on a VRG resource in the ManifestWork
-// for the given cluster. This is typically used to propagate the "do-not-delete-pvc" annotation from
-// the DRPC to the VRG, to ensure that app PVCs are not deleted during DR disabling.
-func propagateAnnotationToVRG(
-	mwu rmnutil.MWUtil,
-	toCluster string,
-	annoKey, annoValue string,
-	log logr.Logger,
+// switchPlacementClusterDecisionRetainFailover updates decisions so that the reason
+// PlacementDecisionReasonFailoverRetained is removed from clusterName (reverting it to clusterName),
+// and applied to any other cluster decisions.
+func (r *DRPlacementControlReconciler) switchPlacementClusterDecisionRetainFailover(
+	ctx context.Context,
+	placement *clrapiv1beta1.Placement,
+	cluster string,
 ) error {
-	log.Info("propagate Annotation to VRG")
-
-	mw, mwErr := mwu.FindManifestWorkByType(rmnutil.MWTypeVRG, toCluster)
-	if mwErr != nil {
-		if k8serrors.IsNotFound(mwErr) {
-			return fmt.Errorf("failed to find ManifestWork for VRG and cluster %s", toCluster)
-		}
-
-		return fmt.Errorf("error (%w) in finding ManifestWork for VRG and cluster %s",
-			mwErr, toCluster)
-	}
-
-	vrg, err := rmnutil.ExtractVRGFromManifestWork(mw)
+	plDecision, err := r.getPlacementDecisionFromPlacement(placement)
 	if err != nil {
-		return fmt.Errorf("error extracting VRG from ManifestWork for cluster %s. Error: %w", toCluster, err)
+		return err
 	}
 
-	if vrg.Spec.ReplicationState != rmn.Primary {
-		return fmt.Errorf("invalid update for VRG in %s spec.replicationState on cluster %s",
-			vrg.Spec.ReplicationState, toCluster)
-	}
-
-	if vrg.GetAnnotations() == nil {
-		vrg.SetAnnotations(make(map[string]string))
-	}
-
-	if vrg.GetAnnotations()[annoKey] == annoValue {
-		log.Info(fmt.Sprintf("Annotation %s already exists with value %s on VRG %s in cluster %s",
-			annoKey, annoValue, vrg.Name, toCluster))
-
+	if plDecision == nil {
 		return nil
 	}
 
-	log.Info(fmt.Sprintf("Adding/Updating Annotation %s with value %s on VRG %s in cluster %s",
-		annoKey, annoValue, vrg.Name, toCluster))
+	updated := false
 
-	vrg.GetAnnotations()[annoKey] = annoValue
+	for idx := range plDecision.Status.Decisions {
+		d := &plDecision.Status.Decisions[idx]
 
-	return mwu.UpdateVRGManifestWork(vrg, mw)
+		if d.ClusterName == cluster {
+			// If the target cluster currently has RetainedForFailover, revert it back to cluster name
+			if d.Reason == PlacementDecisionReasonFailoverRetained {
+				d.Reason = d.ClusterName
+				updated = true
+			}
+		} else {
+			// All other clusters receive RetainedForFailover
+			if d.Reason != PlacementDecisionReasonFailoverRetained {
+				d.Reason = PlacementDecisionReasonFailoverRetained
+				updated = true
+			}
+		}
+	}
+
+	if !updated {
+		return nil
+	}
+
+	if err := r.Status().Update(ctx, plDecision); err != nil {
+		return fmt.Errorf(
+			"failed to update placementDecision status to switch retained failover reason (%w)",
+			err,
+		)
+	}
+
+	r.Log.Info(
+		"Updated PlacementDecision to switch retained failover cluster decision",
+		"ActiveCluster", cluster,
+		"PlacementDecision", plDecision.Status.Decisions,
+	)
+
+	return nil
 }

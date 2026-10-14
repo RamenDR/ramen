@@ -19,9 +19,11 @@ import (
 )
 
 var _ = Describe("PVCS_Util", func() {
-	var testNamespace *corev1.Namespace
-	var testCtx context.Context
-	var cancel context.CancelFunc
+	var (
+		testNamespace *corev1.Namespace
+		testCtx       context.Context
+		cancel        context.CancelFunc
+	)
 
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
@@ -44,10 +46,12 @@ var _ = Describe("PVCS_Util", func() {
 	})
 
 	Describe("List PVCs by PVCSelector", func() {
-		var pvcA *corev1.PersistentVolumeClaim
-		var pvcB *corev1.PersistentVolumeClaim
-		var pvcC *corev1.PersistentVolumeClaim
-		var pvcD *corev1.PersistentVolumeClaim
+		var (
+			pvcA *corev1.PersistentVolumeClaim
+			pvcB *corev1.PersistentVolumeClaim
+			pvcC *corev1.PersistentVolumeClaim
+			pvcD *corev1.PersistentVolumeClaim
+		)
 
 		pvcCount := 4
 

@@ -24,6 +24,41 @@ const (
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
 	CGEnabled                = "unsupported_consistency_grouping_enabled"
+	GlobalActionStatus       = "global_action_consensus_status"
+	// Added for drpc progression state
+	DRProgressionState = "progression_state"
+)
+
+const (
+	InvalidCIDRsDetected = "invalid_cidrs_detected"
+	UndetectedCIDRsFound = "undetected_cidrs_found"
+)
+
+// DR telemetry metrics, forwarded to Red Hat Telemetry via the
+// cluster-monitoring-operator allowlist. Label cardinality is bounded
+// (3 + 2 + 2 = 7 series) as required by telemetry.
+const (
+	DRPolicyTypeName    = "dr_policy_type"
+	DRProtectedAppsName = "dr_protected_apps"
+	DRActionsName       = "dr_actions"
+)
+
+const (
+	DRTypeLabel           = "dr_type"
+	ManagementMethodLabel = "management_method"
+	ActionLabel           = "action"
+)
+
+const (
+	DRTypeMetro    = "metro"
+	DRTypeRegional = "regional"
+	DRTypeUnknown  = "unknown"
+
+	ManagementMethodDiscovered = "discovered"
+	ManagementMethodManaged    = "managed"
+
+	ActionFailover = "failover"
+	ActionRelocate = "relocate"
 )
 
 type SyncTimeMetrics struct {
@@ -49,6 +84,22 @@ type CGEnabledMetrics struct {
 	CGEnabled prometheus.Gauge
 }
 
+type GlobalActionMetrics struct {
+	GlobalActionStatus prometheus.Gauge
+}
+
+type InvalidCIDRsDetectedMetrics struct {
+	InvalidCIDRsDetected prometheus.Gauge
+}
+
+type UndetectedCIDRsFoundMetrics struct {
+	UndetectedCIDRsFound prometheus.Gauge
+}
+
+type DRProgressionStateMetrics struct {
+	DRProgressionState prometheus.Gauge
+}
+
 type SyncMetrics struct {
 	SyncTimeMetrics
 	SyncDurationMetrics
@@ -56,11 +107,12 @@ type SyncMetrics struct {
 }
 
 const (
-	ObjType            = "obj_type"
-	ObjName            = "obj_name"
-	ObjNamespace       = "obj_namespace"
-	Policyname         = "policyname"
-	SchedulingInterval = "scheduling_interval"
+	ObjType               = "obj_type"
+	ObjName               = "obj_name"
+	ObjNamespace          = "obj_namespace"
+	Policyname            = "policyname"
+	SchedulingInterval    = "scheduling_interval"
+	ProgressionStateLabel = "state"
 )
 
 var (
@@ -100,6 +152,24 @@ var (
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
+	}
+
+	globalActionLabels = []string{
+		ObjType,      // Name of the type of the resource [drpc]
+		ObjName,      // Name of the resoure [drpc-name]
+		ObjNamespace, // DRPC namespace
+	}
+
+	cidrMetricLabels = []string{
+		ObjType, // Name of the type of the resource [DRCluster]
+		ObjName, // Name of the resoure [DRCluster-name]
+	}
+
+	drProgressionStateMetricsLabels = []string{
+		ObjType,      // Name of the type of the resource [drpc]
+		ObjName,      // Name of the protected application [drpc-name]
+		ObjNamespace, // Protected namespace
+		ProgressionStateLabel,
 	}
 )
 
@@ -156,6 +226,69 @@ var (
 			Help:      "Unsupported consistency grouping enabled status",
 		},
 		cgEnabledMetricLabels,
+	)
+
+	globalAction = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      GlobalActionStatus,
+			Namespace: metricNamespace,
+			Help:      "Status regarding global action consensus",
+		},
+		globalActionLabels,
+	)
+
+	invalidCIDRsDetected = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      InvalidCIDRsDetected,
+			Namespace: metricNamespace,
+			Help:      "Invalid CIDRs Detected status",
+		},
+		cidrMetricLabels,
+	)
+
+	undetectedCIDRsFound = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      UndetectedCIDRsFound,
+			Namespace: metricNamespace,
+			Help:      "CIDRs configured in DRCluster not detected by the storage provisioner",
+		},
+		cidrMetricLabels,
+	)
+
+	drpcProgressionState = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRProgressionState,
+			Namespace: metricNamespace,
+			Help:      "DRPC progression state indicator; emitted only when WaitOnUserToCleanUp is active",
+		},
+		drProgressionStateMetricsLabels,
+	)
+
+	drPolicyType = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRPolicyTypeName,
+			Namespace: metricNamespace,
+			Help:      "Count of DRPolicy resources by DR type",
+		},
+		[]string{DRTypeLabel},
+	)
+
+	drProtectedApps = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRProtectedAppsName,
+			Namespace: metricNamespace,
+			Help:      "Count of DR protected applications (DRPC resources) by management method",
+		},
+		[]string{ManagementMethodLabel},
+	)
+
+	drActions = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      DRActionsName,
+			Namespace: metricNamespace,
+			Help:      "Cumulative count of DR actions initiated by existing DRPC resources",
+		},
+		[]string{ActionLabel},
 	)
 )
 
@@ -273,6 +406,109 @@ func DeleteCGEnabledMetric(labels prometheus.Labels) bool {
 	return cgEnabled.Delete(labels)
 }
 
+func GlobalActionLabels(drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:      "DRPlacementControl",
+		ObjName:      drpc.Name,
+		ObjNamespace: drpc.Namespace,
+	}
+}
+
+func NewGlobalActionMetric(labels prometheus.Labels) GlobalActionMetrics {
+	return GlobalActionMetrics{
+		GlobalActionStatus: globalAction.With(labels),
+	}
+}
+
+func DeleteGlobalActionMetric(labels prometheus.Labels) bool {
+	return globalAction.Delete(labels)
+}
+
+// InvalidCIDRsDetected Metric reports if CIDRs configured are valid for fencing
+func DRClusterCIDRsMetricLabels(drc *rmn.DRCluster) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType: "DRCluster",
+		ObjName: drc.Name,
+	}
+}
+
+func NewInvalidCIDRsDetectedMetric(labels prometheus.Labels) InvalidCIDRsDetectedMetrics {
+	return InvalidCIDRsDetectedMetrics{
+		InvalidCIDRsDetected: invalidCIDRsDetected.With(labels),
+	}
+}
+
+func DeleteInvalidCIDRsDetectedMetric(labels prometheus.Labels) bool {
+	return invalidCIDRsDetected.Delete(labels)
+}
+
+// UndetectedCIDRsFound Metric reports if CIDRs configured in DRCluster are not detected by the storage provisioner
+func NewUndetectedCIDRsFoundMetric(labels prometheus.Labels) UndetectedCIDRsFoundMetrics {
+	return UndetectedCIDRsFoundMetrics{
+		UndetectedCIDRsFound: undetectedCIDRsFound.With(labels),
+	}
+}
+
+func DeleteUndetectedCIDRsFoundMetric(labels prometheus.Labels) bool {
+	return undetectedCIDRsFound.Delete(labels)
+}
+
+func DRProgressionStateMetricLabels(drpc *rmn.DRPlacementControl,
+	state string,
+) prometheus.Labels {
+	return prometheus.Labels{
+		ObjType:               "DRPlacementControl",
+		ObjName:               drpc.Name,
+		ObjNamespace:          drpc.Namespace,
+		ProgressionStateLabel: state,
+	}
+}
+
+func NewDRPCProgressionStateMetric(labels prometheus.Labels) DRProgressionStateMetrics {
+	return DRProgressionStateMetrics{
+		DRProgressionState: drpcProgressionState.With(labels),
+	}
+}
+
+func DeleteDRPCProgressionStateMetric(labels prometheus.Labels) bool {
+	return drpcProgressionState.Delete(labels)
+}
+
+// SetDRPolicyTypeMetric sets the count of DRPolicy resources for a DR type
+// (DRTypeMetro, DRTypeRegional or DRTypeUnknown)
+func SetDRPolicyTypeMetric(drType string, value float64) {
+	drPolicyType.WithLabelValues(drType).Set(value)
+}
+
+// SetDRProtectedAppsMetric sets the count of DRPC resources for a management
+// method (ManagementMethodDiscovered or ManagementMethodManaged)
+func SetDRProtectedAppsMetric(method string, value float64) {
+	drProtectedApps.WithLabelValues(method).Set(value)
+}
+
+// SetDRActionsMetric sets the cumulative count of DR actions for an action
+// (ActionFailover or ActionRelocate)
+func SetDRActionsMetric(action string, value float64) {
+	drActions.WithLabelValues(action).Set(value)
+}
+
+// InitDRTelemetryMetrics initializes all DR telemetry metric label
+// combinations to 0, so that a series being present with value 0 indicates
+// Ramen is installed with no DR resources, as opposed to an absent series
+func InitDRTelemetryMetrics() {
+	for _, drType := range []string{DRTypeMetro, DRTypeRegional, DRTypeUnknown} {
+		SetDRPolicyTypeMetric(drType, 0)
+	}
+
+	for _, method := range []string{ManagementMethodDiscovered, ManagementMethodManaged} {
+		SetDRProtectedAppsMetric(method, 0)
+	}
+
+	for _, action := range []string{ActionFailover, ActionRelocate} {
+		SetDRActionsMetric(action, 0)
+	}
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
@@ -281,4 +517,11 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
 	metrics.Registry.MustRegister(cgEnabled)
+	metrics.Registry.MustRegister(globalAction)
+	metrics.Registry.MustRegister(invalidCIDRsDetected)
+	metrics.Registry.MustRegister(undetectedCIDRsFound)
+	metrics.Registry.MustRegister(drpcProgressionState)
+	metrics.Registry.MustRegister(drPolicyType)
+	metrics.Registry.MustRegister(drProtectedApps)
+	metrics.Registry.MustRegister(drActions)
 }

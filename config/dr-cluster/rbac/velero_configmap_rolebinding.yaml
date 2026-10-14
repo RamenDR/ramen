@@ -1,0 +1,17 @@
+---
+# RoleBinding for managing ResourceModifier ConfigMap in Velero namespace
+# This RoleBinding should be created in the Velero installation namespace (e.g., "velero" or "openshift-adp")
+# and binds the ramen-velero-configmap-manager Role to the ramen-dr-cluster-operator service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ramen-velero-configmap-manager
+  namespace: velero  # This should match the Velero installation namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ramen-velero-configmap-manager
+subjects:
+- kind: ServiceAccount
+  name: ramen-dr-cluster-operator
+  namespace: ramen-system  # The namespace where Ramen operator is installed

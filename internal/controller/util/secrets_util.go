@@ -342,7 +342,7 @@ func newVeleroSecret(s3SecretRef corev1.SecretReference, fromNS, veleroNS, keyNa
 }
 
 func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.ConfigurationPolicy {
-	return &cpcv1.ConfigurationPolicy{
+	cp := &cpcv1.ConfigurationPolicy{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigurationPolicy",
 			APIVersion: "policy.open-cluster-management.io/v1",
@@ -361,6 +361,10 @@ func newConfigurationPolicy(name string, object *runtime.RawExtension) *cpcv1.Co
 			},
 		},
 	}
+
+	AddLabel(cp, CreatedByRamenLabel, "true")
+
+	return cp
 }
 
 func newPolicy(name, namespace, triggerValue string, object runtime.RawExtension) *gppv1.Policy {
@@ -485,7 +489,7 @@ func (sutil *SecretsUtil) deletePolicyResources(
 ) error {
 	policyName, plBindingName, placementName, _ := GeneratePolicyResourceNames(secret.Name, format)
 
-	sutil.Log.Info("Deleting secret policy", "secret", secret.Name)
+	sutil.Log.Info("Deleting secret policy", "secret", secret.Name, "namespace", namespace)
 
 	plRuleBindingObject := &gppv1.PlacementBinding{
 		ObjectMeta: metav1.ObjectMeta{

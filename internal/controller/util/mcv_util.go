@@ -7,14 +7,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -26,6 +29,10 @@ import (
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
+const (
+	NetworkFencePrefix = "network-fence"
+)
+
 //nolint:interfacebloat
 type ManagedClusterViewGetter interface {
 	GetVRGFromManagedCluster(
@@ -33,7 +40,7 @@ type ManagedClusterViewGetter interface {
 		annotations map[string]string) (*rmn.VolumeReplicationGroup, error)
 
 	GetNFFromManagedCluster(
-		resourceName, resourceNamespace, managedCluster string,
+		resourceName, networkFenceClassName, resourceNamespace, managedCluster string,
 		annotations map[string]string) (*csiaddonsv1alpha1.NetworkFence, error)
 
 	GetMModeFromManagedCluster(
@@ -74,13 +81,19 @@ type ManagedClusterViewGetter interface {
 
 	GetVGSClassFromManagedCluster(
 		resourceName, managedCluster string,
-		annotations map[string]string) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error)
+		annotations map[string]string) (VolumeGroupSnapshotClassWrapper, error)
 
 	ListVGSClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
 	GetVGRClassFromManagedCluster(
 		resourceName, managedCluster string,
 		annotations map[string]string) (*volrep.VolumeGroupReplicationClass, error)
+
+	GetNSFromManagedCluster(
+		managedCluster, resourceName string) (*corev1.Namespace, error)
+
+	GetRecipeFromManagedCluster(
+		managedCluster, resourceName, resourceNamespace string) (*recipev1.Recipe, error)
 
 	ListVGRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
@@ -93,6 +106,8 @@ type ManagedClusterViewGetter interface {
 	DeleteNamespaceManagedClusterView(resourceName, resourceNamespace, clusterName, resourceType string) error
 
 	DeleteNFManagedClusterView(resourceName, resourceNamespace, clusterName, resourceType string) error
+
+	DeleteRecipeManagedClusterView(resourceName, resourceNamespace, clusterName string) error
 }
 
 type ManagedClusterViewGetterImpl struct {
@@ -155,13 +170,18 @@ func (m ManagedClusterViewGetterImpl) GetVRGFromManagedCluster(resourceName, res
 	return vrg, err
 }
 
-func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string,
+func (m ManagedClusterViewGetterImpl) GetNFFromManagedCluster(targetCluster, networkFenceClassName,
+	resourceNamespace, managedCluster string, annotations map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nf := &csiaddonsv1alpha1.NetworkFence{}
 
+	resourceName := strings.Join([]string{NetworkFencePrefix, targetCluster}, "-")
+	if networkFenceClassName != "" {
+		resourceName = strings.Join([]string{NetworkFencePrefix, networkFenceClassName, targetCluster}, "-")
+	}
+
 	err := m.getResourceFromManagedCluster(
-		"network-fence-"+resourceName,
+		resourceName,
 		resourceNamespace,
 		managedCluster,
 		annotations,
@@ -317,10 +337,18 @@ func (m ManagedClusterViewGetterImpl) ListVSClassMCVs(cluster string) (*viewv1be
 
 func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName, managedCluster string,
 	annotations map[string]string,
-) (*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	vgsc := &groupsnapv1beta1.VolumeGroupSnapshotClass{}
+) (VolumeGroupSnapshotClassWrapper, error) {
+	gv, err := m.selectVGSGroupVersionFromManagedCluster(managedCluster, annotations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select VGS API for managed cluster %s: %w", managedCluster, err)
+	}
 
-	err := m.getResourceFromManagedCluster(
+	vgsc, wrapper, err := NewVolumeGroupSnapshotClassForGV(gv)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.getResourceFromManagedCluster(
 		resourceName,
 		"",
 		managedCluster,
@@ -328,12 +356,52 @@ func (m ManagedClusterViewGetterImpl) GetVGSClassFromManagedCluster(resourceName
 		map[string]string{VGSClassLabel: ""},
 		BuildManagedClusterViewName(resourceName, "", MWTypeVGSClass),
 		"VolumeGroupSnapshotClass",
-		groupsnapv1beta1.SchemeGroupVersion.Group,
-		groupsnapv1beta1.SchemeGroupVersion.Version,
+		gv.Group,
+		gv.Version,
 		vgsc,
 	)
 
-	return vgsc, err
+	return wrapper, err
+}
+
+// selectVGSGroupVersionFromManagedCluster picks public vs private from CRDs on the
+// managed cluster using the same precedence as SelectVGSGroupVersion.
+func (m ManagedClusterViewGetterImpl) selectVGSGroupVersionFromManagedCluster(
+	managedCluster string,
+	annotations map[string]string,
+) (schema.GroupVersion, error) {
+	return resolveVGSGroupVersion(func(crdName string) (*apiextensionsv1.CustomResourceDefinition, error) {
+		crd, err := m.getCRDFromManagedCluster(crdName, managedCluster, annotations)
+		if err == nil {
+			return crd, nil
+		}
+
+		if k8serrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("get VGS CRD %q on managed cluster %q: %w", crdName, managedCluster, err)
+	})
+}
+
+func (m ManagedClusterViewGetterImpl) getCRDFromManagedCluster(
+	crdName, managedCluster string,
+	annotations map[string]string,
+) (*apiextensionsv1.CustomResourceDefinition, error) {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+
+	return crd, m.getResourceFromManagedCluster(
+		crdName,
+		"",
+		managedCluster,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(crdName, "", "crd"),
+		"CustomResourceDefinition",
+		apiextensionsv1.SchemeGroupVersion.Group,
+		apiextensionsv1.SchemeGroupVersion.Version,
+		crd,
+	)
 }
 
 func (m ManagedClusterViewGetterImpl) ListVGSClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
@@ -384,6 +452,44 @@ func (m ManagedClusterViewGetterImpl) GetVRClassFromManagedCluster(resourceName,
 	)
 
 	return vrc, err
+}
+
+func (m ManagedClusterViewGetterImpl) GetNSFromManagedCluster(cluster, resourceName string) (*corev1.Namespace, error) {
+	ns := &corev1.Namespace{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		"",
+		cluster,
+		map[string]string{},
+		map[string]string{},
+		BuildManagedClusterViewName(resourceName, "", "ns"),
+		"Namespace",
+		corev1.SchemeGroupVersion.Group,
+		corev1.SchemeGroupVersion.Version,
+		ns)
+
+	return ns, err
+}
+
+func (m ManagedClusterViewGetterImpl) GetRecipeFromManagedCluster(cluster, resourceName,
+	resourceNamespace string,
+) (*recipev1.Recipe, error) {
+	recipe := &recipev1.Recipe{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		resourceNamespace,
+		cluster,
+		map[string]string{},
+		map[string]string{},
+		BuildManagedClusterViewName(resourceName, resourceNamespace, "recipe"),
+		"Recipe",
+		recipev1.GroupVersion.Group,
+		recipev1.GroupVersion.Version,
+		recipe)
+
+	return recipe, err
 }
 
 func (m ManagedClusterViewGetterImpl) ListVRClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
@@ -532,12 +638,31 @@ func (m ManagedClusterViewGetterImpl) getOrCreateManagedClusterView(
 		}
 	}
 
+	needsUpdate := false
+
 	if mcv.Spec.Scope != viewscope {
 		// Expected once when uprading ramen if scope format or details have changed.
 		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s scope %s to %s",
 			key, mcv.Spec.Scope.Name, viewscope.Name))
 
 		mcv.Spec.Scope = viewscope
+		needsUpdate = true
+	}
+
+	mergedAnnotations := make(map[string]string)
+	maps.Copy(mergedAnnotations, mcv.Annotations)
+	maps.Copy(mergedAnnotations, meta.Annotations)
+
+	// Check if annotations actually changed.
+	if !maps.Equal(mcv.Annotations, mergedAnnotations) {
+		// Expected once when uprading ramen if annotations have changed.
+		logger.Info(fmt.Sprintf("Updating ManagedClusterView %s annotations %s to %s",
+			key, mcv.Annotations, mergedAnnotations))
+		mcv.Annotations = mergedAnnotations
+		needsUpdate = true
+	}
+
+	if needsUpdate {
 		if err := m.Update(context.TODO(), mcv); err != nil {
 			return nil, fmt.Errorf("failed to update ManagedClusterView: %w", err)
 		}
@@ -578,6 +703,15 @@ func (m ManagedClusterViewGetterImpl) DeleteDRClusterConfigManagedClusterView(cl
 	mcvNameDRCConfig := BuildManagedClusterViewName(clusterName, "", MWTypeDRCConfig)
 
 	return m.DeleteManagedClusterView(clusterName, mcvNameDRCConfig, logger)
+}
+
+func (m ManagedClusterViewGetterImpl) DeleteRecipeManagedClusterView(
+	resourceName, resourceNamespace, clusterName string,
+) error {
+	logger := ctrl.Log.WithName("MCV").WithValues("resouceName", resourceName)
+	mcvName := BuildManagedClusterViewName(resourceName, resourceNamespace, "recipe")
+
+	return m.DeleteManagedClusterView(clusterName, mcvName, logger)
 }
 
 func (m ManagedClusterViewGetterImpl) DeleteManagedClusterView(clusterName, mcvName string, logger logr.Logger) error {

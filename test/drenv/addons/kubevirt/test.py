@@ -1,0 +1,92 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+import shutil
+import time
+from pathlib import Path
+
+from drenv import kubectl
+from drenv import ssh
+from drenv import virtctl
+
+PACKAGE_DIR = Path(__file__).parent
+
+NAMESPACE = "kubevirt-test"
+
+_TEST_DATA = str(PACKAGE_DIR / "test-data")
+
+
+def test(cluster):
+    """
+    Test kubevirt by creating a VM and verifying SSH access.
+    """
+    copy_public_key()
+    create_vm(cluster)
+    wait_until_vm_is_ready(cluster)
+    verify_ssh(cluster)
+    delete_vm(cluster)
+
+
+def copy_public_key():
+    dst = PACKAGE_DIR / "test-data" / "id_rsa.pub"
+    print(f"Copying public key from {ssh.PUBLIC_KEY} to {dst}")
+    shutil.copyfile(ssh.PUBLIC_KEY, dst)
+
+
+def create_vm(cluster):
+    print(f"Deploying test vm in namespace '{NAMESPACE}'")
+    kubectl.apply(f"--kustomize={_TEST_DATA}", context=cluster)
+
+
+def wait_until_vm_is_ready(cluster):
+    print("Waiting until test vm is ready")
+    kubectl.wait(
+        "vm/testvm",
+        "--for=condition=ready",
+        f"--namespace={NAMESPACE}",
+        timeout=180,
+        context=cluster,
+    )
+
+
+def delete_vm(cluster):
+    print(f"Deleting test vm in namespace '{NAMESPACE}'")
+    kubectl.delete(f"--kustomize={_TEST_DATA}", context=cluster)
+
+
+def verify_ssh(cluster):
+    """
+    Verify that we can run commands via ssh.
+    """
+    delay = 5
+
+    # When running in a vm in the blr lab we need 16 retires. Locally the
+    # second attempt succeeds.
+    retries = 30
+
+    for i in range(retries):
+        time.sleep(delay)
+        print(f"Last entries in /var/log/ramen.log (attempt {i + 1}/{retries})")
+        try:
+            out = virtctl.ssh(
+                "testvm",
+                "tail -6 /var/log/ramen.log",
+                username="cirros",
+                namespace=NAMESPACE,
+                identity_file=ssh.PRIVATE_KEY,
+                local_ssh=True,
+                local_ssh_opts=(
+                    "-o UserKnownHostsFile=/dev/null",
+                    "-o StrictHostKeyChecking=no",
+                    "-o LogLevel=DEBUG",
+                ),
+                context=cluster,
+            )
+        except Exception as e:
+            print(f"{e}")
+            print(f"Retrying in {delay} seconds...")
+        else:
+            print(out)
+            break
+    else:
+        raise RuntimeError("Failed to connect to VM via ssh")

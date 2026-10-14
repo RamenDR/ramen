@@ -1,10 +1,10 @@
 #!/bin/bash
-set -e
+set -e -o pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 source_url="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
-required_version="2.2.2"
+required_version="2.9.0"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/golangci-lint"
 tool="golangci-lint"
@@ -23,4 +23,4 @@ fi
 
 echo "Installing ${tool}:${required_version} in ${target_dir}"
 mkdir -p "${target_dir}"
-curl --silent --show-error --location --fail "$source_url" | sh -s -- -b "${target_dir}" v"$required_version"
+curl --fail --silent --show-error --location "$source_url" | sh -s -- -b "${target_dir}" v"$required_version"

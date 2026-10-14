@@ -64,7 +64,7 @@ func TestDR(dt *testing.T) {
 			panic(err)
 		}
 
-		ctx := test.NewContext(Ctx, workload, deployer)
+		ctx := test.NewContext(Ctx, tc.ContextName(), workload, deployer)
 		t.Run(ctx.Name(), func(dt *testing.T) {
 			t := test.WithLog(dt, ctx.Logger())
 			t.Parallel()

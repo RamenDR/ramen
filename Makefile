@@ -36,13 +36,15 @@ IMAGE_REGISTRY ?= quay.io
 IMAGE_REPOSITORY ?= ramendr
 IMAGE_NAME ?= ramen
 IMAGE_TAG ?= latest
-PLATFORM ?= k8s
+DISTRO ?= k8s
 IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
-RBAC_PROXY_IMG ?= "gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1"
-OPERATOR_SUGGESTED_NAMESPACE ?= ramen-system
-RAMEN_OPS_NAMESPACE ?= ramen-ops
-AUTO_CONFIGURE_DR_CLUSTER ?= true
-VELERO_NAMESPACE ?= velero
+
+# PLATFORM sets the target platform for the container image. Defaults to the
+# host architecture. To build for a different architecture (e.g. building an
+# amd64 image on an arm64 Mac), use:
+#   make docker-build PLATFORM=amd64
+# Non-native builds may use emulation and be much slower.
+PLATFORM ?= $(shell go env GOARCH)
 
 HUB_NAME ?= $(IMAGE_NAME)-hub-operator
 ifeq (dr,$(findstring dr,$(IMAGE_NAME)))
@@ -76,15 +78,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# Set sed command appropriately
-SED_CMD:=sed
-ifeq ($(GOHOSTOS),darwin)
-	ifeq ($(GOHOSTARCH),amd64)
-		SED_CMD:=gsed
-	endif
-endif
-
-
 DOCKERCMD ?= podman
 
 all: build
@@ -107,11 +100,15 @@ help: ## Display this help.
 
 ##@ Development
 
+# Use import paths, not filesystem ./..., to avoid traversing nested modules.
+# https://github.com/kubernetes-sigs/controller-tools/issues/1421
+CONTROLLER_GEN_PATHS := {github.com/ramendr/ramen/...,github.com/ramendr/ramen/api/...}
+
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=operator-role crd:generateEmbeddedObjectMeta=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=operator-role crd:generateEmbeddedObjectMeta=true webhook paths='$(CONTROLLER_GEN_PATHS)' output:crd:artifacts:config=config/crd/bases
 
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths='$(CONTROLLER_GEN_PATHS)'
 
 
 # golangci-lint has a limitation that it doesn't lint subdirectories if
@@ -133,10 +130,11 @@ lint-api: golangci-bin ## Run configured golangci-lint for api module
 	cd api && ../testbin/golangci-lint run ./... --config=../.golangci.yaml
 
 .PHONY: fmt
-fmt: golangci-bin ## Run golangci-lint formatting on the codebase.
+fmt: golangci-bin ## Run golangci-lint and mdformat formatting on the codebase.
 	testbin/golangci-lint fmt
 	cd e2e && ../testbin/golangci-lint fmt
 	cd api && ../testbin/golangci-lint fmt
+	git ls-files -z '*.md' | xargs -0 mdformat
 
 .PHONY: create-rdr-env
 create-rdr-env: drenv-prereqs ## Create a new rdr environment.
@@ -236,13 +234,13 @@ build: generate manifests  ## Build manager binary.
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run-hub: generate manifests ## Run DR Orchestrator controller from your host.
-	go run ./cmd/main.go --config=examples/dr_hub_config.yaml
+	RAMEN_CONTROLLER_TYPE=dr-hub POD_NAMESPACE=$${POD_NAMESPACE:-ramen-system} go run ./cmd/main.go
 
 run-dr-cluster: generate manifests ## Run DR manager controller from your host.
-	go run ./cmd/main.go --config=examples/dr_cluster_config.yaml
+	RAMEN_CONTROLLER_TYPE=dr-cluster POD_NAMESPACE=$${POD_NAMESPACE:-ramen-system} go run ./cmd/main.go
 
 docker-build: ## Build docker image with the manager.
-	$(DOCKERCMD) build -t ${IMG} .
+	$(DOCKERCMD) build --platform linux/$(PLATFORM) -t ${IMG} .
 
 docker-push: ## Push docker image with the manager.
 	$(DOCKERCMD) push ${IMG}
@@ -266,14 +264,13 @@ uninstall-hub: manifests kustomize ## Uninstall hub CRDs from the K8s cluster sp
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/crd | kubectl delete -f -
 
 hub-config: kustomize
-	cd config/hub/default/$(PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-hub: manifests kustomize hub-config ## Deploy hub controller to the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl apply -f -
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl apply -f -
 
 undeploy-hub: kustomize ## Undeploy hub controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(PLATFORM) | kubectl delete -f - --ignore-not-found
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/default/$(DISTRO) | kubectl delete -f - --ignore-not-found
 
 install-dr-cluster: manifests kustomize ## Install dr-cluster CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl apply -f -
@@ -282,7 +279,6 @@ uninstall-dr-cluster: manifests kustomize ## Uninstall dr-cluster CRDs from the 
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/crd | kubectl delete -f -
 
 dr-cluster-config: kustomize
-	cd config/dr-cluster/default && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/dr-cluster/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 
 deploy-dr-cluster: manifests kustomize dr-cluster-config ## Deploy dr-cluster controller to the K8s cluster specified in ~/.kube/config.
@@ -298,9 +294,9 @@ controller-gen: ## Download controller-gen locally.
 	@hack/install-controller-gen.sh
 
 .PHONY: kustomize
-KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize: ## Download kustomize locally.
-	@hack/install-kustomize.sh
+KUSTOMIZE = go tool -modfile=$(CURDIR)/tools.mod kustomize
+kustomize: ## Ensure kustomize is available via go tool.
+	@go tool -modfile=$(CURDIR)/tools.mod kustomize version >/dev/null
 
 .PHONY: opm
 OPM = ./bin/opm
@@ -334,21 +330,11 @@ bundle-push: bundle-hub-push bundle-dr-cluster-push ## Push all bundle images.
 
 .PHONY: bundle-hub
 bundle-hub: manifests kustomize operator-sdk ## Generate hub bundle manifests and metadata, then validate generated files.
-	cd config/hub/default/$(BUNDLE_PLATFORM) && $(KUSTOMIZE) edit set image kube-rbac-proxy=$(RBAC_PROXY_IMG)
 	cd config/hub/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	cd config/hub/manifests/$(IMAGE_NAME) && $(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-hub-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(SED_CMD) -e "s,ramenOpsNamespace: ramen-ops,ramenOpsNamespace: $(RAMEN_OPS_NAMESPACE)," -i config/hub/manager/ramen_manager_config.yaml
-	$(SED_CMD) -e "s,veleroNamespaceName: velero,veleroNamespaceName: $(VELERO_NAMESPACE)," -i config/hub/manager/ramen_manager_config.yaml
-	$(SED_CMD) -e "s,channelName: alpha,channelName: $(DEFAULT_CHANNEL)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,packageName: ramen-dr-cluster-operator,packageName: $(DRCLUSTER_NAME)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,namespaceName: ramen-system,namespaceName: $(OPERATOR_SUGGESTED_NAMESPACE)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1,clusterServiceVersionName: $(DRCLUSTER_NAME).v$(VERSION)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,deploymentAutomationEnabled: true,deploymentAutomationEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	$(SED_CMD) -e "s,s3SecretDistributionEnabled: true,s3SecretDistributionEnabled: $(AUTO_CONFIGURE_DR_CLUSTER)," -i config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml
-	cat config/hub/manifests/$(IMAGE_NAME)/ramen_manager_config_append.yaml >> config/hub/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/hub/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(HUB_NAME) --overwrite --output-dir=config/hub/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/hub/bundle
 
@@ -366,8 +352,6 @@ bundle-dr-cluster: manifests kustomize dr-cluster-config operator-sdk ## Generat
 		--patch '[{"op": "add", "path": "/metadata/annotations/olm.skipRange", "value": "$(SKIP_RANGE)"}]' && \
 		$(KUSTOMIZE) edit add patch --name ramen-dr-cluster-operator.v0.0.0 --kind ClusterServiceVersion\
 		--patch '[{"op": "replace", "path": "/spec/replaces", "value": "$(REPLACES)"}]'
-	$(SED_CMD) -e "s,ramenOpsNamespace: ramen-ops,ramenOpsNamespace: $(RAMEN_OPS_NAMESPACE)," -i config/dr-cluster/manager/ramen_manager_config.yaml
-	$(SED_CMD) -e "s,veleroNamespaceName: velero,veleroNamespaceName: $(VELERO_NAMESPACE)," -i config/dr-cluster/manager/ramen_manager_config.yaml
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone config/dr-cluster/manifests/$(IMAGE_NAME) | $(OSDK) generate bundle -q --package=$(DRCLUSTER_NAME) --overwrite --output-dir=config/dr-cluster/bundle --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 	$(OSDK) bundle validate config/dr-cluster/bundle
 
@@ -417,19 +401,11 @@ catalog-push: ## Push a catalog image.
 .PHONY: docker-buildx
 docker-buildx: # Build and push docker image for the manager for cross-platform support
 ifeq ($(DOCKERCMD),docker)
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} and
-	# replace GOARCH value to ${TARGETARCH} into Dockerfile.cross, and preserve the original Dockerfile
 	$(eval PLATFORMS="linux/arm64,linux/amd64,linux/s390x,linux/ppc64le")
-	$(SED_CMD) \
-		-e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' \
-		-e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' \
-		Dockerfile > Dockerfile.cross
-	$(SED_CMD) -e 's/GOARCH=amd64/GOARCH=$${TARGETARCH}/' -i Dockerfile.cross
 	- $(DOCKERCMD) buildx create --name $(IMAGE_NAME)-builder
 	$(DOCKERCMD) buildx use $(IMAGE_NAME)-builder
-	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} -f Dockerfile.cross .
+	- $(DOCKERCMD) buildx build --push --platform="${PLATFORMS}" --tag ${IMG} .
 	- $(DOCKERCMD) buildx rm $(IMAGE_NAME)-builder
-	rm Dockerfile.cross
 else
 	@echo "docker-buildx is supported only with docker"
 endif

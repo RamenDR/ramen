@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -13,12 +14,13 @@ import (
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
+	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -35,9 +37,10 @@ import (
 )
 
 const (
-	drCConfigFinalizerName = "drclusterconfigs.ramendr.openshift.io/finalizer"
-	drCConfigOwnerLabel    = "drclusterconfigs.ramendr.openshift.io/owner"
-	drCConfigOwnerName     = "ramen"
+	drCConfigFinalizerName    = "drclusterconfigs.ramendr.openshift.io/finalizer"
+	drCConfigOwnerLabel       = "drclusterconfigs.ramendr.openshift.io/owner"
+	drCConfigOwnerName        = "ramen"
+	clusterIDClusterClaimName = "id.k8s.io"
 
 	maxReconcileBackoff = 5 * time.Minute
 )
@@ -51,14 +54,42 @@ const (
 
 	DRClusterConfigS3Reachable   = "Reachable"
 	DRClusterConfigS3Unreachable = "Unreachable"
+	NADCRDMissing                = "NADCRDMissing"
+	NADWatchNotRegistered        = "NADWatchNotRegistered"
+	StaticIPDiscoveryEnabled     = "StaticIPDiscoveryEnabled"
 )
 
 // DRClusterConfigReconciler reconciles a DRClusterConfig object
 type DRClusterConfigReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	Log         logr.Logger
-	RateLimiter *workqueue.TypedRateLimiter[reconcile.Request]
+	Scheme             *runtime.Scheme
+	APIReader          client.Reader
+	Log                logr.Logger
+	NadWatchRegistered bool
+	RateLimiter        *workqueue.TypedRateLimiter[reconcile.Request]
+}
+
+// NADDRNetworkLabel is an opt-in marker for Ramen's static-IP disaster
+// recovery workflow.
+//
+// NADs labeled with:
+//
+//	ramendr.openshift.io/dr-network: "true"
+//
+// are included in DR network discovery and validation. NADs labeled
+// "false", or NADs that do not carry this label, are ignored.
+const (
+	NADDRNetworkLabel      = "ramendr.openshift.io/dr-network"
+	NADResourceName        = "network-attachment-definitions.k8s.cni.cncf.io"
+	StaticIPDiscoveryReady = "StaticIPDiscoveryReady"
+)
+
+// nadGVK is the GroupVersionKind used when listing NADs via the unstructured client.
+// NAD is not a first-class Go type in this module, so we use dynamic listing.
+var nadGVK = schema.GroupVersionKind{
+	Group:   "k8s.cni.cncf.io",
+	Version: "v1",
+	Kind:    "NetworkAttachmentDefinitionList",
 }
 
 //nolint:lll
@@ -70,12 +101,14 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumereplicationclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=csiaddonsnodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="k8s.cni.cncf.io",resources=network-attachment-definitions,verbs=get;list;watch
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
-	log.Info("reconcile enter")
+	log.Info("Entering reconcile loop")
 
-	defer log.Info("reconcile exit")
+	defer log.Info("Exiting reconcile loop")
 
 	drCConfig := &ramen.DRClusterConfig{}
 	if err := r.Client.Get(ctx, req.NamespacedName, drCConfig); err != nil {
@@ -243,6 +276,16 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	log logr.Logger,
 	drCConfig *ramen.DRClusterConfig,
 ) (ctrl.Result, error) {
+	// Validate cluster ID
+	if err := r.validateClusterIDFromClaim(ctx, drCConfig); err != nil {
+		log.Error(err, "failed to validate cluster ID claim")
+		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
+			err.Error(), metav1.ConditionFalse, DRClusterConfigConditionConfigurationFailed,
+		)
+
+		return ctrl.Result{Requeue: true}, err
+	}
+
 	if err := util.NewResourceUpdater(drCConfig).
 		AddFinalizer(drCConfigFinalizerName).
 		Update(ctx, r.Client); err != nil {
@@ -253,7 +296,7 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 		return ctrl.Result{Requeue: true}, fmt.Errorf("failed to add finalizer for DRClusterConfig resource, %w", err)
 	}
 
-	err := r.UpdateSupportedClasses(ctx, drCConfig)
+	err := r.UpdateStatus(ctx, drCConfig)
 	if err != nil {
 		log.Info("Reconcile error", "error", err)
 		setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
@@ -275,62 +318,138 @@ func (r *DRClusterConfigReconciler) processCreateOrUpdate(
 	setDRClusterConfigConfigurationProcessedCondition(&drCConfig.Status.Conditions, drCConfig.Generation,
 		"Configuration processed and validated", metav1.ConditionTrue, DRClusterConfigConditionConfigurationProcessed)
 
+	r.updateStaticIPDiscoveryCondition(ctx, drCConfig)
+
 	return ctrl.Result{}, nil
+}
+
+// validateClusterIDFromClaim fetches the cluster ID claim and validates it against the DRClusterConfig.
+// It only returns an error and leaves status handling to the caller.
+func (r *DRClusterConfigReconciler) validateClusterIDFromClaim(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	clusterID, err := r.getClusterID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cluster ID claim: %w", err)
+	}
+
+	if drCConfig.Spec.ClusterID != clusterID {
+		return fmt.Errorf("cluster ID claim value %q differs from DRClusterConfig ClusterID %q",
+			clusterID, drCConfig.Spec.ClusterID)
+	}
+
+	return nil
+}
+
+// getClusterID fetches the cluster ID directly from the id.k8s.io ClusterClaim.
+func (r *DRClusterConfigReconciler) getClusterID(ctx context.Context) (string, error) {
+	claim := &clusterv1alpha1.ClusterClaim{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: clusterIDClusterClaimName}, claim); err != nil {
+		return "", fmt.Errorf("failed to get ClusterClaim %q: %w", clusterIDClusterClaimName, err)
+	}
+
+	if claim.Spec.Value == "" {
+		return "", fmt.Errorf("ClusterClaim %q has an empty cluster ID value", clusterIDClusterClaimName)
+	}
+
+	return claim.Spec.Value, nil
 }
 
 // UpdateSupportedClasses updates DRClusterConfig status with a list of storage related classes that are marked for DR
 // support. The list is sorted alphabetically to avoid out of order listing and status updates due to the same
-func (r *DRClusterConfigReconciler) UpdateSupportedClasses(
+func (r *DRClusterConfigReconciler) UpdateStatus(
 	ctx context.Context,
 	drCConfig *ramen.DRClusterConfig,
 ) error {
-	sClasses, err := r.listDRSupportedSCs(ctx)
-	if err != nil {
+	if err := r.updateStorageClassesStatus(ctx, drCConfig); err != nil {
 		return err
 	}
 
-	drCConfig.Status.StorageClasses = sClasses
+	if err := r.updateStorageAccessDetailsStatus(ctx, drCConfig); err != nil {
+		return err
+	}
+
+	if err := r.updateNetworkAttachmentsStatus(ctx, drCConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *DRClusterConfigReconciler) updateStorageClassesStatus(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	var err error
+
+	if drCConfig.Status.StorageClasses, err = r.listDRSupportedSCs(ctx); err != nil {
+		return err
+	}
+
 	slices.Sort(drCConfig.Status.StorageClasses)
 
-	vsClasses, err := r.listDRSupportedVSCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeSnapshotClasses, err = r.listDRSupportedVSCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeSnapshotClasses = vsClasses
 	slices.Sort(drCConfig.Status.VolumeSnapshotClasses)
 
-	vrClasses, err := r.listDRSupportedVRCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeReplicationClasses, err = r.listDRSupportedVRCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeReplicationClasses = vrClasses
 	slices.Sort(drCConfig.Status.VolumeReplicationClasses)
 
-	vgrClasses, err := r.listDRSupportedVGRCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeGroupReplicationClasses, err = r.listDRSupportedVGRCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeGroupReplicationClasses = vgrClasses
 	slices.Sort(drCConfig.Status.VolumeGroupReplicationClasses)
 
-	vgsClasses, err := r.listDRSupportedVGSCs(ctx)
-	if err != nil {
+	if drCConfig.Status.VolumeGroupSnapshotClasses, err = r.listDRSupportedVGSCs(ctx); err != nil {
 		return err
 	}
 
-	drCConfig.Status.VolumeGroupSnapshotClasses = vgsClasses
 	slices.Sort(drCConfig.Status.VolumeGroupSnapshotClasses)
 
-	nfClases, err := r.listDRSupportedNFCs(ctx)
+	if drCConfig.Status.NetworkFenceClasses, err = r.listDRSupportedNFCs(ctx); err != nil {
+		return err
+	}
+
+	slices.Sort(drCConfig.Status.NetworkFenceClasses)
+
+	return nil
+}
+
+func (r *DRClusterConfigReconciler) updateStorageAccessDetailsStatus(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	storageAccessDetails, err := r.listStorageAccessDetails(ctx)
 	if err != nil {
 		return err
 	}
 
-	drCConfig.Status.NetworkFenceClasses = nfClases
-	slices.Sort(drCConfig.Status.NetworkFenceClasses)
+	drCConfig.Status.StorageAccessDetails = storageAccessDetails
+
+	return nil
+}
+
+func (r *DRClusterConfigReconciler) updateNetworkAttachmentsStatus(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) error {
+	nads, err := r.listDRSupportedNADs(ctx)
+	if err != nil {
+		return err
+	}
+
+	drCConfig.Status.NetworkAttachments = nads
+
+	r.Log.Info("NAD discovery completed",
+		"drclusterconfig", drCConfig.Name,
+		"count", len(nads))
 
 	return nil
 }
@@ -419,17 +538,19 @@ func (r *DRClusterConfigReconciler) listDRSupportedVGRCs(ctx context.Context) ([
 func (r *DRClusterConfigReconciler) listDRSupportedVGSCs(ctx context.Context) ([]string, error) {
 	vgscs := []string{}
 
-	vgsClasses := &groupsnapv1beta1.VolumeGroupSnapshotClassList{}
-	if err := r.Client.List(ctx, vgsClasses); err != nil {
+	vgsClassWrappers, err := util.GetVolumeGroupSnapshotClasses(
+		ctx, r.Client, metav1.LabelSelector{},
+	)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list VolumeGroupSnapshotClasses, %w", err)
 	}
 
-	for i := range vgsClasses.Items {
-		if !util.HasLabel(&vgsClasses.Items[i], StorageIDLabel) {
+	for _, vgscWrapper := range vgsClassWrappers {
+		if _, ok := vgscWrapper.GetLabels()[StorageIDLabel]; !ok {
 			continue
 		}
 
-		vgscs = append(vgscs, vgsClasses.Items[i].Name)
+		vgscs = append(vgscs, vgscWrapper.GetName())
 	}
 
 	return vgscs, nil
@@ -453,6 +574,74 @@ func (r *DRClusterConfigReconciler) listDRSupportedNFCs(ctx context.Context) ([]
 	}
 
 	return nfcs, nil
+}
+
+// listMatchingNFCClientStatus returns a list of listMatchingNFCClientStatus which refer to networkFenceClass
+func (r *DRClusterConfigReconciler) listMatchingNFCClientStatus(ctx context.Context) (
+	[]csiaddonsv1alpha1.NetworkFenceClientStatus, error,
+) {
+	csiNFClientStatus := []csiaddonsv1alpha1.NetworkFenceClientStatus{}
+
+	nfcs, err := r.listDRSupportedNFCs(ctx)
+	if err != nil {
+		return csiNFClientStatus, err
+	}
+
+	csiAddonsNodeList := &csiaddonsv1alpha1.CSIAddonsNodeList{}
+	if err := r.Client.List(ctx, csiAddonsNodeList); err != nil {
+		return csiNFClientStatus, fmt.Errorf("failed to list CSIAddonsNodes, %w", err)
+	}
+
+	for i := range csiAddonsNodeList.Items {
+		if len(csiAddonsNodeList.Items[i].Status.NetworkFenceClientStatus) == 0 {
+			continue
+		}
+
+		nfClientStatuses := csiAddonsNodeList.Items[i].Status.NetworkFenceClientStatus
+
+		// consider only the NetworkFenceClientStatus which match the NFC Name
+		for _, nfClientStatus := range nfClientStatuses {
+			for _, nfc := range nfcs {
+				if nfClientStatus.NetworkFenceClassName == nfc {
+					csiNFClientStatus = append(csiNFClientStatus, nfClientStatus)
+				}
+			}
+		}
+	}
+
+	return csiNFClientStatus, nil
+}
+
+func (r *DRClusterConfigReconciler) listStorageAccessDetails(ctx context.Context) ([]ramen.StorageAccessDetail, error) {
+	nfcClientStatus, err := r.listMatchingNFCClientStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	provisionerCIDRs := make(map[string][]string)
+
+	for _, status := range nfcClientStatus {
+		nf := &csiaddonsv1alpha1.NetworkFenceClass{}
+		if err := r.Client.Get(ctx, types.NamespacedName{Name: status.NetworkFenceClassName}, nf); err != nil {
+			r.Log.Info("failed to get NetworkFenceClass", "name", status.NetworkFenceClassName, "error", err)
+
+			continue
+		}
+
+		for _, cl := range status.ClientDetails {
+			provisionerCIDRs[nf.Spec.Provisioner] = append(provisionerCIDRs[nf.Spec.Provisioner], cl.Cidrs...)
+		}
+	}
+
+	storageAccessDetails := []ramen.StorageAccessDetail{}
+	for provisioner, cidrs := range provisionerCIDRs {
+		storageAccessDetails = append(storageAccessDetails, ramen.StorageAccessDetail{
+			StorageProvisioner: provisioner,
+			CIDRs:              cidrs,
+		})
+	}
+
+	return storageAccessDetails, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -495,14 +684,193 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	controller := ctrl.NewControllerManagedBy(mgr)
 
-	return controller.WithOptions(ctrlcontroller.Options{
+	controllerBuilder := controller.WithOptions(ctrlcontroller.Options{
 		RateLimiter: rateLimiter,
 	}).For(&ramen.DRClusterConfig{}).
 		Watches(&storagev1.StorageClass{}, drccMapFn, drccPredFn).
 		Watches(&snapv1.VolumeSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeReplicationClass{}, drccMapFn, drccPredFn).
 		Watches(&volrep.VolumeGroupReplicationClass{}, drccMapFn, drccPredFn).
-		Watches(&groupsnapv1beta1.VolumeGroupSnapshotClass{}, drccMapFn, drccPredFn).
 		Watches(&csiaddonsv1alpha1.NetworkFenceClass{}, drccMapFn, drccPredFn).
-		Complete(r)
+		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn)
+
+	if err := util.EnsureLocalVGSAPI(context.TODO(), mgr.GetAPIReader()); err != nil {
+		r.Log.Info("VolumeGroupSnapshotClass API not available, skipping watch", "reason", err.Error())
+	} else {
+		controllerBuilder = util.WatchesVolumeGroupSnapshotClass(controllerBuilder, r.Log, drccMapFn, drccPredFn)
+	}
+
+	// NAD CRD is optional (requires Multus). Only register the watch when the
+	// CRD is already present at startup; on clusters without Multus the
+	// RequeueAfter in processCreateOrUpdate re-checks periodically.
+	if r.nadCRDInstalled(context.Background()) {
+		r.NadWatchRegistered = true
+		controllerBuilder = controller.Watches(&netattdefv1.NetworkAttachmentDefinition{}, drccMapFn, drccPredFn)
+	}
+
+	return controllerBuilder.Complete(r)
+}
+
+func (r *DRClusterConfigReconciler) nadCRDInstalled(ctx context.Context) bool {
+	return util.IsCRDInstalled(ctx, r.APIReader, NADResourceName)
+}
+
+// parseCNIType extracts the CNI plugin type from spec.config (a JSON string)
+// of a NetworkAttachmentDefinition.
+// Returns "unknown" with a non-nil error when config is absent or the type field is not set.
+func parseCNIType(nad *netattdefv1.NetworkAttachmentDefinition) (string, error) {
+	if nad.Spec.Config == "" {
+		return "unknown", fmt.Errorf("spec.config is empty")
+	}
+
+	// spec.config is a JSON string containing the CNI configuration.
+	var cfg struct {
+		Type    string `json:"type"`
+		Plugins []struct {
+			Type string `json:"type"`
+		} `json:"plugins"`
+	}
+
+	if err := json.Unmarshal([]byte(nad.Spec.Config), &cfg); err != nil {
+		return "unknown", fmt.Errorf("spec.config is not valid JSON: %w", err)
+	}
+
+	// Simple CNI config.
+	if cfg.Type != "" {
+		return cfg.Type, nil
+	}
+
+	// Multus conflist format: first plugin is the primary CNI.
+	if len(cfg.Plugins) > 0 && cfg.Plugins[0].Type != "" {
+		return cfg.Plugins[0].Type, nil
+	}
+
+	return "unknown", nil
+}
+
+func (r *DRClusterConfigReconciler) listDRSupportedNADs(ctx context.Context) ([]ramen.NetworkAttachment, error) {
+	// The NAD CRD is optional — it is only present when Multus is installed.
+	if !r.nadCRDInstalled(ctx) {
+		r.Log.Info(
+			"Skipping NAD discovery because the NetworkAttachmentDefinition CRD is not installed",
+			"gvk", nadGVK.String(),
+		)
+
+		return nil, nil
+	}
+
+	nadList := &netattdefv1.NetworkAttachmentDefinitionList{}
+	nadList.SetGroupVersionKind(nadGVK)
+
+	if err := r.Client.List(ctx, nadList,
+		client.MatchingLabels{NADDRNetworkLabel: "true"},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list NADs with label %s=true: %w", NADDRNetworkLabel, err)
+	}
+
+	nads := []ramen.NetworkAttachment{}
+
+	for i := range nadList.Items {
+		item := &nadList.Items[i]
+
+		cniType, err := parseCNIType(item)
+		if err != nil {
+			// Non-fatal: record as unknown so the NAD still appears in status.
+			r.Log.Error(err, "Failed to parse CNI type; using 'unknown'",
+				"nad", item.GetName(), "namespace", item.GetNamespace())
+
+			cniType = "unknown"
+		}
+
+		nads = append(nads, ramen.NetworkAttachment{
+			Name:      item.GetName(),
+			Namespace: item.GetNamespace(),
+			CNIType:   cniType,
+		})
+	}
+
+	// Sort for stable comparison — matches the slices.Sort pattern used for
+	// StorageClasses and VolumeReplicationClasses in the same reconciler.
+	slices.SortFunc(nads, func(a, b ramen.NetworkAttachment) int {
+		nsNameA := a.Namespace + "/" + a.Name
+		nsNameB := b.Namespace + "/" + b.Name
+
+		switch {
+		case nsNameA < nsNameB:
+			return -1
+		case nsNameA > nsNameB:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	return nads, nil
+}
+
+func setStaticIPDiscoveryCondition(
+	conditions *[]metav1.Condition,
+	status metav1.ConditionStatus,
+	reason, message string,
+) {
+	util.SetStatusCondition(conditions, metav1.Condition{
+		Type:    StaticIPDiscoveryReady,
+		Status:  status,
+		Reason:  reason,
+		Message: message,
+	})
+}
+
+// Determine static-IP discovery readiness based on NAD CRD availability
+// and whether the NAD watch was successfully registered at controller startup.
+//
+// Scenarios:
+// 1. NAD CRD absent:
+//   - Static-IP discovery is unavailable.
+//   - Report NADCRDMissing.
+//   - If the CRD is installed later, the controller must be restarted
+//     to register the NAD watch.
+//
+// 2. NAD CRD present but watch not registered:
+//   - Static-IP discovery remains unavailable because NAD changes
+//     cannot be observed.
+//   - Report that a controller restart is required.
+//
+// 3. NAD CRD present and watch registered:
+//   - Static-IP discovery is fully operational.
+//   - NAD create/update/delete events will be observed and processed.
+func (r *DRClusterConfigReconciler) updateStaticIPDiscoveryCondition(
+	ctx context.Context,
+	drCConfig *ramen.DRClusterConfig,
+) {
+	if !r.nadCRDInstalled(ctx) {
+		r.NadWatchRegistered = false
+
+		setStaticIPDiscoveryCondition(
+			&drCConfig.Status.Conditions,
+			metav1.ConditionFalse,
+			NADCRDMissing,
+			"NetworkAttachmentDefinition CRD is not installed on the cluster",
+		)
+
+		return
+	}
+
+	if !r.NadWatchRegistered {
+		setStaticIPDiscoveryCondition(
+			&drCConfig.Status.Conditions,
+			metav1.ConditionFalse,
+			NADWatchNotRegistered,
+			"NetworkAttachmentDefinition CRD is available, but NAD monitoring is disabled until the controller is restarted",
+		)
+
+		return
+	}
+
+	setStaticIPDiscoveryCondition(
+		&drCConfig.Status.Conditions,
+		metav1.ConditionTrue,
+		StaticIPDiscoveryEnabled,
+		"NetworkAttachmentDefinition monitoring is enabled and static IP discovery is operational",
+	)
 }

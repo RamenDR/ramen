@@ -35,6 +35,9 @@ const (
 	// When this annotation is set to true, VolSync will protect RBD PVCs.
 	UseVolSyncAnnotation = "drplacementcontrol.ramendr.openshift.io/use-volsync-for-pvc-protection"
 
+	// When this annotation is set to true, differential (incremental) syncs will be enabled for CephFS CG.
+	EnableDiffAnnotation = "drplacementcontrol.ramendr.openshift.io/enable-diff"
+
 	MaxK8sLabelLength = validation.DNS1123LabelMaxLength
 	MaxK8sNameLength  = validation.DNS1123LabelMaxLength
 
@@ -46,6 +49,8 @@ const (
 
 	VRGOwnerNameLabel      string = "volumereplicationgroups-owner"
 	VRGOwnerNamespaceLabel string = "volumereplicationgroups-owner-namespace"
+
+	MarkForDeletion = "ramendr.io/marked-for-deletion"
 )
 
 type ResourceUpdater struct {
@@ -399,11 +404,20 @@ func IsCRDInstalled(ctx context.Context, apiReader client.Reader, crdName string
 }
 
 func CreateVGRName(prefix string, suffix string) string {
-	return TrimToK8sResourceNameLength("vgr-" + prefix + "-" + suffix)
+	return TrimToK8sResourceNameLength("vgr-" + strings.ToLower(prefix) + "-" + strings.ToLower(suffix))
+}
+
+func GlobalVGRName(groupReplicationID string) string {
+	return TrimToK8sResourceNameLength("global-" + strings.ToLower(groupReplicationID))
 }
 
 func IsPVCMarkedForVolSync(annotations map[string]string) bool {
 	return annotations[UseVolSyncAnnotation] == "true"
+}
+
+// IsDiffSyncEnabled checks if the enable-diff annotation is set to true on the resource
+func IsDiffSyncEnabled(annotations map[string]string) bool {
+	return annotations[EnableDiffAnnotation] == "true"
 }
 
 func TrimToK8sResourceNameLength(name string) string {
@@ -468,4 +482,41 @@ func GenerateCombinedName(name, storageID string) string {
 	// Otherwise, return Hashed 8 character name and append storageID
 	// e.g. "nameHash.storageID"
 	return nameHash + labelSeparator + storageID
+}
+
+func GetReplicationDestinationName(pvcName string) string {
+	return pvcName // Use PVC name as name of ReplicationDestination
+}
+
+func GetLocalReplicationName(pvcName string) string {
+	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
+}
+
+// Service name that VolSync will create locally in the same namespace as the ReplicationDestination
+func getLocalServiceNameForRDFromPVCName(pvcName string) string {
+	return GetLocalServiceNameForRD(GetReplicationDestinationName(pvcName))
+}
+
+func GetLocalServiceNameForRD(rdName string) string {
+	// This is the name VolSync will use for the service
+	return GetServiceName("volsync-rsync-tls-dst-", rdName)
+}
+
+// This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
+// a ServiceExport is created for the service on the cluster that has the ReplicationDestination
+func GetRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
+	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
+}
+
+// GetLocalServiceNameForDiffRD returns the service name created by the ceph-volsync-plugin
+// for External ReplicationDestinations using diff sync
+func GetLocalServiceNameForDiffRD(rdName string) string {
+	return GetServiceName("ceph-volsync-dst-", rdName)
+}
+
+// GetRemoteServiceNameForDiffRDFromPVCName returns the remote service name for diff sync RDs
+func GetRemoteServiceNameForDiffRDFromPVCName(pvcName, rdNamespace string) string {
+	diffLocalName := GetLocalServiceNameForDiffRD(GetReplicationDestinationName(pvcName))
+
+	return fmt.Sprintf("%s.%s.svc.clusterset.local", diffLocalName, rdNamespace)
 }

@@ -159,6 +159,7 @@ var _ = Describe("CephfsCg", func() {
 					if err != nil {
 						return err
 					}
+
 					address := "address"
 					rd.Status = &volsyncv1alpha1.ReplicationDestinationStatus{
 						RsyncTLS: &volsyncv1alpha1.ReplicationDestinationRsyncTLSStatus{
@@ -306,31 +307,31 @@ var _ = Describe("CephfsCg", func() {
 	Describe("VolumeGroupSnapshotClassMatchStorageProviders", func() {
 		It("Should be false", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
+				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{
 					Driver: "test",
-				}, nil,
+				}), nil,
 			)
 			Expect(match).To(BeFalse())
 		})
 		It("Should be false", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
+				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{
 					Driver: "test",
-				}, []string{"test1"},
+				}), []string{"test1"},
 			)
 			Expect(match).To(BeFalse())
 		})
 		It("Should be false", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{}, []string{"test1"},
+				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{}), []string{"test1"},
 			)
 			Expect(match).To(BeFalse())
 		})
 		It("Should be true", func() {
 			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				groupsnapv1beta1.VolumeGroupSnapshotClass{
+				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{
 					Driver: "test",
-				}, []string{"test"},
+				}), []string{"test"},
 			)
 			Expect(match).To(BeTrue())
 		})
@@ -445,6 +446,7 @@ var _ = Describe("CephfsCg", func() {
 						if err != nil {
 							return err
 						}
+
 						vs.Status = &vsv1.VolumeSnapshotStatus{
 							ReadyToUse: &readyToUse,
 						}

@@ -14,6 +14,20 @@ spec:
           expr: (time() - (ramen_last_sync_timestamp_seconds{job='ramen-hub-operator-metrics-service'}))
         - record: ramen_rpo_difference
           expr: ramen_sync_duration_seconds / on(policyname) group_left() (ramen_policy_schedule_interval_seconds{job="ramen-hub-operator-metrics-service"})
+    # Pre-aggregated series for Red Hat Telemetry. Aggregation drops the
+    # per-target labels (pod, instance, job, ...) so telemetry receives a
+    # small, stable set of series, and max dedupes overlapping scrapes of
+    # multiple operator pods (rolling update, stale former leader). These
+    # recorded names, not the raw ramen_dr_* names, belong in the
+    # cluster-monitoring-operator telemetry allowlist.
+    - name: dr_telemetry.rules
+      rules:
+        - record: ramen:dr_policy_type:max
+          expr: max by (dr_type) (ramen_dr_policy_type{job="ramen-hub-operator-metrics-service"})
+        - record: ramen:dr_protected_apps:max
+          expr: max by (management_method) (ramen_dr_protected_apps{job="ramen-hub-operator-metrics-service"})
+        - record: ramen:dr_actions:max
+          expr: max by (action) (ramen_dr_actions{job="ramen-hub-operator-metrics-service"})
     - name: alerts
       rules:
         - alert: VolumeSynchronizationDelay
@@ -47,4 +61,36 @@ spec:
             severity: warning
           annotations:
             description: "Unsupported consistency grouping is enabled for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }})."
+            alert_type: "DisasterRecovery"
+        - alert: GlobalActionConsensusBlocked
+          expr: ramen_global_action_consensus_status == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            description: "Global action consensus not reached for disaster recovery (DRPC: {{ $labels.obj_name }}, Namespace: {{ $labels.obj_namespace }}). Inspect DRPC status.conditions[GlobalAction] for details."
+            alert_type: "DisasterRecovery"
+        - alert: InvalidCIDRsDetected
+          expr: ramen_invalid_cidrs_detected == 1
+          for: 5s
+          labels:
+            severity: critical
+          annotations:
+            description: "CIDRs validation failed: invalid format or detected CIDRs not configured (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
+            alert_type: "DisasterRecovery"
+        - alert: UndetectedCIDRsFound
+          expr: ramen_undetected_cidrs_found == 1
+          for: 5s
+          labels:
+            severity: warning
+          annotations:
+            description: "CIDRs configured in DRCluster are not detected by the storage provisioner (DRCluster: {{ $labels.obj_name }}). Inspect DRCluster status for more details."
+            alert_type: "DisasterRecovery"
+        - alert: ApplicationCleanupPending
+          expr: ramen_progression_state{state="WaitOnUserToCleanUp"} == 1
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            description: "DRPC '{{ $labels.obj_name }}' in namespace '{{ $labels.obj_namespace }}' requires manual cleanup. Check DRPC status for details."
             alert_type: "DisasterRecovery"

@@ -12,26 +12,10 @@ data:
   ramen_manager_config.yaml: |
     apiVersion: ramendr.openshift.io/v1alpha1
     kind: RamenConfig
-    health:
-      healthProbeBindAddress: :8081
-    metrics:
-      bindAddress: 127.0.0.1:9289
-    webhook:
-      port: 9443
-    leaderElection:
-      leaderElect: true
-      resourceName: hub.ramendr.openshift.io
-    ramenControllerType: dr-hub
     maxConcurrentReconciles: 50
     drClusterOperator:
       deploymentAutomationEnabled: $auto_deploy
       s3SecretDistributionEnabled: true
-      channelName: alpha
-      packageName: ramen-dr-cluster-operator
-      namespaceName: ramen-system
-      catalogSourceName: ramen-catalog
-      catalogSourceNamespaceName: ramen-system
-      clusterServiceVersionName: ramen-dr-cluster-operator.v0.0.1
     kubeObjectProtection:
       veleroNamespaceName: velero
     volSync:

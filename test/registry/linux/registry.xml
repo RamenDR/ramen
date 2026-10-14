@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+SPDX-FileCopyrightText: The RamenDR authors
+SPDX-License-Identifier: Apache-2.0
+-->
+<service>
+  <short>Registry</short>
+  <description>Local container registry for minikube clusters.</description>
+  <port protocol="tcp" port="5050"/>
+</service>

@@ -1,0 +1,136 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# Prepare a linux VM for use as a GitHub self-hosted runner. The machine
+# must be prepared first with bootstrap-linux (provides jq, libvirt, etc.).
+#
+# After the runner is installed, the admin must configure it with a token
+# from GitHub and start the service using the svc.sh script in the runner
+# directory.
+
+set -eu -o pipefail
+
+if [[ "$(id --user)" -eq 0 ]]; then
+    echo "Do not run this script as root or with sudo." >&2
+    exit 1
+fi
+
+RUNNER_DIR="/home/github/actions-runner"
+
+# Pinned runner version and SHA-256 digest. The runner has automatic updates
+# so this version may be behind the actually running version. To update the
+# pinned version, download the new tarball and compute: sha256sum <tarball>
+RUNNER_VERSION="2.337.0"
+RUNNER_DIGEST="70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613"
+
+# The actions-runner requires the .NET runtime which depends on libicu.
+echo "Installing runner dependencies..."
+sudo dnf install --assumeyes libicu
+
+# Create a github user for running the actions-runner.
+if ! id --user github &>/dev/null; then
+    echo "Creating github user..."
+    sudo adduser github
+else
+    echo "User github already exists."
+fi
+
+# Add to libvirt group, required for using minikube with kvm driver.
+echo "Adding github to libvirt group..."
+sudo usermod --append --groups libvirt github
+
+# Enable lingering so the github user's systemd user manager is always active.
+# This provides /run/user/<uid> (XDG_RUNTIME_DIR) which is required by podman
+# rootless, used in workflows for running the registry cache and building images.
+echo "Enabling lingering for github user..."
+sudo loginctl enable-linger github
+
+# Add public keys to allow admin to log in as github user.
+sudo mkdir --parents /home/github/.ssh
+if [[ ! -f /home/github/.ssh/authorized_keys ]]; then
+    echo "Copying SSH authorized keys for github user..."
+    sudo cp ~/.ssh/authorized_keys /home/github/.ssh/
+else
+    echo "SSH authorized keys already exist for github user."
+fi
+sudo chown --recursive github:github /home/github/.ssh
+sudo chmod 0700 /home/github/.ssh
+sudo chmod 0600 /home/github/.ssh/authorized_keys
+
+# Create the actions-runner directory.
+echo "Creating actions-runner directory..."
+sudo mkdir --parents "$RUNNER_DIR"
+sudo chown github:github "$RUNNER_DIR"
+
+# Allow running anything in the actions-runner directory. This is needed for
+# running the actions-runner as a systemd service, and for running scripts from
+# checked-out repositories during workflows (e.g. drenv, ramendev). We cannot
+# restrict this further since we don't control what the workflows depend on.
+fcontext="${RUNNER_DIR}(/.*)?"
+fcontext_type=bin_t
+contexts=$(sudo semanage fcontext --list --locallist --noheading)
+if awk --assign p="$fcontext" '$1 == p { found=1; exit } END { exit !found }' <<<"$contexts"; then
+    echo "Updating SELinux fcontext for actions-runner..."
+    sudo semanage fcontext --modify --type "$fcontext_type" "$fcontext"
+else
+    echo "Configuring SELinux for actions-runner..."
+    sudo semanage fcontext --add --type "$fcontext_type" "$fcontext"
+fi
+sudo restorecon -Rv "$RUNNER_DIR"
+
+# Install or update the actions-runner release. Skip if the installed version
+# is equal or newer (the runner has automatic updates).
+installed_version=$(sudo --user github "$RUNNER_DIR/bin/Runner.Listener" --version) || true
+
+needs_install=true
+if [[ -n "$installed_version" ]]; then
+    newer_version=$(printf '%s\n%s\n' "$RUNNER_VERSION" "$installed_version" | sort -V | tail -1)
+    if [[ "$newer_version" == "$installed_version" ]]; then
+        needs_install=false
+    fi
+fi
+
+if [[ "$needs_install" == false ]]; then
+    echo "Actions runner ${installed_version} is up to date."
+else
+    if [[ -n "$installed_version" ]]; then
+        echo "Updating actions-runner from ${installed_version} to ${RUNNER_VERSION}..."
+    else
+        echo "Installing actions-runner ${RUNNER_VERSION}..."
+    fi
+
+    tarball="actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
+    url="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${tarball}"
+    echo "Downloading ${tarball}..."
+    sudo --user github curl --fail --location --output "${RUNNER_DIR}/${tarball}" "$url"
+
+    echo "Verifying checksum..."
+    actual=$(sha256sum "${RUNNER_DIR}/${tarball}" | awk '{ print $1 }')
+    if [[ "$actual" != "$RUNNER_DIGEST" ]]; then
+        echo "Checksum mismatch for ${tarball}:" >&2
+        echo "  expected: ${RUNNER_DIGEST}" >&2
+        echo "  actual:   ${actual}" >&2
+        exit 1
+    fi
+
+    sudo --user github tar --extract --gzip --file "${RUNNER_DIR}/${tarball}" --directory "$RUNNER_DIR"
+    sudo --user github rm -f "${RUNNER_DIR}/${tarball}"
+    echo "Installed actions-runner ${RUNNER_VERSION}."
+fi
+
+echo ""
+echo "Bootstrap complete."
+if ! sudo --user github test -f "$RUNNER_DIR/.runner"; then
+    echo ""
+    echo "Next steps:"
+    echo "  1. Visit https://github.com/RamenDR/ramen/settings/actions/runners/new?arch=x64&os=linux"
+    echo "  2. Configure the runner:"
+    echo "     sudo --user github ${RUNNER_DIR}/config.sh --url <repo-url> --token <token>"
+    echo "  3. Start the service:"
+    echo "     cd ${RUNNER_DIR} && sudo ./svc.sh install github && sudo ./svc.sh start"
+elif [[ "$needs_install" == true ]]; then
+    echo ""
+    echo "To apply the update, restart the runner service:"
+    echo "  cd ${RUNNER_DIR} && sudo ./svc.sh stop && sudo ./svc.sh start"
+fi

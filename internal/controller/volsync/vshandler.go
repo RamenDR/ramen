@@ -6,6 +6,7 @@ package volsync
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,9 +14,9 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -25,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/reference"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -54,11 +55,6 @@ const (
 	VolSyncDoNotDeleteLabel    = "volsync.backube/do-not-delete" // TODO: point to volsync constant once it is available
 	VolSyncDoNotDeleteLabelVal = "true"
 
-	// See: https://issues.redhat.com/browse/ACM-1256
-	// https://github.com/stolostron/backlog/issues/21824
-	ACMAppSubDoNotDeleteAnnotation    = "apps.open-cluster-management.io/do-not-delete"
-	ACMAppSubDoNotDeleteAnnotationVal = "true"
-
 	OwnerNameAnnotation      = "ramendr.openshift.io/owner-name"
 	OwnerNamespaceAnnotation = "ramendr.openshift.io/owner-namespace"
 
@@ -69,6 +65,9 @@ const (
 	PVAnnotationRetentionValue = "retained"
 
 	PVCFinalizerProtected = "volumereplicationgroups.ramendr.openshift.io/pvc-volsync-protection"
+
+	// Prefix for the job that mounts unmounted PVC when RS is not found
+	VolSyncMountJobNamePrefix = "volsync-pvc-mount-"
 )
 
 type VSHandler struct {
@@ -83,6 +82,7 @@ type VSHandler struct {
 	volumeSnapshotClassList     *snapv1.VolumeSnapshotClassList
 	vrgInAdminNamespace         bool
 	workloadStatus              string
+	moverConfig                 []ramendrv1alpha1.MoverConfig
 }
 
 func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, owner metav1.Object,
@@ -105,6 +105,11 @@ func NewVSHandler(ctx context.Context, client client.Client, log logr.Logger, ow
 		vsHandler.volumeSnapshotClassSelector = asyncSpec.VolumeSnapshotClassSelector
 	}
 
+	vrg, ok := owner.(*ramendrv1alpha1.VolumeReplicationGroup)
+	if ok {
+		vsHandler.moverConfig = append([]ramendrv1alpha1.MoverConfig(nil), vrg.Spec.VolSync.MoverConfig...)
+	}
+
 	return vsHandler
 }
 
@@ -116,8 +121,35 @@ func (v *VSHandler) GetOwner() metav1.Object {
 	return v.owner
 }
 
+func (v *VSHandler) GetMoverConfigForPVC(pvcName, pvcNamespace string) *ramendrv1alpha1.MoverConfig {
+	if len(v.moverConfig) > 0 {
+		for _, mc := range v.moverConfig {
+			if mc.PVCName == pvcName && mc.PVCNameSpace == pvcNamespace {
+				return &mc
+			}
+		}
+	}
+
+	return nil
+}
+
 func (v *VSHandler) SetWorkloadStatus(status string) {
 	v.workloadStatus = status
+}
+
+func buildMoverConfig(moverConfigSpec *ramendrv1alpha1.MoverConfig) volsyncv1alpha1.MoverConfig {
+	mc := volsyncv1alpha1.MoverConfig{
+		MoverPodLabels: map[string]string{
+			util.CreatedByRamenLabel: "true",
+		},
+	}
+
+	if moverConfigSpec != nil {
+		mc.MoverSecurityContext = moverConfigSpec.MoverSecurityContext
+		mc.MoverServiceAccount = moverConfigSpec.MoverServiceAccount
+	}
+
+	return mc
 }
 
 // returns replication destination only if create/update is successful and the RD is considered available.
@@ -163,6 +195,13 @@ func (v *VSHandler) ReconcileRD(
 		return nil, nil, err
 	}
 
+	v.EnsureVolSyncMoverJobLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncServiceImportLabels(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+
+	if err = v.ReconcileServiceExportForRD(rd); err != nil {
+		return nil, nil, err
+	}
+
 	return v.generateRDInfo(rdSpec, rd, l)
 }
 
@@ -191,8 +230,7 @@ func (v *VSHandler) generateRDInfo(
 	isSubmarinerEnabled := v.IsSubmarinerEnabled()
 
 	if isSubmarinerEnabled {
-		err := v.ReconcileServiceExportForRD(rd)
-		if err != nil {
+		if err := v.ReconcileServiceExportForRD(rd); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -254,7 +292,12 @@ func (v *VSHandler) createOrUpdateRD(
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	volumeSnapshotClassName, err := v.GetVolumeSnapshotClassFromPVCStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageclass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	if err != nil {
+		return nil, err
+	}
+
+	volumeSnapshotClassName, err := v.getVolumeSnapshotClassFromPVCStorageClass(storageclass)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +309,7 @@ func (v *VSHandler) createOrUpdateRD(
 
 	rd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getReplicationDestinationName(rdSpec.ProtectedPVC.Name),
+			Name:      util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name),
 			Namespace: rdSpec.ProtectedPVC.Namespace,
 		},
 	}
@@ -274,41 +317,47 @@ func (v *VSHandler) createOrUpdateRD(
 	util.AddLabel(rd, util.CreatedByRamenLabel, "true")
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rd, func() error {
-		if !v.vrgInAdminNamespace {
-			if err := ctrl.SetControllerReference(v.owner, rd, v.client.Scheme()); err != nil {
-				l.Error(err, "unable to set controller reference")
-
-				return fmt.Errorf("%w", err)
-			}
-		}
-
 		util.AddLabel(rd, util.VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(rd, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 		util.AddAnnotation(rd, OwnerNameAnnotation, v.owner.GetName())
 		util.AddAnnotation(rd, OwnerNamespaceAnnotation, v.owner.GetNamespace())
 
-		moverConfig := volsyncv1alpha1.MoverConfig{}
+		moverConfig := buildMoverConfig(moverConfigSpec)
 
-		if moverConfigSpec != nil {
-			moverConfig = volsyncv1alpha1.MoverConfig{
-				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
-				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
+		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+			params := map[string]string{
+				"storageClassName":        *rdSpec.ProtectedPVC.StorageClassName,
+				"volumeSnapshotClassName": volumeSnapshotClassName,
+				"copyMethod":              string(volsyncv1alpha1.CopyMethodSnapshot),
+				"keySecret":               pskSecretName,
+				"capacity":                rdSpec.ProtectedPVC.Resources.Requests.Storage().String(),
+				"accessModes":             string(pvcAccessModes[0]),
 			}
-		}
+			if dstPVC != nil {
+				params["destinationPVC"] = *dstPVC
+			}
 
-		rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
-			ServiceType: v.GetRsyncServiceType(),
-			KeySecret:   &pskSecretName,
+			rd.Spec.External = &volsyncv1alpha1.ReplicationDestinationExternalSpec{
+				Provider:   storageclass.Provisioner,
+				Parameters: params,
+			}
+			rd.Spec.RsyncTLS = nil
+		} else {
+			rd.Spec.External = nil
+			rd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
+				ServiceType: v.GetRsyncServiceType(),
+				KeySecret:   &pskSecretName,
 
-			ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
-				Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
-				StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
-				AccessModes:             pvcAccessModes,
-				VolumeSnapshotClassName: &volumeSnapshotClassName,
-				DestinationPVC:          dstPVC,
-			},
-			MoverConfig: moverConfig,
+				ReplicationDestinationVolumeOptions: volsyncv1alpha1.ReplicationDestinationVolumeOptions{
+					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+					Capacity:                rdSpec.ProtectedPVC.Resources.Requests.Storage(),
+					StorageClassName:        rdSpec.ProtectedPVC.StorageClassName,
+					AccessModes:             pvcAccessModes,
+					VolumeSnapshotClassName: &volumeSnapshotClassName,
+					DestinationPVC:          dstPVC,
+				},
+				MoverConfig: moverConfig,
+			}
 		}
 
 		return nil
@@ -353,7 +402,7 @@ func (v *VSHandler) IsPVCInUseByNonRDPod(pvcNamespacedName types.NamespacedName)
 // Callers should assume getting a nil replication source back means they should retry/requeue.
 // Returns true/false if final sync is complete, and also returns an RS if one was reconciled.
 //
-//nolint:cyclop,funlen,gocognit
+//nolint:cyclop,funlen,gocognit,gocyclo
 func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
 	runFinalSync bool,
 	moverConfig *ramendrv1alpha1.MoverConfig) (bool /* finalSyncComplete */, *volsyncv1alpha1.ReplicationSource, error,
@@ -392,17 +441,21 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 		return false, nil, err
 	}
 
+	// When PVC is unmounted and RS for that PVC is not found, create a job to mount the PVC
+	mountJobReady, err := v.EnsureMountJobForUnmountedPVC(&rsSpec)
+	if err != nil {
+		return false, nil, err
+	}
+
+	if !mountJobReady {
+		return false, nil, nil // Requeue until mount job completes
+	}
+
 	pvcOk, err := v.validatePVCForFinalSync(rsSpec, runFinalSync)
 	if !pvcOk || err != nil {
-		// Return the replicationSource if it already exists
-		existingRS, getRSErr := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name), rsSpec.ProtectedPVC.Namespace)
-		if getRSErr != nil {
-			return false, nil, err
-		}
-		// Return the RS here - allows status updates to understand that prev RS syncs may have completed
-		// (i.e. data protected == true), even though we may be indicating that finalSync has not yet completed
-		// because the PVC is still in-use
-		return false, existingRS, err
+		existingRS, hErr := v.handlePVCNotReady(rsSpec, err)
+
+		return false, existingRS, hErr
 	}
 
 	replicationSource, err := v.createOrUpdateRS(rsSpec, pskSecretName, runFinalSync, moverConfig)
@@ -413,6 +466,9 @@ func (v *VSHandler) ReconcileRS(rsSpec ramendrv1alpha1.VolSyncReplicationSourceS
 	if replicationSource == nil {
 		return false, nil, nil // Requeue
 	}
+
+	v.EnsureVolSyncMoverJobLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+	v.EnsureVolSyncServiceImportLabels(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
 
 	//
 	// For final sync only - check status to make sure the final sync is complete
@@ -525,14 +581,6 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, rs, func() error {
-		if !v.vrgInAdminNamespace {
-			if err := ctrl.SetControllerReference(v.owner, rs, v.client.Scheme()); err != nil {
-				l.Error(err, "unable to set controller reference")
-
-				return fmt.Errorf("%w", err)
-			}
-		}
-
 		util.AddLabel(rs, util.VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(rs, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
 
@@ -542,27 +590,36 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 			return err
 		}
 
-		moverConfig := &volsyncv1alpha1.MoverConfig{}
-		if moverConfigSpec != nil {
-			moverConfig = &volsyncv1alpha1.MoverConfig{
-				MoverSecurityContext: moverConfigSpec.MoverSecurityContext,
-				MoverServiceAccount:  moverConfigSpec.MoverServiceAccount,
+		moverConfig := buildMoverConfig(moverConfigSpec)
+
+		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+			rs.Spec.External = &volsyncv1alpha1.ReplicationSourceExternalSpec{
+				Provider: storageClass.Provisioner,
+				Parameters: map[string]string{
+					"copyMethod":              string(volsyncv1alpha1.CopyMethodSnapshot),
+					"storageClassName":        *rsSpec.ProtectedPVC.StorageClassName,
+					"volumeSnapshotClassName": volumeSnapshotClassName,
+					"keySecret":               pskSecretName,
+					"address":                 remoteAddress,
+				},
 			}
-		}
+			rs.Spec.RsyncTLS = nil
+		} else {
+			rs.Spec.External = nil
+			rs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
+				KeySecret: &pskSecretName,
+				Address:   &remoteAddress,
 
-		rs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
-			KeySecret: &pskSecretName,
-			Address:   &remoteAddress,
-
-			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
-				// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
-				// storage classes that support it in the future
-				CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
-				VolumeSnapshotClassName: &volumeSnapshotClassName,
-				StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
-				AccessModes:             rsSpec.ProtectedPVC.AccessModes,
-			},
-			MoverConfig: *moverConfig,
+				ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
+					// Always using CopyMethod of snapshot for now - could use 'Clone' CopyMethod for specific
+					// storage classes that support it in the future
+					CopyMethod:              volsyncv1alpha1.CopyMethodSnapshot,
+					VolumeSnapshotClassName: &volumeSnapshotClassName,
+					StorageClassName:        rsSpec.ProtectedPVC.StorageClassName,
+					AccessModes:             rsSpec.ProtectedPVC.AccessModes,
+				},
+				MoverConfig: moverConfig,
+			}
 		}
 
 		return nil
@@ -580,7 +637,14 @@ func (v *VSHandler) resolveRemoteAddress(rsSpec ramendrv1alpha1.VolSyncReplicati
 	if util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
 		// Remote service address created for the ReplicationDestination on the secondary
 		// The secondary namespace will be the same as primary namespace so use the vrg.Namespace
-		remoteAddress := getRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		var remoteAddress string
+		if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+			remoteAddress = util.GetRemoteServiceNameForDiffRDFromPVCName(
+				rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		} else {
+			remoteAddress = util.GetRemoteServiceNameForRDFromPVCName(rsSpec.ProtectedPVC.Name, rsSpec.ProtectedPVC.Namespace)
+		}
+
 		v.log.Info("Using Submariner remote address", "remoteAddress", remoteAddress)
 
 		return remoteAddress, nil
@@ -687,7 +751,7 @@ func (v *VSHandler) SetupTmpPVCForFinalSync(pvc *corev1.PersistentVolumeClaim) (
 
 func (v *VSHandler) retainPVAndCreateTmpPVC(pvc *corev1.PersistentVolumeClaim) (*corev1.PersistentVolumeClaim, error) {
 	// Retain the PersistentVolume
-	if err := v.retainPVForPVC(*pvc); err != nil {
+	if err := v.retainPVAndRedirectForFinalSync(*pvc); err != nil {
 		v.log.Info("Requeuing, as retaining PersistentVolume failed", "error", err)
 
 		return nil, err
@@ -712,7 +776,7 @@ func (v *VSHandler) retainPVAndCreateTmpPVC(pvc *corev1.PersistentVolumeClaim) (
 	return tmpPVC, nil
 }
 
-func (v *VSHandler) retainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
+func (v *VSHandler) retainPVAndRedirectForFinalSync(pvc corev1.PersistentVolumeClaim) error {
 	l := v.log.WithValues("pvc", pvc.Name)
 
 	l.V(1).Info("retain PV for PVC")
@@ -786,6 +850,7 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 		tmpPVC.ResourceVersion = ""
 		tmpPVC.UID = ""
 		tmpPVC.Finalizers = nil
+		tmpPVC.OwnerReferences = nil             // prevent cascade deletion if the workload owner is deleted
 		tmpPVC.Annotations = map[string]string{} // {"ramendr/tmp-pvc-created": "yes"}
 		// We don't need any labels by default, but if the original PVC has a CG label,
 		// include it on the tmpPVC so that if the CG is enabled the tmpPVC will be included
@@ -805,12 +870,6 @@ func (v *VSHandler) createTmpPVCForFinalSync(pvcNamespacedName types.NamespacedN
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, tmpPVC, func() error {
-		if !v.vrgInAdminNamespace {
-			if err := ctrl.SetControllerReference(v.owner, tmpPVC, v.client.Scheme()); err != nil {
-				return fmt.Errorf("failed to set controller reference %w", err)
-			}
-		}
-
 		return nil
 	})
 	if err != nil {
@@ -852,13 +911,42 @@ func (v *VSHandler) configureReplicationSourceSpec(rs *volsyncv1alpha1.Replicati
 	return nil
 }
 
+// cleanupMountJobForFinalSync deletes the mount job and waits for deletion to complete.
+// This must be called before PVC cleanup to release the kubernetes.io/pvc-protection finalizer.
+func (v *VSHandler) cleanupMountJobForFinalSync(tmpPVCName, pvcNamespace string) error {
+	if err := v.DeleteMountJob(tmpPVCName, pvcNamespace); err != nil {
+		return fmt.Errorf("failed to delete mount job for %s/%s: %w", pvcNamespace, tmpPVCName, err)
+	}
+
+	deleted, err := v.WaitForMountJobDeletion(tmpPVCName, pvcNamespace)
+	if err != nil {
+		return fmt.Errorf("error waiting for mount job deletion for %s/%s: %w", pvcNamespace, tmpPVCName, err)
+	}
+
+	if !deleted {
+		return fmt.Errorf("waiting for mount job deletion to complete for %s/%s", pvcNamespace, tmpPVCName)
+	}
+
+	v.log.V(1).Info("Mount job cleanup completed", "tmpPVCName", tmpPVCName)
+
+	return nil
+}
+
 //nolint:cyclop,funlen
 func (v *VSHandler) UndoAfterFinalSync(pvcName, pvcNamespace string) error {
 	v.log.V(1).Info("Undo after final sync", "pvcName", pvcName)
+
+	tmpPVCName := util.GetTmpPVCNameForFinalSync(pvcName)
+
+	// Clean up mount job first to release the PVC protection finalizer
+	if err := v.cleanupMountJobForFinalSync(tmpPVCName, pvcNamespace); err != nil {
+		return err
+	}
+
 	// Remove claimRef and reset the original PVC claimRef (without uid)
 	tmpPVC, err := v.getPVC(types.NamespacedName{
 		Namespace: pvcNamespace,
-		Name:      util.GetTmpPVCNameForFinalSync(pvcName),
+		Name:      tmpPVCName,
 	})
 	if err == nil {
 		err2 := v.client.Delete(v.ctx, tmpPVC)
@@ -936,14 +1024,6 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 		"isCGEnabled", isCGEnabled, "copyMethodDirect", copyMethodDirect,
 		"prepFinalSync", prepFinalSync, "runFinalSync", runFinalSync)
 
-	if copyMethodDirect && !prepFinalSync && !runFinalSync {
-		taken, err := v.TakePVCOwnership(pvcNamespacedName)
-		if err != nil || !taken {
-			return fmt.Errorf("waiting to take pvc ownership (%w), prepFinalSync: %t, Direct: %t",
-				err, prepFinalSync, copyMethodDirect)
-		}
-	}
-
 	if !prepFinalSync {
 		return nil
 	}
@@ -958,31 +1038,6 @@ func (v *VSHandler) PreparePVC(pvcNamespacedName types.NamespacedName,
 	}
 
 	return v.prepareForFinalSync(pvcNamespacedName)
-}
-
-// TakePVCOwnership adds do-not-delete annotation to indicate that ACM should not delete/cleanup this pvc
-// when the appsub is removed and adds VRG as owner so the PVC is garbage collected when the VRG is deleted.
-func (v *VSHandler) TakePVCOwnership(pvcNamespacedName types.NamespacedName) (bool, error) {
-	l := v.log.WithValues("pvc", pvcNamespacedName)
-
-	l.V(1).Info("Take PVC ownership")
-
-	// Confirm PVC exists and add our VRG as ownerRef
-	pvc, err := v.validatePVCAndAddVRGOwnerRef(pvcNamespacedName)
-	if err != nil {
-		l.Error(err, "unable to validate PVC or add ownership")
-
-		return false, err
-	}
-
-	err = v.client.Update(v.ctx, pvc)
-	if err != nil {
-		l.Error(err, "Error updating annotations on PVC to break appsub ownership")
-
-		return false, fmt.Errorf("error updating annotations on PVC to break appsub ownership (%w)", err)
-	}
-
-	return true, nil
 }
 
 func (v *VSHandler) prepareForCGFinalSync(rgsNamespacedName, pvcNamespacedName types.NamespacedName) error {
@@ -1054,10 +1109,11 @@ func (v *VSHandler) waitForVGSCompletion(rgsNamespacedName types.NamespacedName,
 }
 
 func (v *VSHandler) IsActiveVGSPresent(vgsNamespacedName types.NamespacedName) (bool, error) {
-	vgs := &vgsv1beta1.VolumeGroupSnapshot{}
-	if err := v.client.Get(v.ctx, types.NamespacedName{
-		Name: vgsNamespacedName.Name, Namespace: vgsNamespacedName.Namespace,
-	}, vgs); err != nil {
+	vgs, err := util.GetVolumeGroupSnapshot(
+		v.ctx, v.client,
+		vgsNamespacedName.Name, vgsNamespacedName.Namespace,
+	)
+	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
@@ -1067,7 +1123,7 @@ func (v *VSHandler) IsActiveVGSPresent(vgsNamespacedName types.NamespacedName) (
 		return false, err
 	}
 
-	v.log.V(1).Info("Found volume group snapshot", "vgsName", vgs.Name, "vgsNamespace", vgs.Namespace)
+	v.log.V(1).Info("Found volume group snapshot", "vgsName", vgs.GetName(), "vgsNamespace", vgs.GetNamespace())
 
 	return true, nil
 }
@@ -1101,18 +1157,19 @@ func (v *VSHandler) prepareForFinalSync(pvcNamespacedName types.NamespacedName) 
 }
 
 func (v *VSHandler) doPrepFinalSync(pvcNamespacedName types.NamespacedName) error {
-	_, err := v.ReleasePVCOwnership(pvcNamespacedName)
+	_, err := v.addPVCProtectionFinalizer(pvcNamespacedName)
 	if err != nil {
-		return fmt.Errorf("waiting to release pvc ownership (%w)", err)
+		return fmt.Errorf("waiting to add PVC protection finalizer (%w)", err)
 	}
 
 	return nil
 }
 
-func (v *VSHandler) ReleasePVCOwnership(pvcNamespacedName types.NamespacedName) (*corev1.PersistentVolumeClaim, error) {
+func (v *VSHandler) addPVCProtectionFinalizer(pvcNamespacedName types.NamespacedName,
+) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvc", pvcNamespacedName)
 
-	l.V(1).Info("Release PVC ownership and remove OCM annotation")
+	l.V(1).Info("Adding PVC protection finalizer")
 
 	pvc, err := v.getPVC(pvcNamespacedName)
 	if err != nil {
@@ -1121,8 +1178,6 @@ func (v *VSHandler) ReleasePVCOwnership(pvcNamespacedName types.NamespacedName) 
 
 	return pvc, util.NewResourceUpdater(pvc).
 		AddFinalizer(PVCFinalizerProtected).
-		DeleteAnnotation(ACMAppSubDoNotDeleteAnnotation). // Allows ACM to delete the PVC when the appsub is removed
-		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 
@@ -1163,30 +1218,6 @@ func (v *VSHandler) getPVC(pvcNamespacedName types.NamespacedName) (*corev1.Pers
 	if err != nil {
 		return nil, fmt.Errorf("%w", err)
 	}
-
-	return pvc, nil
-}
-
-// Adds owner ref and ACM "do-not-delete" annotation to indicate that when the appsub is removed, ACM
-// should not cleanup this PVC - we want it left behind so we can run a final sync
-func (v *VSHandler) validatePVCAndAddVRGOwnerRef(pvcNamespacedName types.NamespacedName) (
-	*corev1.PersistentVolumeClaim, error,
-) {
-	pvc, err := v.getPVC(pvcNamespacedName)
-	if err != nil {
-		return nil, err
-	}
-
-	v.log.Info("PVC exists", "pvcName", pvcNamespacedName.Name, "pvcNamespaceName", pvcNamespacedName.Namespace)
-
-	// Add annotation to indicate that ACM should not delete/cleanup this pvc when the appsub is removed
-	// and add VRG as owner
-	err = v.addAnnotationAndVRGOwnerRefAndUpdate(pvc, ACMAppSubDoNotDeleteAnnotation, ACMAppSubDoNotDeleteAnnotationVal)
-	if err != nil {
-		return nil, err
-	}
-
-	v.log.V(1).Info("PVC validated", "pvcName", pvcNamespacedName.Name, "pvcNamespaceName", pvcNamespacedName.Namespace)
 
 	return pvc, nil
 }
@@ -1305,7 +1336,6 @@ func (v *VSHandler) getRS(name, namespace string) (*volsyncv1alpha1.ReplicationS
 }
 
 func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
-	// Remove a ReplicationSource by name that is owned (by parent vrg owner)
 	currentRSListByOwner, err := v.listRSByOwner(pvcNamespace)
 	if err != nil {
 		return err
@@ -1315,11 +1345,8 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 		rs := currentRSListByOwner.Items[i]
 
 		if rs.GetName() == getReplicationSourceName(pvcName) {
-			// Delete the ReplicationSource, log errors with cleanup but continue on
-			if err := v.client.Delete(v.ctx, &rs); err != nil {
-				v.log.Error(err, "Error cleaning up ReplicationSource", "name", rs.GetName())
-			} else {
-				v.log.Info("Deleted ReplicationSource", "name", rs.GetName())
+			if err := v.cleanupRS(&rs); err != nil {
+				return err
 			}
 		}
 	}
@@ -1327,29 +1354,49 @@ func (v *VSHandler) DeleteRS(pvcName string, pvcNamespace string) error {
 	return nil
 }
 
-//nolint:nestif
-func (v *VSHandler) DeleteRD(pvcName string, pvcNamespace string) error {
-	// Remove a ReplicationDestination by name that is owned (by parent vrg owner)
+func (v *VSHandler) cleanupRS(rs *volsyncv1alpha1.ReplicationSource) error {
+	if err := v.client.Delete(v.ctx, rs); err != nil {
+		v.log.Error(err, "Error cleaning up ReplicationSource", "name", rs.GetName())
+	} else {
+		v.log.Info("Deleted ReplicationSource", "name", rs.GetName())
+	}
+
+	return nil
+}
+
+func (v *VSHandler) cleanupRD(rd *volsyncv1alpha1.ReplicationDestination) error {
+	// Delete local RS if needed
+	if v.IsCopyMethodDirect() {
+		if err := v.deleteLocalRDAndRS(rd); err != nil {
+			return err
+		}
+	}
+
+	// Step 3: Delete the RD itself
+	if err := v.client.Delete(v.ctx, rd); err != nil {
+		v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
+
+		return err
+	}
+
+	v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+
+	return nil
+}
+
+func (v *VSHandler) DeleteRD(pvcName, pvcNamespace string) error {
 	currentRDListByOwner, err := v.listRDByOwner(pvcNamespace)
 	if err != nil {
 		return err
 	}
 
+	expectedRDName := util.GetReplicationDestinationName(pvcName)
+
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
-
-		if rd.GetName() == getReplicationDestinationName(pvcName) {
-			if v.IsCopyMethodDirect() {
-				err := v.deleteLocalRDAndRS(&rd)
-				if err != nil {
-					return err
-				}
-			}
-			// Delete the ReplicationDestination, log errors with cleanup but continue on
-			if err := v.client.Delete(v.ctx, &rd); err != nil {
-				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
-			} else {
-				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+		if rd.GetName() == expectedRDName {
+			if err := v.cleanupRD(&rd); err != nil {
+				return err
 			}
 		}
 	}
@@ -1413,6 +1460,25 @@ func (v *VSHandler) deleteVolumeSnapshots(snapshots []snapv1.VolumeSnapshot) err
 	return nil
 }
 
+func (v *VSHandler) deleteSnapshotsForPVC(pvcName, pvcNamespace string) error {
+	snapList := &snapv1.VolumeSnapshotList{}
+
+	if err := v.client.List(v.ctx, snapList, client.InNamespace(pvcNamespace)); err != nil {
+		return fmt.Errorf("error listing VolumeSnapshots in namespace %s (%w)", pvcNamespace, err)
+	}
+
+	var toDelete []snapv1.VolumeSnapshot
+
+	for i := range snapList.Items {
+		src := snapList.Items[i].Spec.Source.PersistentVolumeClaimName
+		if src != nil && *src == pvcName {
+			toDelete = append(toDelete, snapList.Items[i])
+		}
+	}
+
+	return v.deleteVolumeSnapshots(toDelete)
+}
+
 //nolint:gocognit
 func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestination) error {
 	latestRDImage, err := v.getRDLatestImage(rd.GetName(), rd.GetNamespace())
@@ -1428,7 +1494,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 
 	lrs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getLocalReplicationName(rd.GetName()),
+			Name:      util.GetLocalReplicationName(rd.GetName()),
 			Namespace: rd.GetNamespace(),
 		},
 	}
@@ -1439,7 +1505,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	}, lrs)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return v.DeleteLocalRD(getLocalReplicationName(rd.GetName()), rd.GetNamespace())
+			return v.DeleteLocalRD(util.GetLocalReplicationName(rd.GetName()), rd.GetNamespace())
 		}
 
 		return err
@@ -1464,7 +1530,7 @@ func (v *VSHandler) deleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	return fmt.Errorf("waiting for local final sync to complete")
 }
 
-//nolint:gocognit,nestif,cyclop
+//nolint:gocognit,nestif,cyclop,funlen
 func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	repState ramendrv1alpha1.ReplicationState,
 ) error {
@@ -1474,13 +1540,19 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		return err
 	}
 
+	v.log.Info("current RD list by owner", "count", len(currentRDListByOwner.Items))
+
+	groupsToRecreate := map[string]string{}
+
 	for i := range currentRDListByOwner.Items {
 		rd := currentRDListByOwner.Items[i]
 
 		foundInSpecList := false
+		cgName := rd.GetLabels()[util.RGDOwnerLabel]
 
 		for _, rdSpec := range rdSpecList {
-			if rd.GetName() == getReplicationDestinationName(rdSpec.ProtectedPVC.Name) &&
+			// Check if the ReplicationDestination is in the spec list
+			if rd.GetName() == util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name) &&
 				rd.GetNamespace() == rdSpec.ProtectedPVC.Namespace {
 				foundInSpecList = true
 
@@ -1499,6 +1571,10 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 				v.log.Error(err, "Error cleaning up ReplicationDestination", "name", rd.GetName())
 			} else {
 				v.log.Info("Deleted ReplicationDestination", "name", rd.GetName())
+				// If this RD is part of a consistency group, we need to recreate the RGD
+				if cgName != "" {
+					groupsToRecreate[cgName] = rd.GetNamespace()
+				}
 			}
 
 			// Now delete the associated PVC if it exists and we are still secondary
@@ -1512,18 +1588,35 @@ func (v *VSHandler) CleanupRDNotInSpecList(rdSpecList []ramendrv1alpha1.VolSyncR
 		}
 	}
 
+	for cgName, cgNamespace := range groupsToRecreate {
+		v.log.V(1).Info("Recreating RGD", "cgName", cgName)
+
+		if err := util.DeleteReplicationGroupDestination(v.ctx, v.client, cgName, cgNamespace); err != nil {
+			v.log.Error(err, "Failed to delete RGD")
+
+			return err
+		}
+	}
+
 	return nil
 }
 
 // Make sure a ServiceExport exists to export the service for this RD to remote clusters
+// When diff sync is enabled, uses the ceph-volsync-plugin service name instead of rsync-tls.
 // See: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/
 // 2.4/html/services/services-overview#enable-service-discovery-submariner
 func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationDestination) error {
+	// Get name of the local service (this needs to be exported)
+	serviceName := util.GetLocalServiceNameForRD(rd.GetName())
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		serviceName = util.GetLocalServiceNameForDiffRD(rd.GetName())
+	}
+
 	// Using unstructured to avoid needing to require serviceexport in client scheme
 	svcExport := &unstructured.Unstructured{}
 	svcExport.Object = map[string]interface{}{
 		"metadata": map[string]interface{}{
-			"name":      getLocalServiceNameForRD(rd.GetName()), // Get name of the local service (this needs to be exported)
+			"name":      serviceName,
 			"namespace": rd.GetNamespace(),
 		},
 	}
@@ -1542,7 +1635,7 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		// This way on relocate scenarios or failover/failback, when the RD is cleaned up the associated
 		// ServiceExport will get cleaned up with it.
 		if err := ctrlutil.SetOwnerReference(rd, svcExport, v.client.Scheme()); err != nil {
-			v.log.Error(err, "unable to set controller reference", "resource", svcExport)
+			v.log.Error(err, "unable to set owner reference", "resource", svcExport)
 
 			return fmt.Errorf("%w", err)
 		}
@@ -1550,7 +1643,7 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		return nil
 	})
 
-	v.log.V(1).Info("ServiceExport createOrUpdate Complete", "op", op)
+	v.log.V(1).Info("ServiceExport createOrUpdate Complete", "op", op, "serviceName", serviceName)
 
 	if err != nil {
 		v.log.Error(err, "error creating or updating ServiceExport", "replication destination name", rd.GetName(),
@@ -1559,9 +1652,128 @@ func (v *VSHandler) ReconcileServiceExportForRD(rd *volsyncv1alpha1.ReplicationD
 		return fmt.Errorf("error creating or updating ServiceExport (%w)", err)
 	}
 
-	v.log.V(1).Info("ServiceExport Reconcile Complete")
+	v.ensureVolSyncServiceLabels(serviceName, rd.GetNamespace())
 
 	return nil
+}
+
+func (v *VSHandler) ensureVolSyncServiceLabels(serviceName, namespace string) {
+	svc := &corev1.Service{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, svc)
+	if err != nil {
+		v.log.V(1).Info("VolSync Service not found yet, skipping label", "serviceName", serviceName)
+
+		return
+	}
+
+	err = util.NewResourceUpdater(svc).
+		AddLabel(util.CreatedByRamenLabel, "transitive").
+		Update(v.ctx, v.client)
+	if err != nil {
+		v.log.V(1).Info("Failed to label VolSync Service", "serviceName", serviceName, "error", err)
+	}
+
+	ep := &corev1.Endpoints{}
+
+	err = v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, ep)
+	if err != nil {
+		v.log.V(1).Info("VolSync Endpoints not found yet, skipping label", "serviceName", serviceName)
+	} else {
+		err = util.NewResourceUpdater(ep).
+			AddLabel(util.CreatedByRamenLabel, "transitive").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync Endpoints", "serviceName", serviceName, "error", err)
+		}
+	}
+
+	epSliceList := &discoveryv1.EndpointSliceList{}
+
+	err = v.client.List(v.ctx, epSliceList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{"kubernetes.io/service-name": serviceName},
+	)
+	if err != nil {
+		v.log.V(1).Info("Failed to list EndpointSlices, skipping label", "serviceName", serviceName)
+
+		return
+	}
+
+	for i := range epSliceList.Items {
+		err = util.NewResourceUpdater(&epSliceList.Items[i]).
+			AddLabel(util.CreatedByRamenLabel, "transitive").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync EndpointSlice",
+				"endpointSlice", epSliceList.Items[i].Name, "error", err)
+		}
+	}
+}
+
+const (
+	ServiceImportKind    = "ServiceImport"
+	ServiceImportVersion = "v1alpha1"
+)
+
+func (v *VSHandler) EnsureVolSyncServiceImportLabels(pvcName, namespace string) {
+	if !util.IsSubmarinerEnabled(v.owner.GetAnnotations()) {
+		return
+	}
+
+	rdName := util.GetReplicationDestinationName(pvcName)
+	serviceName := util.GetLocalServiceNameForRD(rdName)
+
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		serviceName = util.GetLocalServiceNameForDiffRD(rdName)
+	}
+
+	svcImport := &unstructured.Unstructured{}
+	svcImport.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   ServiceExportGroup,
+		Kind:    ServiceImportKind,
+		Version: ServiceImportVersion,
+	})
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, svcImport)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			v.log.V(1).Info("Failed to get ServiceImport", "serviceName", serviceName, "error", err)
+		}
+
+		return
+	}
+
+	err = util.NewResourceUpdater(svcImport).
+		AddLabel(util.CreatedByRamenLabel, "transitive").
+		Update(v.ctx, v.client)
+	if err != nil {
+		v.log.V(1).Info("Failed to label ServiceImport", "serviceName", serviceName, "error", err)
+	}
+}
+
+func (v *VSHandler) EnsureVolSyncMoverJobLabels(pvcName, namespace string) {
+	for _, prefix := range []string{"volsync-rsync-tls-src-", "volsync-rsync-tls-dst-"} {
+		jobName := util.GetJobName(prefix, pvcName)
+
+		job := &batchv1.Job{}
+
+		err := v.client.Get(v.ctx, types.NamespacedName{Name: jobName, Namespace: namespace}, job)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				v.log.V(1).Info("Failed to get VolSync mover Job", "jobName", jobName, "error", err)
+			}
+
+			continue
+		}
+
+		err = util.NewResourceUpdater(job).
+			AddLabel(util.CreatedByRamenLabel, "transitive").
+			Update(v.ctx, v.client)
+		if err != nil {
+			v.log.V(1).Info("Failed to label VolSync mover Job", "jobName", jobName, "error", err)
+		}
+	}
 }
 
 func (v *VSHandler) listRSByOwner(rsNamespace string) (volsyncv1alpha1.ReplicationSourceList, error) {
@@ -1632,7 +1844,29 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 	return v.ValidateSnapshotAndEnsurePVC(rdSpec, *vsImageRef, failoverAction)
 }
 
-//nolint:cyclop,funlen,gocognit
+// handlePVCNotReady encapsulates the logic used when the PVC is not ready for final sync.
+// It returns any existing RS (if found) to allow status consumers to detect prior syncs (data protected) even when
+// final sync is pending.
+func (v *VSHandler) handlePVCNotReady(
+	rsSpec ramendrv1alpha1.VolSyncReplicationSourceSpec,
+	validateErr error,
+) (*volsyncv1alpha1.ReplicationSource, error) {
+	// Return the replicationSource if it already exists
+	existingRS, getRSErr := v.getRS(
+		getReplicationSourceName(rsSpec.ProtectedPVC.Name),
+		rsSpec.ProtectedPVC.Namespace,
+	)
+	if getRSErr != nil {
+		return nil, validateErr
+	}
+
+	// Return the RS here - allows status updates to understand that prev RS syncs may have completed
+	// (i.e. data protected == true), even though we may be indicating that finalSync has not yet completed
+	// because the PVC is still in-use.
+	return existingRS, validateErr
+}
+
+//nolint:cyclop
 func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 ) error {
@@ -1652,9 +1886,6 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	}
 
 	if pvc != nil {
-		// This PVC is used by the RD. We don't need have the finalizer.
-		ctrlutil.RemoveFinalizer(pvc, PVCFinalizerProtected)
-
 		if err := v.removeOCMAnnotationsAndUpdate(pvc); err != nil {
 			return err
 		}
@@ -1668,12 +1899,6 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(ctx, v.client, pvc, func() error {
-		if !v.vrgInAdminNamespace {
-			if err := ctrl.SetControllerReference(v.owner, pvc, v.client.Scheme()); err != nil {
-				return fmt.Errorf("failed to set controller reference %w", err)
-			}
-		}
-
 		if pvc.CreationTimestamp.IsZero() {
 			pvc.Spec.AccessModes = rdSpec.ProtectedPVC.AccessModes
 			pvc.Spec.StorageClassName = rdSpec.ProtectedPVC.StorageClassName
@@ -1682,13 +1907,8 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 
 		pvc.Spec.Resources.Requests = rdSpec.ProtectedPVC.Resources.Requests
 
-		if pvc.Labels == nil {
-			pvc.Labels = rdSpec.ProtectedPVC.Labels
-		} else {
-			for key, val := range rdSpec.ProtectedPVC.Labels {
-				pvc.Labels[key] = val
-			}
-		}
+		util.SyncPVCLabels(pvc, rdSpec.ProtectedPVC.Labels)
+		util.SyncPVCAnnotations(pvc, rdSpec.ProtectedPVC.Annotations)
 
 		return nil
 	})
@@ -1698,7 +1918,11 @@ func (v *VSHandler) EnsurePVCforDirectCopy(ctx context.Context,
 
 	logger.V(1).Info("PVC created", "operation", op)
 
-	return nil
+	if err := v.StripPVCOwnerReferences(pvc); err != nil {
+		return err
+	}
+
+	return v.RetainPVForPVC(*pvc)
 }
 
 //nolint:nestif
@@ -1775,7 +1999,7 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 
 	v.log.Info(fmt.Sprintf("Rollback to the last snapshot %s for pvc %s", snapshotRef.Name, rdSpec.ProtectedPVC.Name))
 	// 1. Pause the main RD. Any inprogress sync will be terminated.
-	rd, err := v.pauseRD(getReplicationDestinationName(rdSpec.ProtectedPVC.Name), rdSpec.ProtectedPVC.Namespace)
+	rd, err := v.pauseRD(util.GetReplicationDestinationName(rdSpec.ProtectedPVC.Name), rdSpec.ProtectedPVC.Namespace)
 	if err != nil {
 		return err
 	}
@@ -1787,7 +2011,7 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 	}
 
 	lrd, err := GetRD(v.ctx, v.client,
-		getLocalReplicationName(rdSpec.ProtectedPVC.Name), rdSpec.ProtectedPVC.Namespace, v.log)
+		util.GetLocalReplicationName(rdSpec.ProtectedPVC.Name), rdSpec.ProtectedPVC.Namespace, v.log)
 	if err != nil {
 		return err
 	}
@@ -1799,8 +2023,18 @@ func (v *VSHandler) rollbackToLastSnapshot(rdSpec ramendrv1alpha1.VolSyncReplica
 
 	pskSecretName := GetVolSyncPSKSecretNameFromVRGName(v.owner.GetName())
 
-	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback
-	lrd, lrs, err := v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, v.log)
+	moverConfig := v.GetMoverConfigForPVC(rdSpec.ProtectedPVC.Name, rdSpec.ProtectedPVC.Namespace)
+
+	// Create localRD and localRS. The latest snapshot of the main RD will be used for the rollback.
+	// When diff sync is enabled, use External spec for efficient block-level rollback.
+	var lrs *volsyncv1alpha1.ReplicationSource
+
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		lrd, lrs, err = v.reconcileDiffLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, v.log)
+	} else {
+		lrd, lrs, err = v.reconcileLocalReplication(rd, rdSpec, &snapshotRef, pskSecretName, moverConfig, v.log)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -1936,13 +2170,11 @@ func (v *VSHandler) validateAndProtectSnapshot(
 	// Cross-namespace owner references are disallowed, so setting owner is skipped, when VRG is situated in admin
 	// namespace
 	updater := util.NewResourceUpdater(volSnap)
-	if !v.vrgInAdminNamespace {
-		updater.AddOwner(v.owner, v.client.Scheme())
-	}
 
 	err = updater.AddLabel(util.VRGOwnerNameLabel, v.owner.GetName()).
 		AddLabel(util.VRGOwnerNamespaceLabel, v.owner.GetNamespace()).
 		AddLabel(VolSyncDoNotDeleteLabel, VolSyncDoNotDeleteLabelVal).
+		AddLabel(util.CreatedByRamenLabel, "true").
 		Update(v.ctx, v.client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add owner/label to snapshot %s (%w)", volSnap.GetName(), err)
@@ -1951,37 +2183,6 @@ func (v *VSHandler) validateAndProtectSnapshot(
 	v.log.V(1).Info("VolumeSnapshot validated and protected", "volumesnapshot name", volSnap.GetName())
 
 	return volSnap, nil
-}
-
-func (v *VSHandler) addAnnotationAndVRGOwnerRefAndUpdate(obj client.Object,
-	annotationName, annotationValue string,
-) (err error) {
-	var ownerRefUpdated bool
-
-	annotationsUpdated := util.AddAnnotation(obj, annotationName, annotationValue)
-
-	if !v.vrgInAdminNamespace {
-		ownerRefUpdated, err = util.AddOwnerReference(obj, v.owner, v.client.Scheme()) // VRG as owner
-		if err != nil {
-			return err
-		}
-	}
-
-	if annotationsUpdated || ownerRefUpdated {
-		objKindAndName := getKindAndName(v.client.Scheme(), obj)
-
-		if err := v.client.Update(v.ctx, obj); err != nil {
-			v.log.Error(err, "Failed to add annotation or VRG owner reference to obj", "obj", objKindAndName)
-
-			return fmt.Errorf("failed to add %s annotation or VRG owner reference to %s (%w)",
-				annotationName, objKindAndName, err)
-		}
-
-		v.log.Info("annotation and VRG ownerRef added to object",
-			"obj", objKindAndName, "annotationName", annotationName, "annotation value", annotationValue)
-	}
-
-	return nil
 }
 
 func (v *VSHandler) addOwnerReferenceAndUpdate(obj client.Object, owner metav1.Object) error {
@@ -2294,32 +2495,8 @@ func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
 	return true
 }
 
-func getReplicationDestinationName(pvcName string) string {
-	return pvcName // Use PVC name as name of ReplicationDestination
-}
-
 func getReplicationSourceName(pvcName string) string {
 	return pvcName // Use PVC name as name of ReplicationSource
-}
-
-func getLocalReplicationName(pvcName string) string {
-	return pvcName + "-local" // Use PVC name as name plus -local for local RD and RS
-}
-
-// Service name that VolSync will create locally in the same namespace as the ReplicationDestination
-func getLocalServiceNameForRDFromPVCName(pvcName string) string {
-	return getLocalServiceNameForRD(getReplicationDestinationName(pvcName))
-}
-
-func getLocalServiceNameForRD(rdName string) string {
-	// This is the name VolSync will use for the service
-	return util.GetServiceName("volsync-rsync-tls-dst-", rdName)
-}
-
-// This is the remote service name that can be accessed from another cluster.  This assumes submariner and that
-// a ServiceExport is created for the service on the cluster that has the ReplicationDestination
-func getRemoteServiceNameForRDFromPVCName(pvcName, rdNamespace string) string {
-	return fmt.Sprintf("%s.%s.svc.clusterset.local", getLocalServiceNameForRDFromPVCName(pvcName), rdNamespace)
 }
 
 func getKindAndName(scheme *runtime.Scheme, obj client.Object) string {
@@ -2361,15 +2538,18 @@ func ValidateObjectExists(ctx context.Context, c client.Client, obj client.Objec
 func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
-	pskSecretName string, l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
+	pskSecretName string,
+	moverConfigSpec *ramendrv1alpha1.MoverConfig,
+	l logr.Logger) (*volsyncv1alpha1.ReplicationDestination,
 	*volsyncv1alpha1.ReplicationSource, error,
 ) {
-	lrd, err := v.reconcileLocalRD(rdSpec, pskSecretName)
+	lrd, err := v.reconcileLocalRD(rdSpec, pskSecretName, moverConfigSpec)
 	if lrd == nil || err != nil {
 		return nil, nil, fmt.Errorf("failed to reconcile fully localRD (%w)", err)
 	}
 
-	lrs, err := v.reconcileLocalRS(rd, &rdSpec, snapshotRef, pskSecretName, *lrd.Status.RsyncTLS.Address)
+	lrs, err := v.reconcileLocalRS(rd, &rdSpec, snapshotRef, pskSecretName, *lrd.Status.RsyncTLS.Address,
+		moverConfigSpec)
 	if err != nil {
 		return lrd, nil, fmt.Errorf("failed to reconcile localRS (%w)", err)
 	}
@@ -2381,13 +2561,14 @@ func (v *VSHandler) reconcileLocalReplication(rd *volsyncv1alpha1.ReplicationDes
 
 //nolint:funlen
 func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
-	pskSecretName string) (*volsyncv1alpha1.ReplicationDestination, error,
+	pskSecretName string,
+	moverConfigSpec *ramendrv1alpha1.MoverConfig) (*volsyncv1alpha1.ReplicationDestination, error,
 ) {
 	v.log.Info("Reconciling localRD", "rdSpec name", rdSpec.ProtectedPVC.Name)
 
 	lrd := &volsyncv1alpha1.ReplicationDestination{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getLocalReplicationName(rdSpec.ProtectedPVC.Name),
+			Name:      util.GetLocalReplicationName(rdSpec.ProtectedPVC.Name),
 			Namespace: rdSpec.ProtectedPVC.Namespace,
 		},
 	}
@@ -2398,14 +2579,6 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrd, func() error {
-		if !v.vrgInAdminNamespace {
-			if err := ctrl.SetControllerReference(v.owner, lrd, v.client.Scheme()); err != nil {
-				v.log.Error(err, "unable to set controller reference")
-
-				return err
-			}
-		}
-
 		util.AddLabel(lrd, util.CreatedByRamenLabel, "true")
 		util.AddLabel(lrd, util.VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrd, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
@@ -2416,6 +2589,9 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 			pvcAccessModes = rdSpec.ProtectedPVC.AccessModes
 		}
 
+		moverConfig := buildMoverConfig(moverConfigSpec)
+
+		lrd.Spec.External = nil
 		lrd.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationDestinationRsyncTLSSpec{
 			ServiceType: &DefaultRsyncServiceType,
 			KeySecret:   &pskSecretName,
@@ -2427,6 +2603,7 @@ func (v *VSHandler) reconcileLocalRD(rdSpec ramendrv1alpha1.VolSyncReplicationDe
 				AccessModes:      pvcAccessModes,
 				DestinationPVC:   &rdSpec.ProtectedPVC.Name,
 			},
+			MoverConfig: moverConfig,
 		}
 
 		return nil
@@ -2451,6 +2628,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 	pskSecretName, address string,
+	moverConfigSpec *ramendrv1alpha1.MoverConfig,
 ) (*volsyncv1alpha1.ReplicationSource, error,
 ) {
 	v.log.Info("Reconciling localRS", "RD", rd.GetName())
@@ -2466,20 +2644,12 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 	lrs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getLocalReplicationName(rsSpec.ProtectedPVC.Name),
+			Name:      util.GetLocalReplicationName(rsSpec.ProtectedPVC.Name),
 			Namespace: rsSpec.ProtectedPVC.Namespace,
 		},
 	}
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, lrs, func() error {
-		if !v.vrgInAdminNamespace {
-			if err := ctrl.SetControllerReference(v.owner, lrs, v.client.Scheme()); err != nil {
-				v.log.Error(err, "unable to set controller reference")
-
-				return err
-			}
-		}
-
 		util.AddLabel(lrs, util.CreatedByRamenLabel, "true")
 		util.AddLabel(lrs, util.VRGOwnerNameLabel, v.owner.GetName())
 		util.AddLabel(lrs, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
@@ -2490,6 +2660,10 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 		}
 
 		lrs.Spec.SourcePVC = pvc.GetName()
+
+		moverConfig := buildMoverConfig(moverConfigSpec)
+
+		lrs.Spec.External = nil
 		lrs.Spec.RsyncTLS = &volsyncv1alpha1.ReplicationSourceRsyncTLSSpec{
 			KeySecret: &pskSecretName,
 			Address:   &address,
@@ -2497,6 +2671,7 @@ func (v *VSHandler) reconcileLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 			ReplicationSourceVolumeOptions: volsyncv1alpha1.ReplicationSourceVolumeOptions{
 				CopyMethod: volsyncv1alpha1.CopyMethodDirect,
 			},
+			MoverConfig: moverConfig,
 		}
 
 		return nil
@@ -2522,6 +2697,16 @@ func (v *VSHandler) CleanupLocalResources(lrs *volsyncv1alpha1.ReplicationSource
 	err = util.DeletePVC(v.ctx, v.client, lrs.Spec.SourcePVC, lrs.GetNamespace(), v.log)
 	if err != nil {
 		return err
+	}
+
+	// If diff sync was used, clean up the current-state snapshot created for rollback
+	if util.IsDiffSyncEnabled(v.owner.GetAnnotations()) {
+		pvcName := strings.TrimPrefix(lrs.GetName(), "local-")
+		currentStateSnapName := fmt.Sprintf("current-state-%s", pvcName)
+
+		if snapErr := v.deleteSnapshot(v.ctx, v.client, currentStateSnapName, lrs.GetNamespace(), v.log); snapErr != nil {
+			v.log.Error(snapErr, "Failed to delete current-state snapshot", "snapshotName", currentStateSnapName)
+		}
 	}
 
 	// delete localRS
@@ -2578,7 +2763,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 
 	lrs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getLocalReplicationName(rd.GetName()),
+			Name:      util.GetLocalReplicationName(rd.GetName()),
 			Namespace: rd.GetNamespace(),
 		},
 	}
@@ -2610,6 +2795,48 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	return v.createPVCFromSnapshot(rd, rdSpec, snapshotRef, restoreSize)
 }
 
+// resolveCapacity determines the PVC capacity by resolving between RD spec, rdSpec, and snapshot restore size.
+func (v *VSHandler) resolveCapacity(
+	rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapRestoreSize *resource.Quantity,
+) *resource.Quantity {
+	var pvcRequestedCapacity *resource.Quantity
+	if rd.Spec.RsyncTLS != nil {
+		pvcRequestedCapacity = rd.Spec.RsyncTLS.Capacity
+	} else {
+		pvcRequestedCapacity = rdSpec.ProtectedPVC.Resources.Requests.Storage()
+	}
+
+	if snapRestoreSize != nil {
+		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
+			pvcRequestedCapacity = snapRestoreSize
+		}
+	}
+
+	return pvcRequestedCapacity
+}
+
+// setImmutablePVCFields sets the immutable fields on a PVC being created from a snapshot.
+func (v *VSHandler) setImmutablePVCFields(
+	pvc *corev1.PersistentVolumeClaim,
+	rd *volsyncv1alpha1.ReplicationDestination,
+	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	snapshotRef *corev1.TypedLocalObjectReference,
+	accessModes []corev1.PersistentVolumeAccessMode,
+) {
+	pvc.Spec.AccessModes = accessModes
+
+	if rd.Spec.RsyncTLS != nil {
+		pvc.Spec.StorageClassName = rd.Spec.RsyncTLS.StorageClassName
+	} else {
+		pvc.Spec.StorageClassName = rdSpec.ProtectedPVC.StorageClassName
+	}
+
+	pvc.Spec.DataSource = snapshotRef
+	pvc.Spec.VolumeMode = v.volumeModeForProtectedPVC(&rdSpec.ProtectedPVC)
+}
+
 //nolint:funlen
 func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
@@ -2632,12 +2859,7 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 
 	util.AddLabel(pvc, util.CreatedByRamenLabel, "true")
 
-	pvcRequestedCapacity := rd.Spec.RsyncTLS.Capacity
-	if snapRestoreSize != nil {
-		if pvcRequestedCapacity == nil || snapRestoreSize.Cmp(*pvcRequestedCapacity) > 0 {
-			pvcRequestedCapacity = snapRestoreSize
-		}
-	}
+	pvcRequestedCapacity := v.resolveCapacity(rd, rdSpec, snapRestoreSize)
 
 	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, pvc, func() error {
 		if pvc.Status.Phase == corev1.ClaimBound {
@@ -2654,11 +2876,7 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 		}
 
 		if pvc.CreationTimestamp.IsZero() { // set immutable fields
-			pvc.Spec.AccessModes = accessModes
-			pvc.Spec.StorageClassName = rd.Spec.RsyncTLS.StorageClassName
-
-			pvc.Spec.DataSource = snapshotRef
-			pvc.Spec.VolumeMode = v.volumeModeForProtectedPVC(&rdSpec.ProtectedPVC)
+			v.setImmutablePVCFields(pvc, rd, rdSpec, snapshotRef, accessModes)
 		}
 
 		pvc.Spec.Resources.Requests = corev1.ResourceList{
@@ -2724,7 +2942,7 @@ func GetRD(ctx context.Context,
 
 	err := k8sClient.Get(ctx,
 		types.NamespacedName{
-			Name:      getReplicationDestinationName(name),
+			Name:      util.GetReplicationDestinationName(name),
 			Namespace: namespace,
 		}, rdInst)
 	if err != nil {
@@ -2873,15 +3091,6 @@ func (v *VSHandler) checkLastSnapshotSyncStatus(lrs *volsyncv1alpha1.Replication
 	return !completed
 }
 
-func (v *VSHandler) DisownVolSyncManagedPVC(pvc *corev1.PersistentVolumeClaim) error {
-	// TODO: Remove just the VRG ownerReference instead of blindly removing all ownerreferences.
-	// For now, this is fine, given that the VRG is the sole owner of the PVC after DR is enabled.
-	pvc.ObjectMeta.OwnerReferences = nil
-	delete(pvc.Annotations, ACMAppSubDoNotDeleteAnnotation)
-
-	return v.client.Update(v.ctx, pvc)
-}
-
 func (v *VSHandler) addBackOCMAnnotationsAndUpdate(obj client.Object, annotations map[string]string) error {
 	updatedAnnotations := obj.GetAnnotations()
 
@@ -2890,6 +3099,9 @@ func (v *VSHandler) addBackOCMAnnotationsAndUpdate(obj client.Object, annotation
 			updatedAnnotations[key] = val
 		}
 	}
+
+	// Clean up the managed keys marker since we're switching clusters
+	delete(updatedAnnotations, util.ManagedAnnotationKeysMarker)
 
 	obj.SetAnnotations(updatedAnnotations)
 
@@ -2959,6 +3171,10 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		return err
 	}
 
+	if err := v.deleteSnapshotsForPVC(pvc.GetName(), pvc.GetNamespace()); err != nil {
+		return err
+	}
+
 	// Remove the VolSync labels and annotations from the PVC
 	return util.NewResourceUpdater(pvc).
 		DeleteLabel(util.VRGOwnerNameLabel).
@@ -2966,9 +3182,9 @@ func (v *VSHandler) UnprotectVolSyncPVC(pvc *corev1.PersistentVolumeClaim) error
 		DeleteLabel(VolSyncDoNotDeleteLabel).
 		DeleteLabel(util.LabelOwnerName).
 		DeleteLabel(util.LabelOwnerNamespaceName).
+		DeleteLabel(util.ConsistencyGroupLabel).
 		DeleteLabel(util.CreatedByRamenLabel).
 		RemoveFinalizer(PVCFinalizerProtected).
-		RemoveOwner(v.owner, v.client.Scheme()).
 		Update(v.ctx, v.client)
 }
 
@@ -3010,4 +3226,462 @@ func (v *VSHandler) AppendOrUpdateRdInfo(
 
 func (v *VSHandler) IsSubmarinerEnabled() bool {
 	return util.IsSubmarinerEnabled(v.owner.GetAnnotations())
+}
+
+func (v *VSHandler) EnsureMountJobForUnmountedPVC(rsSpec *ramendrv1alpha1.VolSyncReplicationSourceSpec,
+) (bool, error) {
+	log := v.log.WithValues("pvc", rsSpec.ProtectedPVC.Name, "namespace", rsSpec.ProtectedPVC.Namespace)
+	pvcNamespacedName := util.ProtectedPVCNamespacedName(rsSpec.ProtectedPVC)
+
+	jobNamespacedName := types.NamespacedName{
+		Name:      util.GetJobName(VolSyncMountJobNamePrefix, pvcNamespacedName.Name),
+		Namespace: pvcNamespacedName.Namespace,
+	}
+
+	job := &batchv1.Job{}
+
+	err := v.client.Get(context.Background(), jobNamespacedName, job)
+	if err == nil {
+		log.V(1).Info("Mount job already exists, handling result")
+
+		return v.handleMountJobResult(job, pvcNamespacedName, log)
+	}
+
+	if !errors.IsNotFound(err) {
+		return false, err
+	}
+
+	mountJobReq, err := v.mountJobRequired(pvcNamespacedName, log)
+	if err != nil {
+		return false, err
+	}
+
+	if !mountJobReq {
+		return true, nil
+	}
+
+	// PVC exists and is not in use, and RS does not exist - create mount job
+	job, err = v.createOrUpdateMountJob(pvcNamespacedName)
+	if err != nil {
+		return false, err
+	}
+
+	return v.handleMountJobResult(job, pvcNamespacedName, log)
+}
+
+// DeleteMountJob deletes the mount job for a given PVC if it exists
+func (v *VSHandler) DeleteMountJob(pvcName, pvcNamespace string) error {
+	jobName := util.GetJobName(VolSyncMountJobNamePrefix, pvcName)
+
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: pvcNamespace,
+		},
+	}
+
+	v.log.V(1).Info("Deleting mount job", "jobName", jobName, "namespace", pvcNamespace)
+
+	err := v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground))
+	if err != nil {
+		if errors.IsNotFound(err) {
+			v.log.V(1).Info("Mount job not found, already deleted", "jobName", jobName)
+
+			return nil
+		}
+
+		v.log.Error(err, "Failed to delete mount job", "jobName", jobName)
+
+		return fmt.Errorf("failed to delete mount job %s/%s: %w", pvcNamespace, jobName, err)
+	}
+
+	v.log.Info("Successfully deleted mount job", "jobName", jobName, "namespace", pvcNamespace)
+
+	return nil
+}
+
+// WaitForMountJobDeletion waits for the mount job and its pods to be fully deleted
+func (v *VSHandler) WaitForMountJobDeletion(pvcName, pvcNamespace string) (bool, error) {
+	jobName := util.GetJobName(VolSyncMountJobNamePrefix, pvcName)
+
+	job := &batchv1.Job{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{
+		Name:      jobName,
+		Namespace: pvcNamespace,
+	}, job)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			v.log.V(1).Info("Mount job fully deleted", "jobName", jobName)
+
+			return true, nil // Job is gone, deletion complete
+		}
+
+		return false, fmt.Errorf("failed to check mount job status %s/%s: %w", pvcNamespace, jobName, err)
+	}
+
+	// Job still exists, check if it's being deleted
+	if job.DeletionTimestamp != nil {
+		v.log.V(1).Info("Mount job deletion in progress", "jobName", jobName,
+			"deletionTimestamp", job.DeletionTimestamp)
+
+		return false, nil // Still deleting, need to wait
+	}
+
+	// Job exists but not marked for deletion - this shouldn't happen
+	v.log.Info("Mount job exists but not marked for deletion", "jobName", jobName)
+
+	return false, fmt.Errorf("mount job %s/%s exists but not marked for deletion", pvcNamespace, jobName)
+}
+
+func (v *VSHandler) mountJobRequired(
+	pvcNamespacedName types.NamespacedName,
+	log logr.Logger,
+) (bool, error) {
+	vrg, ok := v.GetOwner().(*ramendrv1alpha1.VolumeReplicationGroup)
+	if ok && vrg.Spec.VolSync.MoverConfig != nil {
+		return false, nil
+	}
+
+	_, err := v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
+	if err == nil {
+		log.V(1).Info("ReplicationSource exists, no mount job needed")
+
+		return false, nil
+	}
+
+	if !errors.IsNotFound(err) {
+		return false, err
+	}
+
+	inUse, err := v.pvcExistsAndInUse(pvcNamespacedName, false)
+	if err != nil {
+		return false, err
+	}
+
+	if inUse {
+		log.V(1).Info("PVC is already in use, no mount job needed")
+
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (v *VSHandler) handleMountJobResult(
+	job *batchv1.Job,
+	pvcNamespacedName types.NamespacedName,
+	l logr.Logger,
+) (bool, error) {
+	if jobCompleted(job) {
+		l.V(1).Info("Mount job completed successfully")
+
+		_, err := v.getRS(getReplicationSourceName(pvcNamespacedName.Name), pvcNamespacedName.Namespace)
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				return false, fmt.Errorf("ReplicationSource not found after successful mount job: %w", err)
+			}
+
+			l.V(1).Info("ReplicationSource does not exist after successful mount job, waiting")
+
+			return true, nil
+		}
+
+		err = v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+		if err != nil && !errors.IsNotFound(err) {
+			return false, fmt.Errorf(
+				"deleting mount job %s/%s after success failed: %w",
+				job.Namespace, job.Name, err,
+			)
+		}
+
+		return true, nil
+	}
+
+	if jobFailed(job) {
+		err := v.client.Delete(v.ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+		if err != nil && !errors.IsNotFound(err) {
+			return false, fmt.Errorf(
+				"deleting mount job %s/%s after failure failed: %w",
+				job.Namespace, job.Name, err,
+			)
+		}
+
+		return false, fmt.Errorf(
+			"mount job %s/%s failed",
+			job.Namespace, job.Name,
+		)
+	}
+
+	l.V(1).Info("Mount job in progress")
+
+	return false, nil
+}
+
+func jobCompleted(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func jobFailed(job *batchv1.Job) bool {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func prepareJobMetadata(pvcNamespacedName types.NamespacedName) *batchv1.Job {
+	return &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.GetJobName(VolSyncMountJobNamePrefix, pvcNamespacedName.Name),
+			Namespace: pvcNamespacedName.Namespace,
+		},
+	}
+}
+
+func (v *VSHandler) createOrUpdateMountJob(pvcNamespacedName types.NamespacedName) (*batchv1.Job, error) {
+	job := prepareJobMetadata(pvcNamespacedName)
+
+	util.AddLabel(job, util.CreatedByRamenLabel, "true")
+	util.AddLabel(job, util.VRGOwnerNameLabel, v.owner.GetName())
+	util.AddLabel(job, util.VRGOwnerNamespaceLabel, v.owner.GetNamespace())
+
+	op, err := ctrlutil.CreateOrUpdate(v.ctx, v.client, job, func() error {
+		job.Spec = v.prepareJobSpec(pvcNamespacedName.Name)
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating or updating mount job (%w)", err)
+	}
+
+	v.log.V(1).Info("Mount Job createOrUpdate Complete", "op", op, "jobName", job.Name)
+
+	return job, nil
+}
+
+func (v *VSHandler) prepareJobSpec(pvcName string) batchv1.JobSpec {
+	backoffLimit := int32(1)
+	gracePeriod := 10
+
+	return batchv1.JobSpec{
+		BackoffLimit: &backoffLimit,
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				RestartPolicy:                 corev1.RestartPolicyNever,
+				TerminationGracePeriodSeconds: ptr.To(int64(gracePeriod)),
+				Containers: []corev1.Container{
+					{
+						Name:    "prepare-pvc",
+						Image:   v.getRamenImage(),
+						Command: []string{"/manager"},
+						Env: []corev1.EnvVar{
+							{
+								Name:  "PVC_INIT",
+								Value: "true",
+							},
+							{
+								Name:  "PVC_MOUNT_PATH",
+								Value: "/var/log",
+							},
+						},
+						ImagePullPolicy: "IfNotPresent",
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{
+									"ALL",
+								},
+							},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "varlog",
+								MountPath: "/var/log",
+							},
+						},
+					},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "varlog",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+								ClaimName: pvcName,
+							},
+						},
+					},
+				},
+				SecurityContext: &corev1.PodSecurityContext{
+					SeccompProfile: &corev1.SeccompProfile{
+						Type: corev1.SeccompProfileTypeRuntimeDefault,
+					},
+				},
+			},
+		},
+	}
+}
+
+func (v *VSHandler) getRamenImage() string {
+	podName := os.Getenv("POD_NAME")
+	podNamespace := os.Getenv("POD_NAMESPACE")
+
+	if podName == "" || podNamespace == "" {
+		v.log.Info("POD_NAME or POD_NAMESPACE environment variable is not set.")
+
+		return "quay.io/ramendr/ramen:latest"
+	}
+
+	pod := &corev1.Pod{}
+
+	err := v.client.Get(v.ctx, types.NamespacedName{Name: podName, Namespace: podNamespace}, pod)
+	if err != nil {
+		v.log.Error(err, "Failed to get Ramen operator pod.")
+
+		return ""
+	}
+
+	for _, container := range pod.Spec.Containers {
+		if container.Name == "manager" {
+			return container.Image
+		}
+	}
+
+	return ""
+}
+
+func (v *VSHandler) RetainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
+	if pvc.Spec.VolumeName == "" {
+		return nil
+	}
+
+	pv := &corev1.PersistentVolume{}
+
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
+	}
+
+	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+		return nil
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
+
+	annotations := pv.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	annotations[PVAnnotationRetentionKey] = PVAnnotationRetentionValue
+	pv.SetAnnotations(annotations)
+
+	v.log.Info("Retaining PV for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
+
+	return v.client.Update(v.ctx, pv)
+}
+
+func (v *VSHandler) UndoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim) error {
+	if pvc.Spec.VolumeName == "" {
+		return nil
+	}
+
+	pv := &corev1.PersistentVolume{}
+
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
+	}
+
+	val, ok := pv.ObjectMeta.Annotations[PVAnnotationRetentionKey]
+	if !ok || val != PVAnnotationRetentionValue {
+		return nil
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
+	delete(pv.ObjectMeta.Annotations, PVAnnotationRetentionKey)
+
+	v.log.Info("Undoing PV retention for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
+
+	return v.client.Update(v.ctx, pv)
+}
+
+// StripPVCOwnerReferences removes any VRG, RS, or RD ownerReferences from the PVC.
+// This is a migration step for PVCs that were protected by older versions of Ramen
+// which set ownerReferences on PVCs. Without this, upgrading and then disabling DR
+// would still trigger Kubernetes GC on those PVCs.
+func (v *VSHandler) StripPVCOwnerReferences(pvc *corev1.PersistentVolumeClaim) error {
+	if len(pvc.OwnerReferences) == 0 {
+		return nil
+	}
+
+	newRefs := make([]metav1.OwnerReference, 0, len(pvc.OwnerReferences))
+
+	for _, ref := range pvc.OwnerReferences {
+		switch ref.Kind {
+		case "VolumeReplicationGroup", "ReplicationSource", "ReplicationDestination":
+			continue
+		default:
+			newRefs = append(newRefs, ref)
+		}
+	}
+
+	if len(newRefs) == len(pvc.OwnerReferences) {
+		return nil
+	}
+
+	pvc.OwnerReferences = newRefs
+
+	v.log.Info("Stripped legacy DR ownerReferences from PVC", "pvcName", pvc.Name)
+
+	return v.client.Update(v.ctx, pvc)
+}
+
+// CleanupPVClaimRefForPVCDeletion prepares the PV for rebinding before the PVC is deleted.
+// Clears claimRef.UID, ResourceVersion, APIVersion while keeping Kind, Name, Namespace
+// so the PV transitions to Available (not Released) and can rebind to a new PVC with the same name.
+func (v *VSHandler) CleanupPVClaimRefForPVCDeletion(pvc corev1.PersistentVolumeClaim) error {
+	if pvc.Spec.VolumeName == "" {
+		return nil
+	}
+
+	pv := &corev1.PersistentVolume{}
+
+	if err := v.client.Get(v.ctx, types.NamespacedName{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get PV %s for PVC %s/%s: %w",
+			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
+	}
+
+	if pv.Spec.ClaimRef == nil {
+		return nil
+	}
+
+	pv.Spec.ClaimRef.UID = ""
+	pv.Spec.ClaimRef.ResourceVersion = ""
+	pv.Spec.ClaimRef.APIVersion = ""
+
+	v.log.Info("Clearing PV claimRef for PVC deletion",
+		"pvName", pv.Name, "pvcName", pvc.Name,
+		"claimRefName", pv.Spec.ClaimRef.Name, "claimRefNamespace", pv.Spec.ClaimRef.Namespace)
+
+	return v.client.Update(v.ctx, pv)
 }

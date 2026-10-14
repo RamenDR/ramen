@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+
+# yamllint disable rule:line-length
+---
+resources:
+  - https://raw.githubusercontent.com/rook/rook/release-1.20/deploy/examples/operator.yaml
+
+patches:
+  # Rook 1.20 manages CSI through ceph-csi-operator CRs. These settings used
+  # to live in rook-ceph-operator-config (CSI_ENABLE_CSIADDONS,
+  # CSI_ENABLE_OMAP_GENERATOR, CSI_*_IMAGE).
+  - target:
+      kind: OperatorConfig
+      name: ceph-csi-operator-config
+      namespace: rook-ceph
+    patch: |-
+      - op: replace
+        path: /spec/driverSpecDefaults/deployCsiAddons
+        value: true
+      - op: replace
+        path: /spec/driverSpecDefaults/generateOMapInfo
+        value: true
+      # Adds --feature-gates=CSIVolumeGroupSnapshot=true to the
+      # csi-snapshotter sidecar. Without this, VolumeGroupSnapshot stays
+      # readyToUse: false even though snapshot-controller has the gate.
+      - op: add
+        path: /spec/driverSpecDefaults/snapshotPolicy
+        value: volumeGroupSnapshot
+  # Custom Ceph-CSI image with RBD group mirroring (consistency groups)
+  # support. Rook 1.20 ignores ROOK_CSI_CEPH_IMAGE; CSI plugin images come
+  # from this ImageSet ConfigMap.
+  - target:
+      kind: ConfigMap
+      name: rook-csi-operator-image-set-configmap
+      namespace: rook-ceph
+    patch: |-
+      - op: replace
+        path: /data/plugin
+        value: quay.io/nladha/cephcsi:cg
+  - target:
+      kind: Deployment
+      name: rook-ceph-operator
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: not-used
+      spec:
+        template:
+          spec:
+            containers:
+              - name: rook-ceph-operator
+                env:
+                  # Disable to avoid random failures when restaring the enviroment.
+                  #   failed to call webhook:
+                  #   Post "https://rook-ceph-admission-controller.rook-ceph.svc:443/
+                  #   validate-ceph-rook-io-v1-cephblockpool?timeout=5s":
+                  #   x509: certificate signed by unknown authority
+                  - name: ROOK_DISABLE_ADMISSION_CONTROLLER
+                    value: 'true'

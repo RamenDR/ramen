@@ -59,9 +59,39 @@ type DRClusterConfigStatus struct {
 	// ramen replicationid label
 	VolumeGroupReplicationClasses []string `json:"volumeGroupReplicationClasses,omitempty"`
 
-	// NetworkFenceClass lists all the classes that match the provioner on the cluster that can be used for fencing
+	// NetworkFenceClass lists all the classes that match the provisioner on the cluster that can be used for fencing
 	// operations
 	NetworkFenceClasses []string `json:"networkFenceClasses,omitempty"`
+
+	// StorageAccessDetails lists the storage access information for each storage provisioner detected on the cluster.
+	StorageAccessDetails []StorageAccessDetail `json:"storageAccessDetails,omitempty"`
+
+	// NetworkAttachments lists the discovered NetworkAttachmentDefinitions on the cluster
+	// +optional
+	NetworkAttachments []NetworkAttachment `json:"networkAttachments,omitempty"`
+}
+
+// NetworkAttachment represents a discovered NetworkAttachmentDefinition
+type NetworkAttachment struct {
+	// Name of the NAD
+	Name string `json:"name"`
+
+	// Namespace of the NAD
+	Namespace string `json:"namespace"`
+
+	// CNIType is the type of CNI plugin (e.g., bridge, macvlan, ovn-k8s-cni-overlay)
+	// +optional
+	CNIType string `json:"cniType,omitempty"`
+}
+
+// StorageAccessDetail contains storage access information for a specific storage provisioner.
+type StorageAccessDetail struct {
+	// StorageProvisioner is the name of the storage provisioner
+	StorageProvisioner string `json:"storageProvisioner"`
+
+	// CIDRs is a list of CIDRs that need network access for this storage provisioner.
+	// These CIDRs are extracted from CSIAddonsNode resources that match NetworkFenceClasses for this provisioner.
+	CIDRs []string `json:"cidrs"`
 }
 
 //+kubebuilder:object:root=true

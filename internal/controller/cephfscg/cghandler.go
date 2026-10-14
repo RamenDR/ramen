@@ -51,6 +51,8 @@ func NewVSCGHandler(
 	cgHandler.ramenSchedulingInterval = instance.Spec.Async.SchedulingInterval
 	cgHandler.volumeGroupSnapshotClassSelector = instance.Spec.Async.VolumeGroupSnapshotClassSelector
 
+	cgHandler.moverConfig = append([]ramendrv1alpha1.MoverConfig(nil), instance.Spec.VolSync.MoverConfig...)
+
 	return cgHandler
 }
 
@@ -92,7 +94,8 @@ type cgHandler struct {
 
 	cgName string
 
-	logger logr.Logger
+	logger      logr.Logger
+	moverConfig []ramendrv1alpha1.MoverConfig
 }
 
 func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
@@ -112,10 +115,24 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 		return nil, err
 	}
 
+	rgd, err := c.createOrUpdateRGD(
+		replicationGroupDestinationName, replicationGroupDestinationNamespace, rdSpecsInGroup, log)
+	if err != nil {
+		return nil, err
+	}
+
+	return rgd, nil
+}
+
+func (c *cgHandler) createOrUpdateRGD(
+	name, namespace string,
+	rdSpecsInGroup []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+	log logr.Logger,
+) (*ramendrv1alpha1.ReplicationGroupDestination, error) {
 	rgd := &ramendrv1alpha1.ReplicationGroupDestination{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      replicationGroupDestinationName,
-			Namespace: replicationGroupDestinationNamespace,
+			Name:      name,
+			Namespace: namespace,
 		},
 	}
 
@@ -133,6 +150,9 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupDestination(
 		util.AddLabel(rgd, util.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
 		util.AddAnnotation(rgd, volsync.OwnerNameAnnotation, c.instance.GetName())
 		util.AddAnnotation(rgd, volsync.OwnerNamespaceAnnotation, c.instance.GetNamespace())
+
+		// Propagate enable-diff annotation from VRG to RGD
+		util.AddAnnotation(rgd, util.EnableDiffAnnotation, c.instance.GetAnnotations()[util.EnableDiffAnnotation])
 
 		rgd.Spec.VolumeSnapshotClassSelector = c.volumeSnapshotClassSelector
 		rgd.Spec.RDSpecs = rdSpecsInGroup
@@ -171,6 +191,34 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		log.Error(err, "Failed to get RDs which are owned by RGD", "RGD", replicationGroupSourceName)
 
 		return nil, !finalSyncComplete, err
+	}
+
+	// Get the RGD before deleting it, so we can extract RSSpecs with ProtectedPVC information
+	rgd := &ramendrv1alpha1.ReplicationGroupDestination{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      replicationGroupSourceName,
+			Namespace: replicationGroupSourceNamespace,
+		},
+	}
+
+	var rsSpecsWithProtectedPVC []ramendrv1alpha1.VolSyncReplicationSourceSpec
+
+	if err := c.Client.Get(c.ctx, types.NamespacedName{
+		Name:      replicationGroupSourceName,
+		Namespace: replicationGroupSourceNamespace,
+	}, rgd); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			log.Error(err, "Failed to get RGD for RS ownership setup", "RGD", replicationGroupSourceName)
+
+			return nil, !finalSyncComplete, err
+		}
+
+		log.V(1).Info("RGD not found, will use default RS specs")
+		// Fall back to default behavior if RGD not found
+		rsSpecsWithProtectedPVC = c.populateRSSMoverConfig()
+	} else {
+		// Build RSSpecs from RGD's RDSpecs to include ProtectedPVC information
+		rsSpecsWithProtectedPVC = c.buildRSSpecsFromRDSpecs(rgd.Spec.RDSpecs)
 	}
 
 	for i := range rdList.Items {
@@ -253,6 +301,9 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, c.instance.GetName())
 		util.AddAnnotation(rgs, volsync.OwnerNamespaceAnnotation, c.instance.GetNamespace())
 
+		// Propagate enable-diff annotation from VRG to RGS
+		util.AddAnnotation(rgs, util.EnableDiffAnnotation, c.instance.GetAnnotations()[util.EnableDiffAnnotation])
+
 		if runFinalSync {
 			rgs.Spec.Trigger = &ramendrv1alpha1.ReplicationSourceTriggerSpec{
 				Manual: volsync.FinalSyncTriggerString,
@@ -276,6 +327,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		rgs.Spec.VolumeGroupSnapshotClassName = volumeGroupSnapshotClassName
 		rgs.Spec.VolumeGroupSnapshotSource = c.volumeGroupSnapshotSource
+		rgs.Spec.RSSpec = rsSpecsWithProtectedPVC
 
 		return nil
 	})
@@ -284,6 +336,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		return nil, !finalSyncComplete, err
 	}
+
 	//
 	// For final sync only - check status to make sure the final sync is complete
 	// and also run cleanup of temporary resources
@@ -294,6 +347,62 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 	}
 
 	return rgs, !finalSyncComplete, nil
+}
+
+// populateRSSMoverConfig builds the RsSpecs MoverConfig list for RGS from the VRG spec.
+func (c *cgHandler) populateRSSMoverConfig() []ramendrv1alpha1.VolSyncReplicationSourceSpec {
+	vrssArray := make([]ramendrv1alpha1.VolSyncReplicationSourceSpec, 0, len(c.moverConfig))
+	for _, moverConfig := range c.moverConfig {
+		vrss := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			MoverConfig: &ramendrv1alpha1.MoverConfig{
+				MoverSecurityContext: moverConfig.MoverSecurityContext,
+				MoverServiceAccount:  moverConfig.MoverServiceAccount,
+				PVCName:              moverConfig.PVCName,
+				PVCNameSpace:         moverConfig.PVCNameSpace,
+			},
+		}
+		vrssArray = append(vrssArray, vrss)
+	}
+
+	return vrssArray
+}
+
+// buildRSSpecsFromRDSpecs builds complete RSSpecs from RDSpecs for RGS creation
+// This ensures RSSpecs include ProtectedPVC information needed for RS ownership setup
+func (c *cgHandler) buildRSSpecsFromRDSpecs(
+	rdSpecs []ramendrv1alpha1.VolSyncReplicationDestinationSpec,
+) []ramendrv1alpha1.VolSyncReplicationSourceSpec {
+	log := c.logger.WithName("buildRSSpecsFromRDSpecs")
+
+	rsSpecs := make([]ramendrv1alpha1.VolSyncReplicationSourceSpec, 0, len(rdSpecs))
+
+	for _, rdSpec := range rdSpecs {
+		// Build RS spec from RD spec, preserving ProtectedPVC information
+		rsSpec := ramendrv1alpha1.VolSyncReplicationSourceSpec{
+			ProtectedPVC: rdSpec.ProtectedPVC,
+		}
+
+		// Add mover config if available for this PVC
+		pvcName := rdSpec.ProtectedPVC.Name
+		for _, moverConfig := range c.moverConfig {
+			if moverConfig.PVCName == pvcName {
+				rsSpec.MoverConfig = &ramendrv1alpha1.MoverConfig{
+					MoverSecurityContext: moverConfig.MoverSecurityContext,
+					MoverServiceAccount:  moverConfig.MoverServiceAccount,
+					PVCName:              moverConfig.PVCName,
+					PVCNameSpace:         moverConfig.PVCNameSpace,
+				}
+
+				break
+			}
+		}
+
+		rsSpecs = append(rsSpecs, rsSpec)
+
+		log.V(1).Info("Added RS spec for PVC", "PVC", pvcName)
+	}
+
+	return rsSpecs
 }
 
 func (c *cgHandler) GetLatestImageFromRGD(rgd *ramendrv1alpha1.ReplicationGroupDestination, pvcName string,
@@ -378,7 +487,7 @@ func (c *cgHandler) DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 
 	lrs := &volsyncv1alpha1.ReplicationSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      getLocalReplicationName(rd.Name),
+			Name:      util.GetLocalReplicationName(rd.Name),
 			Namespace: rd.Namespace,
 		},
 	}
@@ -390,7 +499,7 @@ func (c *cgHandler) DeleteLocalRDAndRS(rd *volsyncv1alpha1.ReplicationDestinatio
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return c.VSHandler.DeleteLocalRD(
-				getLocalReplicationName(rd.Name),
+				util.GetLocalReplicationName(rd.Name),
 				rd.Namespace,
 			)
 		}

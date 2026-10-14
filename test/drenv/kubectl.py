@@ -5,9 +5,16 @@ import logging
 import subprocess
 
 from . import commands
+from . import sentinel
 from . import zap
 
 JSONPATH_NEWLINE = '{"\\n"}'
+
+# Default timeout for kubectl commands that can wait for a condition (wait,
+# delete, rollout). Without a timeout these commands can hang indefinitely,
+# wasting hours of CI time. Sentinel.Duration so "caller did not pass" is
+# distinguishable for rollout() (only "status" supports --timeout).
+_DEFAULT_TIMEOUT = sentinel.Duration(300)
 
 
 def version(context=None, output=None):
@@ -127,32 +134,40 @@ def annotate(
     _watch(*args, context=context, log=log)
 
 
-def delete(*args, input=None, context=None, log=print):
+def delete(*args, input=None, timeout=_DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl delete ... logging progress messages.
     """
-    _watch("delete", *args, input=input, context=context, log=log)
+    _watch("delete", *args, input=input, timeout=timeout, context=context, log=log)
 
 
-def rollout(*args, context=None, log=print):
+def rollout(command, *args, timeout=_DEFAULT_TIMEOUT, context=None, log=print):
     """
-    Run kubectl rollout ... logging progress messages.
+    Run kubectl rollout command ... logging progress messages.
+
+    Only the "status" subcommand supports --timeout. For other subcommands
+    the timeout is not passed to kubectl. Passing timeout for other
+    subcommands raises ValueError.
     """
-    _watch("rollout", *args, context=context, log=log)
+    if command != "status":
+        if timeout is not _DEFAULT_TIMEOUT:
+            raise ValueError(f"rollout {command} does not support timeout")
+        timeout = None
+    _watch("rollout", command, *args, timeout=timeout, context=context, log=log)
 
 
-def wait(*args, context=None, log=print):
+def wait(*args, timeout=_DEFAULT_TIMEOUT, context=None, log=print):
     """
     Run kubectl wait ... logging progress messages.
     """
-    _watch("wait", *args, context=context, log=log)
+    _watch("wait", *args, timeout=timeout, context=context, log=log)
 
 
 def watch(
     resource,
     jsonpath="{}",
     namespace=None,
-    timeout=None,
+    timeout=_DEFAULT_TIMEOUT,
     context=None,
 ):
     """
@@ -230,10 +245,12 @@ def _run(cmd, *args, env=None, context=None):
     return commands.run(*cmd, env=env)
 
 
-def _watch(cmd, *args, input=None, context=None, log=print):
+def _watch(cmd, *args, input=None, timeout=None, context=None, log=print):
     cmd = ["kubectl", cmd]
     if context:
         cmd.extend(("--context", context))
     cmd.extend(args)
+    if timeout is not None:
+        cmd.extend(("--timeout", f"{timeout}s"))
     for line in commands.watch(*cmd, input=input):
         log(line)

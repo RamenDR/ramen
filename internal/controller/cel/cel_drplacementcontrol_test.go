@@ -37,7 +37,7 @@ var _ = Describe("DRPC-CEL", func() {
 	DRPCs := []ramen.DRPlacementControl{}
 
 	populateDRPCs := func() {
-		DRPCs = nil
+		DRPCs = make([]ramen.DRPlacementControl, 0, 2)
 
 		drpc1Namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: "drpc1-ns"},

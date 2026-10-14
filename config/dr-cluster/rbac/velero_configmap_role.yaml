@@ -1,0 +1,22 @@
+---
+# Role for managing ResourceModifier ConfigMap in Velero namespace
+# This Role should be created in the Velero installation namespace (e.g., "velero" or "openshift-adp")
+# and bound to the ramen-dr-cluster-operator service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ramen-velero-configmap-manager
+  namespace: velero  # This should match the Velero installation namespace
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

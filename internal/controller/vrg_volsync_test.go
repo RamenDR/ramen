@@ -53,9 +53,11 @@ var (
 )
 
 var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
-	var testNamespace *corev1.Namespace
-	var testCtx context.Context
-	var cancel context.CancelFunc
+	var (
+		testNamespace *corev1.Namespace
+		testCtx       context.Context
+		cancel        context.CancelFunc
+	)
 
 	BeforeEach(func() {
 		testCtx, cancel = context.WithCancel(context.TODO())
@@ -137,7 +139,6 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 				pvcAnnotations := map[string]string{
 					"apps.open-cluster-management.io/hosting-subscription": "sub-name",
 					"apps.open-cluster-management.io/reconcile-option":     "merge",
-					volsync.ACMAppSubDoNotDeleteAnnotation:                 volsync.ACMAppSubDoNotDeleteAnnotationVal,
 					"pv.kubernetes.io/bind-completed":                      "yes",
 					"volume.kubernetes.io/storage-provisioner":             "provisioner",
 					"any-other-annotation":                                 "any-value",
@@ -169,6 +170,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					foundBoundPVC0 := false
 					foundBoundPVC1 := false
 					foundBoundPVC2 := false
+
 					for _, vsPvc := range testVsrg.Status.ProtectedPVCs {
 						switch vsPvc.Name {
 						case boundPvcs[0].GetName():
@@ -179,6 +181,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 							foundBoundPVC2 = true
 						}
 					}
+
 					Expect(foundBoundPVC0).To(BeTrue())
 					Expect(foundBoundPVC1).To(BeTrue())
 					Expect(foundBoundPVC2).To(BeTrue())
@@ -196,9 +199,6 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 						Expect(vsPvc.Annotations).To(HaveKeyWithValue(
 							"any-other-annotation", "any-value"))
 
-						// Except the do-no-delete annotion
-						Expect(vsPvc.Annotations).NotTo(HaveKey(volsync.ACMAppSubDoNotDeleteAnnotation))
-
 						// Other annotations are droopped.
 						Expect(vsPvc.Annotations).NotTo(HaveKey("pv.kubernetes.io/bind-completed"))
 						Expect(vsPvc.Annotations).NotTo(HaveKey("volume.kubernetes.io/storage-provisioner"))
@@ -208,6 +208,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 				Context("When RSSpec entries are added to vrg spec", func() {
 					It("Should create ReplicationSources for each", func() {
 						allRSs := &volsyncv1alpha1.ReplicationSourceList{}
+
 						Eventually(func() int {
 							Expect(k8sClient.List(testCtx, allRSs,
 								client.InNamespace(testNamespace.GetName()))).To(Succeed())
@@ -306,8 +307,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 
 				JustBeforeEach(func() {
 					// Update the vrg spec with some RDSpec entries
-					Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVrg), testVrg)).To(Succeed())
-					testVrg.Spec.VolSync.RDSpec = []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
+					rdSpec := []ramendrv1alpha1.VolSyncReplicationDestinationSpec{
 						{
 							ProtectedPVC: ramendrv1alpha1.ProtectedPVC{
 								Name:               "testingpvc-a",
@@ -333,12 +333,17 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 					}
 
 					Eventually(func() error {
+						if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(testVrg), testVrg); err != nil {
+							return err
+						}
+
+						testVrg.Spec.VolSync.RDSpec = rdSpec
+
 						return k8sClient.Update(testCtx, testVrg)
 					}, testMaxWait, testInterval).Should(Succeed())
 
-					Expect(k8sClient.Update(testCtx, testVrg)).To(Succeed())
-
 					allRDs := &volsyncv1alpha1.ReplicationDestinationList{}
+
 					Eventually(func() int {
 						Expect(k8sClient.List(testCtx, allRDs,
 							client.InNamespace(testNamespace.GetName()))).To(Succeed())
@@ -379,6 +384,7 @@ var _ = Describe("VolumeReplicationGroupVolSyncController", func() {
 				Context("When ReplicationDestinations have address set in status", func() {
 					rd0Address := "99.98.97.96"
 					rd1Address := "99.88.77.66"
+
 					JustBeforeEach(func() {
 						// fake address set in status on the ReplicationDestinations
 						rd0.Status = &volsyncv1alpha1.ReplicationDestinationStatus{

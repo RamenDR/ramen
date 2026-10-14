@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -61,12 +62,17 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		}
 
 		var err error
+
 		done := make(chan interface{})
+
 		go func() {
 			defer GinkgoRecover()
+
 			cfg, err = testEnv.Start()
+
 			close(done)
 		}()
+
 		Eventually(done).WithTimeout(time.Minute).Should(BeClosed())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg).NotTo(BeNil())
@@ -84,6 +90,8 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drCluster1Name}},
 		)).To(Succeed())
 
+		ramencontrollers.ControllerType = ramen.DRHubType
+
 		By("Defining a ramen configuration")
 
 		ramenConfig = &ramen.RamenConfig{
@@ -98,7 +106,6 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			Metrics: ramen.ControllerMetrics{
 				BindAddress: "0", // Disable metrics
 			},
-			RamenControllerType: ramen.DRHubType,
 		}
 		ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 		ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
@@ -114,7 +121,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 
 		options := manager.Options{Scheme: scheme.Scheme}
 		options.Controller.SkipNameValidation = ptr.To(true)
-		ramencontrollers.LoadControllerOptions(&options, ramenConfig)
+		options.Metrics = metricsserver.Options{BindAddress: "0"}
 
 		k8sManager, err := ctrl.NewManager(cfg, options)
 		Expect(err).ToNot(HaveOccurred())
@@ -139,6 +146,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
 		ctx, cancel = context.WithCancel(context.TODO())
+
 		go func() {
 			err = k8sManager.Start(ctx)
 			Expect(err).ToNot(HaveOccurred())
@@ -159,6 +167,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 	AfterAll(func() {
 		cancel() // Stop the reconciler
 		By("tearing down the test environment")
+
 		err := testEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -184,6 +193,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("ManagedCluster resource has no status", func() {
 				It("reports DRCluster validated as false", func() {
 					By("creating a ManagedCluster resource without status")
+
 					mc = createManagedCluster(k8sClient, drCluster1Name)
 					Expect(mc != nil)
 					objectConditionExpectEventually(
@@ -203,6 +213,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("ManagedCluster resource has no claims", func() {
 				It("reports DRCluster validated as false", func() {
 					By("updating a ManagedCluster resource status with conditions")
+
 					mc.Status = ocmv1.ManagedClusterStatus{
 						Conditions: []metav1.Condition{
 							{
@@ -240,6 +251,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("ManagedCluster resource is missing cluster ID claim", func() {
 				It("reports DRCluster validated as false", func() {
 					By("updating a ManagedCluster resource status with other claims")
+
 					mc.Status = ocmv1.ManagedClusterStatus{
 						Conditions: []metav1.Condition{
 							{
@@ -287,6 +299,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("ManagedCluster resource is missing value for cluster ID claim", func() {
 				It("reports DRCluster validated as false", func() {
 					By("updating a ManagedCluster resource status with other claims")
+
 					mc.Status = ocmv1.ManagedClusterStatus{
 						Conditions: []metav1.Condition{
 							{
@@ -338,6 +351,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("ManagedCluster resource has all required status", func() {
 				It("reports DRCluster validated as true", func() {
 					By("updating a ManagedCluster resource status with correct claims")
+
 					mc.Status = ocmv1.ManagedClusterStatus{
 						Conditions: []metav1.Condition{
 							{
@@ -394,6 +408,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("There is a Sync DRPolicy", func() {
 				It("DRClusterConfig manifest has empty schedules", func() {
 					By("Creating a Sync DRPolicy")
+
 					syncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-sync",
@@ -414,6 +429,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("There is an Async DRPolicy", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async1",
@@ -434,6 +450,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("There is another Async DRPolicy with the same schedule", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async2",
@@ -454,6 +471,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("There is another Async DRPolicy with a different schedule", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async3",
@@ -474,6 +492,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("An Async DRPolicy with a common schedule is deleted", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async1",
@@ -487,6 +506,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("An Async DRPolicy with a unique schedule is deleted", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async3",
@@ -500,6 +520,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("A last Async DRPolicy with a unique schedule is deleted", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async2",
@@ -513,6 +534,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("An Async DRPolicy does not contain the DRCluster", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Creating an Async DRPolicy")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async3",
@@ -533,6 +555,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("There are no DRPolicy resources containing the DRCluster", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Deleting all DRPolicy resources referencing the DRCluster")
+
 					syncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-sync",
@@ -546,6 +569,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 			When("There are no DRPolicy resources", func() {
 				It("DRClusterConfig manifest has required schedules", func() {
 					By("Deleting all DRPolicy resources")
+
 					asyncDRPolicy := ramen.DRPolicy{
 						ObjectMeta: metav1.ObjectMeta{
 							Name: "drpolicy-async3",
@@ -560,6 +584,7 @@ var _ = Describe("DRCluster-DRClusterConfigTests", Ordered, func() {
 		Context("When a DRCluster is deleted", func() {
 			It("Cleans up the DRClusterConfig ManifestWork", func() {
 				By("Deleting the DRCluster resource")
+
 				drc := ramen.DRCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: drCluster1Name,

@@ -91,6 +91,7 @@ type ObjectStoreGetter interface {
 }
 
 type ObjectStorer interface {
+	HeadBucket() error
 	UploadObject(key string, object interface{}) error
 	DownloadObject(key string, objectPointer interface{}) error
 	ListKeys(keyPrefix string) (keys []string, err error)
@@ -123,6 +124,16 @@ func (s3ObjectStoreGetter) ObjectStore(ctx context.Context,
 	if err != nil {
 		return nil, s3StoreProfile, fmt.Errorf("failed to get profile %s for caller %s, %w",
 			s3ProfileName, callerTag, err)
+	}
+
+	if s3ProfileName != "" && len(s3StoreProfile.S3SecretRef.Name) > 0 {
+		ns := s3StoreProfile.S3SecretRef.Namespace
+		ramenNS := RamenOperatorNamespace()
+
+		if ns != "" && ns != ramenNS {
+			return nil, s3StoreProfile, fmt.Errorf("invalid S3SecretRef namespace %q for s3 profile %s; "+
+				"must be %q", ns, s3ProfileName, ramenNS)
+		}
 	}
 
 	accessID, secretAccessKey, err := GetS3Secret(ctx, r, s3StoreProfile.S3SecretRef)
@@ -242,6 +253,20 @@ func (s *s3ObjectStore) CreateBucket(bucket string) (err error) {
 					bucket, aerr.Code(), aerr.Message())
 			}
 		}
+	}
+
+	return nil
+}
+
+func (s *s3ObjectStore) HeadBucket() error {
+	ctx, cancel := context.WithDeadline(context.TODO(), time.Now().Add(s3Timeout))
+	defer cancel()
+
+	_, err := s.client.HeadBucketWithContext(ctx, &s3.HeadBucketInput{
+		Bucket: &s.s3Bucket,
+	})
+	if err != nil {
+		return processAwsError(fmt.Errorf("failed to head bucket %s", s.s3Bucket), err)
 	}
 
 	return nil
@@ -409,12 +434,22 @@ func DeleteTypedObject(s ObjectStorer, keyPrefix, keySuffix string, object inter
 }
 
 func processAwsError(errMsgPrefix, err error) error {
-	var awsErr awserr.Error
-	if errors.As(err, &awsErr) {
-		return fmt.Errorf("%w: code: %s, message: %s", errMsgPrefix, awsErr.Code(), awsErr.Message())
+	if err == nil {
+		return errMsgPrefix
 	}
 
-	return errMsgPrefix
+	var awsErr awserr.Error
+	if !errors.As(err, &awsErr) {
+		return fmt.Errorf("%w: %w", errMsgPrefix, err)
+	}
+
+	if origErr := awsErr.OrigErr(); origErr != nil {
+		return fmt.Errorf("%w: code: %s, message: %s, orig: %v",
+			errMsgPrefix, awsErr.Code(), awsErr.Message(), origErr)
+	}
+
+	return fmt.Errorf("%w: code: %s, message: %s",
+		errMsgPrefix, awsErr.Code(), awsErr.Message())
 }
 
 // UploadObject uploads the given object to the bucket with the given key.

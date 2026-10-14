@@ -40,10 +40,7 @@ func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Cli
 		return existingSecret, nil
 	}
 
-	secret, err := generateNewVolSyncReplicationSecret(secretName, secretNamespace, log)
-	if err != nil {
-		return nil, err
-	}
+	secret := generateNewVolSyncReplicationSecret(secretName, secretNamespace)
 
 	if err := ctrl.SetControllerReference(ownerObject, secret, k8sClient.Scheme()); err != nil {
 		log.Error(err, "unable to set controller reference on secret")
@@ -64,14 +61,8 @@ func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Cli
 }
 
 // Pre-shared key for rsync TLS mover
-func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error,
-) {
-	tlsKey, err := genTLSPreSharedKey(log)
-	if err != nil {
-		log.Error(err, "Unable to generate new tls secret for VolSync replication")
-
-		return nil, err
-	}
+func generateNewVolSyncReplicationSecret(secretName, secretNamespace string) *corev1.Secret {
+	tlsKey := genTLSPreSharedKey()
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -88,16 +79,12 @@ func generateNewVolSyncReplicationSecret(secretName, secretNamespace string, log
 
 	rmnutil.AddLabel(secret, rmnutil.CreatedByRamenLabel, "true")
 
-	return secret, nil
+	return secret
 }
 
-func genTLSPreSharedKey(log logr.Logger) (string, error) {
+func genTLSPreSharedKey() string {
 	pskData := make([]byte, tlsPSKDataSize)
-	if _, err := rand.Read(pskData); err != nil {
-		log.Error(err, "error generating tls key")
+	rand.Read(pskData) // panics on failure
 
-		return "", err
-	}
-
-	return hex.EncodeToString(pskData), nil
+	return hex.EncodeToString(pskData)
 }

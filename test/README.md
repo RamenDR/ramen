@@ -34,16 +34,19 @@ environment.
 1. Install minikube, for example on RHEL/CentOS/Fedora:
 
    ```
-   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
    minikube version
    ```
 
-   Tested with version v1.37.0.
+   **NOTE**: minikube version 1.39.0 or later is required, latest version is
+   recommended. Tested with version v1.39.0.
 
 1. Install the `kubectl` tool
 
    ```
-   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   version=$(curl --fail --silent --show-error --location https://dl.k8s.io/release/stable.txt)
+   curl --fail --silent --show-error --location --remote-name \
+       "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
    sudo install kubectl /usr/local/bin
    rm kubectl
    kubectl version --client
@@ -51,12 +54,14 @@ environment.
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.34.1.
+   Tested with version v1.37.0.
 
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh \
+       | bash -s 0.11.2'
    clusteradm version
    ```
 
@@ -68,7 +73,7 @@ environment.
 1. Install the `subctl` tool
 
    ```
-   curl -Ls https://get.submariner.io | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location https://get.submariner.io | bash'
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
    subctl version
@@ -76,13 +81,13 @@ environment.
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0.
-   Version v0.21.2 or later is required.
+   Version v0.24.0 or later is required.
 
 1. Install the `velero` tool
 
    ```
-   curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
+   curl --fail --silent --show-error --location --output velero.tar.gz \
+       https://github.com/vmware-tanzu/velero/releases/download/v1.16.1/velero-v1.16.1-linux-amd64.tar.gz
    tar xf velero.tar.gz --strip 1 velero-v1.16.1-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
@@ -95,20 +100,23 @@ environment.
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-    HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
-    curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
-    sudo install helm /usr/local/bin
-    rm -f helm
-    helm version
+   HELM_VERSION=$(curl --fail --silent --show-error --location https://get.helm.sh/helm-latest-version)
+   bash -o pipefail -c "curl --fail --silent --show-error --location \
+       https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz \
+       | tar xz --strip 1 linux-amd64/helm"
+   sudo install helm /usr/local/bin
+   rm -f helm
+   helm version
    ```
 
    See [Installing Helm](https://helm.sh/docs/intro/install/) for other options
-   Tested with version v4.0.1.
+   Tested with version v4.2.2.
 
 1. Install the `virtctl` tool
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
+   curl --fail --silent --show-error --location --output virtctl \
+       https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
    virtctl version
@@ -120,7 +128,8 @@ environment.
 1. Install `mc` tool
 
    ```
-   curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   curl --fail --silent --show-error --location --output mc \
+       https://dl.min.io/client/mc/release/linux-amd64/mc
    sudo install mc /usr/local/bin
    rm mc
    mc --version
@@ -132,7 +141,9 @@ environment.
 1. Install `kustomize` tool
 
    ```
-   curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh \
+       | bash'
    sudo install kustomize /usr/local/bin
    rm kustomize
    kustomize version
@@ -144,29 +155,39 @@ environment.
 1. Install the `argocd` tool
 
    ```
-   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+   curl --fail --silent --show-error --location --output argocd \
+       https://github.com/argoproj/argo-cd/releases/download/v3.4.4/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
    argocd version --client
    ```
 
-   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+   For more info see
+   [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
 
 1. Install the `kubectl-gather` plugin
 
    ```
+   bash -o pipefail <<'EOF'
    tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-linux-amd64
+   os="$(uname | tr '[:upper:]' '[:lower:]')"
+   machine="$(uname -m)"
+   if [ "$machine" = "aarch64" ]; then machine="arm64"; fi
+   if [ "$machine" = "x86_64" ]; then machine="amd64"; fi
+   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-$os-$machine
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   EOF
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
-   For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
+   kubectl-gather version 0.11.0 or later is required. For more info see
+   [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-## Setup on macOS
+## Setup on macOS 26+
+
+> [!IMPORTANT]
+> Older macOS are not supported.
 
 1. Install the [Homebrew package manager](https://brew.sh/)
 
@@ -179,20 +200,30 @@ environment.
        helm \
        kubectl \
        kustomize \
-       qemu \
-       lima \
+       minikube \
        minio-mc \
+       python3 \
        velero \
+       vfkit \
        virtctl
    ```
 
-   lima version 2.0.0 or later is required, latest version is
-   recommended. Tested with lima version 2.0.2.
+   **NOTE**: minikube version 1.39.0 or later is required, latest version is
+   recommended.
+
+1. Install `vmnet-helper`
+
+   ```
+   brew tap nirs/vmnet-helper
+   brew install vmnet-helper
+   ```
 
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh \
+       | bash -s 0.11.2'
    clusteradm version
    ```
 
@@ -204,7 +235,7 @@ environment.
 1. Install the `subctl` tool
 
    ```
-   curl -Ls https://get.submariner.io | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location https://get.submariner.io | bash'
    sudo install ~/.local/bin/subctl /usr/local/bin/
    rm ~/.local/bin/subctl
    subctl version
@@ -212,43 +243,50 @@ environment.
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0.
-   Version v0.21.2 or later is required.
+   Version v0.24.0 or later is required.
 
 1. Install the `kubectl-gather` plugin
 
    ```
+   bash -o pipefail <<'EOF'
    tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
-   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-darwin-arm64
+   os="$(uname | tr '[:upper:]' '[:lower:]')"
+   machine="$(uname -m)"
+   if [ "$machine" = "aarch64" ]; then machine="arm64"; fi
+   if [ "$machine" = "x86_64" ]; then machine="amd64"; fi
+   curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-$os-$machine
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   EOF
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
-   For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
+   kubectl-gather version 0.11.0 or later is required. For more info see
+   [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
-1. Install `socket_vmnet`
+### Migrating from lima
 
-   > [!IMPORTANT]
-   > You must install the socket_vmnet launchd service, we don't manage
-   > socket_vment with Lima.
+If you used the lima provider on macOS, you must remove existing clusters, and
+recreate the clusters with minikube.
 
-   ```
-   VERSION="$(curl -fsSL https://api.github.com/repos/lima-vm/socket_vmnet/releases/latest | jq -r .tag_name)"
-   FILE="socket_vmnet-${VERSION:1}-$(uname -m).tar.gz"
-   SERVICE_ID="io.github.lima-vm.socket_vmnet"
-   curl -OSL "https://github.com/lima-vm/socket_vmnet/releases/download/${VERSION}/${FILE}"
-   sudo tar Cxzvf / "${FILE}" opt/socket_vmnet
-   sudo cp "/opt/socket_vmnet/share/doc/socket_vmnet/launchd/$SERVICE_ID.plist" "/Library/LaunchDaemons/$SERVICE_ID.plist"
-   sudo launchctl bootstrap system "/Library/LaunchDaemons/$SERVICE_ID.plist"
-   sudo launchctl enable system/$SERVICE_ID
-   sudo launchctl kickstart -kp system/$SERVICE_ID
-   /opt/socket_vmnet/bin/socket_vmnet --version
-   ```
+```
+drenv delete envs/{cluster-name}.yaml
+drenv start envs/{cluster-name}.yaml
+```
 
-   For more info see [Installing socket_vmnet from binary](https://github.com/lima-vm/socket_vmnet?tab=readme-ov-file#from-binary)
+If you don't use lima vms with socket_vmnet, you can uninstall socket_vmnet:
+
+```
+sudo launchctl bootout system/io.github.lima-vm.socket_vmnet
+sudo rm /Library/LaunchDaemons/io.github.lima-vm.socket_vmnet.plist
+sudo rm -rf /opt/socket_vmnet
+```
+
+If you don't use lima vms, you can uninstall it:
+
+```
+brew uninstall lima
+```
 
 ## Testing that drenv is healthy
 
@@ -260,15 +298,14 @@ scripts/drenv-selftest
 
 ## Using the drenv tool
 
-Before running the `drenv` tool you need to activate the virtual
-environment:
+Before running the `drenv` tool you need to activate the virtual environment:
 
 ```
 source venv
 ```
 
-The shell prompt will change to reflect that the `ramen` virtual
-environment is active:
+The shell prompt will change to reflect that the `ramen` virtual environment is
+active:
 
 ```
 (ramen) [user@host ramen]$
@@ -280,8 +317,8 @@ Change directory to the test directory:
 cd test
 ```
 
-To set up the host for running specific drenv environment file,
-run once before starting any environment:
+To set up the host for running specific drenv environment file, run once before
+starting any environment:
 
 ```
 drenv setup envs/regional-dr.yaml
@@ -313,9 +350,9 @@ To inspect a processed environment file:
 drenv dump envs/example.yaml
 ```
 
-Dumping the file shows how drenv binds templates, expands addons
-arguments, name workers, and applies default values. This can be useful
-to debugging drenv or when writing a new environment file.
+Dumping the file shows how drenv binds templates, expands addons arguments, name
+workers, and applies default values. This can be useful to debugging drenv or
+when writing a new environment file.
 
 To see all available commands:
 
@@ -343,10 +380,72 @@ drenv cleanup
 
 This should not be needed.
 
+## Shell completion for `drenv`
+
+`drenv` supports shell completion, making it easier to complete subcommands,
+options, and environment file paths while typing.
+
+After activating the project's virtual environment, enable completion by running
+the following command. This works with the default shells on Linux (Bash) and
+macOS (Zsh):
+
+```sh
+source <(register-python-argcomplete drenv)
+```
+
+If you are using Zsh and shell completion is not already enabled in your
+environment, enable it once by running:
+
+```sh
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+```
+
+Open a new shell (or reload your shell configuration), activate the virtual
+environment, and run the completion command above.
+
+To verify the feature, try:
+
+```sh
+% drenv st[TAB]
+start        -- start an environment
+stop         -- stop an environment
+stress-test  -- run drenv stress test
+
+% drenv start --[TAB]
+--help            -- show this help message and exit
+--logfile         -- path to logfile (default 'drenv.log')
+--name-prefix     -- prefix profile names
+--skip-tests      -- Do not run addons 'test' hooks
+--skip-addons     -- Do not run addons 'start' hooks
+```
+
+`drenv` uses the Python `argcomplete` package, which integrates with `argparse`
+to keep shell completions synchronized with the command-line interface
+automatically.
+
+## Configuring drenv
+
+drenv can be configured using an optional configuration file at
+`~/.config/drenv/config.yaml`. If the file does not exist, default values are
+used.
+
+### Available options
+
+- `registry_host`: The hostname or IP address of the registry cache, as
+  reachable from inside minikube VMs. The default value `host.minikube.internal`
+  works for minikube VMs using podman machine. Override this if you use a
+  different VM setup (e.g. external VMs on vmnet-shared).
+
+### Example configuration
+
+```yaml
+registry_host: "192.168.105.2"
+```
+
 ## Caching resources
 
-If you run the drenv tool with a flaky network you can improve
-reliability of starting the environment by caching resources.
+If you run the drenv tool with a flaky network you can improve reliability of
+starting the environment by caching resources.
 
 To cache resources for the `regional-dr.yaml` environment run:
 
@@ -354,9 +453,9 @@ To cache resources for the `regional-dr.yaml` environment run:
 drenv cache envs/regional-dr.yaml
 ```
 
-The cache expires in 2 days. To refresh the cache daily, you can install
-a cron job to run `scripts/refresh-cache` daily as the user used to run
-the environment.
+The cache expires in 2 days. To refresh the cache daily, you can install a cron
+job to run `scripts/refresh-cache` daily as the user used to run the
+environment.
 
 See the `scripts/refresh-cache.crontab` for example user crontab.
 
@@ -366,10 +465,21 @@ To clear the cached resources run:
 drenv clear
 ```
 
+## Caching container images
+
+We use use local registry cache to cache container images. To check the cache
+stats you can use:
+
+```
+drenv registry-cache stats
+```
+
+See [`registry-cache/README.md`](registry-cache/README.md) for more details.
+
 ## The environment file
 
-To create an environment you need an yaml file describing the
-clusters and how to deploy them.
+To create an environment you need an yaml file describing the clusters and how
+to deploy them.
 
 ### Example environment file
 
@@ -391,14 +501,14 @@ profiles:
 
 ### Experimenting with the example environment
 
-You can play with the example environment to understand how the `drenv`
-tool works and how to write addons.
+You can play with the example environment to understand how the `drenv` tool
+works and how to write addons.
 
 #### Starting the example environment
 
-Starting the environment create 2 minikube clusters, deploy example
-deployment on every clusters, and finally run a self test verifying that
-the deployment is available on both clusters.
+Starting the environment create 2 minikube clusters, deploy example deployment
+on every clusters, and finally run a self test verifying that the deployment is
+available on both clusters.
 
 ```
 $ drenv start envs/example.yaml
@@ -450,9 +560,8 @@ Tue Jan  3 21:21:20 UTC 2023
 
 #### Isolating environments with --name-prefix
 
-To run multiple instances of the same environment, or multiple
-environments using the same profile names, use unique `--name-prefix`
-for each run.
+To run multiple instances of the same environment, or multiple environments
+using the same profile names, use unique `--name-prefix` for each run.
 
 Start first instance:
 
@@ -539,9 +648,8 @@ $ example/test ex1
 
 #### Starting a started environment
 
-If something failed while starting, or we change the scripts, we can run
-start again. This can be faster then creating the environment from
-scratch.
+If something failed while starting, or we change the scripts, we can run start
+again. This can be faster then creating the environment from scratch.
 
 ```
 $ drenv start envs/example.yaml
@@ -638,9 +746,8 @@ $ cat drenv.log
 
 #### Stopping the environment
 
-We can stop the environment, for example if we need to reboot the host,
-or don't have enough resources to run multiple environment at the same
-time.
+We can stop the environment, for example if we need to reboot the host, or don't
+have enough resources to run multiple environment at the same time.
 
 ```
 $ drenv stop envs/example.yaml
@@ -652,13 +759,13 @@ $ drenv stop envs/example.yaml
 2023-01-03 23:43:14,033 INFO    [example] Environment stopped in 4.86 seconds
 ```
 
-We can start the environment later. This can be faster than recreating
-it from scratch.
+We can start the environment later. This can be faster than recreating it from
+scratch.
 
 #### Deleting the environment
 
-To delete the environment including the VM disks and dropping all
-changes made to the environment:
+To delete the environment including the VM disks and dropping all changes made
+to the environment:
 
 ```
 $ drenv delete envs/example.yaml
@@ -673,81 +780,81 @@ $ drenv delete envs/example.yaml
 ### The environment file format
 
 - `templates`: templates for creating new profiles.
-    - `name`: profile name.
-    - `provider`: cluster provider. The default provider is "minikube",
-      creating cluster using VM or containers.  Use "external" to use
-      exsiting clusters not managed by `drenv`. Use the special value
-      "$provider" to select the best provider for the host. (default
-      "$provider")
-    - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
-      docker for VMs and containers. On MacOS, the defaults are hyperkit and
-      podman. Use "$vm" and "$container" values to use the recommended VM and
-      container drivers for the platform.
-    - `container_runtime`: The container runtime to be used. Valid
-      options: "docker", "cri-o", "containerd" (default: "containerd")
-    - `network`: The network to run minikube with. If left empty, the behavior
-      is same as that of minikube for the platform. Use
-      "$network" value to use the recommended network configuration
-      for the platform.
-    - `extra_disks`: Number of extra disks (default 0)
-    - `disk_size`: Disk size string (default "50g")
-    - `nodes`: Number of cluster nodes (default 1)
-    - `cni`: Network plugin (default "auto")
-    - `cpus`: Number of CPUs per VM (default 2)
-    - `memory`: Memory per VM (default 4g)
-    - `addons`: List of minikube addons to install
-    - `service_cluster_ip_range`: The CIDR to be used for service
-      cluster IPs.
-    - `extra_config`: List of extra config key=value. Each item adds
-      `--extra-config` minikube option. See `minikube start --help` to
-      see the possible keys and values.
-    - `feature_gates`: List of Kubernetes feature gates key=value. Each
-      item adds `--feature-gates` minikube option. See
-      [Feature Gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
-      for possible keys and values.
-    - `containerd`: Optional containerd configuration object. See
-      `containerd config default` for available options.
-    - `workers`: Optional list of workers to run when starting a
-      profile. Use multiple workers to run scripts in parallel.
-        - `name`: Optional worker name
-        - `addons`: Addons to deploy by this worker.
-            - `name`: Addon directory
-            - `args`: Optional argument to addon hooks. If not specified
-              the hooks are run with one argument, the profile name.
 
-- `profiles`: List of profile managed by the environment. Any template
-   key is valid in the profile, overriding the same key from the template.
-    - `template`: The template to create this profile from.
-
-- `workers`: Optional list of workers for deploying addons after all
-  profile are started.
+  - `name`: profile name.
+  - `provider`: cluster provider. The default provider is "minikube", creating
+    cluster using VM or containers. Use "external" to use exsiting clusters not
+    managed by `drenv`. Use the special value "$provider" to select the best
+    provider for the host. (default "$provider")
+  - `driver`: The minikube driver. On Linux, the default drivers are kvm2 and
+    docker for VMs and containers. On MacOS, the defaults are hyperkit and
+    podman. Use "$vm" and "$container" values to use the recommended VM and
+    container drivers for the platform.
+  - `container_runtime`: The container runtime to be used. Valid options:
+    "docker", "cri-o", "containerd" (default: "containerd")
+  - `network`: The network to run minikube with. If left empty, the behavior is
+    same as that of minikube for the platform. Use "$network" value to use the
+    recommended network configuration for the platform.
+  - `extra_disks`: Number of extra disks (default 0)
+  - `disk_size`: Disk size string (default "50g")
+  - `nodes`: Number of cluster nodes (default 1)
+  - `cni`: Network plugin (default "auto")
+  - `cpus`: Number of CPUs per VM (default 2)
+  - `memory`: Memory per VM (default 4g)
+  - `addons`: List of minikube addons to install
+  - `service_cluster_ip_range`: The CIDR to be used for service cluster IPs.
+  - `extra_config`: List of extra config key=value. Each item adds
+    `--extra-config` minikube option. See `minikube start --help` to see the
+    possible keys and values.
+  - `feature_gates`: List of Kubernetes feature gates key=value. Each item adds
+    `--feature-gates` minikube option. See
+    [Feature Gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
+    for possible keys and values.
+  - `containerd`: Optional containerd configuration object. See
+    `containerd config default` for available options.
+  - `workers`: Optional list of workers to run when starting a profile. Use
+    multiple workers to run scripts in parallel.
     - `name`: Optional worker name
-    - `addons`: Addons to deploy by this worker
-        - `name`: Addon directory
-        - `args`: Optional argument to the addon hooks. If not specified
-          the hooks are run without any arguments.
+    - `addons`: Addons to deploy by this worker.
+      - `name`: Addon directory
+      - `args`: Optional argument to addon hooks. If not specified the hooks are
+        run with one argument, the profile name.
+
+- `profiles`: List of profile managed by the environment. Any template key is
+  valid in the profile, overriding the same key from the template.
+
+  - `template`: The template to create this profile from.
+
+- `workers`: Optional list of workers for deploying addons after all profile are
+  started.
+
+  - `name`: Optional worker name
+  - `addons`: Addons to deploy by this worker
+    - `name`: Addon directory
+    - `args`: Optional argument to the addon hooks. If not specified the hooks
+      are run without any arguments.
 
 #### Addon hooks
 
-The addon directory may contain hooks to be run on certain events, based
-on the hook file name.
+The addon directory may contain hooks to be run on certain events, based on the
+hook file name.
 
-| Event        | Hooks         | Comment                             |
-|--------------|---------------|-------------------------------------|
-| start        | start, test   | after cluster was started           |
-| stop         | stop          | before cluster is stopped           |
-| delete       | -             |                                     |
+| Event  | Hooks       | Comment                   |
+| ------ | ----------- | ------------------------- |
+| start  | start, test | after cluster was started |
+| stop   | stop        | before cluster is stopped |
+| delete | -           |                           |
 
-The `start` and `test` hooks are not allowed to fail. If a hook fail,
-execution stops and the entire command will fail.
+The `start` and `test` hooks are not allowed to fail. If a hook fail, execution
+stops and the entire command will fail.
 
-The `stop` hook is allowed to fail. The failure is logged but the
-`stop` command will not fail.
+The `stop` hook is allowed to fail. The failure is logged but the `stop` command
+will not fail.
 
 #### Addon arguments
 
-When specifying addon `args`, you can use the special variable `$name`.
-This will be replaced with the profile name.
+When specifying addon `args`, you can use the special variable `$name`. This
+will be replaced with the profile name.
 
 Example yaml:
 
@@ -769,9 +876,9 @@ my-addon/test cluster1 arg2
 
 #### Hook working directory
 
-Hook should not assume the current working directory. To make the hook
-runnable from any directory the hook can change the current working
-directory to the hook directory:
+Hook should not assume the current working directory. To make the hook runnable
+from any directory the hook can change the current working directory to the hook
+directory:
 
 ```python
 import os
@@ -779,8 +886,8 @@ import os
 os.chdir(os.path.dirname(__file__))
 ```
 
-Now you can run the hook from any directory, and the hook can use
-relative path for resources in the same directory:
+Now you can run the hook from any directory, and the hook can use relative path
+for resources in the same directory:
 
 ```python
 kubectl.apply("--filename=deployment.yaml", context=cluster)
@@ -788,8 +895,8 @@ kubectl.apply("--filename=deployment.yaml", context=cluster)
 
 #### containerd options
 
-To configure containerd you can add a configuration object matching
-containerd toml structure.
+To configure containerd you can add a configuration object matching containerd
+toml structure.
 
 For example to enable this option containerd toml:
 
@@ -808,8 +915,8 @@ containerd:
       device_ownership_from_security_context: true
 ```
 
-When set, contained configuration is merged into the current
-configuration in `/etc/containerd/config.toml` in the node.
+When set, contained configuration is merged into the current configuration in
+`/etc/containerd/config.toml` in the node.
 
 ## Environment files
 
@@ -817,23 +924,22 @@ The environments files are located in the `envs` directory.
 
 ### Ramen testing environments
 
-- `regional-dr.yaml` - for testing regional DR using a hub cluster and 2
-  managed clusters with Ceph storage.
+- `regional-dr.yaml` - for testing regional DR using a hub cluster and 2 managed
+  clusters with Ceph storage.
 
-- `regional-dr-hubless.yaml` - for testing regional DR using a setup
-  without a hub.
+- `regional-dr-hubless.yaml` - for testing regional DR using a setup without a
+  hub.
 
-- `regional-dr-kubevirt.yaml` - for testing regional DR for kubevirt
-  workloads.
+- `regional-dr-kubevirt.yaml` - for testing regional DR for kubevirt workloads.
 
 - `regional-dr-external.yaml.example` - A starting point for creating
-   environment for testing regional DR using with external storage.
+  environment for testing regional DR using with external storage.
 
 ### drenv development environments
 
-These environments are useful for developing the `drenv` tool and
-scripts. When debugging an issue or adding a new component, it is much
-simpler and faster to work with a minimal environment.
+These environments are useful for developing the `drenv` tool and scripts. When
+debugging an issue or adding a new component, it is much simpler and faster to
+work with a minimal environment.
 
 - `vm.yaml` - for testing `drenv` with the $vm driver
 - `container.yaml` - for testing `drenv` with the $container driver
@@ -860,8 +966,7 @@ The tests requires a small test cluster. To create it use:
 make cluster
 ```
 
-This starts the `drenv-test-cluster` minikube profile using the kvm2
-driver.
+This starts the `drenv-test-cluster` minikube profile using the kvm2 driver.
 
 To delete the test cluster run:
 
@@ -893,129 +998,4 @@ Reformatting code to be compatible with project style:
 
 ```
 make black-reformat
-```
-
-## Writing environment tests
-
-The `drenv` python package provides a `test` helper module to make
-writing good environment test easy.
-
-To create a new test, create a new directory in the test directory:
-
-```
-mkdir my-test
-```
-
-The directory can have one or more scripts as needed. The simplest test
-will have only a `run` script, and a configuration file:
-
-```
-$ ls -1 my-test
-config.yaml
-run
-```
-
-The test must be runnable from any directory:
-
-```
-$ my-test/run
-...
-$ cd my-test
-$ ./run
-...
-```
-
-### Writing complicated tests
-
-A more complicated test may have several steps. To keep the test simple
-and easy understand and debug, separate each step in a test scrip that
-can run by a developer manually. The `run` script will run all the steps
-in the right order.
-
-```
-$ ls -1 basic-test/
-config.yaml
-deploy
-failover
-kustomization.yaml
-relocate
-run
-undeploy
-```
-
-A developer can run one or more steps:
-
-```
-$ basic-test/deploy dr1; basic-test/failover dr2
-...
-```
-
-Debug the system or the test, and continue:
-
-```
-$ basic-test/relocate dr1; basic-test/undeploy
-...
-```
-
-Or run all the steps at once:
-
-```
-$ basic-test/run
-...
-```
-
-### Writing a test script
-
-A test script starts with importing the `drenv.test` module:
-
-```python
-from drenv import test
-```
-
-The first thing is to start the test:
-
-```python
-test.start("deploy", __file__)
-```
-
-This sets up the process for a new test:
-
-- change directory to the parent directory of `__file__`
-- load the configuration file from the test directory
-- create a logger named "deploy" using standard log format
-- create an arguments parser with the default options
-- installs a hook for logging unhandled exception to the test log
-
-If the test needs additional arguments it can add them using the same
-arguments accepted by the standard library `argparse` module:
-
-```python
-test.add_argument("cluster", help="Cluster name to deploy on.")
-```
-
-Finally the test parses the arguments:
-
-```python
-args = test.parse_args()
-```
-
-If the command line arguments included the `-v' or '--verbose` option
-the test logger level is increased to debug level automatically.
-
-To access the test configuration, use:
-
-```python
-my_value = test.config["my-key"]
-```
-
-During the test, log important messages using:
-
-```python
-test.info("Starting deploy")
-```
-
-To log debug messages use:
-
-```python
-test.debug("Got reply: %s", reply)
 ```

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.15.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: volumegroupreplications.replication.storage.openshift.io
 spec:
   group: replication.storage.openshift.io
@@ -11,10 +11,28 @@ spec:
     kind: VolumeGroupReplication
     listKind: VolumeGroupReplicationList
     plural: volumegroupreplications
+    shortNames:
+    - vgr
     singular: volumegroupreplication
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.volumeGroupReplicationClassName
+      name: VolumeGroupReplicationClass
+      type: string
+    - jsonPath: .spec.volumeGroupReplicationContentName
+      name: VolumeGroupReplicationContent
+      type: string
+    - jsonPath: .spec.replicationState
+      name: desiredState
+      type: string
+    - jsonPath: .status.state
+      name: currentState
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: VolumeGroupReplication is the Schema for the volumegroupreplications
@@ -46,6 +64,15 @@ spec:
                   AutoResync represents the group to be auto resynced when
                   ReplicationState is "secondary"
                 type: boolean
+              external:
+                default: false
+                description: |-
+                  External represents if VolumeGroupReplication should be reconciled by the csi-addons controller
+                  or an external controller managed by the storage vendor.
+                type: boolean
+                x-kubernetes-validations:
+                - message: source is immutable
+                  rule: self == oldSelf
               replicationState:
                 description: |-
                   ReplicationState represents the replication operation to be performed on the group.
@@ -112,6 +139,8 @@ spec:
                     x-kubernetes-validations:
                     - message: selector is immutable
                       rule: self == oldSelf
+                required:
+                - selector
                 type: object
                 x-kubernetes-validations:
                 - message: source is immutable
@@ -131,11 +160,12 @@ spec:
                 - message: volumeGroupReplicationContentName is immutable
                   rule: self == oldSelf
               volumeReplicationClassName:
-                description: volumeReplicationClassName is the volumeReplicationClass
-                  name for VolumeReplication object
+                description: |-
+                  volumeReplicationClassName is the volumeReplicationClass name for the VolumeReplication object
+                  created for this volumeGroupReplication
                 type: string
                 x-kubernetes-validations:
-                - message: volumReplicationClassName is immutable
+                - message: volumeReplicationClassName is immutable
                   rule: self == oldSelf
               volumeReplicationName:
                 description: Name of the VolumeReplication object created for this
@@ -149,7 +179,6 @@ spec:
             - replicationState
             - source
             - volumeGroupReplicationClassName
-            - volumeReplicationClassName
             type: object
           status:
             description: VolumeGroupReplicationStatus defines the observed state of
@@ -158,16 +187,8 @@ spec:
               conditions:
                 description: Conditions are the list of conditions and their status.
                 items:
-                  description: "Condition contains details for one aspect of the current
-                    state of this API Resource.\n---\nThis struct is intended for
-                    direct use as an array at the field path .status.conditions.  For
-                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
-                    observations of a foo's current state.\n\t    // Known .status.conditions.type
-                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
-                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
-                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
-                    \   // other fields\n\t}"
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
                     lastTransitionTime:
                       description: |-
@@ -208,12 +229,7 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: |-
-                        type of condition in CamelCase or in foo.example.com/CamelCase.
-                        ---
-                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
-                        useful (see .node.status.conditions), the ability to deconflict is important.
-                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
@@ -225,6 +241,12 @@ spec:
                   - type
                   type: object
                 type: array
+              destinationVolumeID:
+                description: |-
+                  DestinationVolumeID is the volume ID on the destination/target side.
+                  This field is set when the SP reports different source and destination
+                  volume IDs.
+                type: string
               lastCompletionTime:
                 format: date-time
                 type: string
@@ -246,6 +268,27 @@ spec:
                   operator has dealt with
                 format: int64
                 type: integer
+              persistentVolumeClaimsRefList:
+                description: |-
+                  PersistentVolumeClaimsRefList is the list of PVCs for the volume group replication.
+                  The maximum number of allowed PVCs in the group is 100.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
               state:
                 description: State captures the latest state of the replication operation.
                 type: string

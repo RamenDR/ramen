@@ -10,7 +10,6 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
-	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	storagev1 "k8s.io/api/storage/v1"
 	"open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 
@@ -26,7 +25,7 @@ type classLists struct {
 	vsClasses  []*snapv1.VolumeSnapshotClass
 	vrClasses  []*volrep.VolumeReplicationClass
 	vgrClasses []*volrep.VolumeGroupReplicationClass
-	vgsClasses []*groupsnapv1beta1.VolumeGroupSnapshotClass
+	vgsClasses []util.VolumeGroupSnapshotClassWrapper
 }
 
 // peerInfo contains a single peer relationship between a PAIR of clusters for a common storageClassName across
@@ -62,6 +61,11 @@ type peerInfo struct {
 	// offloaded represents replication is offloaded for the storageClassName across both peers, and is applicable
 	// when an asynchronous pairing is detected across the peer clusters
 	offloaded bool
+
+	// global represents replication is managed via a globally scoped VolumeGroupReplication for the
+	// storageClassName across both peers, and is applicable when the peer is offloaded and the VGRClass is
+	// labeled with "ramendr.openshift.io/groupreplicationid"
+	global bool
 }
 
 // peerClassMatchesPeer compares the GroupReplicationID (if available) or storage class name between the PeerClass
@@ -117,6 +121,7 @@ func peerClassFromPeer(peer peerInfo) ramen.PeerClass {
 		GroupReplicationID: peer.groupReplicationID,
 		Grouping:           peer.grouping,
 		Offloaded:          peer.offloaded,
+		Global:             peer.global,
 	}
 }
 
@@ -200,7 +205,7 @@ func hasVGSClassMatchingSID(scName string, cl classLists, sID string) bool {
 			continue
 		}
 
-		if !provisionerMatchesSC(scName, cl, cl.vgsClasses[idx].Driver) {
+		if !provisionerMatchesSC(scName, cl, cl.vgsClasses[idx].GetDriver()) {
 			continue
 		}
 
@@ -246,10 +251,13 @@ func getVRID(scName string, cl classLists, vrcIdx int, inSID string, schedule st
 	return rID
 }
 
-// getVGRID inspects VolumeGroupReplicationClass in the passed in classLists at the specified index, and returns,
-// - an empty string if the VGRClass fails to match the passed in storageID, schedule or provisioner, or
-// - the value of GroupReplicationID on the VGRClass
-func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule string) string {
+// getVGRID returns:
+//   - GroupReplicationID of the VGRClass at vgrcIdx if it matches the passed in
+//     storageID, schedule, provisioner, and scGrID (when non-empty)
+//   - empty string if no match found
+//
+// scGrID is required when multiple VGRClasses share the same storageID to select the correct one.
+func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule string, scGrID string) string {
 	sID := cl.vgrClasses[vgrcIdx].GetLabels()[StorageIDLabel]
 	if sID == "" || inSID != sID {
 		return ""
@@ -264,6 +272,9 @@ func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule 
 	}
 
 	grID := cl.vgrClasses[vgrcIdx].GetLabels()[GroupReplicationIDLabel]
+	if scGrID != "" && scGrID != grID {
+		return ""
+	}
 
 	return grID
 }
@@ -294,19 +305,20 @@ func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, 
 	return ""
 }
 
-// getAsyncVGRClassPeer inspects if there is a common GroupReplicationID among the vgrClasses in the passed
-// in classLists, that relate to the corresponding storageIDs and schedule, and returns the GroupReplicationID or ""
-// if there is no match.
-func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule string) string {
+// getAsyncVGRClassPeer returns:
+//   - common GroupReplicationID if a matching VGRClass pair is found across clA and clB for the
+//     given storageIDs, schedule, and scGrID (when non-empty)
+//   - empty string if no match found
+func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule, scGrID string) string {
 	for vgrcAidx := range clA.vgrClasses {
-		grIDA := getVGRID(scName, clA, vgrcAidx, sIDA, schedule)
+		grIDA := getVGRID(scName, clA, vgrcAidx, sIDA, schedule, scGrID)
 
 		if grIDA == "" {
 			continue
 		}
 
 		for vgrcBidx := range clB.vgrClasses {
-			grIDB := getVGRID(scName, clB, vgrcBidx, sIDB, schedule)
+			grIDB := getVGRID(scName, clB, vgrcBidx, sIDB, schedule, scGrID)
 			if grIDB == "" {
 				continue
 			}
@@ -322,22 +334,39 @@ func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string,
 	return ""
 }
 
+// isAsyncVGRClassPeerGlobal checks if the VGRClasses with the given GroupReplicationID on both peers
+// are labeled as global. Returns true only if both peers have the global label.
+func isAsyncVGRClassPeerGlobal(clA, clB classLists, grID string) bool {
+	hasGlobal := func(cl classLists) bool {
+		for idx := range cl.vgrClasses {
+			if cl.vgrClasses[idx].GetLabels()[GroupReplicationIDLabel] == grID {
+				return util.HasLabelWithValue(cl.vgrClasses[idx], GlobalReplicationLabel, "true")
+			}
+		}
+
+		return false
+	}
+
+	return hasGlobal(clA) && hasGlobal(clB)
+}
+
 // getAsyncPeers determines if scName in the first classList has asynchronous peers in the remaining classLists.
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
 // the desired asynchronous schedule that requires to be matched.
 // Grouping logic:
-//   - Offloaded storage: Uses VGRC only, grouping = true when VGRC with ReplicationID exists
+//   - Offloaded storage: Uses VGRC only, grouping = true when VGRC with GroupReplicationID exists.
+//     Additionally, global = true when both peer VGRCs are labeled with GlobalReplicationLabel.
 //   - Non-offloaded storage: Uses VRC and VGRC, grouping = true when both exist with ReplicationID,
 //     not necessarily requiring them to have identical ReplicationIDs.
 //   - Snapshots: Uses VGSC and VSC, grouping = true when VGSC exists on both clusters for the same storageClass
 //
-// nolint:gocognit,cyclop,ineffassign,funlen
+// nolint:gocognit,cyclop,ineffassign,funlen,gocyclo
 func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLists, schedule string) []peerInfo {
 	peers := []peerInfo{}
 
 	for _, cl := range cls[1:] {
 		for scIdx := range cl.sClasses {
-			var grouping bool
+			var grouping, global bool
 
 			var rID, grID string
 
@@ -355,7 +384,19 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 				continue
 			}
 
-			grID = getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+			// read scGrID from the SC on cls[0] to select the correct VGRClass when multiple
+			// VGRClasses share the same storageID, schedule, and provisioner
+			scGrID := ""
+
+			for clsIndx := range cls[0].sClasses {
+				if cls[0].sClasses[clsIndx].GetName() == scName {
+					scGrID = cls[0].sClasses[clsIndx].GetLabels()[GroupReplicationIDLabel]
+
+					break
+				}
+			}
+
+			grID = getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule, scGrID)
 			if offloaded && grID == "" {
 				continue
 			}
@@ -363,6 +404,10 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 			switch offloaded {
 			case true:
 				grouping = true
+
+				if isAsyncVGRClassPeerGlobal(cls[0], cl, grID) {
+					global = true
+				}
 			case false:
 				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
 				grouping = rID != "" && grID != ""
@@ -386,6 +431,7 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 				groupReplicationID: grID,
 				grouping:           grouping,
 				offloaded:          offloaded,
+				global:             global,
 			})
 
 			break
@@ -661,8 +707,8 @@ func getVGSClassesFromCluster(
 	m util.ManagedClusterViewGetter,
 	drcConfig *ramen.DRClusterConfig,
 	clusterName string,
-) ([]*groupsnapv1beta1.VolumeGroupSnapshotClass, error) {
-	vgsClasses := []*groupsnapv1beta1.VolumeGroupSnapshotClass{}
+) ([]util.VolumeGroupSnapshotClassWrapper, error) {
+	vgsClasses := []util.VolumeGroupSnapshotClassWrapper{}
 
 	vgsClassNames := drcConfig.Status.VolumeGroupSnapshotClasses
 	if len(vgsClassNames) == 0 {
@@ -673,12 +719,12 @@ func getVGSClassesFromCluster(
 	annotations[AllDRPolicyAnnotation] = clusterName
 
 	for _, vgscName := range vgsClassNames {
-		sClass, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
+		vgscWrapper, err := m.GetVGSClassFromManagedCluster(vgscName, clusterName, annotations)
 		if err != nil {
-			return []*groupsnapv1beta1.VolumeGroupSnapshotClass{}, err
+			return []util.VolumeGroupSnapshotClassWrapper{}, err
 		}
 
-		vgsClasses = append(vgsClasses, sClass)
+		vgsClasses = append(vgsClasses, vgscWrapper)
 	}
 
 	return vgsClasses, pruneVGSClassViews(m, u.log, clusterName, vgsClassNames)

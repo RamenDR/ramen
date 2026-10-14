@@ -17,7 +17,14 @@ echo "${OUTPUTS_FILE}"
 
 check_version() {
     if ! [[ "$1" == "$(echo -e "$1\n$2" | sort -V | tail -n1)" ]] ; then
-        echo "ERROR: $3 version is too old. Expected $2, found $1"
+        echo "ERROR: $3 version is too old. Expected >= $2, found $1"
+        exit 1
+    fi
+}
+
+check_max_version() {
+    if ! [[ "$2" == "$(echo -e "$1\n$2" | sort -V | tail -n1)" ]] ; then
+        echo "ERROR: $3 version is too new. Expected <= $2, found $1"
         exit 1
     fi
 }
@@ -32,8 +39,8 @@ check_tool() {
         echo "ERROR: $1 is not installed"
         echo "You can install it by running:"
         case "$1" in
-            mdl)
-                echo "  gem install mdl"
+            mdformat)
+                echo "  pip install mdformat mdformat-gfm mdformat-gfm-alerts"
                 ;;
             shellcheck)
                 echo "  dnf install ShellCheck"
@@ -49,21 +56,24 @@ check_tool() {
     fi
 }
 
-# markdownlint: https://github.com/markdownlint/markdownlint
-# https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
-run_mdl() {
-    local tool="mdl"
-    local required_version="0.13.0"
+# mdformat: https://github.com/hukkin/mdformat
+run_mdformat() {
+    local tool="mdformat"
+    local required_version="1.0.0"
     local detected_version
 
     echo "=====  $tool ====="
 
     check_tool "${tool}"
 
-    detected_version=$("${tool}" --version)
+    detected_version=$("${tool}" --version | cut -d' ' -f2)
     check_version "${detected_version}" "${required_version}" "${tool}"
 
-    get_files ".*\.md" | xargs -0 -r "${tool}" --style "${scriptdir}/mdl-style.rb" | tee -a "${OUTPUTS_FILE}"
+    # Skip Hugo content files (website/content): they carry YAML front matter and
+    # template shortcodes that mdformat cannot parse (it rewrites front matter
+    # into Markdown headings and reflows shortcodes).
+    (get_files ".*\.md$" | grep --null-data -zv '^website/content/' \
+        | xargs -0 -r "${tool}" --check) 2>&1 | tee -a "${OUTPUTS_FILE}"
     echo
     echo
 }
@@ -103,7 +113,7 @@ run_yamllint() {
 }
 
 
-run_mdl
+run_mdformat
 run_shellcheck
 run_yamllint
 

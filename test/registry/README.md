@@ -3,7 +3,20 @@ SPDX-FileCopyrightText: The RamenDR authors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Using local registry for minikube clusters
+# Local registry for minikube clusters
+
+This directory contains configuration for running a local container registry.
+The registry can be used to push custom images and consume them in minikube
+clusters.
+
+The local registry is optional and managed manually by the developer. It is not
+related to the registry cache (see `test/registry-cache/`).
+
+## Port assignment
+
+| Port | Address                     | Purpose                    |
+| ---- | --------------------------- | -------------------------- |
+| 5050 | host.minikube.internal:5050 | Local registry (push/pull) |
 
 ## Initial setup - Linux
 
@@ -13,12 +26,17 @@ SPDX-License-Identifier: Apache-2.0
    sudo dnf install podman
    ```
 
-1. Allow access to port 5000 in the libvirt zone
+1. Allow access to registry port in the libvirt zone
 
    ```
-   sudo firewall-cmd --zone=libvirt --add-port=5000/tcp --permanent
+   sudo cp linux/registry.xml /etc/firewalld/services/
+   sudo firewall-cmd --reload
+   sudo firewall-cmd --zone=libvirt --add-service=registry --permanent
    sudo firewall-cmd --reload
    ```
+
+   This allows minikube VMs to access the local registry container running on
+   the host.
 
 1. Configure podman to allow insecure access
 
@@ -26,7 +44,7 @@ SPDX-License-Identifier: Apache-2.0
    sudo cp host.minikube.internal.conf /etc/containers/registries.conf.d/
    ```
 
-1. Run the registry container
+1. Run the local registry container
 
    ```
    ./start
@@ -37,8 +55,8 @@ SPDX-License-Identifier: Apache-2.0
 
 ### Systemd service
 
-To create a registry service running at boot, install the provided
-systemd units and start the service.
+To create a registry service running at boot, install the provided systemd units
+and start the service.
 
 ```
 sudo cp systemd/registry.* /etc/containers/systemd/
@@ -75,8 +93,8 @@ sudo systemctl start registry.service
 1. Configure podman to allow insecure local registry
 
    ```
-   cat registry/host.lima.internal.conf | podman machine ssh \
-       "sudo tee /etc/containers/registries.conf.d/host.lima.internal.conf > /dev/null"
+   cat host.minikube.internal.conf | podman machine ssh \
+       "sudo tee /etc/containers/registries.conf.d/host.minikube.internal.conf > /dev/null"
    ```
 
 1. Restart podman machine to apply the changes
@@ -86,29 +104,17 @@ sudo systemctl start registry.service
    podman machine start
    ```
 
-1. Run the registry container
+1. Run the local registry container
 
    ```
    ./start
    ```
 
-### Mirroring k8s images to the local registry
-
-To mirror k8s images to the local registry run:
+## Testing the local registry
 
 ```
-./mirror-k8s
-```
-
-This pulls the images used by `kubeadm init` to podman, and push them to the
-local registry. You must run this before start the drenv with the
-`--local-registry` option.
-
-## Testing the registry
-
-```
-$ curl host.minikube.internal:5050/v2/_catalog
-{}
+$ curl --fail --silent --show-error http://host.minikube.internal:5050/v2/_catalog
+{"repositories":[]}
 ```
 
 ## Pushing to the local registry
@@ -129,7 +135,7 @@ $ curl host.minikube.internal:5050/v2/_catalog
 
 Example source.yaml:
 
-```
+```yaml
 ---
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: VolumeImportSource
@@ -141,11 +147,7 @@ spec:
       url: "docker://host.minikube.internal:5050/nirsof/cirros:0.6.2-1"
 ```
 
-> [!NOTE]
-> For macOS the registry address is `host.lima.internal:5050` instead of
-> `host.minikube.internal`.
-
-## Managing the registry container
+## Managing the local registry container
 
 To stop the registry container run:
 
@@ -159,7 +161,7 @@ To start the registry container (e.g. after reboot) run:
 podman start registry
 ```
 
-To remove the registry and delete the cached images:
+To remove the registry and delete the stored images:
 
 ```
 podman rm registry

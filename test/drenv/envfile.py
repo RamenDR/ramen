@@ -51,17 +51,17 @@ _PLATFORM_DEFAULTS = {
     },
     "darwin": {
         PROVIDER: {
-            X86_64: "lima",
-            ARM64: "lima",
+            X86_64: "minikube",
+            ARM64: "minikube",
         },
         VM: {
-            X86_64: "",
-            ARM64: "",
+            X86_64: "vfkit",
+            ARM64: "vfkit",
         },
         CONTAINER: "podman",
         SHARED_NETWORK: {
-            X86_64: "",
-            ARM64: "",
+            X86_64: "vmnet-shared",
+            ARM64: "vmnet-shared",
         },
     },
 }
@@ -168,7 +168,7 @@ def _validate_profile(profile, addons_root):
     profile.setdefault("cni", "auto")
     profile.setdefault("cpus", 2)
     profile.setdefault("memory", "4g")
-    profile.setdefault("network", "")
+    profile.setdefault("network", SHARED_NETWORK)
     profile.setdefault("addons", [])
     profile.setdefault("ser", [])
     profile.setdefault("service_cluster_ip_range", None)

@@ -8,15 +8,15 @@ SPDX-License-Identifier: Apache-2.0
 This page will help you to set up an environment for testing **Regional-DR**
 basic tests.
 
-This video will demonstrate how to test application DR *after* completing the configuration.
+This video will demonstrate how to test application DR *after* completing the
+configuration.
 
 [![Video demo](https://img.youtube.com/vi/8-fpChSWzeo/hqdefault.jpg)](https://www.youtube.com/embed/8-fpChSWzeo)
 
 ## What you’ll need
 
-To set up a *Ramen* development environment you will need to run 3
-Kubernetes clusters. *Ramen* makes this easy using minikube, but you need
-enough resources:
+To set up a *Ramen* development environment you will need to run 3 Kubernetes
+clusters. *Ramen* makes this easy using minikube, but you need enough resources:
 
 - Bare metal or virtual machine with nested virtualization enabled
 - 8 CPUs or more
@@ -28,7 +28,8 @@ enough resources:
 
 ## Setting up your machine
 
-1. Fork the *Ramen* repository at [https://github.com/RamenDR/ramen](https://github.com/RamenDR/ramen)
+1. Fork the *Ramen* repository at
+   [https://github.com/RamenDR/ramen](https://github.com/RamenDR/ramen)
 
 1. Clone the source locally
 
@@ -39,16 +40,15 @@ enough resources:
 
 1. Create python virtual environment
 
-   The *Ramen* project use python tool to create and provision test
-   environment and run tests. The create a virtual environment including
-   the tools run:
+   The *Ramen* project use python tool to create and provision test environment
+   and run tests. The create a virtual environment including the tools run:
 
    ```
    make venv
    ```
 
-   This create a virtual environment in `~/.venv/ramen` and a symbolic
-   link `venv` for activating the environment.
+   This create a virtual environment in `~/.venv/ramen` and a symbolic link
+   `venv` for activating the environment.
 
    To activate the environment use:
 
@@ -85,21 +85,25 @@ enough resources:
    rpm -q libvirt virt-manager
    ```
 
-   For more information see [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
+   For more information see
+   [Virtualization on Fedora](https://docs.fedoraproject.org/en-US/quick-docs/virtualization-getting-started/).
 
 1. Install minikube - on Fedora you can use::
 
    ```
-   sudo dnf install https://github.com/kubernetes/minikube/releases/download/v1.37.0/minikube-1.37.0-0.x86_64.rpm
+   sudo dnf install https://github.com/kubernetes/minikube/releases/latest/download/minikube-latest.x86_64.rpm
    minikube version
    ```
 
-   Tested with version v1.37.0.
+   **NOTE**: minikube version 1.39.0 or later is required, latest version is
+   recommended.
 
 1. Install the `kubectl` tool
 
    ```
-   curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+   version=$(curl --fail --silent --show-error --location https://dl.k8s.io/release/stable.txt)
+   curl --fail --silent --show-error --location --remote-name \
+       "https://dl.k8s.io/release/$version/bin/linux/amd64/kubectl"
    sudo install kubectl /usr/local/bin
    rm kubectl
    kubectl version --client
@@ -107,7 +111,7 @@ enough resources:
 
    For more info see
    [Install and Set Up kubectl on Linux](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/)
-   Tested with version v1.34.1.
+   Tested with version v1.37.0.
 
 1. Validate the installation
 
@@ -147,7 +151,9 @@ enough resources:
 1. Install the `clusteradm` tool
 
    ```
-   curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s 0.11.2
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh \
+       | bash -s 0.11.2'
    clusteradm version
    ```
 
@@ -159,7 +165,7 @@ enough resources:
 1. Install the `subctl` tool
 
    ```
-   curl -Ls https://get.submariner.io | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location https://get.submariner.io | bash'
    sudo install .local/bin/subctl /usr/local/bin/
    rm .local/bin/subctl
    subctl version
@@ -167,13 +173,13 @@ enough resources:
 
    For more info see
    [Submariner subctl installation](https://submariner.io/operations/deployment/subctl/).
-   Tested with version v0.22.0.
-   Version v0.21.2 or later is required.
+   Version v0.24.0 or later is required.
 
 1. Install the `velero` tool
 
    ```
-   curl -L -o velero.tar.gz https://github.com/vmware-tanzu/velero/releases/download/v1.14.0/velero-v1.14.0-linux-amd64.tar.gz
+   curl --fail --silent --show-error --location --output velero.tar.gz \
+       https://github.com/vmware-tanzu/velero/releases/download/v1.14.0/velero-v1.14.0-linux-amd64.tar.gz
    tar xf velero.tar.gz --strip 1 velero-v1.14.0-linux-amd64/velero
    sudo install velero /usr/local/bin
    rm velero.tar.gz velero
@@ -186,7 +192,8 @@ enough resources:
 1. Install the `virtctl` tool.
 
    ```
-   curl -L -o virtctl https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
+   curl --fail --silent --show-error --location --output virtctl \
+       https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
    virtctl version
@@ -198,7 +205,8 @@ enough resources:
 1. Install `mc` tool
 
    ```
-   curl -L -o mc https://dl.min.io/client/mc/release/linux-amd64/mc
+   curl --fail --silent --show-error --location --output mc \
+       https://dl.min.io/client/mc/release/linux-amd64/mc
    sudo install mc /usr/local/bin
    rm mc
    mc --version
@@ -210,7 +218,9 @@ enough resources:
 1. Install `kustomize` tool
 
    ```
-   curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+   bash -o pipefail -c 'curl --fail --silent --show-error --location \
+       https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh \
+       | bash'
    sudo install kustomize /usr/local/bin
    rm kustomize
    kustomize version
@@ -222,17 +232,20 @@ enough resources:
 1. Install the `argocd` tool
 
    ```
-   curl -L -o argocd https://github.com/argoproj/argo-cd/releases/download/v2.11.3/argocd-linux-amd64
+   curl --fail --silent --show-error --location --output argocd \
+       https://github.com/argoproj/argo-cd/releases/download/v3.4.4/argocd-linux-amd64
    sudo install argocd /usr/local/bin/
    rm argocd
    argocd version --client
    ```
 
-   For more info see [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
+   For more info see
+   [argocd installation](https://argo-cd.readthedocs.io/en/stable/cli_installation/)
 
 1. Install the `kubectl-gather` plugin
 
    ```
+   bash -o pipefail <<'EOF'
    tag="$(curl -fsSL https://api.github.com/repos/nirs/kubectl-gather/releases/latest | jq -r .tag_name)"
    os="$(uname | tr '[:upper:]' '[:lower:]')"
    machine="$(uname -m)"
@@ -241,18 +254,20 @@ enough resources:
    curl -L -o kubectl-gather https://github.com/nirs/kubectl-gather/releases/download/$tag/kubectl-gather-$tag-$os-$machine
    sudo install kubectl-gather /usr/local/bin
    rm kubectl-gather
+   EOF
    kubectl gather --version
    ```
 
-   kubectl-gather version 0.6.0 or later is required. Tested with
-   version 0.8.0.
+   kubectl-gather version 0.6.0 or later is required. Tested with version 0.8.0.
    For more info see [kubectl-gather](https://github.com/nirs/kubectl-gather)
 
 1. Install `helm` tool - on Fedora you can use:
 
    ```
-   HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name)
-   curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz | tar xz --strip 1 linux-amd64/helm
+   helm_version=$(curl --fail --silent --show-error --location https://get.helm.sh/helm-latest-version)
+   bash -o pipefail -c "curl --fail --silent --show-error --location \
+       https://get.helm.sh/helm-${helm_version}-linux-amd64.tar.gz \
+       | tar xz --strip 1 linux-amd64/helm"
    sudo install helm /usr/local/bin
    rm -f helm
    helm version
@@ -281,8 +296,8 @@ enough resources:
 
 ## Starting the test environment
 
-Before using the `drenv` tool to start a test environment, you need to
-activate the python virtual environment:
+Before using the `drenv` tool to start a test environment, you need to activate
+the python virtual environment:
 
 ```
 cd ramen
@@ -293,9 +308,9 @@ This environment simulates a Regional DR setup, when the managed clusters are
 located in different zones (e.g. US, Europe) and storage is replicated
 asynchronously. This environment includes 3 clusters - a hub cluster (`hub`),
 and 2 managed clusters (`dr1`, `dr2`) using `Ceph` storage. The connectivity
-between managed clusters will be configured using subctl (Submariner client).
-In addition, rbd-mirroring is configured using the Submariner connection for
-ceph image replication of block volumes.
+between managed clusters will be configured using subctl (Submariner client). In
+addition, rbd-mirroring is configured using the Submariner connection for ceph
+image replication of block volumes.
 
 To start the environment, run:
 
@@ -304,8 +319,7 @@ cd test
 drenv start envs/regional-dr.yaml
 ```
 
-Starting takes 10-15 minutes, depending on your machine and
-internet connection.
+Starting takes 10-15 minutes, depending on your machine and internet connection.
 
 Example output:
 
@@ -383,8 +397,8 @@ ramendev deploy test/envs/regional-dr.yaml
 For more info on the `ramendev` tool see
 [ramendev/README.md](../ramendev/README.md).
 
-Ramen now needs to be configured to know about the managed clusters and the
-s3 endpoints. To configure the ramen operator for test environment:
+Ramen now needs to be configured to know about the managed clusters and the s3
+endpoints. To configure the ramen operator for test environment:
 
 ```
 ramendev config test/envs/regional-dr.yaml
@@ -392,54 +406,16 @@ ramendev config test/envs/regional-dr.yaml
 
 ## Running system tests
 
-At this point *Ramen* is ready to protect workloads in your cluster, and
-you are ready for testing basic flows.
+At this point *Ramen* is ready to protect workloads in your cluster, and you are
+ready for testing DR flows.
 
-Ramen basic test use the [ocm-ramen-samples repo](https://github.com/RamenDR/ocm-ramen-samples).
-Before running the tests, you need to deploy a channel pointing this
-repo:
-
-```
-kubectl apply -k https://github.com/RamenDR/ocm-ramen-samples.git/channel --context hub
-```
-
-To run basic tests using regional-dr environment run:
-
-```
-test/basic-test/run test/envs/regional-dr.yaml
-```
-
-This test does these operations:
-
-1. Deploys a busybox application
-1. Enables DR for the application
-1. Fails over the application to the other cluster
-1. Relocates the application back to the original cluster
-1. Disables DR for the application
-1. Uninstalls the application
-
-If needed, you can run one or more steps from this test, for example to
-deploy and enable DR run:
-
-```
-env=$PWD/test/envs/regional-dr.yaml
-test/basic-test/deploy $env
-test/basic-test/enable-dr $env
-```
-
-At this point you can run run manually failover, relocate one or more
-times as needed.
-
-To clean up the basic-test for regional-dr.yaml run this command:
-
-```
-test/basic-test/undeploy $env
-```
+Please refer to the [e2e testing documentation](../docs/e2e.md) for detailed
+instructions on running end-to-end tests.
 
 ## Undeploying the test environment
 
-If you want to clean up your environment completely run this command.
-All clusters and resources will be deleted.
+If you want to clean up your environment completely run this command. All
+clusters and resources will be deleted.
 
 ```
 cd ramen/test

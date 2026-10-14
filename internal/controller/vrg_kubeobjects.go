@@ -6,21 +6,26 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
+	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	recipecore "github.com/ramendr/ramen/internal/controller/core"
 	"github.com/ramendr/ramen/internal/controller/hooks"
+	"github.com/ramendr/ramen/internal/controller/hooks/common"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
@@ -64,6 +69,12 @@ func kubeObjectsRecoverName(prefix string, groupNumber int) string {
 }
 
 func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
+	if v.instance.Spec.DryRun {
+		v.log.Info("Skipping upload of Kube Objects to S3 store(s) as VRG is in dry-run mode")
+
+		return
+	}
+
 	if v.instance.Spec.PrepareForFinalSync || v.instance.Spec.RunFinalSync {
 		v.log.Info("Skipping kube objects capture in final sync case")
 
@@ -140,14 +151,20 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 		return
 	}
 
-	// requeue with a delay if the time for the next capture has not yet arrived
-	if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
-		v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
-			"interval", interval)
-		delaySetIfLess(result, delay, v.log)
-		v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
+	// requeue with a delay if the time for the next capture has not yet arrived,
+	// unless the VM list in VM-recipe has been updated (out-of-band capture).
+	if !v.isProtectedVMsListUpdated() {
+		if delay := interval - time.Since(captureToRecoverFrom.StartTime.Time); delay > 0 {
+			v.log.Info("delaying kube objects capture start as per capture interval", "delay", delay,
+				"interval", interval)
+			delaySetIfLess(result, delay, v.log)
+			v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
-		return
+			return
+		}
+	} else {
+		log.Info("Protected VMs list in VM-recipe updated; triggering immediate kube objects capture instead of delaying",
+			"currentVMs", vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList])
 	}
 
 	// before starting a new capture, delete the previous one with the same number
@@ -163,6 +180,71 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResumeOrDelay(
 	v.kubeObjectsCaptureStartOrResume(result, number, pathName, capturePathName,
 		namePrefix, veleroNamespaceName, interval, generation,
 		kubeobjects.RequestsMapKeyedByName(requests), log)
+}
+
+// isProtectedVMsListUpdated checks if the list of protected Virtual Machines in the
+// VM recipe parameters has changed since the last acknowledged capture.
+// It returns true if there is a mismatch (e.g. newly onboarded workloads), which triggers
+// an immediate, out-of-band capture instead of delaying for the configured interval.
+// It does NOT update lastSeenProtectedVMsList; call acknowledgeProtectedVMsList only after
+// a capture completes successfully.
+func (v *VRGInstance) isProtectedVMsListUpdated() bool {
+	vrg := v.instance
+	if !util.IsVMRecipe(vrg.Spec.KubeObjectProtection) || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
+		return false
+	}
+
+	vmNamespaceList := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	if len(vmNamespaceList) == 0 {
+		return false
+	}
+
+	protectedNamespace := vmNamespaceList[0]
+	cacheKey := v.protectedVMsCacheKey(protectedNamespace)
+
+	currentVMs := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	lastSeenVal, ok := v.reconciler.lastSeenProtectedVMsList.Load(cacheKey)
+	lastSeenVMs, ok2 := lastSeenVal.([]string)
+
+	return !ok || !ok2 || !stringSlicesEqualIgnoreOrder(currentVMs, lastSeenVMs)
+}
+
+// acknowledgeProtectedVMsList records the current VM list as the last successfully captured
+// baseline. Must only be called after kubeObjectsCaptureComplete confirms all capture
+// requests completed successfully.
+func (v *VRGInstance) acknowledgeProtectedVMsList() {
+	vrg := v.instance
+	if !util.IsVMRecipe(vrg.Spec.KubeObjectProtection) || vrg.Spec.KubeObjectProtection.RecipeParameters == nil {
+		return
+	}
+
+	vmNamespaceList := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.ProtectedVMNamespace]
+	if len(vmNamespaceList) == 0 {
+		return
+	}
+
+	protectedNamespace := vmNamespaceList[0]
+	cacheKey := v.protectedVMsCacheKey(protectedNamespace)
+	currentVMs := vrg.Spec.KubeObjectProtection.RecipeParameters[recipecore.VMList]
+
+	v.reconciler.lastSeenProtectedVMsList.Store(cacheKey, currentVMs)
+}
+
+// stringSlicesEqual compares two string slices for equality after sorting them,
+// ensuring order differences do not trigger false positive changes.
+func stringSlicesEqualIgnoreOrder(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	aCopy := slices.Clone(a)
+	bCopy := slices.Clone(b)
+
+	slices.Sort(aCopy)
+	slices.Sort(bCopy)
+
+	return slices.Equal(aCopy, bCopy)
 }
 
 func (v *VRGInstance) kubeObjectsCapturesDelete(
@@ -237,6 +319,11 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 
 		result.Requeue = true
 
+		if v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom != nil &&
+			time.Since(v.instance.Status.KubeObjectProtection.CaptureToRecoverFrom.StartTime.Time) <= 2*interval {
+			v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploading, "Kube objects capture in-progress")
+		}
+
 		return
 	}
 
@@ -268,6 +355,63 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	)
 }
 
+// kubeObjectsHookExecute resolves and runs a recipe hook.
+// skip is true when the hook type is unsupported; the caller should continue the workflow loop.
+// On success, hooksSucceeded is set. On Execute failure, records anyHookFailed and the last
+// failure message; when shouldStopExecution applies, HooksReady is set failed. The caller stops
+// or continues per failOn. kubeObjectsHookWorkflowResult sets final HooksReady state.
+func (v *VRGInstance) kubeObjectsHookExecute(
+	hook kubeobjects.HookSpec,
+	log1 logr.Logger,
+	failOn string,
+	isEssentialStep bool,
+	hooksSucceeded *bool,
+	anyHookFailed *bool,
+	lastFailureMessage *string,
+) (skip bool, err error) {
+	hookCtx := hooks.HookContext{
+		Hook:           hook,
+		Client:         v.reconciler.Client,
+		Reader:         v.reconciler.APIReader,
+		Scheme:         v.reconciler.Scheme,
+		RecipeElements: v.recipeElements,
+	}
+
+	executor, err1 := hooks.GetHookExecutor(hookCtx)
+	if err1 != nil {
+		// continue if hook type is not supported. Supported types are "check" and "exec"
+		log1.Info("Hook type not supported", "hook", hook)
+
+		return true, err1
+	}
+
+	err = executor.Execute(log1)
+	if err != nil {
+		*anyHookFailed = true
+		*lastFailureMessage = fmt.Sprintf("Hook '%s' failed: %v", hook.Name, err)
+
+		if shouldStopExecution(failOn, isEssentialStep) {
+			setVRGHookFailedCondition(&v.instance.Status.Conditions, v.instance.Generation, *lastFailureMessage)
+		}
+	} else {
+		*hooksSucceeded = true
+	}
+
+	return false, err
+}
+
+// kubeObjectsHookWorkflowResult sets HooksReady from hook workflow flags.
+func (v *VRGInstance) kubeObjectsHookWorkflowResult(
+	hooksSucceeded, anyHookFailed bool,
+	hooksSucceededMessage, lastHookFailureMessage string,
+) {
+	if hooksSucceeded && !anyHookFailed {
+		setVRGHookExecutedCondition(&v.instance.Status.Conditions, v.instance.Generation, hooksSucceededMessage)
+	} else if anyHookFailed {
+		setVRGHookFailedCondition(&v.instance.Status.Conditions, v.instance.Generation, lastHookFailureMessage)
+	}
+}
+
 //nolint:gocognit,funlen,cyclop
 func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capturePathName, namePrefix,
 	veleroNamespaceName string,
@@ -279,11 +423,16 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 	essentialStepsCount := 0
 	requestsProcessedCount := 0
 	requestsCompletedCount := 0
+	hooksSucceeded := false
+	anyHookFailed := false
+	lastCaptureHookFailureMessage := ""
 	labels := util.OwnerLabels(v.instance)
 	labels[util.VeleroKubevirtMetadataOnlyBackupLabel] = "true"
 
 	for groupNumber, captureGroup := range captureSteps {
 		var err error
+
+		var skip bool
 
 		var isEssentialStep bool
 
@@ -295,23 +444,10 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		if cg.IsHook {
 			isEssentialStep = cg.Hook.Essential != nil && *cg.Hook.Essential
 
-			hookCtx := hooks.HookContext{
-				Hook:           cg.Hook,
-				Client:         v.reconciler.Client,
-				Reader:         v.reconciler.APIReader,
-				Scheme:         v.reconciler.Scheme,
-				RecipeElements: v.recipeElements,
-			}
-
-			executor, err1 := hooks.GetHookExecutor(hookCtx)
-			if err1 != nil {
-				// continue if hook type is not supported. Supported types are "check" and "exec"
-				log1.Info("Hook type not supported", "hook", cg.Hook)
-
+			if skip, err = v.kubeObjectsHookExecute(cg.Hook, log1, failOn, isEssentialStep, &hooksSucceeded,
+				&anyHookFailed, &lastCaptureHookFailureMessage); skip {
 				continue
 			}
-
-			err = executor.Execute(log1)
 		}
 
 		if !cg.IsHook {
@@ -351,11 +487,29 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 		}
 	}
 
+	v.kubeObjectsHookWorkflowResult(hooksSucceeded, anyHookFailed,
+		"Capture hooks executed successfully",
+		lastCaptureHookFailureMessage,
+	)
+
 	if essentialStepsCount == 0 {
 		allEssentialStepsFailed = false
 	}
 
 	return allEssentialStepsFailed, nil
+}
+
+// kubeObjectsStorageLocation returns the location in this S3 store where kube
+// objects protect and recover requests are kept under keyPrefix.
+func (s s3StoreAccessor) kubeObjectsStorageLocation(keyPrefix string) kubeobjects.StorageLocation {
+	return kubeobjects.StorageLocation{
+		S3URL:          s.S3CompatibleEndpoint,
+		Bucket:         s.S3Bucket,
+		Region:         s.S3Region,
+		KeyPrefix:      keyPrefix,
+		SecretKeyRef:   s.VeleroNamespaceSecretKeyRef,
+		CACertificates: s.CACertificates,
+	}
 }
 
 func (v *VRGInstance) kubeObjectsGroupCapture(
@@ -371,11 +525,13 @@ func (v *VRGInstance) kubeObjectsGroupCapture(
 
 		request, ok := requests[requestName]
 		if !ok {
+			// Merge ConfigMap default exclusions with recipe-level exclusions
+			captureSpec := v.mergeExcludedResources(captureGroup.Spec)
+
 			if _, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region,
-				pathName, s3StoreAccessor.VeleroNamespaceSecretKeyRef, s3StoreAccessor.CACertificates,
-				captureGroup.Spec, veleroNamespaceName, requestName,
+				s3StoreAccessor.kubeObjectsStorageLocation(pathName),
+				captureSpec, veleroNamespaceName, requestName,
 				labels, annotations,
 			); err != nil {
 				log1.Error(err, "Kube objects group capture request submit error")
@@ -494,6 +650,7 @@ func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
 	}
 
 	v.reconciler.recipeRetries.Store(v.namespacedName, 0)
+	v.acknowledgeProtectedVMsList()
 	v.kubeObjectsCaptureStatusTrue(VRGConditionReasonUploaded, kubeObjectsClusterDataProtectedTrueMessage)
 
 	captureStartTimeSince := time.Since(captureToRecoverFromIdentifier.StartTime.Time)
@@ -611,6 +768,20 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 		return nil
 	}
 
+	// When static IP translation rules are present, the ResourceModifier ConfigMap
+	// must exist in the velero namespace before the restore runs — Velero will
+	// reject a Restore that references a missing ConfigMap.
+	// This covers the failover case where the VRG was previously secondary (the CM
+	// was created there) but may have been deleted or not yet reconciled on this
+	// cluster.  Create-or-update it now and gate the restore on its presence.
+	if hasStaticIPTranslation(v.instance) {
+		if err := v.ensureResourceModifierCM(result); err != nil {
+			result.Requeue = true
+
+			return err
+		}
+	}
+
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		if err := v.kubeObjectsRecoverFromS3(result, s3StoreAccessor); err != nil {
 			v.log.Info("Kube objects restore error", "profile", s3StoreAccessor.S3ProfileName, "error", err)
@@ -661,9 +832,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 
 			return v.reconciler.kubeObjects.RecoverRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.S3CompatibleEndpoint, s3StoreAccessor.S3Bucket, s3StoreAccessor.S3Region, pathName,
-				s3StoreAccessor.VeleroNamespaceSecretKeyRef,
-				s3StoreAccessor.CACertificates,
+				s3StoreAccessor.kubeObjectsStorageLocation(pathName),
 				recoverGroup, v.veleroNamespaceName(),
 				captureName, captureRequest,
 				recoverName,
@@ -749,11 +918,16 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 	failOn := v.recipeElements.RestoreFailOn
 	allEssentialStepsFailed := true
 	essentialStepsCount := 0
+	hooksSucceeded := false
+	anyHookFailed := false
+	lastRecoverHookFailureMessage := ""
 	labels := util.OwnerLabels(v.instance)
 
 	recoverSteps := v.recipeElements.RecoverWorkflow
 	for groupNumber, recoverGroup := range recoverSteps {
 		var err error
+
+		var skip bool
 
 		var isEssentialStep bool
 
@@ -763,23 +937,10 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 		if rg.IsHook {
 			isEssentialStep = rg.Hook.Essential != nil && *rg.Hook.Essential
 
-			hookCtx := hooks.HookContext{
-				Hook:           rg.Hook,
-				Client:         v.reconciler.Client,
-				Reader:         v.reconciler.APIReader,
-				Scheme:         v.reconciler.Scheme,
-				RecipeElements: v.recipeElements,
-			}
-
-			executor, err1 := hooks.GetHookExecutor(hookCtx)
-			if err1 != nil {
-				// continue if hook type is not supported. Supported types are "check" and "exec"
-				log1.Info("Hook type not supported", "hook", rg.Hook)
-
+			if skip, err = v.kubeObjectsHookExecute(rg.Hook, log1, failOn, isEssentialStep, &hooksSucceeded,
+				&anyHookFailed, &lastRecoverHookFailureMessage); skip {
 				continue
 			}
-
-			err = executor.Execute(log1)
 		}
 
 		if !rg.IsHook {
@@ -806,6 +967,11 @@ func (v *VRGInstance) executeRecoverSteps(result *ctrl.Result, s3StoreAccessor s
 			essentialStepsCount++
 		}
 	}
+
+	v.kubeObjectsHookWorkflowResult(hooksSucceeded, anyHookFailed,
+		"Recovery hooks executed successfully",
+		lastRecoverHookFailureMessage,
+	)
 
 	if essentialStepsCount == 0 {
 		allEssentialStepsFailed = false
@@ -835,6 +1001,11 @@ func (v *VRGInstance) executeRecoverGroup(result *ctrl.Result, s3StoreAccessor s
 	labels map[string]string, groupNumber int,
 	rg kubeobjects.RecoverSpec, requests []kubeobjects.Request, log1 logr.Logger,
 ) error {
+	// Inject the static IP ResourceModifier reference when translation rules are present.
+	if hasStaticIPTranslation(v.instance) && rg.ResourceModifier == nil {
+		rg.ResourceModifier = v.resourceModifierRef()
+	}
+
 	sourceVrgName := v.instance.Name
 	sourceVrgNamespaceName := v.instance.Namespace
 	request, ok, submit, cleanup := v.getRecoverOrProtectRequest(
@@ -928,12 +1099,170 @@ func (v *VRGInstance) kubeObjectsProtectionDelete(result *ctrl.Result) error {
 	}
 
 	vrg := v.instance
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(vrg)
 
-	return v.kubeObjectsRecoverRequestsDelete(
-		result,
-		v.veleroNamespaceName(),
-		util.OwnerLabels(vrg),
-	)
+	if err := v.kubeObjectsRecoverRequestsDelete(result, veleroNS, labels); err != nil {
+		return err
+	}
+
+	// BSLs are kept alive across capture cycles and must be deleted explicitly here.
+	if err := v.reconciler.kubeObjects.ProtectBSLsDelete(v.ctx, v.reconciler.Client, veleroNS, labels); err != nil {
+		v.log.Error(err, "Kube objects BSLs delete error")
+
+		result.Requeue = true
+
+		return err
+	}
+
+	return nil
+}
+
+// cleanupVeleroBackupsForSecondary removes Velero Backup CRs owned by THIS specific VRG.
+// S3 backup data is preserved because:
+//  1. Ramen creates Backup CRs without finalizers
+//  2. BackupSyncPeriod is disabled in BSL config, so Velero doesn't add gc-finalizers
+//  3. Deleting a Backup CR without finalizers only removes the CR, not S3 data
+//
+// This cleanup is executed BEFORE vrg.status.state transitions to Secondary, during the
+// reconciliation when vrg.spec.replicationState is Secondary. This is critical because once
+// the VRG achieves Secondary state, reconciliation frequency reduces, so cleanup must happen
+// during the transition to ensure CRs are removed.
+//
+// Applies to ALL discovered apps (vm-recipe, other kube object protection schemes).
+func (v *VRGInstance) cleanupVeleroBackupsForSecondary() error {
+	if v.kubeObjectProtectionDisabled("secondary-cleanup") {
+		return nil
+	}
+
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(v.instance)
+
+	v.log.Info("Starting velero backup cleanup for secondary",
+		"vrgNamespace", v.instance.GetNamespace(),
+		"vrgName", v.instance.GetName(),
+		"veleroNamespace", veleroNS,
+		"ownerLabels", labels)
+
+	backupList, err := v.listVeleroBackupsForVRG(veleroNS, labels)
+	if err != nil {
+		return err
+	}
+
+	// Early exit for idempotency - no backups to clean up
+	// This is expected when:
+	// - Backups were already cleaned up in a previous reconcile
+	// - No kube object protection backups were ever created
+	// - This is a PVC-only protection (no recipe/discovered app)
+	if len(backupList.Items) == 0 {
+		v.log.Info("No velero backup CRs to cleanup (already clean or not applicable)")
+
+		return nil
+	}
+
+	v.log.Info("Found velero backup CRs to cleanup",
+		"count", len(backupList.Items),
+		"vrgName", v.instance.GetName())
+
+	return v.deleteVeleroBackups(backupList)
+}
+
+// listVeleroBackupsForVRG lists all Velero Backup CRs owned by this VRG
+func (v *VRGInstance) listVeleroBackupsForVRG(veleroNS string, labels map[string]string) (*velero.BackupList, error) {
+	backupList := &velero.BackupList{}
+
+	listOpts := []client.ListOption{
+		client.InNamespace(veleroNS),
+		client.MatchingLabels(labels),
+	}
+
+	if err := v.reconciler.Client.List(v.ctx, backupList, listOpts...); err != nil {
+		v.log.Error(err, "Failed to list velero backups for cleanup")
+
+		return nil, err
+	}
+
+	return backupList, nil
+}
+
+// deleteVeleroBackups deletes backup CRs. S3 data is preserved because Ramen creates
+// Backup CRs without finalizers and BackupSyncPeriod is disabled in BSL configuration.
+// The backupList is already filtered by label selector to contain only backups owned by this VRG.
+func (v *VRGInstance) deleteVeleroBackups(backupList *velero.BackupList) error {
+	deletedCount := 0
+	errorCount := 0
+
+	for i := range backupList.Items {
+		backup := &backupList.Items[i]
+		backupName := backup.GetName()
+
+		if err := v.reconciler.Client.Delete(v.ctx, backup); err != nil {
+			if !k8serrors.IsNotFound(err) {
+				v.log.Error(err, "Failed to delete backup CR", "backup", backupName)
+
+				errorCount++
+
+				continue
+			}
+			// Already deleted - idempotent
+			v.log.Info("Backup CR already deleted", "backup", backupName)
+		}
+
+		v.log.Info("Successfully deleted backup CR",
+			"backup", backupName,
+			"vrgOwner", v.instance.GetNamespace()+"/"+v.instance.GetName())
+
+		deletedCount++
+	}
+
+	v.log.Info("Velero backup cleanup completed",
+		"vrgName", v.instance.GetName(),
+		"deleted", deletedCount,
+		"errors", errorCount,
+		"total", len(backupList.Items))
+
+	if errorCount > 0 {
+		return fmt.Errorf("failed to delete %d out of %d backup CRs", errorCount, len(backupList.Items))
+	}
+
+	return nil
+}
+
+// mergeExcludedResources merges ConfigMap default exclusions with recipe-level exclusions.
+// Returns a new Spec with the merged exclusions.
+func (v *VRGInstance) mergeExcludedResources(spec kubeobjects.Spec) kubeobjects.Spec {
+	// Get default exclusions from ConfigMap
+	v.reconciler.excludedResourcesMutex.RLock()
+	defaultExclusions := v.reconciler.cachedExcludedResources
+	v.reconciler.excludedResourcesMutex.RUnlock()
+
+	if len(defaultExclusions) == 0 {
+		// No default exclusions, return original spec
+		return spec
+	}
+
+	// Create a new spec with merged exclusions
+	// ConfigMap defaults + Recipe group exclusions
+	mergedExclusions := make([]string, 0, len(defaultExclusions)+len(spec.ExcludedResources))
+	mergedExclusions = append(mergedExclusions, defaultExclusions...)
+	mergedExclusions = append(mergedExclusions, spec.ExcludedResources...)
+
+	// Remove duplicates
+	seen := make(map[string]bool, len(mergedExclusions))
+	uniqueExclusions := make([]string, 0, len(mergedExclusions))
+
+	for _, resource := range mergedExclusions {
+		if !seen[resource] {
+			seen[resource] = true
+			uniqueExclusions = append(uniqueExclusions, resource)
+		}
+	}
+
+	// Create a copy of the spec with merged exclusions
+	mergedSpec := spec
+	mergedSpec.ExcludedResources = uniqueExclusions
+
+	return mergedSpec
 }
 
 func kubeObjectsRequestsWatch(
@@ -1162,89 +1491,16 @@ func convertRecipeHookToRecoverSpec(hook Recipe.Hook, suffix string) (*kubeobjec
 	}, nil
 }
 
-// TODO: Return error as well or ensure that other than exec and check hooks are
+// TODO: Return error as well or ensure that other than exec, check, scale and job hooks are
 // handled properly.
 func getHookSpecFromHook(hook Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	// based on hook.type, the hook is chks, ops or scale
-	switch hook.Type {
-	case "exec":
-		return getOpHookSpec(&hook, suffix)
-	case "check":
-		return getChkHookSpec(&hook, suffix)
-	case "scale":
-		return getScaleHookSpec(&hook, suffix)
-	default:
+	// Use common package for HookSpec creation
+	hookSpec := common.GetHookSpecFromRecipe(&hook, suffix)
+	if hookSpec == nil {
 		return kubeobjects.HookSpec{}
 	}
-}
 
-func getScaleHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	return kubeobjects.HookSpec{
-		Name:           hook.Name,
-		Namespace:      hook.Namespace,
-		Type:           hook.Type,
-		SelectResource: hook.SelectResource,
-		LabelSelector:  hook.LabelSelector,
-		NameSelector:   hook.NameSelector,
-		Essential:      hook.Essential,
-		Timeout:        hook.Timeout,
-		OnError:        hook.OnError,
-		// suffix will be up, down, or sync
-		Scale: kubeobjects.ScaleSpec{
-			Operation: suffix,
-		},
-	}
-}
-
-func getChkHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	for _, chk := range hook.Chks {
-		if chk.Name == suffix {
-			return kubeobjects.HookSpec{
-				Name:                 hook.Name,
-				Namespace:            hook.Namespace,
-				Type:                 hook.Type,
-				SelectResource:       hook.SelectResource,
-				LabelSelector:        hook.LabelSelector,
-				NameSelector:         hook.NameSelector,
-				Timeout:              chk.Timeout,
-				OnError:              chk.OnError,
-				SkipHookIfNotPresent: hook.SkipHookIfNotPresent,
-				Chk: kubeobjects.Check{
-					Name:      suffix,
-					Condition: chk.Condition,
-				},
-				Essential: hook.Essential,
-			}
-		}
-	}
-
-	return kubeobjects.HookSpec{}
-}
-
-func getOpHookSpec(hook *Recipe.Hook, suffix string) kubeobjects.HookSpec {
-	for _, op := range hook.Ops {
-		if op.Name == suffix {
-			return kubeobjects.HookSpec{
-				Name:           hook.Name,
-				Namespace:      hook.Namespace,
-				Type:           hook.Type,
-				Timeout:        hook.Timeout,
-				OnError:        hook.OnError,
-				SelectResource: hook.SelectResource,
-				LabelSelector:  hook.LabelSelector,
-				NameSelector:   hook.NameSelector,
-				SinglePodOnly:  hook.SinglePodOnly,
-				Op: kubeobjects.Operation{
-					Name:      suffix,
-					Container: op.Container,
-					Command:   op.Command,
-					InverseOp: op.InverseOp,
-				},
-			}
-		}
-	}
-
-	return kubeobjects.HookSpec{}
+	return *hookSpec
 }
 
 func convertRecipeGroupToRecoverSpec(group Recipe.Group) (*kubeobjects.RecoverSpec, error) {
@@ -1355,4 +1611,8 @@ func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
 	}
 
 	return metav1.Time{}
+}
+
+func (v *VRGInstance) protectedVMsCacheKey(protectedNamespace string) string {
+	return v.instance.Namespace + "/" + v.instance.Name + "/" + protectedNamespace
 }

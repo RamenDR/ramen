@@ -5,7 +5,9 @@ package controllers_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -25,13 +27,21 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
-var NFClassAvailable bool
+var NFClassCount int // Number of NFCs to simulate (0=disabled, 1=single, 2+=multiple)
+
+var cidrs = [][]string{
+	{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
+	{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
+	{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
+
+	{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
+}
 
 var baseNF = &csiaddonsv1alpha1.NetworkFence{
 	TypeMeta:   metav1.TypeMeta{Kind: "NetworkFence", APIVersion: "csiaddons.openshift.io/v1alpha1"},
 	ObjectMeta: metav1.ObjectMeta{Name: strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0"}, "-")},
 	Spec: csiaddonsv1alpha1.NetworkFenceSpec{
-		Cidrs:      []string{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"},
+		Cidrs:      cidrs[0],
 		FenceState: csiaddonsv1alpha1.Fenced,
 	},
 }
@@ -68,7 +78,22 @@ var baseDRCConfig = &ramen.DRClusterConfig{
 func generateDRCC() *ramen.DRClusterConfig {
 	drcc := baseDRCConfig.DeepCopy()
 	drcc.Status.StorageClasses = []string{"sc1"}
-	drcc.Status.NetworkFenceClasses = []string{"nfc1"}
+
+	// Support multiple NFCs for testing
+	nfClasses := make([]string, NFClassCount)
+
+	for i := 0; i < NFClassCount; i++ {
+		nfClasses[i] = fmt.Sprintf("nfc%d", i+1)
+	}
+
+	drcc.Status.NetworkFenceClasses = nfClasses
+
+	drcc.Status.StorageAccessDetails = []ramen.StorageAccessDetail{
+		{
+			StorageProvisioner: "fake.ramen.com",
+			CIDRs:              cidrs[0],
+		},
+	}
 
 	return drcc
 }
@@ -84,9 +109,9 @@ func generateSC() *storagev1.StorageClass {
 	return sc
 }
 
-func generateNFC() *csiaddonsv1alpha1.NetworkFenceClass {
+func generateNFCByName(name string) *csiaddonsv1alpha1.NetworkFenceClass {
 	nfc := baseNFClass.DeepCopy()
-	nfc.Name = "nfc1"
+	nfc.Name = name
 	nfc.Annotations = map[string]string{
 		controllers.StorageIDLabel: "sc1-sid",
 	}
@@ -94,8 +119,8 @@ func generateNFC() *csiaddonsv1alpha1.NetworkFenceClass {
 	return nfc
 }
 
-func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, managedCluster string,
-	annotations map[string]string,
+func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, networkFenceClass, resourceNamespace,
+	managedCluster string, annotations map[string]string,
 ) (*csiaddonsv1alpha1.NetworkFence, error) {
 	nfStatus := csiaddonsv1alpha1.NetworkFenceStatus{
 		Result:  csiaddonsv1alpha1.FencingOperationResultSucceeded,
@@ -105,9 +130,10 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, 
 	nf := baseNF.DeepCopy()
 
 	callerName := getFunctionNameAtIndex(2)
-	if callerName == "fenceClusterOnCluster" {
+	switch callerName {
+	case "checkFenceStatus":
 		nf.Spec.FenceState = csiaddonsv1alpha1.Fenced
-	} else if callerName == "unfenceClusterOnCluster" {
+	case "checkUnfenceStatus":
 		nf.Spec.FenceState = csiaddonsv1alpha1.Unfenced
 	}
 
@@ -115,7 +141,7 @@ func (f FakeMCVGetter) GetNFFromManagedCluster(resourceName, resourceNamespace, 
 
 	nf.Generation = 1
 
-	if NFClassAvailable {
+	if NFClassCount > 0 {
 		nf.Name = strings.Join([]string{controllers.NetworkFencePrefix, "drc-cluster0", "nfc1"}, "-")
 		nf.Spec.NetworkFenceClassName = "nfc1"
 	}
@@ -127,8 +153,9 @@ func (f FakeMCVGetter) GetNFClassFromManagedCluster(resourceName, managedCluster
 ) (*csiaddonsv1alpha1.NetworkFenceClass, error) {
 	// Guard against test interference: Only return populated NetworkFenceClass when
 	// NFClass is being tested to maintain test isolation for other test suites.
-	if NFClassAvailable {
-		return generateNFC(), nil
+	if NFClassCount > 0 {
+		// Return the NFC matching the requested resourceName
+		return generateNFCByName(resourceName), nil
 	}
 
 	return nil, nil
@@ -140,7 +167,7 @@ func (f FakeMCVGetter) GetDRClusterConfigFromManagedCluster(
 ) (*ramen.DRClusterConfig, error) {
 	// Guard against test interference: Only return populated DRClusterConfig when
 	// NFClass is being tested to maintain test isolation for other test suites.
-	if NFClassAvailable {
+	if NFClassCount > 0 {
 		return generateDRCC(), nil
 	}
 
@@ -151,7 +178,7 @@ func (f FakeMCVGetter) GetSClassFromManagedCluster(resourceName, managedCluster 
 ) (*storagev1.StorageClass, error) {
 	// Guard against test interference: Only return populated StorageClass when
 	// NFClass is being tested to maintain test isolation for other test suites.
-	if NFClassAvailable {
+	if NFClassCount > 0 {
 		return generateSC(), nil
 	}
 
@@ -187,6 +214,9 @@ func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *
 }
 
 var _ = Describe("DRClusterController", func() {
+	// DRPolicy finalization can exceed default suite timeout under CI; DRCluster reconcile errors (e.g. S3) add delay.
+	drPolicyDeleteEventuallyTimeout := 30 * time.Second
+
 	drclusterDelete := func(drcluster *ramen.DRCluster) {
 		clusterName := drcluster.Name
 		Expect(k8sClient.Delete(context.TODO(), drcluster)).To(Succeed())
@@ -196,6 +226,7 @@ var _ = Describe("DRClusterController", func() {
 				Name:      drcluster.Name,
 			}, drcluster))
 		}, timeout, interval).Should(BeTrue())
+
 		manifestWork := &workv1.ManifestWork{}
 		Expect(k8serrors.IsNotFound(apiReader.Get(
 			context.TODO(),
@@ -206,17 +237,9 @@ var _ = Describe("DRClusterController", func() {
 			manifestWork))).To(BeTrue())
 	}
 
-	cidrs := [][]string{
-		{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
-		{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
-
-		{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
-		{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
-	}
-
 	drclusters := []ramen.DRCluster{}
 	populateDRClusters := func() {
-		drclusters = nil
+		drclusters = make([]ramen.DRCluster, 0, 2)
 		drclusters = append(drclusters,
 			ramen.DRCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -292,12 +315,14 @@ var _ = Describe("DRClusterController", func() {
 		if !namespaceDeletionSupported {
 			return
 		}
+
 		for _, drcluster := range drclusters {
 			Expect(k8sClient.Delete(
 				context.TODO(),
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: drcluster.Name}},
 			)).To(Succeed())
 		}
+
 		for i := range drclusters {
 			namespaceDeletionConfirm(drclusters[i].Name)
 		}
@@ -330,7 +355,7 @@ var _ = Describe("DRClusterController", func() {
 		Expect(k8sClient.Delete(context.TODO(), policy)).To(Succeed())
 		Eventually(func() bool {
 			return k8serrors.IsNotFound(apiReader.Get(context.TODO(), types.NamespacedName{Name: policy.Name}, policy))
-		}, timeout, interval).Should(BeTrue())
+		}, drPolicyDeleteEventuallyTimeout, interval).Should(BeTrue())
 	}
 
 	drpolicyDelete := func(drpolicy *ramen.DRPolicy) {
@@ -338,6 +363,7 @@ var _ = Describe("DRClusterController", func() {
 	}
 
 	var drcluster *ramen.DRCluster
+
 	Specify("DRCluster initialize tests", func() {
 		populateDRClusters()
 		createDRClusterNamespaces()
@@ -348,11 +374,13 @@ var _ = Describe("DRClusterController", func() {
 	Context("DRCluster resource S3Profile validation", func() {
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
+
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("an S3Profile is missing in config", func() {
 			It("reports NOT validated with reason s3ConnectionFailed", func() {
 				By("creating a new DRCluster with an invalid S3Profile")
+
 				drcluster.Spec.S3ProfileName = "missing"
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
@@ -373,12 +401,14 @@ var _ = Describe("DRClusterController", func() {
 				drclusterDelete(drcluster)
 				// recreate DRPolicy
 				createPolicies()
+
 				drcluster = drclusters[0].DeepCopy()
 			})
 		})
 		When("an S3Profile fails listing", func() {
 			It("reports NOT validated with reason s3ListFailed", func() {
 				By("creating a DRCluster with an invalid S3Profile that fails listing")
+
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
@@ -396,6 +426,7 @@ var _ = Describe("DRClusterController", func() {
 		When("fenced", func() {
 			It("reports validated with reason Succeeded and ignores S3Profile errors", func() {
 				By("fencing an existing DRCluster with an invalid S3Profile")
+
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateManuallyFenced
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
@@ -416,6 +447,7 @@ var _ = Describe("DRClusterController", func() {
 				drclusterDelete(drcluster)
 				// recreate DRPolicy
 				createPolicies()
+
 				drcluster = drclusters[0].DeepCopy()
 			})
 		})
@@ -423,6 +455,7 @@ var _ = Describe("DRClusterController", func() {
 		When("S3Profile is valid", func() {
 			It("reports validated with reason Succeeded", func() {
 				By("creating a DRCluster with a valid S3Profile and no cluster fencing")
+
 				drcluster.Spec.S3ProfileName = s3Profiles[0].S3ProfileName
 				drcluster.Spec.ClusterFence = ""
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -446,6 +479,7 @@ var _ = Describe("DRClusterController", func() {
 				drclusterDelete(drcluster)
 				// recreate DRPolicy
 				createPolicies()
+
 				drcluster = drclusters[0].DeepCopy()
 			})
 		})
@@ -453,6 +487,7 @@ var _ = Describe("DRClusterController", func() {
 		When("S3Profile is changed to an invalid profile in ramen config", func() {
 			It("reports NOT validated with reason s3ConnectionFailed", func() {
 				By("creating a DRCluster with the new valid S3Profile")
+
 				drcluster.Spec.S3ProfileName = s3Profiles[5].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
@@ -467,8 +502,10 @@ var _ = Describe("DRClusterController", func() {
 					false,
 				)
 				By("changing the S3Profile in ramen config to an invalid value")
+
 				newS3Profiles := s3Profiles[0:]
 				s3Profiles[5].S3Bucket = bucketNameFail
+
 				s3ProfilesStore(newS3Profiles)
 				objectConditionExpectEventually(
 					apiReader,
@@ -489,6 +526,7 @@ var _ = Describe("DRClusterController", func() {
 				drclusterDelete(drcluster)
 				// recreate DRPolicy
 				createPolicies()
+
 				drcluster = drclusters[0].DeepCopy()
 			})
 		})
@@ -496,6 +534,7 @@ var _ = Describe("DRClusterController", func() {
 		When("when adding an invalid S3Profile in DRCLuster", func() {
 			It("reports NOT validated with reason s3ListFailed", func() {
 				By("creating a DRCluster with an invalid S3Profile that fails listing")
+
 				drcluster.Spec.S3ProfileName = s3Profiles[4].S3ProfileName
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
 				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
@@ -521,13 +560,17 @@ var _ = Describe("DRClusterController", func() {
 	Context("DRCluster resource CIDR validation", func() {
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
+
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("provided CIDR value is incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
 				By("creating a new DRCluster with an invalid CIDR")
-				drcluster.Spec.CIDRs = cidrs[1]
+
+				drcluster.Spec.CIDRs = cidrs[3]
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 				objectConditionExpectEventually(
 					apiReader,
 					drcluster,
@@ -537,13 +580,22 @@ var _ = Describe("DRClusterController", func() {
 					ramen.DRClusterValidated,
 					false,
 				)
-				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(ramen.ReasonInvalidCIDRsFormat),
+					Ignore(),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
 			})
 		})
 		When("provided CIDR value is changed to be correct", func() {
 			It("reports validated", func() {
 				drcluster.Spec.CIDRs = cidrs[0]
 				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
 				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
 				objectConditionExpectEventually(
 					apiReader,
@@ -566,6 +618,7 @@ var _ = Describe("DRClusterController", func() {
 
 				// recreate DRPolicy
 				createPolicies()
+
 				drcluster = drclusters[0].DeepCopy()
 			})
 		})
@@ -588,7 +641,7 @@ var _ = Describe("DRClusterController", func() {
 		})
 		When("provided CIDR value is changed to be incorrect", func() {
 			It("reports NOT validated with reason ValidationFailed", func() {
-				drcluster.Spec.CIDRs = cidrs[1]
+				drcluster.Spec.CIDRs = cidrs[3]
 				drcluster = updateDRClusterParameters(drcluster)
 				objectConditionExpectEventually(
 					apiReader,
@@ -597,6 +650,15 @@ var _ = Describe("DRClusterController", func() {
 					Equal("ValidationFailed"),
 					Ignore(),
 					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(ramen.ReasonInvalidCIDRsFormat),
+					Ignore(),
+					ramen.DRClusterConditionTypeCIDRsValidated,
 					false,
 				)
 			})
@@ -612,6 +674,7 @@ var _ = Describe("DRClusterController", func() {
 	Context("DRCluster resource fencing validation", func() {
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
+
 			drcluster = drclusters[0].DeepCopy()
 		})
 		When("provided Fencing value is ManuallyFenced", func() {
@@ -732,6 +795,7 @@ var _ = Describe("DRClusterController", func() {
 		When("deleting a DRCluster with empty fencing value", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
+
 				drcluster = getLatestDRCluster(drcluster.Name)
 				drclusterDelete(drcluster)
 			})
@@ -739,6 +803,7 @@ var _ = Describe("DRClusterController", func() {
 
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
+
 			drcluster = drclusters[0].DeepCopy()
 		})
 
@@ -783,6 +848,7 @@ var _ = Describe("DRClusterController", func() {
 		When("deleting a DRCluster", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)
+
 				drcluster = getLatestDRCluster(drcluster.Name)
 				drclusterDelete(drcluster)
 			})
@@ -792,6 +858,7 @@ var _ = Describe("DRClusterController", func() {
 	Context("DRCluster resource cluster name validation", func() {
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
+
 			drcluster = drclusters[0].DeepCopy()
 		})
 		// TODO: We need ManagedCluster validation and tests, just not namespace validation
@@ -858,8 +925,10 @@ var _ = Describe("DRClusterController", func() {
 					false,
 				)
 				By("updating ramen config to NOT auto deploy managed cluster components")
+
 				ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = false
 				ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = false
+
 				configMapUpdate()
 				drclusterConditionExpectConsistently(
 					apiReader,
@@ -872,8 +941,10 @@ var _ = Describe("DRClusterController", func() {
 		When("configuration automation is turned ON after being OFF", func() {
 			It("creates Subscription related manifests", func() {
 				By("updating ramen config to auto deploy managed cluster components")
+
 				ramenConfig.DrClusterOperator.DeploymentAutomationEnabled = true
 				ramenConfig.DrClusterOperator.S3SecretDistributionEnabled = true
+
 				configMapUpdate()
 				drclusterConditionExpectConsistently(
 					apiReader,
@@ -886,7 +957,9 @@ var _ = Describe("DRClusterController", func() {
 		When("configuration automation is ON and CSVersion in configuration changes", func() {
 			It("does NOT update Subscription CSVersion", func() {
 				By("updating ramen config to change CSV version")
+
 				ramenConfig.DrClusterOperator.ClusterServiceVersionName = "fake.v0.0.2"
+
 				configMapUpdate()
 				drclusterConditionExpectConsistently(
 					apiReader,
@@ -900,7 +973,9 @@ var _ = Describe("DRClusterController", func() {
 		When("configuration automation is ON and Channel in configuration changes", func() {
 			It("updates Subscription CSVersion", func() {
 				By("updating ramen config to change Channel")
+
 				ramenConfig.DrClusterOperator.ChannelName = "fake"
+
 				configMapUpdate()
 				drclusterConditionExpectConsistently(
 					apiReader,
@@ -945,13 +1020,15 @@ var _ = Describe("DRClusterController", func() {
 		Specify("create a drcluster copy for changes", func() {
 			createPolicies()
 			createOtherDRClusters()
+
 			drcluster = drclusters[0].DeepCopy()
 		})
 
 		When("provided Fencing value is Fenced where NFClass is available", func() {
 			It("should update NetworkFence correctly with NetworkFenceClass Name", func() {
-				NFClassAvailable = true
-				defer func() { NFClassAvailable = false }()
+				NFClassCount = 1
+
+				defer func() { NFClassCount = 0 }()
 
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
 				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
@@ -972,8 +1049,9 @@ var _ = Describe("DRClusterController", func() {
 
 		When("provided Fencing value is Unfenced where NFClass is available", func() {
 			It("reports validated with status fencing as Unfenced", func() {
-				NFClassAvailable = true
-				defer func() { NFClassAvailable = false }()
+				NFClassCount = 1
+
+				defer func() { NFClassCount = 0 }()
 
 				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
 				drcluster = updateDRClusterParameters(drcluster)
@@ -992,6 +1070,50 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
+
+		When("provided Fencing value with Multiple NFClasses", func() {
+			It("creates, checks, and cleans up all NetworkFence ManifestWorks", func() {
+				NFClassCount = 2
+
+				defer func() {
+					NFClassCount = 0
+				}()
+
+				// Fence the cluster
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateFenced
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				// Verify fencing succeeds
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonFenced),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+
+				// Unfence the cluster
+				drcluster.Spec.ClusterFence = ramen.ClusterFenceStateUnfenced
+				drcluster = updateDRClusterParameters(drcluster)
+
+				// Verify unfencing and cleanup succeeds (Clean state means all MWs deleted)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					BeElementOf(controllers.DRClusterConditionReasonUnfenced, controllers.DRClusterConditionReasonCleaning,
+						controllers.DRClusterConditionReasonClean),
+					Ignore(),
+					ramen.DRClusterConditionTypeFenced,
+					false,
+				)
+			})
+		})
+
 		When("provided Fencing value is empty", func() {
 			It("reports validated with status fencing as Unfenced", func() {
 				drcluster.Spec.ClusterFence = ""
@@ -1007,6 +1129,129 @@ var _ = Describe("DRClusterController", func() {
 				)
 			})
 		})
+		When("deleting a DRCluster", func() {
+			It("is successful", func() {
+				drpolicyDelete(syncDRPolicy)
+				drclusterDelete(drcluster)
+			})
+		})
+
+		Specify("Delete other DRClusters", func() {
+			deleteOtherDRClusters()
+		})
+
+		Specify("Delete namespaces named the same as DRClusters", func() {
+			deleteDRClusterNamespaces()
+		})
+	})
+
+	// InvalidCIDRsDetected tests
+	Context("InvalidCIDRsDetected Tests", func() {
+		Specify("create a drcluster copy for changes", func() {
+			createPolicies()
+			createOtherDRClusters()
+
+			drcluster = drclusters[0].DeepCopy()
+		})
+
+		When("provided CIDRs include all detected CIDRs from StorageAccessDetails", func() {
+			It("reports validated with reason Succeeded", func() {
+				NFClassCount = 1
+
+				defer func() { NFClassCount = 0 }()
+
+				drcluster.Spec.CIDRs = cidrs[0]
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonValidated),
+					Ignore(),
+					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(ramen.ReasonCIDRsValidationSucceeded),
+					Ignore(),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
+			})
+		})
+
+		When("provided CIDRs include all detected CIDRs plus additional undetected CIDRs", func() {
+			It("reports validated with reason Succeeded and CIDRsValidated with reason UndetectedCIDRsFound", func() {
+				NFClassCount = 1
+
+				defer func() { NFClassCount = 0 }()
+
+				// cidrs[0] are the detected CIDRs in StorageAccessDetails; cidrs[1] are additional undetected CIDRs
+				drcluster.Spec.CIDRs = append(cidrs[0], cidrs[1]...)
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonValidated),
+					Ignore(),
+					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(ramen.ReasonUndetectedCIDRsFound),
+					ContainSubstring("CIDRs not detected by storage provisioner"),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
+			})
+		})
+
+		When("provided CIDRs do not include detected CIDRs from StorageAccessDetails", func() {
+			It("reports NOT validated with reason ValidationFailed and CIDRsValidated with reason DetectedCIDRsUnconfigured",
+				func() {
+					NFClassCount = 1
+
+					defer func() { NFClassCount = 0 }()
+
+					drcluster.Spec.CIDRs = []string{"192.168.1.0/24"} // missing detected CIDRs from StorageAccessDetails
+					drcluster = updateDRClusterParameters(drcluster)
+					updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+					updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+					objectConditionExpectEventually(
+						apiReader,
+						drcluster,
+						metav1.ConditionFalse,
+						Equal(controllers.ReasonValidationFailed),
+						ContainSubstring("CIDRs validation failed"),
+						ramen.DRClusterValidated,
+						false,
+					)
+					objectConditionExpectEventually(
+						apiReader,
+						drcluster,
+						metav1.ConditionFalse,
+						Equal(ramen.ReasonDetectedCIDRsUnconfigured),
+						ContainSubstring("detected CIDRs not configured"),
+						ramen.DRClusterConditionTypeCIDRsValidated,
+						false,
+					)
+				})
+		})
+
 		When("deleting a DRCluster", func() {
 			It("is successful", func() {
 				drpolicyDelete(syncDRPolicy)

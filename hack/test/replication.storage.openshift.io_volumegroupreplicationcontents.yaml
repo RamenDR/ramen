@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.15.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: volumegroupreplicationcontents.replication.storage.openshift.io
 spec:
   group: replication.storage.openshift.io
@@ -11,10 +11,22 @@ spec:
     kind: VolumeGroupReplicationContent
     listKind: VolumeGroupReplicationContentList
     plural: volumegroupreplicationcontents
+    shortNames:
+    - vgrcontent
     singular: volumegroupreplicationcontent
   scope: Cluster
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.volumeGroupReplicationClassName
+      name: VolumeGroupReplicationClass
+      type: string
+    - jsonPath: .spec.volumeGroupReplicationRef.name
+      name: VolumeGroupReplication
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: VolumeGroupReplicationContent is the Schema for the volumegroupreplicationcontents
@@ -52,9 +64,9 @@ spec:
                 type: string
               source:
                 description: |-
-                  Source specifies whether the snapshot is (or should be) dynamically provisioned
-                  or already exists, and just requires a Kubernetes object representation.
-                  This field is immutable after creation.
+                  Source specifies whether the volume group is (or should be) dynamically provisioned
+                  or already exists using the volumes listed here, and just requires a
+                  Kubernetes object representation.
                   Required.
                 properties:
                   volumeHandles:
@@ -67,10 +79,20 @@ spec:
                 required:
                 - volumeHandles
                 type: object
+              volumeGroupAttributes:
+                additionalProperties:
+                  type: string
+                description: volumeGroupAttributes holds the contextual information
+                  of the volume group.
+                type: object
+                x-kubernetes-validations:
+                - message: field is immutable
+                  rule: self == oldSelf
               volumeGroupReplicationClassName:
                 description: |-
                   VolumeGroupReplicationClassName is the name of the VolumeGroupReplicationClass from
                   which this group replication was (or will be) created.
+                  Required.
                 type: string
               volumeGroupReplicationHandle:
                 description: |-
@@ -83,10 +105,8 @@ spec:
                   VolumeGroupReplicationContent object is bound.
                   VolumeGroupReplication.Spec.VolumeGroupReplicationContentName field must reference to
                   this VolumeGroupReplicationContent's name for the bidirectional binding to be valid.
-                  For a pre-existing VolumeGroupReplicationContent object, name and namespace of the
-                  VolumeGroupReplication object MUST be provided for binding to happen.
-                  This field is immutable after creation.
-                  Required.
+                  For a pre-existing VolumeGroupReplication object, MUST provide an empty/nil value for
+                  VolumeGroupReplicationRef for the auto-binding to happen.
                 properties:
                   apiVersion:
                     description: API version of the referent.
@@ -100,7 +120,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-
@@ -130,25 +149,64 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
                 x-kubernetes-validations:
-                - message: both volumeGroupReplicationRef.name and volumeGroupReplicationRef.namespace
-                    must be set
-                  rule: has(self.name) && has(self.__namespace__)
-                - message: volumeGroupReplicationRef is immutable
-                  rule: self == oldSelf
+                - message: volumeGroupReplicationRef.name, volumeGroupReplicationRef.namespace
+                    and volumeGroupReplicationRef.uid must be set if volumeGroupReplicationRef
+                    is defined
+                  rule: 'self != null ? has(self.name) && has(self.__namespace__)
+                    && has(self.uid) : true'
             required:
             - provisioner
             - source
-            - volumeGroupReplicationHandle
-            - volumeGroupReplicationRef
+            - volumeGroupReplicationClassName
             type: object
           status:
             description: VolumeGroupReplicationContentStatus defines the status of
               VolumeGroupReplicationContent
             properties:
+              destinationVolumeGroupID:
+                description: |-
+                  DestinationVolumeGroupID is the volume group ID on the
+                  destination/target side, as reported by the SP.
+                type: string
+              persistentVolumeMappingList:
+                description: |-
+                  PersistentVolumeMappingList is the list of PVs for the group
+                  replication, enriched with source and destination volume handles.
+                  This replaces PersistentVolumeRefList. When both fields are
+                  present, consumers SHOULD prefer this field.
+                  The maximum number of allowed PVs in the group is 100.
+                items:
+                  description: |-
+                    PersistentVolumeMapping contains the PV reference along with its
+                    source and destination volume handles. The destination handle is
+                    populated only when the SP supports GET_REPLICATION_DESTINATION_INFO
+                    and destination info is available.
+                  properties:
+                    destinationVolumeHandle:
+                      description: |-
+                        DestinationVolumeHandle is the CSI volume handle on the
+                        destination/target cluster, as reported by the SP.
+                        This field is empty when destination info is not available.
+                      type: string
+                    name:
+                      description: Name is the name of the PersistentVolume.
+                      type: string
+                    volumeHandle:
+                      description: |-
+                        VolumeHandle is the CSI volume handle of this PV on the
+                        source cluster (i.e. PV.Spec.CSI.VolumeHandle).
+                      type: string
+                  required:
+                  - name
+                  - volumeHandle
+                  type: object
+                type: array
               persistentVolumeRefList:
                 description: |-
-                  PersistentVolumeRefList is the list of of PV for the group replication
+                  PersistentVolumeRefList is the list of PV for the group replication
                   The maximum number of allowed PV in the group is 100.
+                  Deprecated: Use PersistentVolumeMappingList instead, which includes
+                  source and destination volume handle information per PV.
                 items:
                   description: |-
                     LocalObjectReference contains enough information to let you locate the
@@ -161,9 +219,7 @@ spec:
                         This field is effectively required, but due to backwards compatibility is
                         allowed to be empty. Instances of this type with an empty value here are
                         almost certainly wrong.
-                        TODO: Add other useful fields. apiVersion, kind, uid?
                         More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                        TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic

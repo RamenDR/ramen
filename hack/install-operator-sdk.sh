@@ -25,5 +25,5 @@ fi
 
 echo "Installing ${tool}:${required_version} in ${target_dir}"
 mkdir -p "${target_dir}"
-curl --silent --show-error --location --output "${target_path}" "${source_url}"
+curl --fail --silent --show-error --location --output "${target_path}" "${source_url}"
 chmod +x "${target_path}"

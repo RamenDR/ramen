@@ -1,17 +1,18 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import os
+import logging
 import json
 import secrets
+import threading
+import time
 from contextlib import closing
 
 import pytest
 
 from drenv import commands
 from drenv import kubectl
-
-EXAMPLE_DEPLOYMENT = os.path.join("addons", "example", "deployment.yaml")
+from drenv.addons import example
 
 # Avoid random timeouts in github.
 TIMEOUT = 30
@@ -48,35 +49,174 @@ def test_exec(tmpenv):
 
 
 def test_apply(tmpenv, capsys):
-    kubectl.apply(f"--filename={EXAMPLE_DEPLOYMENT}", context=tmpenv.profile)
+    kubectl.apply(f"--filename={example.DEPLOYMENT}", context=tmpenv.profile)
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment unchanged"
 
 
-def test_rollout(tmpenv, capsys):
+def test_rollout_status(tmpenv, capsys):
     kubectl.rollout(
         "status",
         "deploy/example-deployment",
-        f"--timeout={TIMEOUT}s",
+        timeout=TIMEOUT,
         context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
     assert out.strip() == 'deployment "example-deployment" successfully rolled out'
 
 
+def test_rollout_status_default_timeout(tmpenv, capsys):
+    kubectl.rollout(
+        "status",
+        "deploy/example-deployment",
+        context=tmpenv.profile,
+    )
+    out, err = capsys.readouterr()
+    assert out.strip() == 'deployment "example-deployment" successfully rolled out'
+
+
+def test_rollout_restart(tmpenv, capsys):
+    kubectl.rollout(
+        "restart",
+        "deploy/example-deployment",
+        context=tmpenv.profile,
+    )
+    out, err = capsys.readouterr()
+    assert "example-deployment" in out
+    assert "restarted" in out
+
+    # Wait for the restart to complete so subsequent tests find a consistent
+    # deployment state.
+    kubectl.rollout(
+        "status",
+        "deploy/example-deployment",
+        timeout=TIMEOUT,
+        context=tmpenv.profile,
+    )
+
+
+def test_rollout_restart_unsupported_timeout():
+    with pytest.raises(ValueError, match="rollout restart does not support timeout"):
+        kubectl.rollout(
+            "restart",
+            "deploy/example-deployment",
+            timeout=300,
+        )
+
+
 def test_wait(tmpenv, capsys):
     kubectl.wait(
         "deploy/example-deployment",
         "--for=condition=available",
-        f"--timeout={TIMEOUT}s",
+        timeout=TIMEOUT,
         context=tmpenv.profile,
     )
     out, err = capsys.readouterr()
     assert out.strip() == "deployment.apps/example-deployment condition met"
 
 
+def test_wait_for_create(tmpenv):
+    """Wait for a resource that does not exist yet."""
+    name = f"test-wait-create-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+
+    def create_later():
+        time.sleep(1)
+        logging.debug("Creating %s", resource)
+        kubectl.create("configmap", name, context=tmpenv.profile)
+
+    t = threading.Thread(target=create_later, daemon=True)
+    t.start()
+    try:
+        logging.debug("Waiting for %s to be created", resource)
+        kubectl.wait(
+            resource,
+            "--for=create",
+            timeout=3,
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+        logging.debug("Wait for %s completed", resource)
+    finally:
+        t.join()
+        logging.debug("Deleting %s", resource)
+        kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
+
+
+def test_wait_for_jsonpath_value(tmpenv):
+    """Wait for a jsonpath field that does not exist yet."""
+    name = f"test-wait-jsonpath-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+    logging.debug("Creating %s", resource)
+    kubectl.create("configmap", name, context=tmpenv.profile)
+
+    def patch_later():
+        time.sleep(1)
+        logging.debug("Patching %s with data", resource)
+        kubectl.patch(
+            resource,
+            "--type=merge",
+            '--patch={"data":{"key":"value"}}',
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+
+    t = threading.Thread(target=patch_later, daemon=True)
+    t.start()
+    try:
+        logging.debug("Waiting for %s jsonpath {.data.key}=value", resource)
+        kubectl.wait(
+            resource,
+            "--for=jsonpath={.data.key}=value",
+            timeout=3,
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+        logging.debug("Wait for %s completed", resource)
+    finally:
+        t.join()
+        logging.debug("Deleting %s", resource)
+        kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
+
+
+def test_wait_for_jsonpath_any_value(tmpenv):
+    """Wait for a jsonpath field to have any non-empty value."""
+    name = f"test-wait-any-{secrets.token_hex(4)}"
+    resource = f"configmap/{name}"
+    logging.debug("Creating %s", resource)
+    kubectl.create("configmap", name, context=tmpenv.profile)
+
+    def patch_later():
+        time.sleep(1)
+        logging.debug("Patching %s with data", resource)
+        kubectl.patch(
+            resource,
+            "--type=merge",
+            '--patch={"data":{"key":"value"}}',
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+
+    t = threading.Thread(target=patch_later, daemon=True)
+    t.start()
+    try:
+        logging.debug("Waiting for %s jsonpath {.data.key} any value", resource)
+        kubectl.wait(
+            resource,
+            "--for=jsonpath={.data.key}",
+            timeout=3,
+            context=tmpenv.profile,
+            log=logging.debug,
+        )
+        logging.debug("Wait for %s completed", resource)
+    finally:
+        t.join()
+        logging.debug("Deleting %s", resource)
+        kubectl.delete(resource, context=tmpenv.profile, log=logging.debug)
+
+
 def test_patch(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     kubectl.patch(
         pod,
         "--type=merge",
@@ -88,7 +228,7 @@ def test_patch(tmpenv, capsys):
 
 
 def test_label(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     name = f"test-{secrets.token_hex(8)}"
 
     kubectl.label(pod, f"{name}=old", context=tmpenv.profile)
@@ -101,7 +241,7 @@ def test_label(tmpenv, capsys):
 
 
 def test_annotate(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     annotation = f"test-{secrets.token_hex(8)}"
 
     print(f"Adding new annotation {annotation}")
@@ -123,7 +263,7 @@ def test_annotate(tmpenv, capsys):
 
 
 def test_delete(tmpenv, capsys):
-    pod = kubectl.get("pod", "--output=name", context=tmpenv.profile).strip()
+    pod = _current_pod(tmpenv.profile)
     kubectl.delete(pod, context=tmpenv.profile)
     out, err = capsys.readouterr()
     _, name = pod.split("/", 1)
@@ -239,6 +379,22 @@ def test_watch_timeout(tmpenv):
 
     # We should get at least the initial state.
     assert output[0] == "example-deployment"
+
+
+def _current_pod(context):
+    """
+    Return the name of the current running example pod. After rollout restart
+    the deployment may have old terminating pods.
+    """
+    out = kubectl.get(
+        "pod",
+        "--selector=app=example",
+        "--field-selector=status.phase=Running",
+        "--output=name",
+        context=context,
+    ).strip()
+    assert "\n" not in out, f"Expected single pod, got: {out}"
+    return out
 
 
 def _get_annotations(resource, context):

@@ -1,10 +1,10 @@
 module github.com/ramendr/ramen/api
 
 // Required minimum version, must be available in downstream builders.
-go 1.24.0
+go 1.25.0
 
-// Recommended version: latest go 1.24 release.
-toolchain go1.24.5
+// Recommended version: latest go toolchain.
+toolchain go1.26.1
 
 require (
 	k8s.io/api v0.33.2
@@ -22,8 +22,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect

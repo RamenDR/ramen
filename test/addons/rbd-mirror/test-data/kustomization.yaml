@@ -1,9 +1,0 @@
-# SPDX-FileCopyrightText: The RamenDR authors
-# SPDX-License-Identifier: Apache-2.0
-
----
-resources:
-- vr-1m.yaml
-- rbd-pvc.yaml
-
-namespace: rook-ceph

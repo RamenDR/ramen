@@ -63,9 +63,12 @@ def exists(profile):
     return False
 
 
-def start(profile, verbose=False, timeout=None, local_registry=False):
+def start(profile, verbose=False, timeout=None, local_registry=False, dns_mode="auto"):
     start = time.monotonic()
     logging.info("[%s] Starting lima cluster", profile["name"])
+    logging.debug(
+        "[%s] Ignoring dns mode '%s' for lima cluster", profile["name"], dns_mode
+    )
 
     existing = True
     if not exists(profile):
@@ -101,8 +104,7 @@ def start(profile, verbose=False, timeout=None, local_registry=False):
 
 
 def configure(profile, existing=False):
-    # Cluster is configured when created.
-    pass
+    logging.info("[%s] Skipping configure for lima cluster", profile["name"])
 
 
 def stop(profile):
@@ -204,7 +206,7 @@ def _write_config(profile, path, local_registry=False):
         config["param"]["LOCAL_REGISTRY"] = LOCAL_REGISTRY
 
     with open(path, "w") as f:
-        yaml.dump(config, f)
+        yaml.safe_dump(config, f)
 
 
 def _create_additional_disks(profile):
@@ -267,7 +269,7 @@ def _fixup_kubeconfig(profile, path):
     config["current-context"] = profile["name"]
 
     with open(path, "w") as f:
-        yaml.dump(config, f)
+        yaml.safe_dump(config, f)
 
 
 def _remove_kubeconfig(profile):

@@ -3,59 +3,14 @@
 # SPDX-FileCopyrightText: The RamenDR authors
 # SPDX-License-Identifier: Apache-2.0
 
-import json
-import os
 import sys
 
-import yaml
-
-import drenv
-from drenv import kubectl
-from drenv import cache
-
-# The ceph, and ceph-csi iamges are very large (500m each), using larger
-# timeout to avoid timeouts with flaky network.
-TIMEOUT = 600
-
-
-def deploy(cluster):
-    print("Deploying rook ceph cluster")
-    path = cache.get(".", "addons/rook-cluster-1.18.yaml")
-    kubectl.apply("--filename", path, context=cluster)
-
-
-def wait(cluster):
-    print("Waiting until rook ceph cluster is ready")
-    drenv.wait_for(
-        "cephcluster/my-cluster",
-        output="jsonpath={.status.phase}",
-        namespace="rook-ceph",
-        profile=cluster,
-    )
-    kubectl.wait(
-        "cephcluster/my-cluster",
-        "--for=jsonpath={.status.phase}=Ready",
-        "--namespace=rook-ceph",
-        f"--timeout={TIMEOUT}s",
-        context=cluster,
-    )
-
-    out = kubectl.get(
-        "cephcluster/my-cluster",
-        "--output=jsonpath={.status}",
-        "--namespace=rook-ceph",
-        context=cluster,
-    )
-    info = {"ceph cluster status": json.loads(out)}
-    print(yaml.dump(info, sort_keys=False))
-
+from drenv.addons.rook import cluster as rook_cluster
 
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} cluster")
     sys.exit(1)
 
-os.chdir(os.path.dirname(__file__))
 cluster = sys.argv[1]
 
-deploy(cluster)
-wait(cluster)
+rook_cluster.start(cluster)

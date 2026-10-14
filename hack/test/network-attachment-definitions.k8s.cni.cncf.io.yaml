@@ -1,0 +1,32 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apiextensions.k8s.io/v1","kind":"CustomResourceDefinition","metadata":{"annotations":{},"name":"network-attachment-definitions.k8s.cni.cncf.io"},"spec":{"group":"k8s.cni.cncf.io","names":{"kind":"NetworkAttachmentDefinition","plural":"network-attachment-definitions","shortNames":["net-attach-def"],"singular":"network-attachment-definition"},"scope":"Namespaced","versions":[{"name":"v1","schema":{"openAPIV3Schema":{"properties":{"spec":{"properties":{"config":{"type":"string"}},"type":"object"}},"type":"object"}},"served":true,"storage":true}]}}
+  name: network-attachment-definitions.k8s.cni.cncf.io
+spec:
+  conversion:
+    strategy: None
+  group: k8s.cni.cncf.io
+  names:
+    kind: NetworkAttachmentDefinition
+    listKind: NetworkAttachmentDefinitionList
+    plural: network-attachment-definitions
+    shortNames:
+    - net-attach-def
+    singular: network-attachment-definition
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              config:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true

@@ -16,6 +16,9 @@ linters:
       # default is false: such cases aren't reported by default.
       check-type-assertions: true
       check-blank: true
+      exclude-functions:
+        # crypto/rand.Read always returns nil error; it panics on failure (since Go 1.24).
+        - crypto/rand.Read
     gocognit:
       # minimal code complexity to report, 30 by default
       # (but we recommend 10-20)

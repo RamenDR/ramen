@@ -64,6 +64,12 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 		instance:   &ramendrv1alpha1.ProtectedVolumeReplicationGroupList{},
 	}
 
+	s.log.Info("Entering reconcile loop")
+
+	defer func() {
+		s.log.Info("Exiting reconcile loop", "time spent", time.Since(start))
+	}()
+
 	// get ProtectedVolumeReplicationGroupListInstance and save to s.instance
 	if err := r.Client.Get(s.ctx, req.NamespacedName, s.instance); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("get: %w", err))
@@ -72,12 +78,6 @@ func (r *ProtectedVolumeReplicationGroupListReconciler) Reconcile(ctx context.Co
 	s.log = s.log.WithValues("rid", s.instance.ObjectMeta.UID, "gen", s.instance.ObjectMeta.Generation,
 		"rv", s.instance.ObjectMeta.ResourceVersion)
 	s.ctx = ctrl.LoggerInto(ctx, s.log)
-
-	s.log.Info("reconcile start")
-
-	defer func() {
-		s.log.Info("reconcile end", "time spent", time.Since(start))
-	}()
 
 	if s.instance.Status != nil {
 		return ctrl.Result{}, nil
@@ -125,10 +125,6 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getNamespacesAndVrgPrefixe
 		return prefixNamespaceVRG, fmt.Errorf("error during ParseResultListFromReplicaStore: %w", err)
 	}
 
-	for index, val := range prefixNamespaceVRG {
-		s.log.Info(fmt.Sprintf("prefixNamespaceVRG[%d]=%s", index, val))
-	}
-
 	return prefixNamespaceVRG, nil
 }
 
@@ -140,8 +136,6 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefi
 	const NoPrefixToRemove = ""
 
 	namespaceNamesList := getUniqueStringsFromList(prefixNamespaceVRG, ParseSingleSlash, NoPrefixToRemove)
-
-	s.log.Info("namespaceNames:")
 
 	for _, namespace := range namespaceNamesList {
 		namespaceAndVRG := getUniqueStringsFromList(prefixNamespaceVRG, ParseRemoveSlashes, namespace)
@@ -157,13 +151,14 @@ func (s *ProtectedVolumeReplicationGroupListInstance) getVrgContentsFromS3(prefi
 			// add all VRGs found to list
 			for i := range vrgs {
 				vrg := &vrgs[i]
-				s.log.Info(fmt.Sprintf("downloaded VRG with name '%s' in namespace '%s'", vrg.Name, vrg.Namespace))
 				VrgTidyForList(vrg)
 
 				vrgsAll = append(vrgsAll, *vrg)
 			}
 		}
 	}
+
+	s.log.Info("downloaded VRGs from S3", "count", len(vrgsAll))
 
 	return vrgsAll, nil
 }

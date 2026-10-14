@@ -48,9 +48,10 @@ func drPolicyEventHandler() handler.EventHandler {
 }
 
 func filterDRClusters(drpolicy *ramen.DRPolicy) []ctrl.Request {
-	requests := []ctrl.Request{}
+	clusterNames := util.DRPolicyClusterNames(drpolicy)
+	requests := make([]ctrl.Request, 0, len(clusterNames))
 
-	for _, cluster := range util.DRPolicyClusterNames(drpolicy) {
+	for _, cluster := range clusterNames {
 		requests = append(requests, reconcile.Request{
 			NamespacedName: types.NamespacedName{
 				Name: cluster,

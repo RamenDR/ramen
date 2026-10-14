@@ -17,6 +17,15 @@ var _ = Describe("misc", func() {
 	Expect(util.IsPVCMarkedForVolSync(map[string]string{util.UseVolSyncAnnotation: "true"})).
 		Should(Equal(true))
 
+	// Tests for IsDiffSyncEnabled
+	Expect(util.IsDiffSyncEnabled(nil)).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{"other-key": "true"})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: ""})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: "false"})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: "True"})).Should(Equal(false))
+	Expect(util.IsDiffSyncEnabled(map[string]string{util.EnableDiffAnnotation: "true"})).Should(Equal(true))
+
 	pvcNamespace1 := "busybox-box-appT"
 	pvcNamespace2 := "busybox-box-appppppppXppppT"
 	pvcNamespace3 := "busybox-box-appppppppXppppddffghT"
@@ -44,4 +53,11 @@ var _ = Describe("misc", func() {
 	errs := validation.NameIsDNSSubdomain(validResourceName, false)
 
 	Expect(errs).To(BeEmpty(), "expected a valid DNS subdomain name, got errors: %v", errs)
+
+	shortenedPVCName := util.GetLocalServiceNameForRD("long-pvc-name-50-chars-00000000000000000000000000000000000000")
+
+	Expect(shortenedPVCName).Should(Equal("volsync-rsync-tls-dst-6e0c095d"))
+
+	originalPVCName := util.GetLocalServiceNameForRD("normal-pvc-name")
+	Expect(originalPVCName).Should(Equal("volsync-rsync-tls-dst-normal-pvc-name"))
 })

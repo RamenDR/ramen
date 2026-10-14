@@ -40,48 +40,87 @@ type ReplicationGroupDestinationReconciler struct {
 //+kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;delete
 
+//nolint:funlen
 func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("rgd", req.NamespacedName, "rid", util.GetRID())
-	logger.Info("Get ReplicationGroupDestination")
+	logger.Info("Entering reconcile loop")
 
-	rgd := &ramendrv1alpha1.ReplicationGroupDestination{}
-	if err := r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
+	defer logger.Info("Exiting reconcile loop")
+
+	rgd, vrg, ramenConfig, done, err := r.getRGDConfig(ctx, req, logger)
+	if done {
+		return ctrl.Result{}, err
+	}
+
+	return r.runRGDReconcile(ctx, logger, rgd, vrg, ramenConfig)
+}
+
+// getRGDConfig fetches the RGD object, the owning VRG, and ramen config.
+// done=true means the caller should return ctrl.Result{}, err immediately.
+func (r *ReplicationGroupDestinationReconciler) getRGDConfig(
+	ctx context.Context,
+	req ctrl.Request,
+	logger logr.Logger,
+) (
+	rgd *ramendrv1alpha1.ReplicationGroupDestination,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+	done bool,
+	err error,
+) {
+	rgd = &ramendrv1alpha1.ReplicationGroupDestination{}
+	if err = r.Client.Get(ctx, req.NamespacedName, rgd); err != nil {
 		if !k8serrors.IsNotFound(err) {
 			logger.Error(err, "Failed to get ReplicationGroupDestination")
 		}
 
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return nil, nil, nil, true, client.IgnoreNotFound(err)
 	}
 
 	if rgd.Spec.Paused {
 		logger.Info("ReplicationGroupDestination is paused, skipping reconciliation")
 
-		return ctrl.Result{}, nil
+		return nil, nil, nil, true, nil
 	}
 
-	logger.Info("Get vrg from ReplicationGroupDestination")
-
-	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	if err := r.Client.Get(ctx, types.NamespacedName{
+	vrg = &ramendrv1alpha1.VolumeReplicationGroup{}
+	if err = r.Client.Get(ctx, types.NamespacedName{
 		Name:      rgd.GetLabels()[util.VRGOwnerNameLabel],
 		Namespace: rgd.GetLabels()[util.VRGOwnerNamespaceLabel],
 	}, vrg); err != nil {
-		return ctrl.Result{}, err
+		return nil, nil, nil, true, err
 	}
 
-	logger.Info("Get ramen config from configmap")
+	if util.ResourceIsDeleted(vrg) {
+		logger.Info("VRG is deleted, skipping RGD reconciliation", "vrg", types.NamespacedName{
+			Name:      vrg.GetName(),
+			Namespace: vrg.GetNamespace(),
+		})
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
+		return nil, nil, nil, true, nil
+	}
+
+	_, ramenConfig, err = ConfigMapGet(ctx, r.Client)
 	if err != nil {
 		logger.Error(err, "Failed to get ramen config")
 
-		return ctrl.Result{}, err
+		return nil, nil, nil, true, err
 	}
 
+	return rgd, vrg, ramenConfig, false, nil
+}
+
+// runRGDReconcile drives the RGD state machine and updates status.
+func (r *ReplicationGroupDestinationReconciler) runRGDReconcile(
+	ctx context.Context,
+	logger logr.Logger,
+	rgd *ramendrv1alpha1.ReplicationGroupDestination,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) (ctrl.Result, error) {
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 
-	logger.Info("Run ReplicationGroupDestination state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
 	result, err := statemachine.Run(
 		ctx,
 		cephfscg.NewRGDMachine(r.Client, rgd,
@@ -106,7 +145,9 @@ func (r *ReplicationGroupDestinationReconciler) Reconcile(ctx context.Context, r
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manager,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) error {
 	vsMapFun := handler.EnqueueRequestsFromMapFunc(handler.MapFunc(
 		func(ctx context.Context, obj client.Object) []reconcile.Request {
 			if rgdName, ok := obj.GetLabels()[util.RGDOwnerLabel]; ok {
@@ -121,7 +162,7 @@ func (r *ReplicationGroupDestinationReconciler) SetupWithManager(mgr ctrl.Manage
 
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 		}).
 		Owns(&volsyncv1alpha1.ReplicationDestination{}).
 		For(&ramendrv1alpha1.ReplicationGroupDestination{}).

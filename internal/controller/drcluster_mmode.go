@@ -6,6 +6,7 @@ package controllers
 import (
 	"github.com/go-logr/logr"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ocmworkv1 "open-cluster-management.io/api/work/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
@@ -178,6 +179,8 @@ func (u *drclusterInstance) activateRegionalFailoverPrequisite(identifier ramen.
 		},
 	}
 
+	util.AddLabel(&mMode, util.CreatedByRamenLabel, "true")
+
 	annotations := make(map[string]string)
 	annotations[DRClusterNameAnnotation] = u.object.GetName()
 
@@ -219,6 +222,23 @@ func (u *drclusterInstance) pruneMModesActivations(
 		// Check if maintenance mode is still required, if not expire it
 		mModeKey := mModeRequest.Spec.StorageProvisioner + mModeRequest.Spec.TargetID
 		if _, ok := activationsRequired[mModeKey]; !ok {
+			// Before pruning verify there is no failover DRPC that still depends on this specific MaintenanceMode
+			// on this cluster. This ensures that all VRGs using this storage backend have fully transitioned to
+			// Primary before MMode is removed.
+			if u.mmodeStillNeededByFailoverDRPC(mModeRequest.Spec.StorageProvisioner, mModeRequest.Spec.TargetID) {
+				u.log.Info(
+					"Keeping maintenance mode activation because at least one failover DRPC still needs this MaintenanceMode",
+					"name", mModeMWs.Items[idx].GetName(),
+					"provisioner", mModeRequest.Spec.StorageProvisioner,
+					"targetID", mModeRequest.Spec.TargetID,
+				)
+
+				// Treat as survivor for now so that status remains visible.
+				survivors[mModeRequest.Spec.TargetID] = &mModeMWs.Items[idx]
+
+				continue
+			}
+
 			u.log.Info("Pruning maintenance mode activaiton", "name", mModeMWs.Items[idx].GetName())
 
 			if err := u.expireClusterMModeActivation(&mModeMWs.Items[idx]); err != nil {
@@ -400,4 +420,83 @@ func drClusterMModeCleanup(
 	}
 
 	return nil
+}
+
+// mmodeStillNeededByFailoverDRPC returns true if there exists at least one
+// DRPlacementControl that is failing over to this DRCluster, uses the specified
+// storage backend and whose storage protection has not fully completed yet.
+// We only keep a specific MaintenanceMode active if there's a failover DRPC using
+// that exact storage backend that is not fully available.
+// This prevents blocking unrelated storage backends.
+func (u *drclusterInstance) mmodeStillNeededByFailoverDRPC(storageProvisioner, targetID string) bool {
+	drpcCollections, err := DRPCsFailingOverToCluster(u.client, u.log, u.object.GetName())
+	if err != nil {
+		u.log.Error(err, "Failed to list DRPlacementControls when deciding MMode pruning")
+		u.requeue = true
+
+		return true
+	}
+
+	for _, drpcCollection := range drpcCollections {
+		drpc := drpcCollection.drpc
+
+		availableCond := meta.FindStatusCondition(drpc.Status.Conditions, ramen.ConditionAvailable)
+		if availableCond == nil ||
+			availableCond.Status != metav1.ConditionTrue ||
+			availableCond.ObservedGeneration != drpc.Generation {
+			if u.drpcUsesStorageBackend(drpc, storageProvisioner, targetID) {
+				u.log.Info("DRPC still needs this MaintenanceMode",
+					"drpc", drpc.GetName(),
+					"namespace", drpc.GetNamespace(),
+					"provisioner", storageProvisioner,
+					"targetID", targetID)
+
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// drpcUsesStorageBackend checks if a DRPC's VRG uses the specified storage backend
+// by examining the VRG's protected PVCs and their storage identifiers.
+func (u *drclusterInstance) drpcUsesStorageBackend(
+	drpc *ramen.DRPlacementControl,
+	storageProvisioner,
+	targetID string,
+) bool {
+	drPolicy, err := GetDRPolicy(u.ctx, u.client, drpc, u.log)
+	if err != nil {
+		u.log.Error(err, "Failed to get DRPolicy for DRPC", "drpc", drpc.GetName())
+
+		return true
+	}
+
+	drpcCollection := DRPCAndPolicy{
+		drpc:     drpc,
+		drPolicy: drPolicy,
+	}
+
+	vrgs, err := u.getVRGs(drpcCollection)
+	if err != nil {
+		u.log.Error(err, "Failed to get VRGs for DRPC", "drpc", drpc.GetName())
+
+		return true
+	}
+
+	for _, vrg := range vrgs {
+		if vrg == nil {
+			continue
+		}
+
+		for _, protectedPVC := range vrg.Status.ProtectedPVCs {
+			if protectedPVC.StorageIdentifiers.StorageProvisioner == storageProvisioner &&
+				protectedPVC.StorageIdentifiers.ReplicationID.ID == targetID {
+				return true
+			}
+		}
+	}
+
+	return false
 }

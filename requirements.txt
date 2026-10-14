@@ -1,6 +1,9 @@
-black
+black>=26.5.1
 coverage
 flake8
+mdformat
+mdformat-gfm
+mdformat-gfm-alerts
 pylint
-pytest
+pytest>=9.1.1
 setuptools

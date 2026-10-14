@@ -5,8 +5,11 @@ import concurrent.futures
 import os
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 
 from drenv import kubectl
+from drenv import patch
+from drenv import yaml
 
 from . import command
 
@@ -41,7 +44,7 @@ def run(args):
         futures = []
 
         if env["hub"]:
-            f = executor.submit(deploy, args, env["hub"], "hub", platform="k8s")
+            f = executor.submit(deploy, args, env["hub"], "hub", distro="k8s")
             futures.append(f)
 
         for cluster in env["clusters"]:
@@ -65,19 +68,56 @@ def load_image(args):
         command.watch(*cmd, stderr=subprocess.STDOUT, cwd=work_dir)
 
 
-def deploy(args, cluster, deploy_type, platform="", timeout=120):
-    command.info("Deploying ramen operator in cluster '%s'", cluster)
-    overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", platform)
-    yaml = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")
-    kubectl.apply("--filename=-", input=yaml, context=cluster, log=command.debug)
-
+def deploy(args, cluster, deploy_type, distro="", timeout=120):
     deploy = f"ramen-{deploy_type}-operator"
+
+    command.info("Deploying ramen operator in cluster '%s'", cluster)
+    overlay = os.path.join(args.source_dir, f"config/{deploy_type}/default", distro)
+    manifests = kubectl.kustomize(overlay, load_restrictor="LoadRestrictionsNone")
+    kubectl.apply(
+        "--filename=-",
+        input=annotate_deployment(manifests, deploy),
+        context=cluster,
+        log=command.debug,
+    )
+
     command.info("Waiting until '%s' is rolled out in cluster '%s'", deploy, cluster)
     kubectl.rollout(
         "status",
         f"deploy/{deploy}",
         f"--namespace={args.ramen_namespace}",
-        f"--timeout={timeout}s",
+        timeout=timeout,
         context=cluster,
         log=command.debug,
     )
+
+
+def annotate_deployment(manifests, name):
+    """
+    Annotate the Deployment pod template so apply rolls out new pods.
+
+    The operator image tag is always :latest and imagePullPolicy is
+    IfNotPresent. Applying the same manifests does not change spec.template,
+    so Kubernetes keeps the running pods and they never pick up the image
+    loaded by drenv.
+    """
+    timestamp = datetime.now(timezone.utc).isoformat()
+    deployment_patch = {
+        "spec": {
+            "template": {
+                "metadata": {
+                    "annotations": {
+                        "ramendr.openshift.io/deployed-at": timestamp,
+                    }
+                }
+            }
+        }
+    }
+    docs = []
+    for doc in yaml.safe_load_all(manifests):
+        if doc is None:
+            continue
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == name:
+            doc = patch.merge(doc, deployment_patch)
+        docs.append(doc)
+    return "".join("---\n" + yaml.safe_dump(doc) for doc in docs)

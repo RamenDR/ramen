@@ -11,7 +11,6 @@ import (
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
 	"github.com/backube/volsync/controllers/statemachine"
 	"github.com/go-logr/logr"
-	vgsv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -72,72 +71,122 @@ type ReplicationGroupSourceReconciler struct {
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
 
-//nolint:funlen
 func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := r.Log.WithValues("rgs", req.NamespacedName, "rid", util.GetRID())
-	logger.Info("Get ReplicationGroupSource")
+	logger.Info("Entering reconcile loop")
 
-	if !r.volumeGroupSnapshotCRsAreWatched {
-		return ctrl.Result{},
-			fmt.Errorf("ReplicationGroupSource {%s/%s} doesn't work if VolumeGroupSnapshot CRD is not installed. "+
-				"Please install VolumeGroupSnapshot CRD and restart the operator", req.Namespace, req.Name)
-	}
+	defer logger.Info("Exiting reconcile loop")
 
-	rgs := &ramendrv1alpha1.ReplicationGroupSource{}
-	if err := r.Client.Get(ctx, req.NamespacedName, rgs); err != nil {
-		if !k8serrors.IsNotFound(err) {
-			logger.Error(err, "Failed to get ReplicationGroupSource")
-		}
-
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	logger.Info("Get ramen config from configmap")
-
-	_, ramenConfig, err := ConfigMapGet(ctx, r.Client)
-	if err != nil {
-		logger.Error(err, "Failed to get ramen config")
-
+	rgs, vrg, ramenConfig, done, err := r.getRGSConfig(ctx, req, logger)
+	if done {
 		return ctrl.Result{}, err
 	}
 
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+	vsHandler, vgsHandler := r.buildVGSHandler(ctx, logger, rgs, vrg, ramenConfig, defaultCephFSCSIDriverName)
 
-	vgsHandler := cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, logger)
+	return r.runRGSReconcile(ctx, logger, rgs, vrg, vsHandler, vgsHandler)
+}
 
-	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
-		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
-
-		err := vgsHandler.CleanVolumeGroupSnapshot(ctx)
-
-		const retryDelay = 5 * time.Second
-
-		return ctrl.Result{RequeueAfter: retryDelay}, err
+// getRGSConfig fetches the RGS object, ramen config, and the owning VRG.
+// done=true means the caller should return result/err immediately.
+func (r *ReplicationGroupSourceReconciler) getRGSConfig(
+	ctx context.Context,
+	req ctrl.Request,
+	logger logr.Logger,
+) (
+	rgs *ramendrv1alpha1.ReplicationGroupSource,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+	done bool,
+	err error,
+) {
+	if !r.volumeGroupSnapshotCRsAreWatched {
+		return nil, nil, nil, true,
+			fmt.Errorf("ReplicationGroupSource {%s/%s} doesn't work if VolumeGroupSnapshot CRD is not installed. "+
+				"Please install VolumeGroupSnapshot CRD and restart the operator", req.Namespace, req.Name)
 	}
 
-	logger.Info("Get vrg from ReplicationGroupSource")
+	rgs = &ramendrv1alpha1.ReplicationGroupSource{}
+	if err = r.Client.Get(ctx, req.NamespacedName, rgs); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			logger.Error(err, "Failed to get ReplicationGroupSource")
+		}
 
-	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	if err := r.Client.Get(ctx, types.NamespacedName{
+		return nil, nil, nil, true, client.IgnoreNotFound(err)
+	}
+
+	_, ramenConfig, err = ConfigMapGet(ctx, r.Client)
+	if err != nil {
+		logger.Error(err, "Failed to get ramen config")
+
+		return nil, nil, nil, true, err
+	}
+
+	vrg = &ramendrv1alpha1.VolumeReplicationGroup{}
+	if err = r.Client.Get(ctx, types.NamespacedName{
 		Name:      rgs.GetLabels()[util.VRGOwnerNameLabel],
 		Namespace: rgs.GetLabels()[util.VRGOwnerNamespaceLabel],
 	}, vrg); err != nil {
-		return ctrl.Result{}, err
+		return nil, nil, nil, true, err
 	}
 
+	if util.ResourceIsDeleted(vrg) {
+		logger.Info("VRG is deleted, skipping RGSreconciliation", "vrg", types.NamespacedName{
+			Name:      vrg.GetName(),
+			Namespace: vrg.GetNamespace(),
+		})
+
+		return nil, nil, nil, true, nil
+	}
+
+	return rgs, vrg, ramenConfig, false, nil
+}
+
+// buildVGSHandler constructs the VSHandler and VolumeGroupSource handler appropriate for this RGS.
+func (r *ReplicationGroupSourceReconciler) buildVGSHandler(
+	ctx context.Context,
+	logger logr.Logger,
+	rgs *ramendrv1alpha1.ReplicationGroupSource,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+	defaultCephFSCSIDriverName string,
+) (*volsync.VSHandler, cephfscg.VolumeGroupSourceHandler) {
 	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
 
-	logger.Info("Run ReplicationGroupSource state machine", "DefaultCephFSCSIDriverName", defaultCephFSCSIDriverName)
+	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
+		&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
+		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
+	)
+
+	if util.IsDiffSyncEnabled(rgs.GetAnnotations()) {
+		return vsHandler,
+			cephfscg.NewDiffVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+	}
+
+	return vsHandler, cephfscg.NewVolumeGroupSourceHandler(r.Client, rgs, defaultCephFSCSIDriverName, vsHandler, logger)
+}
+
+// runRGSReconcile drives the RGS state machine (or the final-sync cleanup path) and updates status.
+func (r *ReplicationGroupSourceReconciler) runRGSReconcile(
+	ctx context.Context,
+	logger logr.Logger,
+	rgs *ramendrv1alpha1.ReplicationGroupSource,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	vsHandler *volsync.VSHandler,
+	vgsHandler cephfscg.VolumeGroupSourceHandler,
+) (ctrl.Result, error) {
+	if cephfscg.IsPrepareForFinalSyncTriggered(rgs) {
+		logger.Info("Detected request for final sync preparation, waiting for confirmation to continue")
+
+		const retryDelay = 5 * time.Second
+
+		return ctrl.Result{RequeueAfter: retryDelay}, vgsHandler.CleanVolumeGroupSnapshot(ctx)
+	}
+
 	result, err := statemachine.Run(
 		ctx,
-		cephfscg.NewRGSMachine(r.Client, rgs, vrg,
-			volsync.NewVSHandler(ctx, r.Client, logger, vrg,
-				&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
-				volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
-			),
-			vgsHandler,
-			logger,
-		),
+		cephfscg.NewRGSMachine(r.Client, rgs, vrg, vsHandler, vgsHandler, logger),
 		logger,
 	)
 	// Update instance status
@@ -154,22 +203,22 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if util.IsCRDInstalled(context.TODO(), r.APIReader, util.VGSCRDPrivateName) {
-		r.volumeGroupSnapshotCRsAreWatched = true
-	}
-
+func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(ctrlcontroller.Options{
-			MaxConcurrentReconciles: getMaxConcurrentReconciles(ctrl.Log),
+			MaxConcurrentReconciles: getMaxConcurrentReconciles(ramenConfig),
 		}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&volsyncv1alpha1.ReplicationSource{}).
 		For(&ramendrv1alpha1.ReplicationGroupSource{})
 
-	if r.volumeGroupSnapshotCRsAreWatched {
-		builder.Owns(&vgsv1beta1.VolumeGroupSnapshot{})
+	if err := util.EnsureLocalVGSAPI(context.TODO(), r.APIReader); err != nil {
+		return fmt.Errorf("VolSync is enabled but VolumeGroupSnapshot API is unavailable: %w", err)
 	}
+
+	r.volumeGroupSnapshotCRsAreWatched = util.OwnsVolumeGroupSnapshot(builder)
 
 	return builder.Complete(r)
 }

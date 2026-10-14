@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/ramendr/ramen/e2e/config"
@@ -72,6 +73,59 @@ func Generate(ctx types.TestContext, recipeConfig *config.Recipe) (*recipe.Recip
 			Workflows: generateWorkflows(hooks),
 		},
 	}, nil
+}
+
+func CreateRecipeOnManagedClusters(ctx types.TestContext, recipe *recipe.Recipe) error {
+	env := ctx.Env()
+	log := ctx.Logger()
+
+	for _, cluster := range env.ManagedClusters() {
+		recipeCopy := recipe.DeepCopy()
+
+		err := cluster.Client.Create(ctx.Context(), recipeCopy)
+		if err != nil {
+			if !k8serrors.IsAlreadyExists(err) {
+				return fmt.Errorf("failed to create Recipe %q in cluster %q: %w",
+					recipe.Name, cluster.Name, err)
+			}
+
+			log.Debugf("Recipe %q already exists in cluster %q, skipping creation", recipe.Name, cluster.Name)
+
+			continue
+		}
+	}
+
+	return nil
+}
+
+func DeleteRecipeOnManagedClusters(ctx types.TestContext, r *recipe.Recipe) error {
+	env := ctx.Env()
+	log := ctx.Logger()
+
+	for _, cluster := range env.ManagedClusters() {
+		recipe := &recipe.Recipe{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      r.Name,
+				Namespace: r.Namespace,
+			},
+		}
+
+		err := cluster.Client.Delete(ctx.Context(), recipe)
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				log.Debugf("recipe \"%s/%s\" not found in cluster %q", r.Namespace, r.Name, cluster.Name)
+
+				continue
+			}
+
+			return fmt.Errorf("failed to delete Recipe %q in cluster %q: %w",
+				recipe.Name, cluster.Name, err)
+		}
+	}
+
+	log.Debugf("Recipe %q deleted from managed clusters", r.Name)
+
+	return nil
 }
 
 func generateHooks(ctx types.TestContext, rc *config.Recipe) ([]*recipe.Hook, error) {

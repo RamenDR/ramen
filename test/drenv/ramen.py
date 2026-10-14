@@ -59,4 +59,4 @@ def dump_e2e_config(env):
     e2e_config = {"clusters": e2e_clusters}
     path = os.path.join(base, "config.yaml")
     with open(path, "w") as f:
-        yaml.dump(e2e_config, f)
+        yaml.safe_dump(e2e_config, f)

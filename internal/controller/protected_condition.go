@@ -30,11 +30,20 @@ func updateDRPCProtectedCondition(
 	vrg *rmn.VolumeReplicationGroup,
 	clusterName string,
 ) {
+	// Check for hook failures first to provide clear visibility
+	if updateVRGHooksReady(drpc, vrg, clusterName) {
+		return
+	}
+
 	if updateVRGClusterDataReady(drpc, vrg, clusterName) {
 		return
 	}
 
 	if updateDRPCProtectedForReplicationState(drpc, vrg, clusterName) {
+		return
+	}
+
+	if updateVRGDestinationInfoAvailable(drpc, vrg, clusterName) {
 		return
 	}
 
@@ -112,6 +121,41 @@ func updateVRGClusterDataProtected(drpc *rmn.DRPlacementControl,
 
 	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeClusterDataProtected,
 		"workload resource protection", "protecting workload resources", "protecting workload resources")
+}
+
+// updateVRGDestinationInfoAvailable is a helper function to process VRG DestinationInfoAvailable condition and
+// update DRPC Protected condition. If the condition is absent on the VRG, it does not block Protected=True.
+//   - Returns a bool that is true if status was updated, and false otherwise
+func updateVRGDestinationInfoAvailable(drpc *rmn.DRPlacementControl,
+	vrg *rmn.VolumeReplicationGroup,
+	clusterName string,
+) bool {
+	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeDestinationInfoAvailable)
+	if condition == nil {
+		return false
+	}
+
+	if condition.Status == metav1.ConditionTrue && condition.ObservedGeneration == vrg.Generation {
+		return false
+	}
+
+	return genericUpdateProtectedForCondition(drpc, vrg, clusterName, VRGConditionTypeDestinationInfoAvailable,
+		"destination info availability", "waiting for destination info", "destination info")
+}
+
+// updateDRPCReplicationHealthyCondition copies VRG ReplicationHealthy onto DRPC as its own
+// condition so CSI Replicating status and message are visible on the hub. The condition
+// is omitted when the VRG does not report it.
+func updateDRPCReplicationHealthyCondition(drpc *rmn.DRPlacementControl, vrg *rmn.VolumeReplicationGroup) {
+	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeReplicationHealthy)
+	if condition == nil {
+		meta.RemoveStatusCondition(&drpc.Status.Conditions, rmn.ConditionReplicationHealthy)
+
+		return
+	}
+
+	addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionReplicationHealthy, drpc.Generation,
+		condition.Status, condition.Reason, condition.Message)
 }
 
 // updateVRGDataReadyAsPrimary is a helper function to process VRG DataReady when VRG is Primary and update DRPC
@@ -212,6 +256,41 @@ func updateVRGDataProtectedAsSecondary(drpc *rmn.DRPlacementControl,
 		"workload data protection", "protecting workload data", "protecting workload data")
 }
 
+// updateVRGHooksReady is a helper function to process VRG HooksReady condition and update DRPC
+// Protected condition. This provides clear visibility when hooks fail.
+//   - Returns a bool that is true if status was updated, and false otherwise
+func updateVRGHooksReady(drpc *rmn.DRPlacementControl,
+	vrg *rmn.VolumeReplicationGroup,
+	clusterName string,
+) bool {
+	updated := true
+
+	condition := meta.FindStatusCondition(vrg.Status.Conditions, VRGConditionTypeHooksReady)
+
+	// Ignore missing or stale hook condition for current VRG generation
+	if condition == nil || condition.ObservedGeneration != vrg.Generation {
+		return !updated
+	}
+
+	// If hooks succeeded for current generation, continue with other Protected checks
+	if condition.Status == metav1.ConditionTrue {
+		return !updated
+	}
+
+	// Hook failed - report it clearly in DRPC status
+	if condition.Status == metav1.ConditionFalse && condition.Reason == VRGConditionReasonHookFailed {
+		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionProtected, drpc.Generation,
+			metav1.ConditionFalse,
+			rmn.ReasonProtectedError,
+			fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s hook execution failed: %s",
+				vrg.GetNamespace(), vrg.GetName(), clusterName, condition.Message))
+
+		return updated
+	}
+
+	return !updated
+}
+
 // genericUpdateProtectedForCondition is a common helper that processes passed in VRG condition with varying VRG reasons
 // to determine DRPC Protected condition updates,
 func genericUpdateProtectedForCondition(drpc *rmn.DRPlacementControl,
@@ -294,7 +373,9 @@ func updateMiscVRGStatus(drpc *rmn.DRPlacementControl,
 		return updated
 	}
 
-	if vrg.Spec.Async != nil && vrg.Status.LastGroupSyncTime.IsZero() {
+	if vrg.Spec.Async != nil &&
+		vrg.GetLabels()[GlobalVGRLabel] == "" &&
+		(vrg.Status.LastGroupSyncTime == nil || vrg.Status.LastGroupSyncTime.IsZero()) {
 		addOrUpdateCondition(&drpc.Status.Conditions, rmn.ConditionProtected, drpc.Generation, metav1.ConditionFalse,
 			rmn.ReasonProtectedProgressing, fmt.Sprintf("VolumeReplicationGroup (%s/%s) on cluster %s "+
 				"is not reporting any lastGroupSyncTime as %s, retrying till status is met",

@@ -97,6 +97,9 @@ type VolSyncReplicationDestinationSpec struct {
 	// protectedPVC contains the information about the PVC to be protected by VolSync
 	//+optional
 	ProtectedPVC ProtectedPVC `json:"protectedPVC,omitempty"`
+
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSyncReplicationSourceSpec defines the configuration for the VolSync
@@ -110,6 +113,8 @@ type VolSyncReplicationSourceSpec struct {
 	// to the replication destination (RD).
 	//+optional
 	RsyncTLS *RsyncTLSConfig `json:"rsyncTLS,omitempty"`
+	//+optional
+	MoverConfig *MoverConfig `json:"moverConfig,omitempty"`
 }
 
 // VolSynccSpec defines the ReplicationDestination specs for the Secondary VRG, or
@@ -200,6 +205,25 @@ type RecipeRef struct {
 
 const KubeObjectProtectionCaptureIntervalDefault = 5 * time.Minute
 
+type StaticIPTranslationSpec struct {
+	IPTranslations []IPTranslationSpec `json:"ipTranslations,omitempty"`
+}
+
+type IPTranslationSpec struct {
+	ResourceRef ResourceReference `json:"resourceRef"`
+
+	Networks []NetworkTranslation `json:"networks,omitempty"`
+}
+
+type NetworkTranslation struct {
+	NetworkName string               `json:"networkName"`
+	Addresses   []AddressTranslation `json:"addresses,omitempty"`
+}
+
+type AddressTranslation struct {
+	TargetIP string `json:"targetIP"`
+}
+
 // VolumeReplicationGroup (VRG) spec declares the desired schedule for data
 // replication and replication state of all PVCs identified via the given
 // PVC label selector. For each such PVC, the VRG will do the following:
@@ -247,6 +271,10 @@ type VolumeReplicationGroupSpec struct {
 	// Action is either Failover or Relocate
 	//+optional
 	Action VRGAction `json:"action,omitempty"`
+	// DryRun indicates whether the action should be executed in test/non-destructive mode.
+	// When true, no permanent changes are made on the failover cluster.
+	//+optional
+	DryRun bool `json:"dryRun,omitempty"`
 	//+optional
 	KubeObjectProtection *KubeObjectProtectionSpec `json:"kubeObjectProtection,omitempty"`
 
@@ -257,6 +285,9 @@ type VolumeReplicationGroupSpec struct {
 	// You can use a recipe to filter and coordinate the order of the resources that are protected.
 	//+optional
 	ProtectedNamespaces *[]string `json:"protectedNamespaces,omitempty"`
+
+	//+optional
+	StaticIPTranslationSpec *StaticIPTranslationSpec `json:"staticIPTranslationSpec,omitempty"`
 }
 
 type Identifier struct {
@@ -381,6 +412,30 @@ type VolSyncReplicationDestinationInfo struct {
 	RsyncTLS *RsyncTLSConfig `json:"rsyncTLS,omitempty"`
 }
 
+type StaticIPDiscoveryStatus struct {
+	Resources []DiscoveredResource `json:"resources,omitempty"`
+}
+
+type DiscoveredResource struct {
+	ResourceRef ResourceReference `json:"resourceRef"`
+
+	Networks []DiscoveredNetwork `json:"networks,omitempty"`
+}
+
+type DiscoveredNetwork struct {
+	NetworkName string   `json:"networkName"`
+	Addresses   []string `json:"addresses,omitempty"`
+}
+
+type ResourceReference struct {
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
+	// +optional
+	Kind      string `json:"kind,omitempty"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 // VolumeReplicationGroupStatus defines the observed state of VolumeReplicationGroup
 type VolumeReplicationGroupStatus struct {
 	State State `json:"state,omitempty"`
@@ -421,6 +476,9 @@ type VolumeReplicationGroupStatus struct {
 	// successful synchronization of all PVCs
 	//+optional
 	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
+
+	//+optional
+	StaticIPDiscoveryStatus *StaticIPDiscoveryStatus `json:"staticIPDiscovery,omitempty"`
 }
 
 // +kubebuilder:object:root=true

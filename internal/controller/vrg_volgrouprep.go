@@ -24,11 +24,27 @@ import (
 const (
 	groupReplicationSecretName      = "replication.storage.openshift.io/group-replication-secret-name"
 	groupReplicationSecretNamespace = "replication.storage.openshift.io/group-replication-secret-namespace"
+
+	// destinationVolumeGroupHandleAnnotation annotates a VGRC with the destination-side
+	// volume group ID before S3 upload. On restore, Spec.VolumeGroupReplicationHandle is
+	// replaced with this value (analogous to destinationVolumeHandleAnnotation on PVs).
+	destinationVolumeGroupHandleAnnotation = "ramendr.openshift.io/destination-volume-group-handle"
+
+	// clusterIDKey is the CSI parameter / volume-group attribute identifying the storage cluster.
+	clusterIDKey = "clusterID"
 )
 
 //nolint:gocognit,cyclop,funlen
 func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
+	isGlobal := v.hasGlobalVGRLabel()
+
+	if isGlobal && !v.isGlobalStateInConsensus() {
+		v.requeue()
+
+		return
+	}
+
 	for vgrNamespacedName, pvcs := range groupPVCs {
 		log := v.log.WithValues("vgr", vgrNamespacedName.String())
 
@@ -47,6 +63,18 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 		for idx := range pvcs {
 			pvc := pvcs[idx]
 
+			// Annotate the PV with the destination volume handle if available from VR status.
+			// This allows the secondary cluster to restore the PV with the correct volume handle
+			// when source and destination volume IDs differ.
+			if err := v.annotateWithDestinationVolumeHandleForVolGroupRep(vgrNamespacedName, pvc); err != nil {
+				log.Error(err, fmt.Sprintf("failed to annotate PV of PVC %s with destination volume handle",
+					pvc.Name))
+
+				v.requeue()
+
+				continue
+			}
+
 			if err := v.uploadPVandPVCtoS3Stores(pvc, log); err != nil {
 				log.Error(err, "Requeuing due to failure to upload PV/PVC object to S3 store(s)")
 
@@ -56,12 +84,25 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 			}
 		}
 
-		if err := v.uploadVGRandVGRCtoS3Stores(vgrNamespacedName, log); err != nil {
-			log.Error(err, "Requeuing due to failure to upload VGR object to S3 store(s)")
+		// Annotate the VGRC with the destination volume group handle when available,
+		// so restore on the peer cluster can rewrite Spec.VolumeGroupReplicationHandle.
+		if err := v.annotateWithDestinationVolumeGroupHandle(vgrNamespacedName); err != nil {
+			log.Error(err, "failed to annotate VGRC with destination volume group handle")
 
 			v.requeue()
 
 			continue
+		}
+
+		// Global VGRs are not backed up to S3 they are created fresh on the target cluster.
+		if !isGlobal {
+			if err := v.uploadVGRandVGRCtoS3Stores(vgrNamespacedName, log); err != nil {
+				log.Error(err, "Requeuing due to failure to upload VGR object to S3 store(s)")
+
+				v.requeue()
+
+				continue
+			}
 		}
 	}
 }
@@ -70,6 +111,23 @@ func (v *VRGInstance) reconcileVolGroupRepsAsPrimary(groupPVCs map[types.Namespa
 func (v *VRGInstance) reconcileVolGroupRepsAsSecondary(requeue *bool,
 	groupPVCs map[types.NamespacedName][]*corev1.PersistentVolumeClaim,
 ) {
+	if v.hasGlobalVGRLabel() {
+		// On steady-state secondary, no PVCs match the VRG selector.
+		// Signal readiness so siblings don't wait on this VRG.
+		if len(groupPVCs) == 0 {
+			v.setGlobalSecondaryCondition(metav1.ConditionTrue,
+				VRGConditionReasonPVCsNotInUse, "PVCs are not in use")
+
+			return
+		}
+
+		if !v.isGlobalStateInConsensus() {
+			*requeue = true
+
+			return
+		}
+	}
+
 	for vgrNamespacedName, pvcs := range groupPVCs {
 		log := v.log.WithValues("vgr", vgrNamespacedName.String())
 
@@ -105,8 +163,24 @@ func (v *VRGInstance) reconcileVGRAsSecondary(vrNamespacedName types.NamespacedN
 		skip    bool = true
 	)
 
+	isGlobal := v.hasGlobalVGRLabel()
+
 	for idx := range pvcs {
 		if !v.isPVCReadyForSecondary(pvcs[idx], log) {
+			if isGlobal {
+				v.setGlobalSecondaryCondition(metav1.ConditionFalse,
+					VRGConditionReasonPVCsInUse, "PVCs are still in use")
+			}
+
+			return requeue, false, skip
+		}
+	}
+
+	if isGlobal {
+		v.setGlobalSecondaryCondition(metav1.ConditionTrue,
+			VRGConditionReasonPVCsNotInUse, "PVCs are not in use")
+
+		if !v.areSiblingVRGsReadyForGlobalSecondary(log) {
 			return requeue, false, skip
 		}
 	}
@@ -171,9 +245,16 @@ func (v *VRGInstance) isVGRandVGRCArchivedAlready(vgr *volrep.VolumeGroupReplica
 
 // Upload VGRCs and VGRs to the list of S3 stores in the VRG spec
 func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.NamespacedName, log logr.Logger) error {
+	if v.instance.Spec.DryRun {
+		log.Info("Skipping upload of VGR and VGRC object to S3 store(s) as VRG is in dry-run mode")
+
+		return nil
+	}
+
 	vgr := &volrep.VolumeGroupReplication{}
 
-	err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr)
+	// APIReader: avoid stale informer cache after destination-handle annotation Update.
+	err := v.reconciler.APIReader.Get(v.ctx, vrNamespacedName, vgr)
 	if err != nil {
 		return fmt.Errorf("failed to get VGR (%w)", err)
 	}
@@ -227,7 +308,9 @@ func (v *VRGInstance) uploadVGRandVGRCtoS3Stores(vrNamespacedName types.Namespac
 	return nil
 }
 
-func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volrep.VolumeGroupReplication) error {
+func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volrep.VolumeGroupReplication,
+	vgrc *volrep.VolumeGroupReplicationContent,
+) error {
 	if s3ProfileName == "" {
 		return fmt.Errorf("missing S3 profiles, failed to protect cluster data for VGR %s", vgr.Name)
 	}
@@ -237,13 +320,7 @@ func (v *VRGInstance) UploadVGRandVGRCtoS3Store(s3ProfileName string, vgr *volre
 		return fmt.Errorf("error getting object store, failed to protect cluster data for VGR %s, %w", vgr.Name, err)
 	}
 
-	vgrc, err := v.getVGRCFromVGR(vgr)
-	if err != nil {
-		return fmt.Errorf("error getting VGRC for VGR, failed to protect cluster data for VGRC %s to s3Profile %s, %w",
-			vgrc.Name, s3ProfileName, err)
-	}
-
-	return v.UploadVGRAndVGRCtoS3(s3ProfileName, objectStore, vgr, &vgrc)
+	return v.UploadVGRAndVGRCtoS3(s3ProfileName, objectStore, vgr, vgrc)
 }
 
 func (v *VRGInstance) UploadVGRAndVGRCtoS3(s3ProfileName string, objectStore ObjectStorer,
@@ -279,10 +356,18 @@ func (v *VRGInstance) UploadVGRAndVGRCtoS3(s3ProfileName string, objectStore Obj
 func (v *VRGInstance) UploadVGRandVGRCtoS3Stores(vgr *volrep.VolumeGroupReplication,
 	log logr.Logger,
 ) ([]string, error) {
+	// Fetch VGRC once and upload the same object to every profile so buckets cannot
+	// diverge.
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		return nil, fmt.Errorf("error getting VGRC for VGR, failed to protect cluster data for VGR %s, %w",
+			vgr.Name, err)
+	}
+
 	succeededProfiles := []string{}
 	// Upload the VGR and VGRC to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
-		err := v.UploadVGRandVGRCtoS3Store(s3ProfileName, vgr)
+		err := v.UploadVGRandVGRCtoS3Store(s3ProfileName, vgr, &vgrc)
 		if err != nil {
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonUploadFailed, err.Error())
@@ -304,7 +389,10 @@ func (v *VRGInstance) getVGRCFromVGR(vgr *volrep.VolumeGroupReplication) (volrep
 		Name: vgrcName,
 	}
 
-	if err := v.reconciler.Get(v.ctx, vgrcObjectKey, &vgrc); err != nil {
+	// Use APIReader, not the informer cache. Destination volume-group-handle annotation is
+	// applied via Update immediately before S3 upload; a cached Get can return the
+	// pre-Update VGRC and upload an object missing destination-volume-group-handle.
+	if err := v.reconciler.APIReader.Get(v.ctx, vgrcObjectKey, &vgrc); err != nil {
 		return vgrc, fmt.Errorf("failed to get VGRC %v from VGR %v, %w",
 			vgrcObjectKey, client.ObjectKeyFromObject(vgr), err)
 	}
@@ -411,10 +499,7 @@ func (v *VRGInstance) getVGRUsingSCLabel(pvc *corev1.PersistentVolumeClaim) (*vo
 		return nil, fmt.Errorf("error determining replicationID")
 	}
 
-	vgrNamespacedName := types.NamespacedName{
-		Name:      rmnutil.CreateVGRName(grID, v.instance.Name),
-		Namespace: pvc.Namespace,
-	}
+	vgrNamespacedName := v.vgrNamespacedName(grID, pvc.Namespace)
 
 	vgr := &volrep.VolumeGroupReplication{}
 	err = v.reconciler.Get(v.ctx, vgrNamespacedName, vgr)
@@ -546,6 +631,20 @@ func (v *VRGInstance) undoPVCFinalizersAndPVRetentionForVGR(vrNamespacedName typ
 ) bool {
 	const requeue = true
 
+	// For global VGR, only clean PVC finalizers; skip VGR deletion.
+	if v.hasGlobalVGRLabel() {
+		for idx := range pvcs {
+			if err := v.preparePVCForVRDeletion(pvcs[idx], log); err != nil {
+				log.Info("Requeuing due to failure in preparing PersistentVolumeClaim for cleanup",
+					"error", err)
+
+				return requeue
+			}
+		}
+
+		return !requeue
+	}
+
 	if err := v.deleteVGR(vrNamespacedName, log); err != nil {
 		log.Info("Requeuing due to failure in finalizing VolumeGroupReplication resource",
 			"errorValue", err)
@@ -620,6 +719,20 @@ func (v *VRGInstance) isCGEnabled(pvc *corev1.PersistentVolumeClaim) (string, bo
 	return cg, ok && rmnutil.IsCGEnabledForVolRep(v.ctx, v.reconciler.APIReader)
 }
 
+// vgrNamespacedName returns the VGR namespaced name for a PVC's consistency group.
+// For global VGRs, all PVCs share a single VGR in the operator namespace.
+// For non-global, each VRG gets its own VGR in the PVC's namespace.
+func (v *VRGInstance) vgrNamespacedName(cg, pvcNamespace string) types.NamespacedName {
+	if v.hasGlobalVGRLabel() {
+		return v.globalVGRNamespacedName()
+	}
+
+	return types.NamespacedName{
+		Name:      rmnutil.CreateVGRName(cg, v.instance.Name),
+		Namespace: pvcNamespace,
+	}
+}
+
 func (v *VRGInstance) processVGRAsPrimary(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, log logr.Logger,
 ) (bool, bool, error) {
@@ -632,10 +745,32 @@ func (v *VRGInstance) processVGRAsSecondary(vrNamespacedName types.NamespacedNam
 	return v.createOrUpdateVGR(vrNamespacedName, pvcs, volrep.Secondary, log)
 }
 
+func (v *VRGInstance) labelPVCsWithVGROwner(pvcs []*corev1.PersistentVolumeClaim, vgrName string) error {
+	for idx := range pvcs {
+		pvc := pvcs[idx]
+
+		err := rmnutil.NewResourceUpdater(pvc).
+			AddLabel("volumegroupreplication-owner", vgrName).
+			Update(v.ctx, v.reconciler.Client)
+		if err != nil {
+			return fmt.Errorf("failed to update PVC labels: %w", err)
+		}
+	}
+
+	return nil
+}
+
+//nolint:gocognit,funlen
 func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState, log logr.Logger,
 ) (bool, bool, error) {
 	const requeue = true
+
+	v.log.V(1).Info("create or update VGR", "state", state, "pvcs", len(pvcs))
+
+	if err := v.labelPVCsWithVGROwner(pvcs, vrNamespacedName.Name); err != nil {
+		return requeue, false, err
+	}
 
 	volRep := &volrep.VolumeGroupReplication{}
 
@@ -663,6 +798,12 @@ func (v *VRGInstance) createOrUpdateVGR(vrNamespacedName types.NamespacedName,
 
 		// Create VGR
 		if err = v.createVGR(vrNamespacedName, pvcs, state); err != nil {
+			if v.hasGlobalVGRLabel() && k8serrors.IsAlreadyExists(err) {
+				log.Info("Global VGR already exists, will use existing resource", "resource", vrNamespacedName)
+
+				return requeue, false, nil
+			}
+
 			log.Error(err, "Failed to create VolumeGroupReplication resource", "resource", vrNamespacedName)
 			rmnutil.ReportIfNotPresent(v.reconciler.eventRecorder, v.instance, corev1.EventTypeWarning,
 				rmnutil.EventReasonVRCreateFailed, err.Error())
@@ -748,7 +889,7 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 
 // createVGR creates a VolumeGroupReplication CR
 //
-//nolint:funlen
+//nolint:funlen,cyclop
 func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 	pvcs []*corev1.PersistentVolumeClaim, state volrep.ReplicationState,
 ) error {
@@ -783,13 +924,37 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 			vrNamespacedName.Namespace, vrNamespacedName.Name, err)
 	}
 
-	selector := metav1.AddLabelToSelector(&v.recipeElements.PvcSelector.LabelSelector, rmnutil.ConsistencyGroupLabel, cg)
+	isGlobal := v.hasGlobalVGRLabel()
+
+	var selector *metav1.LabelSelector
+	if isGlobal || offloaded {
+		// Global VGRs are shared across VRGs, so select by consistency group only
+		// to include PVCs from all VRGs.
+		// Offloaded follow the same logic as global since they are also shared and not owned by VRG.
+		selector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				rmnutil.ConsistencyGroupLabel: cg,
+			},
+		}
+	} else {
+		selector = metav1.AddLabelToSelector(
+			&v.recipeElements.PvcSelector.LabelSelector,
+			rmnutil.ConsistencyGroupLabel,
+			cg,
+		)
+	}
+
+	// Owner labels are skipped for global VGRs since no single VRG owns them.
+	labels := map[string]string{}
+	if !isGlobal {
+		labels = rmnutil.OwnerLabels(v.instance)
+	}
 
 	volRep := &volrep.VolumeGroupReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
-			Labels:    rmnutil.OwnerLabels(v.instance),
+			Labels:    labels,
 		},
 		Spec: volrep.VolumeGroupReplicationSpec{
 			ReplicationState:                state,
@@ -804,10 +969,11 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	rmnutil.AddLabel(volRep, rmnutil.CreatedByRamenLabel, "true")
 
-	if !vrgInAdminNamespace(v.instance, v.ramenConfig) {
-		// This is to keep existing behavior of ramen.
-		// Set the owner reference only for the VRs which are in the same namespace as the VRG and
-		// when VRG is not in the admin namespace.
+	// This is to keep existing behavior of ramen. Set the owner reference only
+	// for the VGRs which are in the same namespace as the VRG and when VRG is
+	// not in the admin namespace. Additionally skip for global VGRs which reside
+	// in the operator namespace.
+	if !vrgInAdminNamespace(v.instance, v.ramenConfig) && !isGlobal {
 		if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
 			return fmt.Errorf("failed to set owner reference to VolumeGroupReplication resource (%s/%s), %w",
 				volRep.GetName(), volRep.GetNamespace(), err)
@@ -848,6 +1014,140 @@ func (v *VRGInstance) deleteVGR(vrNamespacedName types.NamespacedName, log logr.
 	v.log.Info("Deleted VolumeGroupReplication resource %s/%s", vrNamespacedName.Namespace, vrNamespacedName.Name)
 
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, cr, log)
+}
+
+// annotateWithDestinationVolumeHandleForVolGroupRep looks up the VolumeGroupReplication for the PVC
+// and annotates the PV with the destination volume handle if available.
+func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamespacedName types.NamespacedName,
+	pvc *corev1.PersistentVolumeClaim,
+) error {
+	// Metro DR (Sync mode) doesn't use VolumeGroupReplication
+	if v.instance.Spec.Sync != nil {
+		return nil
+	}
+
+	pv, err := v.getPVFromPVC(pvc)
+	if err != nil {
+		return fmt.Errorf("failed to get PV for PVC %s: %w", pvc.Name, err)
+	}
+
+	vgr := &volrep.VolumeGroupReplication{}
+
+	if err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr); err != nil {
+		v.log.Info(fmt.Sprintf("failed to get VGR %s for PV %s err %s", vrNamespacedName.Name, pv.Name, err))
+
+		return err
+	}
+
+	available, err := v.destinationInfoAvailableOrSkip(vgr.Status.Conditions,
+		fmt.Sprintf("VGR %s", vgr.Name), pv.Name)
+	if err != nil {
+		return err
+	}
+
+	if !available {
+		return nil
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		v.log.Error(err, "failed to annotate PV %s for PVC - no VGRContent found", "pvc", pvc.Name)
+
+		return fmt.Errorf("failed to get VolumeGroupReplicationContent for VGR %s: %w", vgr.Name, err)
+	}
+
+	return v.findAndApplyPVMapping(&vgrc, &pv, vgr.Name)
+}
+
+// annotateWithDestinationVolumeGroupHandle looks up the VolumeGroupReplication
+// and annotates the VGRC with the destination volume group handle if available.
+func (v *VRGInstance) annotateWithDestinationVolumeGroupHandle(vrNamespacedName types.NamespacedName) error {
+	// Metro DR (Sync mode) doesn't use VolumeGroupReplication
+	if v.instance.Spec.Sync != nil {
+		return nil
+	}
+
+	vgr := &volrep.VolumeGroupReplication{}
+
+	if err := v.reconciler.Get(v.ctx, vrNamespacedName, vgr); err != nil {
+		v.log.Info(fmt.Sprintf("failed to get VGR %s for volume group handle err %s",
+			vrNamespacedName.Name, err))
+
+		return err
+	}
+
+	available, err := v.destinationInfoAvailableOrSkip(vgr.Status.Conditions,
+		fmt.Sprintf("VGR %s", vgr.Name), vgr.Name)
+	if err != nil {
+		return err
+	}
+
+	if !available {
+		return nil
+	}
+
+	vgrc, err := v.getVGRCFromVGR(vgr)
+	if err != nil {
+		v.log.Error(err, "failed to annotate VGRC - no VGRContent found", "vgr", vgr.Name)
+
+		return fmt.Errorf("failed to get VolumeGroupReplicationContent for VGR %s: %w", vgr.Name, err)
+	}
+
+	return v.findAndApplyVolumeGroupHandle(&vgrc, vgr.Name)
+}
+
+// findAndApplyVolumeGroupHandle applies the destination volume group handle from
+// VGRC status to the VGRC if present. Clearing the archived annotation forces a
+// re-upload to S3 in the same reconcile: annotation-only VGRC updates do not bump
+// Generation, so isVGRandVGRCArchivedAlready would otherwise skip upload.
+func (v *VRGInstance) findAndApplyVolumeGroupHandle(vgrc *volrep.VolumeGroupReplicationContent,
+	vgrName string,
+) error {
+	destinationVolumeGroupHandle := vgrc.Status.DestinationVolumeGroupID
+	if destinationVolumeGroupHandle == "" {
+		return fmt.Errorf("destination volume group ID is empty for VGR %s", vgrName)
+	}
+
+	if vgrc.Annotations == nil {
+		vgrc.Annotations = make(map[string]string)
+	}
+
+	if vgrc.Annotations[destinationVolumeGroupHandleAnnotation] == destinationVolumeGroupHandle {
+		return nil
+	}
+
+	vgrc.Annotations[destinationVolumeGroupHandleAnnotation] = destinationVolumeGroupHandle
+	delete(vgrc.Annotations, pvcVRAnnotationArchivedKey)
+	v.log.Info(fmt.Sprintf("annotated VGRC %s with DestinationVolumeGroupID %s",
+		vgrc.Name, destinationVolumeGroupHandle))
+
+	if err := v.reconciler.Update(v.ctx, vgrc); err != nil {
+		return fmt.Errorf("failed to update VolumeGroupReplicationContent %s with destination "+
+			"volume group handle annotation: %w", vgrc.Name, err)
+	}
+
+	return nil
+}
+
+// findAndApplyPVMapping searches for the PV mapping in the VolumeGroupReplicationContent
+// and applies the destination volume handle to the PV if found.
+func (v *VRGInstance) findAndApplyPVMapping(vgrc *volrep.VolumeGroupReplicationContent,
+	pv *corev1.PersistentVolume, vgrName string,
+) error {
+	for _, pvMapping := range vgrc.Status.PersistentVolumeMappingList {
+		if pvMapping.Name != pv.Name {
+			continue
+		}
+
+		if pvMapping.DestinationVolumeHandle == "" {
+			return fmt.Errorf("destination volume ID is empty for VGR %s", vgrName)
+		}
+
+		return v.applyDestinationVolumeHandleToPV(pv, pvMapping.DestinationVolumeHandle)
+	}
+
+	return fmt.Errorf("no persistent volume mapping for PV %s in VolumeGroupReplicationContent %s",
+		pv.Name, vgrc.Name)
 }
 
 func (v *VRGInstance) addArchivedAnnotationForVGRandVGRC(vgr *volrep.VolumeGroupReplication, log logr.Logger) error {
@@ -1054,7 +1354,82 @@ func (v *VRGInstance) cleanupVGRCForRestore(vgrc *volrep.VolumeGroupReplicationC
 	vgrc.ResourceVersion = ""
 	vgrc.Spec.VolumeGroupReplicationRef = nil
 
+	// If the VGRC was annotated with a destination volume group handle during S3 upload,
+	// replace Spec.VolumeGroupReplicationHandle so the VGRC references the correct group
+	// on this (destination) cluster.
+	if vgrc.Annotations != nil {
+		if destHandle, ok := vgrc.Annotations[destinationVolumeGroupHandleAnnotation]; ok && destHandle != "" {
+			v.log.V(1).Info("Set VGRC volume group replication handle from destination handle",
+				"VGRC", vgrc.Name, "handle", destHandle)
+			vgrc.Spec.VolumeGroupReplicationHandle = destHandle
+			delete(vgrc.Annotations, destinationVolumeGroupHandleAnnotation)
+		}
+	}
+
+	if err := v.updateVGRCVolumeHandlesForRestore(vgrc); err != nil {
+		return err
+	}
+
+	if err := v.updateVGRCClusterIDForRestore(vgrc); err != nil {
+		return err
+	}
+
 	return v.processVGRCSecrets(vgrc)
+}
+
+// updateVGRCVolumeHandlesForRestore replaces Spec.Source.VolumeHandles with
+// destination volume handles from Status.PersistentVolumeMappingList when present.
+// Mirrors cleanupPVForRestore rewriting PV Spec.CSI.VolumeHandle from the
+// destination-volume-handle annotation. No-op when mappings are missing
+// (e.g. destination info was not available at archive time).
+func (v *VRGInstance) updateVGRCVolumeHandlesForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+	for i, handle := range vgrc.Spec.Source.VolumeHandles {
+		for _, pvMapping := range vgrc.Status.PersistentVolumeMappingList {
+			if pvMapping.VolumeHandle != handle {
+				continue
+			}
+
+			if pvMapping.DestinationVolumeHandle == "" {
+				return fmt.Errorf("destination volume ID is empty for VGRC %s, PV %s, volumeHandle %s",
+					vgrc.Name, pvMapping.Name, handle)
+			}
+
+			v.log.V(1).Info("Set VGRC volume handle from destination handle",
+				"VGRC", vgrc.Name, "handle", pvMapping.DestinationVolumeHandle)
+
+			vgrc.Spec.Source.VolumeHandles[i] = pvMapping.DestinationVolumeHandle
+
+			break
+		}
+	}
+
+	return nil
+}
+
+// updateVGRCClusterIDForRestore sets volumeGroupAttributes.clusterID from the target
+// cluster's VolumeGroupReplicationClass parameters, when present.
+func (v *VRGInstance) updateVGRCClusterIDForRestore(vgrc *volrep.VolumeGroupReplicationContent) error {
+	vgrclass := &volrep.VolumeGroupReplicationClass{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: vgrc.Spec.VolumeGroupReplicationClassName}, vgrclass)
+	if err != nil {
+		return err
+	}
+
+	clusterID, ok := vgrclass.Spec.Parameters[clusterIDKey]
+	if !ok || clusterID == "" {
+		return nil
+	}
+
+	if vgrc.Spec.VolumeGroupAttributes == nil {
+		vgrc.Spec.VolumeGroupAttributes = map[string]string{}
+	}
+
+	v.log.V(1).Info("Set VGRC clusterID for target cluster",
+		"VGRC", vgrc.Name, "clusterID", clusterID)
+	vgrc.Spec.VolumeGroupAttributes[clusterIDKey] = clusterID
+
+	return nil
 }
 
 func (v *VRGInstance) cleanupVGRForRestore(vgr *volrep.VolumeGroupReplication) error {

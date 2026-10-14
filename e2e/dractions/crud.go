@@ -22,6 +22,20 @@ func updatePlacement(ctx types.TestContext, placement *clusterv1beta1.Placement)
 	return hub.Client.Update(ctx.Context(), placement)
 }
 
+func getDRPC(ctx types.TestContext, namespace, name string) (*ramen.DRPlacementControl, error) {
+	hub := ctx.Env().Hub
+
+	drpc := &ramen.DRPlacementControl{}
+	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
+
+	err := hub.Client.Get(ctx.Context(), key, drpc)
+	if err != nil {
+		return nil, err
+	}
+
+	return drpc, nil
+}
+
 func getVRG(
 	ctx types.TestContext,
 	cluster *types.Cluster,
@@ -36,28 +50,6 @@ func getVRG(
 	}
 
 	return vrg, nil
-}
-
-func getVRGNamespace(ctx types.TestContext) string {
-	if ctx.Deployer().IsDiscovered() {
-		return ctx.ManagementNamespace()
-	}
-
-	return ctx.AppNamespace()
-}
-
-func getDRPC(ctx types.TestContext, namespace, name string) (*ramen.DRPlacementControl, error) {
-	hub := ctx.Env().Hub
-
-	drpc := &ramen.DRPlacementControl{}
-	key := k8stypes.NamespacedName{Namespace: namespace, Name: name}
-
-	err := hub.Client.Get(ctx.Context(), key, drpc)
-	if err != nil {
-		return nil, err
-	}
-
-	return drpc, nil
 }
 
 func createDRPC(ctx types.TestContext, drpc *ramen.DRPlacementControl) error {
@@ -133,12 +125,15 @@ func generateDRPC(name, namespace, clusterName, drPolicyName, placementName, app
 		Spec: ramen.DRPlacementControlSpec{
 			PreferredCluster: clusterName,
 			DRPolicyRef: v1.ObjectReference{
-				Name: drPolicyName,
+				APIVersion: ramen.GroupVersion.String(),
+				Kind:       "DRPolicy",
+				Name:       drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
-				Kind:      "Placement",
-				Name:      placementName,
-				Namespace: namespace,
+				APIVersion: clusterv1beta1.GroupVersion.String(),
+				Kind:       "Placement",
+				Name:       placementName,
+				Namespace:  namespace,
 			},
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appname": appname},
@@ -189,7 +184,7 @@ func createPlacementManagedByRamen(ctx types.TestContext, name, namespace string
 }
 
 func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, placementName,
-	appname, protectedNamespace string,
+	appname, protectedNamespace string, recipeRef *ramen.RecipeRef,
 ) *ramen.DRPlacementControl {
 	kubeObjectProtectionSpec := &ramen.KubeObjectProtectionSpec{
 		KubeObjectSelector: &metav1.LabelSelector{
@@ -201,6 +196,7 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 				},
 			},
 		},
+		RecipeRef: recipeRef,
 	}
 	drpc := &ramen.DRPlacementControl{
 		TypeMeta: metav1.TypeMeta{
@@ -215,12 +211,15 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 		Spec: ramen.DRPlacementControlSpec{
 			PreferredCluster: clusterName,
 			DRPolicyRef: v1.ObjectReference{
-				Name: drPolicyName,
+				APIVersion: ramen.GroupVersion.String(),
+				Kind:       "DRPolicy",
+				Name:       drPolicyName,
 			},
 			PlacementRef: v1.ObjectReference{
-				Kind:      "Placement",
-				Name:      placementName,
-				Namespace: namespace,
+				APIVersion: clusterv1beta1.GroupVersion.String(),
+				Kind:       "Placement",
+				Name:       placementName,
+				Namespace:  namespace,
 			},
 			PVCSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"appname": appname},
@@ -231,30 +230,4 @@ func generateDRPCDiscoveredApps(name, namespace, clusterName, drPolicyName, plac
 	}
 
 	return drpc
-}
-
-func annotateDRPCDoNotDeletePVC(ctx types.TestContext, drpcName string) error {
-	log := ctx.Logger()
-
-	if err := addDRPCAnnotation(ctx, drpcName); err != nil {
-		if k8serrors.IsNotFound(err) {
-			log.Debugf("Skipping drpc annotation: %v", err)
-
-			return nil
-		}
-
-		return err
-	}
-
-	if err := waitForDRPCAnnotationPropagation(ctx, drpcName); err != nil {
-		if k8serrors.IsNotFound(err) {
-			log.Debugf("Skipping wait for annotation %q propagation: %v", drpcDoNotDeletePVCAnnotation, err)
-
-			return nil
-		}
-
-		return err
-	}
-
-	return nil
 }
