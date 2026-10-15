@@ -45,7 +45,6 @@ const (
 	destinationVolumeHandleAnnotation = "ramendr.openshift.io/destination-volume-handle"
 )
 
-//nolint:gosec
 const (
 	// secretRef keys
 	controllerPublishSecretName        = "csi.storage.k8s.io/controller-publish-secret-name"
