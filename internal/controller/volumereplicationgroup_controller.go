@@ -2492,8 +2492,8 @@ func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
 
 		log.Info("Enqueuing VRG for offloaded VGR sync time change",
 			"vrg", vrgNamespacedName,
-			"vgrLastSyncTime", vgr.Status.LastSyncTime,
-			"vrgLastGroupSyncTime", vrg.Status.LastGroupSyncTime)
+			"vgrLastSyncTime", util.TimeString(vgr.Status.LastSyncTime),
+			"vrgLastGroupSyncTime", util.TimeString(vrg.Status.LastGroupSyncTime))
 	}
 
 	return req
