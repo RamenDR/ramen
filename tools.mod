@@ -2,6 +2,8 @@ module github.com/ramendr/ramen
 
 go 1.26.0
 
+toolchain go1.27.2
+
 tool sigs.k8s.io/kustomize/kustomize/v5
 
 require (

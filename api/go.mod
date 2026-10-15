@@ -1,10 +1,10 @@
 module github.com/ramendr/ramen/api
 
 // Required minimum version, must be available in downstream builders.
-go 1.25.0
+go 1.26.0
 
 // Recommended version: latest go toolchain.
-toolchain go1.26.1
+toolchain go1.27.2
 
 require (
 	k8s.io/api v0.33.2
