@@ -90,7 +90,7 @@ jobs:
       - name: GolangCI Lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.9.0
+          version: v2.14.0
           working-directory: ${{ matrix.directory }}
 
   # Ensure that the code is compatible with go version from go.mod. Go enforces
