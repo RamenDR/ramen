@@ -2492,8 +2492,8 @@ func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
 
 		log.Info("Enqueuing VRG for offloaded VGR sync time change",
 			"vrg", vrgNamespacedName,
-			"vgrLastSyncTime", vgr.Status.LastSyncTime,
-			"vrgLastGroupSyncTime", vrg.Status.LastGroupSyncTime)
+			"vgrLastSyncTime", util.TimeString(vgr.Status.LastSyncTime),
+			"vrgLastGroupSyncTime", util.TimeString(vrg.Status.LastGroupSyncTime))
 	}
 
 	return req
@@ -2689,7 +2689,7 @@ func (v *VRGInstance) CheckForVMConflictOnPrimary() error {
 	foundVMsSet := sets.NewString(foundVMs...)
 	protectedVMsSet := sets.NewString(vmList...)
 
-	if !(foundVMsSet.Equal(protectedVMsSet)) {
+	if !foundVMsSet.Equal(protectedVMsSet) {
 		v.log.Info(fmt.Sprintf("VMs found matching label selector are : %v"+
 			" and the list of VMs being protected are: %v "+
 			". This may impact failover or recovery operations.", foundVMsSet, protectedVMsSet))

@@ -68,7 +68,6 @@ const (
 	DRClusterConditionReasonErrorUnknown = "UnknownError"
 )
 
-//nolint:gosec
 const (
 	StorageAnnotationSecretName      = "drcluster.ramendr.openshift.io/storage-secret-name"
 	StorageAnnotationSecretNamespace = "drcluster.ramendr.openshift.io/storage-secret-namespace"

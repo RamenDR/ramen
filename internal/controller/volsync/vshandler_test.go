@@ -44,35 +44,35 @@ var _ = Describe("VolSync Handler - utils", func() {
 	Context("When converting scheduling interval to cronspec for VolSync", func() {
 		It("Should successfully convert an interval specified in minutes", func() {
 			cronSpecSchedule, err := volsync.ConvertSchedulingIntervalToCronSpec("10m")
-			Expect(err).NotTo((HaveOccurred()))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(cronSpecSchedule).ToNot(BeNil())
 			Expect(*cronSpecSchedule).To(Equal("*/10 * * * *"))
 		})
 		It("Should successfully convert an interval specified in minutes (case-insensitive)", func() {
 			cronSpecSchedule, err := volsync.ConvertSchedulingIntervalToCronSpec("2M")
-			Expect(err).NotTo((HaveOccurred()))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(cronSpecSchedule).ToNot(BeNil())
 			Expect(*cronSpecSchedule).To(Equal("*/2 * * * *"))
 		})
 		It("Should successfully convert an interval specified in hours", func() {
 			cronSpecSchedule, err := volsync.ConvertSchedulingIntervalToCronSpec("12h")
-			Expect(err).NotTo((HaveOccurred()))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(cronSpecSchedule).ToNot(BeNil())
 			Expect(*cronSpecSchedule).To(Equal("0 */12 * * *"))
 		})
 		It("Should successfully convert an interval specified in days", func() {
 			cronSpecSchedule, err := volsync.ConvertSchedulingIntervalToCronSpec("13d")
-			Expect(err).NotTo((HaveOccurred()))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(cronSpecSchedule).ToNot(BeNil())
 			Expect(*cronSpecSchedule).To(Equal("0 0 */13 * *"))
 		})
 		It("Should fail if interval is invalid (no num)", func() {
 			_, err := volsync.ConvertSchedulingIntervalToCronSpec("d")
-			Expect(err).To((HaveOccurred()))
+			Expect(err).To(HaveOccurred())
 		})
 		It("Should fail if interval is invalid (no m/h/d)", func() {
 			_, err := volsync.ConvertSchedulingIntervalToCronSpec("123")
-			Expect(err).To((HaveOccurred()))
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })

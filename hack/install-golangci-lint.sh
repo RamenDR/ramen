@@ -3,8 +3,8 @@ set -e -o pipefail
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 
-source_url="https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh"
-required_version="2.9.0"
+source_url="https://golangci-lint.run/install.sh"
+required_version="2.14.0"
 target_dir="${script_dir}/../testbin"
 target_path="${target_dir}/golangci-lint"
 tool="golangci-lint"

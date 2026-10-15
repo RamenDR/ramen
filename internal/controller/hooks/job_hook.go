@@ -296,7 +296,7 @@ func (j JobHook) checkJobStatus(ctx context.Context, jobKey types.NamespacedName
 			log.Info("Job completed successfully",
 				"jobName", jobName,
 				"succeeded", currentJob.Status.Succeeded,
-				"completionTime", currentJob.Status.CompletionTime)
+				"completionTime", util.TimeString(currentJob.Status.CompletionTime))
 
 			return true, nil
 		}

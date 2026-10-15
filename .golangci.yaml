@@ -31,6 +31,17 @@ linters:
       template: |
         SPDX-FileCopyrightText: The RamenDR authors
         SPDX-License-Identifier: Apache-2.0
+    gosec:
+      # G101 matches any string containing words like "secret". That hits API
+      # keys and annotation names, not credentials, and the fix is a nolint
+      # comment.
+      #
+      # G703 is wrong. It treats the process environment and command-line
+      # arguments as untrusted, but that is how the trusted caller passes
+      # filesystem paths into the program. A program cannot reject them.
+      excludes:
+        - G101
+        - G703
     misspell:
       locale: US
     promlinter:
@@ -141,7 +152,7 @@ linters:
     - gocritic
     - gocyclo
     #  - golint // Fully deprecated, remove this line once an alternative is enabled for the same
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
     - govet

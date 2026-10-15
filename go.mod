@@ -4,7 +4,7 @@ module github.com/ramendr/ramen
 go 1.26.0
 
 // Recommended version: latest go toolchain.
-toolchain go1.26.1
+toolchain go1.27.2
 
 // This replace should always be here for ease of development.
 replace github.com/ramendr/ramen/api => ./api
