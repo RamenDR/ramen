@@ -1722,6 +1722,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
 	updateDRPCReplicationHealthyCondition(drpc, vrg)
+	r.reconcileDRPCNonConsistencyGroupDeprecation(drpc, vrg, log, time.Now())
 }
 
 // getVRG retrieves a VRG either from the provided map or fetches it from the managed cluster/S3 store.
