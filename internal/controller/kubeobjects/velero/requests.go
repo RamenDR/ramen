@@ -283,6 +283,8 @@ func backupDummyStatusProcessAndRestore(
 			labels,
 		)
 	case velero.BackupPhaseNew,
+		velero.BackupPhaseQueued,
+		velero.BackupPhaseReadyToStart,
 		velero.BackupPhaseInProgress,
 		velero.BackupPhaseWaitingForPluginOperations,
 		velero.BackupPhaseWaitingForPluginOperationsPartiallyFailed,
@@ -427,6 +429,8 @@ func backupRealStatusProcess(
 	case velero.BackupPhaseCompleted:
 		return nil
 	case velero.BackupPhaseNew,
+		velero.BackupPhaseQueued,
+		velero.BackupPhaseReadyToStart,
 		velero.BackupPhaseInProgress,
 		velero.BackupPhaseWaitingForPluginOperations,
 		velero.BackupPhaseWaitingForPluginOperationsPartiallyFailed,
