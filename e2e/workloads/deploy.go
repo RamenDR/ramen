@@ -4,14 +4,20 @@
 package workloads
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
+	"strings"
+	"time"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
+	"github.com/spf13/viper"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
@@ -22,7 +28,6 @@ const (
 	deploymentName           = "deploy"
 	deploymentAppName        = "busybox"
 	deploymentPath           = "workloads/deployment/base"
-	deploymentPVCName        = "busybox-pvc"
 	deploymentSelectResource = "deployment"
 
 	//nolint:lll
@@ -32,17 +37,61 @@ const (
 )
 
 type Deployment struct {
-	Name    string
-	Branch  string
-	PVCSpec config.PVCSpec
+	Name     string
+	Branch   string
+	PVCSpec  config.PVCSpec
+	PVCNames []string
 }
 
 func NewDeployment(branch string, pvcSpec config.PVCSpec) types.Workload {
-	return &Deployment{
-		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
-		Branch:  branch,
-		PVCSpec: pvcSpec,
+	pvcNames, err := fetchDeploymentPVCNames(viper.GetString("repo.url"), branch)
+	if err != nil {
+		panic(err)
 	}
+
+	return &Deployment{
+		Name:     fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
+		Branch:   branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: pvcNames,
+	}
+}
+
+// fetchDeploymentPVCNames builds the deployment kustomization from the git repo and returns the claim names of the
+// PVCs used by the deployment volumes.
+func fetchDeploymentPVCNames(repoURL, branch string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	url := repoURL + "/" + deploymentPath + "?ref=" + branch
+
+	out, err := exec.CommandContext(ctx, "kubectl", "kustomize", url).Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build kustomization %q: %w", url, err)
+	}
+
+	for _, doc := range strings.Split(string(out), "\n---\n") {
+		deploy := &appsv1.Deployment{}
+		if err := yaml.Unmarshal([]byte(doc), deploy); err != nil {
+			return nil, err
+		}
+
+		if deploy.Kind != "Deployment" {
+			continue
+		}
+
+		var pvcNames []string
+
+		for _, volume := range deploy.Spec.Template.Spec.Volumes {
+			if volume.PersistentVolumeClaim != nil {
+				pvcNames = append(pvcNames, volume.PersistentVolumeClaim.ClaimName)
+			}
+		}
+
+		return pvcNames, nil
+	}
+
+	return nil, fmt.Errorf("deployment not found in kustomization %q", url)
 }
 
 func (w Deployment) GetAppName() string {
@@ -110,18 +159,22 @@ func (w Deployment) Kustomize() string {
 		accessMode = w.PVCSpec.AccessModes
 	}
 
-	patch := `{
-				"patches": [{
-					"target": {
-						"kind": "PersistentVolumeClaim",
-						"name": "busybox-pvc"
-					},
-					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + scName +
-		`\n- op: add\n  path: /spec/accessModes\n  value: [` + accessMode + `]"
-				}]
-			}`
+	const pvcPatch = `{
+		"target": {
+			"kind": "PersistentVolumeClaim",
+			"name": "%s"
+		},
+		"patch": "- op: replace\n  path: /spec/storageClassName\n  value: %s\n` +
+		`- op: add\n  path: /spec/accessModes\n  value: [%s]"
+	}`
 
-	return patch
+	patches := make([]string, 0, len(w.PVCNames))
+
+	for _, pvcName := range w.PVCNames {
+		patches = append(patches, fmt.Sprintf(pvcPatch, pvcName, scName, accessMode))
+	}
+
+	return `{"patches": [` + strings.Join(patches, ",") + `]}`
 }
 
 func (w Deployment) GetResources() error {
@@ -159,7 +212,13 @@ func (w Deployment) Health(ctx types.TestContext, cluster *types.Cluster) error 
 			condition.Reason, deploymentMinimumReplicasAvailable, cluster.Name)
 	}
 
-	return checkPVCHealth(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
+	for _, pvcName := range w.PVCNames {
+		if err := checkPVCHealth(ctx, cluster, ctx.AppNamespace(), pvcName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Status returns the deployment status across managed clusters.
@@ -187,17 +246,25 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
-	if err != nil {
-		return types.WorkloadStatus{}, err
+	pvcsFound := 0
+
+	for _, pvcName := range w.PVCNames {
+		pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
+		if err != nil {
+			return types.WorkloadStatus{}, err
+		}
+
+		if pvcExist {
+			pvcsFound++
+		}
 	}
 
 	var status types.ApplicationStatus
 
 	switch {
-	case deploymentExist && pvcExist:
+	case deploymentExist && pvcsFound == len(w.PVCNames):
 		status = types.ApplicationFound
-	case deploymentExist || pvcExist:
+	case deploymentExist || pvcsFound > 0:
 		status = types.ApplicationPartial
 	default:
 		status = types.ApplicationNotFound
