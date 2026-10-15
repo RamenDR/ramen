@@ -1808,7 +1808,7 @@ func updatePeerClass(log logr.Logger, to []rmn.PeerClass, from rmn.PeerClass, sc
 func hasPeerClass(vrgPeerClasses []rmn.PeerClass, scName string, clusterIDs []string) bool {
 	for peerClassVRGIdx := range vrgPeerClasses {
 		if (vrgPeerClasses[peerClassVRGIdx].StorageClassName == scName) &&
-			(equalClusterIDSlices(vrgPeerClasses[peerClassVRGIdx].ClusterIDs, clusterIDs)) {
+			equalClusterIDSlices(vrgPeerClasses[peerClassVRGIdx].ClusterIDs, clusterIDs) {
 			return true
 		}
 	}
