@@ -29,7 +29,7 @@ require (
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0
 	github.com/stretchr/testify v1.11.1
-	github.com/vmware-tanzu/velero v1.15.0
+	github.com/vmware-tanzu/velero v1.18.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/time v0.15.0
 	k8s.io/api v0.36.1
