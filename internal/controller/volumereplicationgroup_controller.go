@@ -894,7 +894,7 @@ func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaim
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
 
-		storageClass, err := v.validateAndGetStorageClass(pvc.Spec.StorageClassName, pvc)
+		storageClass, err := v.getStorageClass(pvc)
 		if err != nil {
 			return false, err
 		}
@@ -998,11 +998,9 @@ func (v *VRGInstance) getCGLabelValue(scName *string, pvcName, pvcNamespace stri
 		return "", fmt.Errorf("missing storage class name for PVC %s/%s", pvcNamespace, pvcName)
 	}
 
-	storageClass := &storagev1.StorageClass{}
-	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
-		v.log.Info(fmt.Sprintf("Failed to get the storageclass %s", *scName))
-
-		return "", fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
+	storageClass, err := v.getStorageClassFromSCName(scName)
+	if err != nil {
+		return "", err
 	}
 
 	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
@@ -1077,9 +1075,8 @@ func (v *VRGInstance) validateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList
 
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
-		scName := pvc.Spec.StorageClassName
 
-		storageClass, err := v.validateAndGetStorageClass(scName, pvc)
+		storageClass, err := v.getStorageClass(pvc)
 		if err != nil {
 			return err
 		}
@@ -1122,13 +1119,6 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 	peerClass, err := v.findPeerClassMatchingSC(storageClass, peerClasses, pvc)
 	if err != nil {
 		return err
-	}
-
-	if peerClass == nil {
-		msg := fmt.Sprintf("peerClass matching storageClass %s not found for async PVC", storageClass.GetName())
-		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonPeerClassNotFound, msg)
-
-		return errors.New(msg)
 	}
 
 	pvcEnabledForVolSync := util.IsPVCMarkedForVolSync(v.instance.GetAnnotations())
@@ -1187,9 +1177,8 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
-		scName := pvc.Spec.StorageClassName
 
-		storageClass, err := v.validateAndGetStorageClass(scName, pvc)
+		storageClass, err := v.getStorageClass(pvc)
 		if err != nil {
 			return err
 		}
@@ -1208,7 +1197,7 @@ func (v *VRGInstance) separateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimLis
 		len(v.volRepPVCs), len(v.volSyncPVCs)))
 
 	if len(pvcList.Items) != (len(v.volRepPVCs) + len(v.volSyncPVCs)) {
-		return fmt.Errorf("no PVCs are procted")
+		return fmt.Errorf("no PVCs are protected")
 	}
 
 	return nil
@@ -1268,12 +1257,12 @@ func (v *VRGInstance) findReplicationClassUsingPeerClass(
 
 func (v *VRGInstance) findVolSnapClass(storageClass *storagev1.StorageClass,
 ) (*snapv1.VolumeSnapshotClass, error) {
-	SnaphotClasses, err := v.volSyncHandler.GetVolumeSnapshotClasses()
+	snapshotClasses, err := v.volSyncHandler.GetVolumeSnapshotClasses()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, snapshotClass := range SnaphotClasses {
+	for _, snapshotClass := range snapshotClasses {
 		sIDFromSnapClass := snapshotClass.GetLabels()[StorageIDLabel]
 
 		matched := sIDFromSnapClass == storageClass.GetLabels()[StorageIDLabel] &&
@@ -1282,25 +1271,9 @@ func (v *VRGInstance) findVolSnapClass(storageClass *storagev1.StorageClass,
 		if matched {
 			return &snapshotClass, nil
 		}
-
-		continue
 	}
 
 	return nil, nil
-}
-
-func (v *VRGInstance) validateAndGetStorageClass(scName *string, pvc *corev1.PersistentVolumeClaim,
-) (*storagev1.StorageClass, error) {
-	if scName == nil || *scName == "" {
-		return nil, fmt.Errorf("missing storage class name for PVC %s/%s", pvc.GetNamespace(), pvc.GetName())
-	}
-
-	storageClass := &storagev1.StorageClass{}
-	if err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: *scName}, storageClass); err != nil {
-		return nil, fmt.Errorf("failed to get the storageclass with name %s (%w)", *scName, err)
-	}
-
-	return storageClass, nil
 }
 
 func (v *VRGInstance) findPeerClassMatchingSC(
@@ -2785,9 +2758,9 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 		return vmConflictCondition
 	}
 
-	// Priortize the resource conflict condition on Primary cluster
+	// Prioritize the resource conflict condition on Primary cluster
 	if vmResourceConflict && pvcResourceConflict {
-		return v.PriortizePrimaryClusterDataConflictCondition(vmConflictCondition, pvcConflictCondition)
+		return v.PrioritizePrimaryClusterDataConflictCondition(vmConflictCondition, pvcConflictCondition)
 	}
 
 	if vmResourceConflict {
@@ -2797,7 +2770,7 @@ func (v *VRGInstance) aggregateVRGNoClusterDataConflictCondition() *metav1.Condi
 	return pvcConflictCondition
 }
 
-func (v *VRGInstance) PriortizePrimaryClusterDataConflictCondition(
+func (v *VRGInstance) PrioritizePrimaryClusterDataConflictCondition(
 	vmConflictCondition, pvcConflictCondition *metav1.Condition,
 ) *metav1.Condition {
 	if vmConflictCondition.Reason == pvcConflictCondition.Reason {
