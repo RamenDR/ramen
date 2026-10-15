@@ -65,6 +65,16 @@ func appendSubscriptionObject(
 		return nil, err
 	}
 
+	// Keep the existing scheduling settings when the DRCluster does not override them.
+	config := schedulingConfigFromSpec(drcluster)
+	if config == nil && mwSub != nil && mwSub.Spec.Config != nil {
+		config = &operatorsv1alpha1.SubscriptionConfig{
+			NodeSelector: mwSub.Spec.Config.NodeSelector,
+			Tolerations:  mwSub.Spec.Config.Tolerations,
+			Affinity:     mwSub.Spec.Config.Affinity,
+		}
+	}
+
 	if mwSub != nil {
 		// If Subscription spec, other than CSV version is the same, use existing Subscription object to allow
 		// upgrades to later CSV versions as they appear on the managed clusters (instead of forcing it to
@@ -75,6 +85,8 @@ func appendSubscriptionObject(
 			mwSub.Spec.CatalogSource == drClusterOperatorCatalogSourceNameOrDefault(ramenConfig) &&
 			mwSub.Spec.CatalogSourceNamespace == drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig) &&
 			mwSub.Spec.Package == drClusterOperatorPackageNameOrDefault(ramenConfig) {
+			mwSub.Spec.Config = config
+
 			return append(objects, mwSub), nil
 		}
 	}
@@ -87,7 +99,23 @@ func appendSubscriptionObject(
 			drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
 			drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
 			drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
+			config,
 		)), nil
+}
+
+// schedulingConfigFromSpec returns the Subscription config from spec.operator.subscriptionConfig,
+// or nil when the spec field is unset.
+func schedulingConfigFromSpec(drcluster *rmn.DRCluster) *operatorsv1alpha1.SubscriptionConfig {
+	specConfig := drcluster.Spec.Operator.SubscriptionConfig
+	if specConfig == nil {
+		return nil
+	}
+
+	return &operatorsv1alpha1.SubscriptionConfig{
+		NodeSelector: specConfig.NodeSelector,
+		Tolerations:  specConfig.Tolerations,
+		Affinity:     specConfig.Affinity,
+	}
 }
 
 var olmClusterRole = &rbacv1.ClusterRole{
@@ -168,6 +196,7 @@ func subscription(
 	catalogSourceName string,
 	catalogSourceNamespaceName string,
 	clusterServiceVersionName string,
+	config *operatorsv1alpha1.SubscriptionConfig,
 ) *operatorsv1alpha1.Subscription {
 	return &operatorsv1alpha1.Subscription{
 		TypeMeta: metav1.TypeMeta{Kind: "Subscription", APIVersion: "operators.coreos.com/v1alpha1"},
@@ -185,6 +214,7 @@ func subscription(
 			Channel:                channelName,
 			StartingCSV:            clusterServiceVersionName,
 			InstallPlanApproval:    "Automatic",
+			Config:                 config,
 		},
 	}
 }
