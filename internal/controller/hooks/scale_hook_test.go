@@ -196,7 +196,7 @@ func TestScaleUpDeploymentMissingAnnotation(t *testing.T) {
 
 	err = scaleHook.ScaleUpResource(resource, log)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no annotations found to restore replicas for resource")
+	assert.Contains(t, err.Error(), "no annotations found to restore replicas")
 }
 
 func TestScaleUpStatefulSetMissingAnnotation(t *testing.T) {
@@ -222,7 +222,7 @@ func TestScaleUpStatefulSetMissingAnnotation(t *testing.T) {
 
 	err = scaleHook.ScaleUpResource(resource, log)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no annotations found to restore replicas for resource")
+	assert.Contains(t, err.Error(), "no annotations found to restore replicas")
 }
 
 func TestScaleUpDeployment(t *testing.T) {

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
 package hooks
 
 import (
@@ -31,8 +34,14 @@ func getResourcesUsingNameSelector(r client.Reader, hook *kubeobjects.HookSpec,
 	if isValidK8sName(hook.NameSelector) {
 		// use nameSelector for Matching field
 		objs, err := getObjectsUsingValidK8sName(r, hook, objList)
+		if err != nil {
+			return ValidNameSelector, filteredObjs, fmt.Errorf(
+				"failed to list resources using valid nameSelector=%q (hook=%q namespace=%q): %w",
+				hook.NameSelector, hook.Name, hook.Namespace, err,
+			)
+		}
 
-		return ValidNameSelector, objs, err
+		return ValidNameSelector, objs, nil
 	} else if isValidRegex(hook.NameSelector) {
 		// after listing without the fields selector, match with the regex for filtering
 		listOps := &client.ListOptions{
@@ -41,13 +50,19 @@ func getResourcesUsingNameSelector(r client.Reader, hook *kubeobjects.HookSpec,
 
 		err = r.List(context.Background(), objList, listOps)
 		if err != nil {
-			return RegexNameSelector, filteredObjs, err
+			return RegexNameSelector, filteredObjs, fmt.Errorf(
+				"failed to list resources using regex nameSelector=%q (hook=%q namespace=%q): %w",
+				hook.NameSelector, hook.Name, hook.Namespace, err,
+			)
 		}
 
 		return RegexNameSelector, getObjectsBasedOnTypeAndRegex(objList, hook.NameSelector), nil
 	}
 
-	return InvalidNameSelector, filteredObjs, fmt.Errorf("nameSelector is neither distinct name nor regex")
+	return InvalidNameSelector, filteredObjs, fmt.Errorf(
+		"nameSelector=%q is neither a valid k8s name nor a valid regex (hook=%q namespace=%q)",
+		hook.NameSelector, hook.Name, hook.Namespace,
+	)
 }
 
 func getObjectsUsingValidK8sName(r client.Reader, hook *kubeobjects.HookSpec,
@@ -59,10 +74,13 @@ func getObjectsUsingValidK8sName(r client.Reader, hook *kubeobjects.HookSpec,
 
 	err := r.List(context.Background(), objList, listOps)
 	if err != nil {
-		return nil, fmt.Errorf("error listing resources using nameSelector: %w", err)
+		return nil, fmt.Errorf(
+			"failed to list resources using nameSelector=%q (hook=%q namespace=%q): %w",
+			hook.NameSelector, hook.Name, hook.Namespace, err,
+		)
 	}
 
-	return getFilteredObjectsBasedOnTypeAndNameSelector(objList, hook.NameSelector), err
+	return getFilteredObjectsBasedOnTypeAndNameSelector(objList, hook.NameSelector), nil
 }
 
 // Based on the type of resource, slice of objects is returned.
@@ -177,9 +195,17 @@ func getObjectsBasedOnTypeAndRegex(objList client.ObjectList, nameSelector strin
 func getResourcesUsingLabelSelector(r client.Reader, hook *kubeobjects.HookSpec,
 	objList client.ObjectList,
 ) error {
+	if len(hook.LabelSelector.MatchLabels) == 0 && len(hook.LabelSelector.MatchExpressions) == 0 {
+		return fmt.Errorf(
+			"labelSelector has no MatchLabels or MatchExpressions (hook=%q namespace=%q)",
+			hook.Name, hook.Namespace,
+		)
+	}
+
 	selector, err := metav1.LabelSelectorAsSelector(hook.LabelSelector)
 	if err != nil {
-		return fmt.Errorf("error converting labelSelector to selector")
+		return fmt.Errorf("failed to convert labelSelector to selector (hook=%q namespace=%q): %w",
+			hook.Name, hook.Namespace, err)
 	}
 
 	listOps := &client.ListOptions{
@@ -189,7 +215,8 @@ func getResourcesUsingLabelSelector(r client.Reader, hook *kubeobjects.HookSpec,
 
 	err = r.List(context.Background(), objList, listOps)
 	if err != nil {
-		return fmt.Errorf("error listing resources using labelSelector: %w", err)
+		return fmt.Errorf("failed to list resources using labelSelector (hook=%q namespace=%q): %w",
+			hook.Name, hook.Namespace, err)
 	}
 
 	return nil
