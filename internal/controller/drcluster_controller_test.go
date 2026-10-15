@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -189,6 +190,51 @@ func (f FakeMCVGetter) DeleteNFManagedClusterView(
 	resourceName, resourceNamespace, clusterName, resourceType string,
 ) error {
 	return nil
+}
+
+// mismatchedCSVCluster and mismatchedCSVInstalled let a single test simulate the catalog/CSV
+// mismatch bug (hub requests a CSV that the managed cluster's catalog does not have) without
+// affecting every other DRCluster test, which rely on the happy-path default below: the installed
+// CSV always matches what the hub's ManifestWork requested.
+var (
+	mismatchedCSVCluster   string
+	mismatchedCSVInstalled string
+)
+
+func (f FakeMCVGetter) GetSubscriptionFromManagedCluster(
+	resourceName, resourceNamespace, managedCluster string, annotations map[string]string,
+) (*operatorsv1alpha1.Subscription, error) {
+	mwu := &util.MWUtil{
+		Client:          f.Client,
+		APIReader:       f.apiReader,
+		Ctx:             context.TODO(),
+		Log:             ctrl.Log.WithName("MWUtilTest"),
+		InstName:        "",
+		TargetNamespace: "",
+	}
+
+	sub, err := controllers.SubscriptionFromDrClusterManifestWork(mwu, managedCluster)
+	if err != nil {
+		return nil, err
+	}
+
+	if sub == nil {
+		return nil, k8serrors.NewNotFound(
+			schema.GroupResource{Group: "operators.coreos.com", Resource: "subscriptions"}, resourceName)
+	}
+
+	sub.Status.CurrentCSV = sub.Spec.StartingCSV
+
+	if managedCluster == mismatchedCSVCluster {
+		sub.Status.InstalledCSV = mismatchedCSVInstalled
+
+		return sub, nil
+	}
+
+	// Happy-path default: simulate OLM having resolved and installed exactly the CSV requested.
+	sub.Status.InstalledCSV = sub.Spec.StartingCSV
+
+	return sub, nil
 }
 
 func inspectClusterManifestSubscriptionCSV(match bool, value string, drcluster *ramen.DRCluster) {
@@ -481,6 +527,50 @@ var _ = Describe("DRClusterController", func() {
 				createPolicies()
 
 				drcluster = drclusters[0].DeepCopy()
+			})
+		})
+
+		When("the DR Cluster Operator CSV installed on the managed cluster does not match the hub's request", func() {
+			BeforeEach(func() {
+				mismatchedCSVCluster = drcluster.Name
+				mismatchedCSVInstalled = "odr-cluster-operator.v4.22.0-108.stable"
+			})
+
+			AfterEach(func() {
+				mismatchedCSVCluster = ""
+				mismatchedCSVInstalled = ""
+			})
+
+			It("reports NOT validated with reason DrClustersDeployStatusCheckFailed", func() {
+				By("creating a DRCluster with a valid S3Profile, but a catalog that installed a different CSV")
+
+				drcluster.Spec.S3ProfileName = s3Profiles[0].S3ProfileName
+				drcluster.Spec.ClusterFence = ""
+				Expect(k8sClient.Create(context.TODO(), drcluster)).To(Succeed())
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal("DrClustersDeployStatusCheckFailed"),
+					And(
+						ContainSubstring("ramen-dr-cluster-operator.v0.0.1"),
+						ContainSubstring(mismatchedCSVInstalled),
+					),
+					ramen.DRClusterValidated,
+					false,
+				)
+			})
+
+			When("deleting a DRCluster", func() {
+				It("is successful", func() {
+					drpolicyDelete(syncDRPolicy)
+					drclusterDelete(drcluster)
+					// recreate DRPolicy
+					createPolicies()
+
+					drcluster = drclusters[0].DeepCopy()
+				})
 			})
 		})
 

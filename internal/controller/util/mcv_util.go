@@ -14,6 +14,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	recipev1 "github.com/ramendr/recipe/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -94,6 +95,10 @@ type ManagedClusterViewGetter interface {
 
 	GetRecipeFromManagedCluster(
 		managedCluster, resourceName, resourceNamespace string) (*recipev1.Recipe, error)
+
+	GetSubscriptionFromManagedCluster(
+		resourceName, resourceNamespace, managedCluster string,
+		annotations map[string]string) (*operatorsv1alpha1.Subscription, error)
 
 	ListVGRClassMCVs(managedCluster string) (*viewv1beta1.ManagedClusterViewList, error)
 
@@ -494,6 +499,28 @@ func (m ManagedClusterViewGetterImpl) GetRecipeFromManagedCluster(cluster, resou
 
 func (m ManagedClusterViewGetterImpl) ListVRClassMCVs(cluster string) (*viewv1beta1.ManagedClusterViewList, error) {
 	return m.listMCVsWithLabel(cluster, map[string]string{VRClassLabel: ""})
+}
+
+func (m ManagedClusterViewGetterImpl) GetSubscriptionFromManagedCluster(
+	resourceName, resourceNamespace, managedCluster string,
+	annotations map[string]string,
+) (*operatorsv1alpha1.Subscription, error) {
+	sub := &operatorsv1alpha1.Subscription{}
+
+	err := m.getResourceFromManagedCluster(
+		resourceName,
+		resourceNamespace,
+		managedCluster,
+		annotations,
+		nil,
+		BuildManagedClusterViewName(resourceName, resourceNamespace, "sub"),
+		"Subscription",
+		operatorsv1alpha1.GroupName,
+		operatorsv1alpha1.GroupVersion,
+		sub,
+	)
+
+	return sub, err
 }
 
 // outputs a string for use in creating a ManagedClusterView name
