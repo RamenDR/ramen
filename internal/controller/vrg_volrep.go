@@ -1029,7 +1029,7 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 		return
 	}
 
-	log.Info("PVC unprotect VR", "deletion time", pvc.GetDeletionTimestamp())
+	log.Info("PVC unprotect VR", "deletion time", rmnutil.TimeString(pvc.GetDeletionTimestamp()))
 	v.pvcUnprotectVolRep(pvc, log)
 
 	return

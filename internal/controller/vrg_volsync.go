@@ -980,7 +980,7 @@ func (v *VRGInstance) pvcUnprotectVolSyncIfDeleted(
 		return false
 	}
 
-	log.Info("PVC unprotect VolSync", "deletion time", pvc.GetDeletionTimestamp())
+	log.Info("PVC unprotect VolSync", "deletion time", util.TimeString(pvc.GetDeletionTimestamp()))
 	v.pvcUnprotectVolSync(pvc, log)
 
 	return true
