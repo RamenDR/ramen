@@ -27,6 +27,16 @@ func ResourceIsDeleted(obj client.Object) bool {
 	return !obj.GetDeletionTimestamp().IsZero()
 }
 
+// TimeString returns a string for t. A nil time is an empty string.
+// String panics when called on a nil *metav1.Time.
+func TimeString(t *metav1.Time) string {
+	if t == nil {
+		return ""
+	}
+
+	return t.String()
+}
+
 func ProtectedPVCNamespacedName(pvc ramen.ProtectedPVC) types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: pvc.Namespace,
