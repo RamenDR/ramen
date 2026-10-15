@@ -79,6 +79,8 @@ func appendSubscriptionObject(
 		}
 	}
 
+	subConfig := subscriptionSchedulingConfig(mwSub)
+
 	return append(objects,
 		subscription(
 			drClusterOperatorNamespaceNameOrDefault(ramenConfig),
@@ -87,7 +89,28 @@ func appendSubscriptionObject(
 			drClusterOperatorCatalogSourceNameOrDefault(ramenConfig),
 			drClusterOperatorCatalogSourceNamespaceNameOrDefault(ramenConfig),
 			drClusterOperatorClusterServiceVersionNameOrDefault(ramenConfig),
+			subConfig,
 		)), nil
+}
+
+// subscriptionSchedulingConfig extracts just the scheduling-related fields (NodeSelector, Tolerations,
+// Affinity) from an existing Subscription's Spec.Config, if any, for reuse in a regenerated Subscription.
+// It returns nil if there is no existing Subscription, no Config, or none of those fields are set.
+func subscriptionSchedulingConfig(mwSub *operatorsv1alpha1.Subscription) *operatorsv1alpha1.SubscriptionConfig {
+	if mwSub == nil || mwSub.Spec.Config == nil {
+		return nil
+	}
+
+	existing := mwSub.Spec.Config
+	if existing.NodeSelector == nil && existing.Tolerations == nil && existing.Affinity == nil {
+		return nil
+	}
+
+	return &operatorsv1alpha1.SubscriptionConfig{
+		NodeSelector: existing.NodeSelector,
+		Tolerations:  existing.Tolerations,
+		Affinity:     existing.Affinity,
+	}
 }
 
 var olmClusterRole = &rbacv1.ClusterRole{
@@ -168,6 +191,7 @@ func subscription(
 	catalogSourceName string,
 	catalogSourceNamespaceName string,
 	clusterServiceVersionName string,
+	config *operatorsv1alpha1.SubscriptionConfig,
 ) *operatorsv1alpha1.Subscription {
 	return &operatorsv1alpha1.Subscription{
 		TypeMeta: metav1.TypeMeta{Kind: "Subscription", APIVersion: "operators.coreos.com/v1alpha1"},
@@ -185,6 +209,7 @@ func subscription(
 			Channel:                channelName,
 			StartingCSV:            clusterServiceVersionName,
 			InstallPlanApproval:    "Automatic",
+			Config:                 config,
 		},
 	}
 }
