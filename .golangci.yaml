@@ -152,7 +152,7 @@ linters:
     - gocritic
     - gocyclo
     #  - golint // Fully deprecated, remove this line once an alternative is enabled for the same
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
     - govet
