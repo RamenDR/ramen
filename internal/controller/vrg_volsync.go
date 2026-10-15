@@ -999,6 +999,7 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 		if err := markRGSResourceForDeletion(v.ctx, v.reconciler.Client, cg, pvc.Namespace); err != nil {
 			log.Error(err, "Failed to mark RGS for deletion", "CG", cg)
+			v.requeue()
 
 			return
 		}
@@ -1006,12 +1007,16 @@ func (v *VRGInstance) pvcUnprotectVolSync(pvc corev1.PersistentVolumeClaim, log 
 
 	if err := v.volSyncHandler.UndoPVRetentionForPVC(pvc); err != nil {
 		log.Error(err, "Failed to undo PV retention for deselected PVC", "PVC", pvc.Name)
+		v.requeue()
+
+		return
 	}
 
 	log.Info("Unprotecting VolSync PVC", "PVC", pvc.Name)
 
 	if err := v.volSyncHandler.UnprotectVolSyncPVC(&pvc); err != nil {
 		log.Error(err, "Failed to unprotect VolSync PVC", "PVC", pvc.Name)
+		v.requeue()
 
 		return
 	}

@@ -1554,7 +1554,7 @@ func (v *VRGInstance) reconcileAsPrimary() {
 	}
 
 	vrg := v.instance
-	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
+	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync) || v.result.Requeue
 	v.reconcileVolRepsAsPrimary()
 
 	if vrg.Spec.PrepareForFinalSync {
