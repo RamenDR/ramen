@@ -85,7 +85,8 @@ func (r RestoreRequest) EndTime() metav1.Time {
 	return metav1.Now()
 }
 
-func (r BackupRequest) Status(log logr.Logger) error  { return backupRealStatusProcess(r.backup, log) }
+func (r BackupRequest) Status(log logr.Logger) error { return backupRealStatusProcess(r.backup, log) }
+
 func (r RestoreRequest) Status(log logr.Logger) error { return restoreStatusProcess(r.restore, log) }
 
 type (
@@ -93,9 +94,10 @@ type (
 	RestoreRequests struct{ restores *velero.RestoreList }
 )
 
-func (r BackupRequests) Count() int                     { return len(r.backups.Items) }
-func (r RestoreRequests) Count() int                    { return len(r.restores.Items) }
-func (r BackupRequests) Get(i int) kubeobjects.Request  { return BackupRequest{&r.backups.Items[i]} }
+func (r BackupRequests) Count() int                    { return len(r.backups.Items) }
+func (r RestoreRequests) Count() int                   { return len(r.restores.Items) }
+func (r BackupRequests) Get(i int) kubeobjects.Request { return BackupRequest{&r.backups.Items[i]} }
+
 func (r RestoreRequests) Get(i int) kubeobjects.Request { return RestoreRequest{&r.restores.Items[i]} }
 
 type RequestsManager struct{}
