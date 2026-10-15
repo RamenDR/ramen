@@ -140,11 +140,11 @@ func isFullyEnclosed(expression string) bool {
 //nolint:funlen,gocognit,gocyclo,cyclop
 func compare(a, b reflect.Value, operator string) (bool, error) {
 	// convert pointer to interface
-	if a.Kind() == reflect.Ptr {
+	if a.Kind() == reflect.Pointer {
 		a = a.Elem()
 	}
 
-	if b.Kind() == reflect.Ptr {
+	if b.Kind() == reflect.Pointer {
 		b = b.Elem()
 	}
 
