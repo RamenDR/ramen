@@ -163,7 +163,7 @@ func waitForResourceDelete(ctx types.Context, cluster *types.Cluster, obj client
 // getKind extracts resource type name from the object
 func getKind(obj client.Object) string {
 	t := reflect.TypeOf(obj)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
