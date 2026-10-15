@@ -3,8 +3,8 @@
 
 # Build the manager binary.
 
-# To build with a different Go version, use --build-arg GO_VERSION=1.25.
-ARG GO_VERSION=1.26
+# To build with a different Go version, use --build-arg GO_VERSION=<GO_VERSION>
+ARG GO_VERSION=1.27
 
 FROM docker.io/library/golang:${GO_VERSION} as builder
 
