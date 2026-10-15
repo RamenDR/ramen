@@ -643,11 +643,11 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 	)
 
 	if backup.Status.StartTimestamp != nil {
-		log.Info("Backup", "start", backup.Status.StartTimestamp)
+		log.Info("Backup", "start", backup.Status.StartTimestamp.Time)
 	}
 
 	if backup.Status.CompletionTimestamp != nil {
-		log.Info("Backup", "finish", backup.Status.CompletionTimestamp)
+		log.Info("Backup", "finish", backup.Status.CompletionTimestamp.Time)
 	}
 
 	if backup.Status.Progress != nil {
@@ -668,11 +668,11 @@ func restoreStatusLog(restore *velero.Restore, log logr.Logger) {
 	)
 
 	if restore.Status.StartTimestamp != nil {
-		log.Info("Restore", "start", restore.Status.StartTimestamp)
+		log.Info("Restore", "start", restore.Status.StartTimestamp.Time)
 	}
 
 	if restore.Status.CompletionTimestamp != nil {
-		log.Info("Restore", "finish", restore.Status.CompletionTimestamp)
+		log.Info("Restore", "finish", restore.Status.CompletionTimestamp.Time)
 	}
 
 	if restore.Status.Progress != nil {

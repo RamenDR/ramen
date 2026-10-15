@@ -2418,7 +2418,7 @@ func (v *VRGInstance) isPVCSyncedInVGR(pvc *corev1.PersistentVolumeClaim,
 		v.log.Info("Skipping sync time update - VGR sync time is not after PVC creation",
 			"pvc", pvc.Name,
 			"pvcCreationTime", pvc.CreationTimestamp,
-			"vgrSyncTime", vgrSyncTime)
+			"vgrSyncTime", vgrSyncTime.Time)
 
 		return false
 	}
@@ -2427,7 +2427,7 @@ func (v *VRGInstance) isPVCSyncedInVGR(pvc *corev1.PersistentVolumeClaim,
 		v.groupAlreadyHasThisSyncTime(pvc.Name, vgrSyncTime) {
 		v.log.Info("Skipping sync time update - PVC joined after this VGR sync time",
 			"pvc", pvc.Name,
-			"vgrSyncTime", vgrSyncTime)
+			"vgrSyncTime", vgrSyncTime.Time)
 
 		return false
 	}

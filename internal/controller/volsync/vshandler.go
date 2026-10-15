@@ -3323,7 +3323,7 @@ func (v *VSHandler) WaitForMountJobDeletion(pvcName, pvcNamespace string) (bool,
 	// Job still exists, check if it's being deleted
 	if job.DeletionTimestamp != nil {
 		v.log.V(1).Info("Mount job deletion in progress", "jobName", jobName,
-			"deletionTimestamp", job.DeletionTimestamp)
+			"deletionTimestamp", job.DeletionTimestamp.Time)
 
 		return false, nil // Still deleting, need to wait
 	}
