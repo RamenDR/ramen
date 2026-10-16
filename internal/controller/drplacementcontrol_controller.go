@@ -118,6 +118,8 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager, ramenC
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=placements/finalizers,verbs=update
 // +kubebuilder:rbac:groups=argoproj.io,resources=applicationsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=restores,verbs=get;list;watch
+// +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,verbs=get;list;watch;create;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -155,6 +157,12 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 
 		return ctrl.Result{}, fmt.Errorf("failed to get DRPC object: %w", err)
+	}
+
+	// Hub recovery: when an ACM Restore restores managed clusters, ensure the global
+	// KlusterletConfig carries the AppliedManifestWork eviction grace period.
+	if err := EnsureKlusterletConfigForRestore(ctx, r.Client); err != nil {
+		logger.Info("Failed to ensure KlusterletConfig for hub recovery", "error", err.Error())
 	}
 
 	// Save a copy of the instance status to be used for the VRG status update comparison
