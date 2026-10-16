@@ -410,6 +410,8 @@ github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3A
 github.com/spf13/viper v1.19.0 h1:RWq5SEjt8o25SROyN3z2OrDB9l7RPd3lwTWU8EcEdcI=
 github.com/spf13/viper v1.19.0/go.mod h1:GQUN9bilAbhU/jgc1bKs99f/suXKeUMct8Adx5+Ntkg=
 github.com/stoewer/go-strcase v1.2.0/go.mod h1:IBiWB2sKIp3wVVQ3Y035++gc+knqhUQag1KpM8ahLw8=
+github.com/stolostron/cluster-lifecycle-api v0.0.0-20260330032750-43755d6ceb09 h1:vM6k7Atzuhygf/rTytmRdTEs3HdnIuhkpdKyVrgHX7Q=
+github.com/stolostron/cluster-lifecycle-api v0.0.0-20260330032750-43755d6ceb09/go.mod h1:6V51MeHkiYrmQVSFAhc4rfgZk2/AxtZMNSgNN8DjvRQ=
 github.com/stolostron/kubernetes-dependency-watches v0.10.2 h1:b8g3Wye6igeRrrSQwXGr4Ch4zTY4uouzHlDARw8/m7w=
 github.com/stolostron/kubernetes-dependency-watches v0.10.2/go.mod h1:pV1b/PwVNG4a5tzBcqxhUpMjjo5nY0gUb6ieu6sGH6o=
 github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0 h1:qL6eeBtdjLq7ktBBg8tB44b6jTKQjFy6bdl8EM+Kq6o=
