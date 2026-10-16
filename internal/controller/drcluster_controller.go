@@ -14,6 +14,7 @@ import (
 
 	csiaddonsv1alpha1 "github.com/csi-addons/kubernetes-csi-addons/api/csiaddons/v1alpha1"
 	"github.com/go-logr/logr"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -429,7 +430,7 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 		return ctrl.Result{}, fmt.Errorf("drclusters s3Profile validate: %w", u.validatedSetFalseAndUpdate(reason, err))
 	}
 
-	if err := u.getDRClusterDeployedStatus(u.object); err != nil {
+	if err := u.getDRClusterDeployedStatus(u.object, ramenConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drclusters deploy status: %w",
 			u.validatedSetFalseAndUpdate("DrClustersDeployStatusCheckFailed", err))
 	}
@@ -463,6 +464,58 @@ func (r DRClusterReconciler) processCreateOrUpdate(u *drclusterInstance) (ctrl.R
 	return ctrl.Result{Requeue: requeue || u.requeue}, nil
 }
 
+func (u *drclusterInstance) checkDRClusterOperatorCSV(ramenConfig *ramen.RamenConfig) error {
+	if !ramenConfig.DrClusterOperator.DeploymentAutomationEnabled {
+		return nil
+	}
+
+	annotations := map[string]string{DRClusterNameAnnotation: u.object.Name}
+
+	sub, err := u.reconciler.MCVGetter.GetSubscriptionFromManagedCluster(
+		"ramen-dr-cluster-subscription",
+		drClusterOperatorNamespaceNameOrDefault(ramenConfig),
+		u.object.Name,
+		annotations,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get DR Cluster Operator Subscription status from cluster %s: %w",
+			u.object.Name, err)
+	}
+
+	if message, failed := subscriptionInstallFailed(sub); failed {
+		u.log.Info("DR Cluster Operator Subscription has a failure condition", "message", message)
+	}
+
+	if sub.Status.CurrentCSV == "" || sub.Status.InstalledCSV == "" {
+		return nil
+	}
+
+	if sub.Status.InstalledCSV != sub.Status.CurrentCSV {
+		return fmt.Errorf("DR Cluster Operator CSV requested on cluster %q (%q) differs from the installed CSV (%q)",
+			u.object.Name, sub.Status.CurrentCSV, sub.Status.InstalledCSV)
+	}
+
+	return nil
+}
+
+func subscriptionInstallFailed(sub *operatorsv1alpha1.Subscription) (message string, failed bool) {
+	failureConditions := []operatorsv1alpha1.SubscriptionConditionType{
+		operatorsv1alpha1.SubscriptionResolutionFailed,
+		operatorsv1alpha1.SubscriptionInstallPlanFailed,
+		operatorsv1alpha1.SubscriptionBundleUnpackFailed,
+		operatorsv1alpha1.SubscriptionCatalogSourcesUnhealthy,
+	}
+
+	for _, condType := range failureConditions {
+		cond := sub.Status.GetCondition(condType)
+		if cond.Status == corev1.ConditionTrue {
+			return cond.Message, true
+		}
+	}
+
+	return "", false
+}
+
 func (u *drclusterInstance) initializeStatus() {
 	// Save a copy of the instance status to be used for the DRCluster status update comparison
 	u.object.Status.DeepCopyInto(&u.savedInstanceStatus)
@@ -479,7 +532,9 @@ func (u *drclusterInstance) initializeStatus() {
 	}
 }
 
-func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluster) error {
+func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluster,
+	ramenConfig *ramen.RamenConfig,
+) error {
 	mw, err := u.mwUtil.GetDrClusterManifestWork(drcluster.Name)
 	if err != nil {
 		return fmt.Errorf("error in fetching DRCluster ManifestWork %v", err)
@@ -492,6 +547,10 @@ func (u *drclusterInstance) getDRClusterDeployedStatus(drcluster *ramen.DRCluste
 	deployed := util.IsManifestInAppliedState(mw)
 	if !deployed {
 		return fmt.Errorf("DRCluster ManifestWork is not in applied state")
+	}
+
+	if err := u.checkDRClusterOperatorCSV(ramenConfig); err != nil {
+		return err
 	}
 
 	return nil
