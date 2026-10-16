@@ -275,7 +275,7 @@ func (f FakeMCVGetter) GetVRGFromManagedCluster(resourceName, resourceNamespace,
 		return nil, fmt.Errorf("%s: Faking cluster down %s", getFunctionNameAtIndex(2), managedCluster)
 	}
 
-	vrg, err := GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace)
+	vrg, err := GetFakeVRGFromMCVUsingMW(resourceName, managedCluster, resourceNamespace)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return fakeVRGConditionally(resourceNamespace, managedCluster, err)
@@ -356,10 +356,10 @@ func getVRGNamespace(defaultNamespace string) string {
 }
 
 //nolint:funlen
-func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
+func GetFakeVRGFromMCVUsingMW(resourceName, managedCluster, resourceNamespace string,
 ) (*rmn.VolumeReplicationGroup, error) {
 	manifestLookupKey := types.NamespacedName{
-		Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(resourceNamespace), "vrg"),
+		Name:      rmnutil.ManifestWorkName(resourceName, getVRGNamespace(resourceNamespace), "vrg"),
 		Namespace: managedCluster,
 	}
 
@@ -1730,7 +1730,7 @@ func verifyActionResultForPlacement(placement *clrapiv1beta1.Placement, homeClus
 	Expect(placementDecision).ShouldNot(BeNil())
 	Expect(placementDecision.GetLabels()[rmnutil.ExcludeFromVeleroBackup]).Should(Equal("true"))
 	Expect(placementDecision.Status.Decisions[0].ClusterName).Should(Equal(homeCluster))
-	vrg, err := GetFakeVRGFromMCVUsingMW(homeCluster, placement.GetNamespace())
+	vrg, err := GetFakeVRGFromMCVUsingMW(DRPCCommonName, homeCluster, placement.GetNamespace())
 	Expect(err).NotTo(HaveOccurred())
 
 	switch plType {
