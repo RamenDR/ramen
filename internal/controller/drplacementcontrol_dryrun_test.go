@@ -103,6 +103,12 @@ var _ = Describe("DRPCDryRunTestFailover", func() {
 		// Cleanup - errors are ignored as resources may not exist
 		if drpc != nil {
 			Expect(k8sClient.Delete(context.TODO(), drpc)).To(Or(Succeed(), MatchError(ContainSubstring("not found"))))
+
+			// The DRPC finalizer needs the DRPolicy and DRClusters to clean up its
+			// ManifestWorks, so wait for it to finish before deleting them.
+			Eventually(func() bool {
+				return k8serrors.IsNotFound(apiReader.Get(context.TODO(), drpcNamespacedName, &rmn.DRPlacementControl{}))
+			}, timeout, interval).Should(BeTrue())
 		}
 
 		if userPlacement != nil {
