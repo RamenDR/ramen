@@ -66,7 +66,7 @@ def generate_config_map(controller, env, args):
     template = drenv.template(command.resource("configmap.yaml"))
     return template.substitute(
         name=f"ramen-{controller}-operator-config",
-        auto_deploy="true",
+        auto_deploy="false",
         cluster1=clusters[0],
         cluster2=clusters[1],
         minio_url_cluster1=minio.service_url(clusters[0]),
