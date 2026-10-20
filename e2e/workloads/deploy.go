@@ -103,7 +103,11 @@ type jsonPatch struct {
 	Value any    `json:"value"`
 }
 
+<<<<<<< HEAD
 func (w Deployment) Kustomize() (string, error) {
+=======
+func (w Deployment) Kustomize() string {
+>>>>>>> 0238b186 (e2e: write the deployment PVC kustomize patch as YAML)
 	if w.PVCSpec.StorageClassName == "" && w.PVCSpec.AccessModes == "" {
 		return "", nil
 	}
@@ -113,7 +117,7 @@ func (w Deployment) Kustomize() (string, error) {
 		scName = w.PVCSpec.StorageClassName
 	}
 
-	accessMode := "ReadWriteOnce"
+	accessMode := string(corev1.ReadWriteOnce)
 	if w.PVCSpec.AccessModes != "" {
 		accessMode = w.PVCSpec.AccessModes
 	}
@@ -123,7 +127,11 @@ func (w Deployment) Kustomize() (string, error) {
 		{Op: "add", Path: "/spec/accessModes", Value: []string{accessMode}},
 	})
 	if err != nil {
+<<<<<<< HEAD
 		return "", fmt.Errorf("failed to marshal PVC patch: %w", err)
+=======
+		panic(err) // Kustomize() has no error return
+>>>>>>> 0238b186 (e2e: write the deployment PVC kustomize patch as YAML)
 	}
 
 	kustomize := &argocd.ApplicationSourceKustomize{
@@ -140,10 +148,17 @@ func (w Deployment) Kustomize() (string, error) {
 
 	out, err := json.Marshal(kustomize)
 	if err != nil {
+<<<<<<< HEAD
 		return "", fmt.Errorf("failed to marshal kustomize: %w", err)
 	}
 
 	return string(out), nil
+=======
+		panic(err)
+	}
+
+	return string(out)
+>>>>>>> 0238b186 (e2e: write the deployment PVC kustomize patch as YAML)
 }
 
 func (w Deployment) GetResources() error {
