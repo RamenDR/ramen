@@ -4,6 +4,7 @@
 package workloads
 
 import (
+	"encoding/json"
 	"fmt"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
+	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -95,6 +97,12 @@ func (w Deployment) GetOperations(namespace string) []*recipe.Operation {
 	}
 }
 
+type jsonPatch struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
+}
+
 func (w Deployment) Kustomize() string {
 	if w.PVCSpec.StorageClassName == "" && w.PVCSpec.AccessModes == "" {
 		return ""
@@ -105,23 +113,37 @@ func (w Deployment) Kustomize() string {
 		scName = w.PVCSpec.StorageClassName
 	}
 
-	accessMode := "ReadWriteOnce"
+	accessMode := string(corev1.ReadWriteOnce)
 	if w.PVCSpec.AccessModes != "" {
 		accessMode = w.PVCSpec.AccessModes
 	}
 
-	patch := `{
-				"patches": [{
-					"target": {
-						"kind": "PersistentVolumeClaim",
-						"name": "busybox-pvc"
-					},
-					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + scName +
-		`\n- op: add\n  path: /spec/accessModes\n  value: [` + accessMode + `]"
-				}]
-			}`
+	ops, err := json.Marshal([]jsonPatch{
+		{Op: "replace", Path: "/spec/storageClassName", Value: scName},
+		{Op: "add", Path: "/spec/accessModes", Value: []string{accessMode}},
+	})
+	if err != nil {
+		panic(err) // Kustomize() has no error return
+	}
 
-	return patch
+	kustomize := &argocd.ApplicationSourceKustomize{
+		Patches: argocd.KustomizePatches{{
+			Target: &argocd.KustomizeSelector{
+				KustomizeResId: argocd.KustomizeResId{
+					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+					Name:         deploymentPVCName,
+				},
+			},
+			Patch: string(ops),
+		}},
+	}
+
+	out, err := json.Marshal(kustomize)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(out)
 }
 
 func (w Deployment) GetResources() error {
