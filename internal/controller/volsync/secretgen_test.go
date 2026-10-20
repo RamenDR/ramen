@@ -146,7 +146,7 @@ var _ = Describe("Secretgen", func() {
 			hubManager, err := ramenmanager.NewManager(testEnv.Config, ctrl.Options{
 				Scheme:  scheme.Scheme,
 				Metrics: metrics.Options{BindAddress: "0"},
-			}, ramendrv1alpha1.DRHubType)
+			}, ramendrv1alpha1.DRHubType, "")
 			Expect(err).NotTo(HaveOccurred())
 
 			var managerCtx context.Context
