@@ -4,6 +4,7 @@
 package workloads
 
 import (
+	"encoding/json"
 	"fmt"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 
+	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -95,33 +97,41 @@ func (w Deployment) GetOperations(namespace string) []*recipe.Operation {
 	}
 }
 
-func (w Deployment) Kustomize() string {
-	if w.PVCSpec.StorageClassName == "" && w.PVCSpec.AccessModes == "" {
-		return ""
+func (w Deployment) Kustomize() (string, error) {
+	if w.PVCSpec.StorageClassName == "" {
+		return "", fmt.Errorf("pvcSpec %q: storageClassName is required", w.PVCSpec.Name)
 	}
 
-	scName := "rook-ceph-block"
-	if w.PVCSpec.StorageClassName != "" {
-		scName = w.PVCSpec.StorageClassName
+	if w.PVCSpec.AccessModes == "" {
+		return "", fmt.Errorf("pvcSpec %q: accessModes is required", w.PVCSpec.Name)
 	}
 
-	accessMode := "ReadWriteOnce"
-	if w.PVCSpec.AccessModes != "" {
-		accessMode = w.PVCSpec.AccessModes
+	ops, err := json.Marshal([]jsonPatch{
+		{Op: "replace", Path: "/spec/storageClassName", Value: w.PVCSpec.StorageClassName},
+		{Op: "add", Path: "/spec/accessModes", Value: []string{w.PVCSpec.AccessModes}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal PVC patch: %w", err)
 	}
 
-	patch := `{
-				"patches": [{
-					"target": {
-						"kind": "PersistentVolumeClaim",
-						"name": "busybox-pvc"
-					},
-					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + scName +
-		`\n- op: add\n  path: /spec/accessModes\n  value: [` + accessMode + `]"
-				}]
-			}`
+	kustomize := &argocd.ApplicationSourceKustomize{
+		Patches: argocd.KustomizePatches{{
+			Target: &argocd.KustomizeSelector{
+				KustomizeResId: argocd.KustomizeResId{
+					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+					Name:         deploymentPVCName,
+				},
+			},
+			Patch: string(ops),
+		}},
+	}
 
-	return patch
+	out, err := json.Marshal(kustomize)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal kustomize: %w", err)
+	}
+
+	return string(out), nil
 }
 
 func (w Deployment) GetResources() error {
