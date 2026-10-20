@@ -24,7 +24,9 @@ import (
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	uberzap "go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -41,6 +43,7 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -96,6 +99,33 @@ func bindFlags(bindfuncs ...func(*flag.FlagSet)) {
 	}
 }
 
+// drClusterManagerCacheOptions returns cache.Options that restrict the controller-runtime
+// cache for ConfigMap and Secret, which otherwise get fully listed/watched across every
+// namespace on the managed cluster and can exceed the dr-cluster operator's memory limit.
+//
+// veleroNamespaceName is included for ConfigMap because the VRG controller reads/deletes
+// its per-VRG ResourceModifier ConfigMap there (see deleteResourceModifierCM)
+func drClusterManagerCacheOptions(veleroNamespaceName string) cache.Options {
+	ramenLabelSelector := labels.SelectorFromSet(labels.Set{rmnutil.CreatedByRamenLabel: "true"})
+
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			&corev1.ConfigMap{}: {
+				Namespaces: map[string]cache.Config{
+					controllers.RamenOperatorNamespace(): {},
+					veleroNamespaceName:                  {},
+				},
+			},
+			&corev1.Secret{}: {
+				Namespaces: map[string]cache.Config{
+					controllers.RamenOperatorNamespace(): {},
+					cache.AllNamespaces:                  {LabelSelector: ramenLabelSelector},
+				},
+			},
+		},
+	}
+}
+
 func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig,
 ) (*ctrl.Options, *ramendrv1alpha1.RamenConfig) {
 	ctrlOptions := ctrl.Options{
@@ -117,6 +147,10 @@ func buildOptions(restCfg *rest.Config, ramenConfig *ramendrv1alpha1.RamenConfig
 	if err != nil {
 		setupLog.Error(err, "unable to ensure ramen config ConfigMap exists")
 		os.Exit(1)
+	}
+
+	if controllers.ControllerType == ramendrv1alpha1.DRClusterType {
+		ctrlOptions.Cache = drClusterManagerCacheOptions(ramenConfig.KubeObjectProtection.VeleroNamespaceName)
 	}
 
 	for _, warning := range controllers.DeprecatedManagerOptionWarnings(ramenConfig, &ctrlOptions) {
