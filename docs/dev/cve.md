@@ -84,25 +84,30 @@ the Ramen repository. Downstream builds use a different Dockerfile and build
 process, so this method does not apply to downstream images.
 
 The relevant Go version for CVE checking is the one used to build the Ramen
-container image, not the `go.mod` compatibility version. Check the Dockerfile to
-see which Go version is used:
+container image, not the `go.mod` compatibility version. Read `ARG GO_VERSION`
+in the Dockerfile. The builder image is
+`docker.io/library/golang:${GO_VERSION}`.
+
+That tag is a release, not a patch. The registry moves it when a new patch is
+published. A local cache can still be the older image.
+
+To compile with the image currently in the registry, rebuild with a pull:
 
 ```bash
-grep "FROM.*golang" Dockerfile
+podman build --pull=always -t ${IMG} .
 ```
 
-**Example output:**
+Do not conclude the CVE is fixed from `GO_VERSION`. Read the compiler from the
+binary, the same way as the downstream steps below:
 
+```bash
+podman run --rm --entrypoint cat ${IMG} /manager > manager
+go version manager
+rm manager
 ```
-FROM docker.io/library/golang:1.25 as builder
-```
 
-This shows the image uses Go 1.25, which will pick the latest 1.25.x patch
-version available. If a CVE was fixed in Go 1.25.7, the Ramen image is not
-affected even if `go.mod` specifies `go 1.25.0`.
-
-Compare the Go version from the Dockerfile against the CVE fix versions to
-determine if the upstream code is vulnerable.
+Compare that `go1.x.y` to the CVE fix. A cached builder that was not pulled can
+still print an older patch.
 
 ### Checking downstream container images
 
