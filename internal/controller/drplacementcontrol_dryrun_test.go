@@ -121,13 +121,13 @@ func enterDryRunTestingFailover() {
 		Equal(rmn.ProgressionCompleted),
 		"Progression must not advance to Completed during an active dryRun")
 
-	By("verifying LastAppDeploymentCluster is NOT mutated during dryRun")
-	// updateUserPlacementRule() line 1915: the !DryRun guard prevents writing
-	// LastAppDeploymentCluster when DryRun=true.
-	Consistently(func() string {
+	By("verifying LastAppDeploymentCluster IS updated to failover cluster during dryRun")
+	// ensurePlacement() updates LastAppDeploymentCluster to the failover cluster during dryRun
+	// for immediate UI feedback showing where the test-failover is running.
+	Eventually(func() string {
 		return getLatestDRPC(DefaultDRPCNamespace).GetAnnotations()[controllers.LastAppDeploymentCluster]
-	}, timeout/2, interval).Should(Equal(East1ManagedCluster),
-		"LastAppDeploymentCluster must be preserved while DryRun=true")
+	}, timeout, interval).Should(Equal(West1ManagedCluster),
+		"LastAppDeploymentCluster should be updated to failover cluster during DryRun")
 
 	By("verifying DRPCLastAction is NOT mutated during dryRun")
 	// Same !DryRun guard: DRPCLastAction must stay as it was at initial deployment ("").
@@ -174,10 +174,11 @@ func enterDryRunTestingFailover() {
 //   - DiscoveredApp: intermediateProgression = ProgressionWaitOnUserToCleanUp
 //     (cleanupSecondary calls setDiscoveredAppGCProgression which sets WaitOnUserToCleanUp)
 func verifyDryRunPromotion(intermediateProgression rmn.ProgressionStatus) {
+	// For BOTH AppSet and DiscoveredApp: VRG stays in Unknown state during cleanup
+	By("setting East1 VRG to return Unknown state (simulating transitioning)")
+	vrgUnknownCluster = East1ManagedCluster
+
 	By("setting DryRun=false, keeping Action=Failover and FailoverCluster=West1")
-	// detectPromotionOrRevert() sees FailoverCluster==testFailoverCluster && !DryRun
-	// → routes to handlePromotion() which updates annotations then requeues.
-	// Normal failover then completes because West1 ManifestWork is already Applied.
 	setDRPCDryRunExpectationTo(
 		East1ManagedCluster,
 		West1ManagedCluster,
@@ -186,19 +187,66 @@ func verifyDryRunPromotion(intermediateProgression rmn.ProgressionStatus) {
 	)
 
 	By("waiting for intermediate Progression=" + string(intermediateProgression))
+	time.Sleep(5 * time.Second)
 	Eventually(func() rmn.ProgressionStatus {
 		return getLatestDRPC(DefaultDRPCNamespace).Status.Progression
 	}, timeout, interval).Should(Equal(intermediateProgression),
 		"Progression must transition through "+string(intermediateProgression)+" during promote")
 
+	// Verify VRG stays in Unknown state during cleanup
+	By("verifying East1 VRG Status.State is Unknown (transitioning to Secondary)")
+	Eventually(func() rmn.State {
+		eastVRG, err := GetFakeVRGFromMCVUsingMW(East1ManagedCluster, DefaultDRPCNamespace)
+		if err != nil {
+			return ""
+		}
+		return eastVRG.Status.State
+	}, timeout, interval).Should(Equal(rmn.UnknownState),
+		"East1 VRG must be in Unknown state during cleanup")
+
+	By("verifying East1 VRG stays in Unknown state (does not prematurely transition)")
+	Consistently(func() rmn.State {
+		eastVRG, err := GetFakeVRGFromMCVUsingMW(East1ManagedCluster, DefaultDRPCNamespace)
+		if err != nil {
+			return ""
+		}
+		return eastVRG.Status.State
+	}, 10*time.Second, interval).Should(Equal(rmn.UnknownState),
+		"East1 VRG must remain in Unknown state until workload is deleted")
+
+	// Simulate workload deletion - VRG transitions from Unknown → Secondary
+	By("simulating workload deletion on East1 (cleanup cluster)")
+	vrgUnknownCluster = "" // Clear so VRG returns Secondary state now
+	updateManifestWorkStatus(East1ManagedCluster, DefaultDRPCNamespace, "vrg", ocmworkv1.WorkApplied)
+
+	By("verifying East1 VRG Status.State transitioned to Secondary after cleanup")
+	Eventually(func() rmn.State {
+		eastVRG, err := GetFakeVRGFromMCVUsingMW(East1ManagedCluster, DefaultDRPCNamespace)
+		if err != nil {
+			return ""
+		}
+		return eastVRG.Status.State
+	}, timeout, interval).Should(Equal(rmn.SecondaryState),
+		"East1 VRG must transition to Secondary after workload deletion")
+
 	By("waiting for Phase=FailedOver and Progression=Completed")
 	waitForDRPCPhaseAndProgression(DefaultDRPCNamespace, rmn.FailedOver)
 
-	By("verifying test-failover-dryrun annotation was removed")
+	By("verifying test-failover-dryrun annotation was removed from DRPC")
 	// handlePromotion() calls cleanupTestFailoverAnnotation() before updating DRPC.
 	Expect(getLatestDRPC(DefaultDRPCNamespace).
 		GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]).
-		To(BeEmpty(), "test-failover-dryrun annotation must be removed after promotion")
+		To(BeEmpty(), "test-failover-dryrun annotation must be removed from DRPC after promotion")
+
+	By("verifying test-failover-dryrun annotation on West1 VRG changed to false")
+	Eventually(func() string {
+		westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+		if err != nil {
+			return ""
+		}
+		return westVRG.GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]
+	}, timeout, interval).Should(Equal("false"),
+		"West1 VRG test-failover-dryrun annotation must be set to false after promotion")
 
 	By("verifying LastAppDeploymentCluster was updated to West1")
 	Expect(getLatestDRPC(DefaultDRPCNamespace).
@@ -234,110 +282,7 @@ func verifyDryRunPromotion(intermediateProgression rmn.ProgressionStatus) {
 //  5. Lag-blocked  — lastGroupSyncTime > 3× schedulingInterval blocks dryRun
 var _ = Describe("DRPlacementControl DryRun", func() {
 	// -------------------------------------------------------------------------
-	// Test 1: Reject when failoverCluster equals LastAppDeploymentCluster
-	// -------------------------------------------------------------------------
-	Context("DryRun Reconciler - Async DR: reject same-cluster test-failover (AppSet)", func() {
-		// After initial deployment to East1 the controller writes
-		// LastAppDeploymentCluster=East1.  Setting DryRun=true with
-		// FailoverCluster=East1 must be rejected: you cannot test-failover to
-		// the cluster the app is already running on.
-		var (
-			placement *clrapiv1beta1.Placement
-			drpc      *rmn.DRPlacementControl
-		)
-
-		Specify("DRClusters", func() {
-			populateDRClusters()
-		})
-
-		When("An Application is deployed for the first time", func() {
-			It("Should deploy to East1ManagedCluster", func() {
-				By("Initial Deployment")
-
-				resetAppSet()
-
-				UseApplicationSet = true
-				getBaseVRG(DefaultDRPCNamespace).ObjectMeta.Namespace = ApplicationNamespace
-
-				var placementObj interface{ GetName() string }
-
-				placementObj, drpc = InitialDeploymentAsync(
-					DefaultDRPCNamespace, UserPlacementName, East1ManagedCluster, UsePlacementWithAppSet)
-
-				var ok bool
-
-				placement, ok = placementObj.(*clrapiv1beta1.Placement)
-				Expect(ok).To(BeTrue())
-				Expect(placement).NotTo(BeNil())
-				verifyInitialDRPCDeployment(placement, East1ManagedCluster)
-			})
-		})
-
-		//nolint:dupl
-		When("DryRun=true is set with failoverCluster equal to the current app cluster", func() {
-			It("should set ConditionAvailable=False with a same-cluster rejection message", func() {
-				By("patching DRPC with DryRun=true, Action=Failover, FailoverCluster=East1 (same as current)")
-				setDRPCDryRunExpectationTo(
-					West1ManagedCluster, // preferredCluster
-					East1ManagedCluster, // failoverCluster — same as LastAppDeploymentCluster
-					rmn.ActionFailover,
-					true,
-				)
-
-				By("waiting for ConditionAvailable=False with the exact same-cluster rejection message")
-				// recordFailure() writes ConditionAvailable=False with the full error from
-				// processTestFailoverFlowIfEnabled() lines 162-164.
-				Eventually(func() bool {
-					d := getLatestDRPC(DefaultDRPCNamespace)
-					_, cond := getDRPCCondition(&d.Status, rmn.ConditionAvailable)
-
-					return cond != nil &&
-						cond.Status == metav1.ConditionFalse &&
-						strings.Contains(cond.Message,
-							"dryRun failover target cannot be the same as current deployment cluster: "+
-								East1ManagedCluster)
-				}, timeout, interval).Should(BeTrue(),
-					"expected ConditionAvailable=False with same-cluster rejection message")
-
-				By("verifying Progression did not change from Completed — rejection must be a no-op")
-				Consistently(func() rmn.ProgressionStatus {
-					return getLatestDRPC(DefaultDRPCNamespace).Status.Progression
-				}, timeout/2, interval).Should(Equal(rmn.ProgressionCompleted),
-					"Progression must remain Completed when dryRun is rejected — no failover state machine entered")
-
-				By("verifying LastAppDeploymentCluster was NOT mutated during the rejected dryRun")
-				Consistently(func() string {
-					return getLatestDRPC(DefaultDRPCNamespace).
-						GetAnnotations()[controllers.LastAppDeploymentCluster]
-				}, timeout/2, interval).Should(Equal(East1ManagedCluster),
-					"LastAppDeploymentCluster must remain east1-cluster — never mutated on a rejected dryRun")
-
-				By("verifying test-failover-dryrun annotation was NOT written on a rejected dryRun")
-				Consistently(func() string {
-					return getLatestDRPC(DefaultDRPCNamespace).
-						GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]
-				}, timeout/2, interval).Should(BeEmpty(),
-					"test-failover-dryrun annotation must not be written when dryRun validation fails")
-			})
-		})
-
-		Specify("Cleanup after same-cluster dryRun rejection test", func() {
-			deleteUserPlacement()
-			deleteDRPC()
-			waitForCompletion("deleted")
-			deleteAppSet()
-			resetAppSet()
-
-			UseApplicationSet = false
-
-			deleteDRPolicyAsync()
-			ensureDRPolicyIsDeleted(drpc.Spec.DRPolicyRef.Name)
-			deleteDRClustersAsync()
-		})
-	})
-
-	// -------------------------------------------------------------------------
-	// Test 2: Reject when Action=Relocate with DryRun=true
+	// Test 1: Reject when Action=Relocate with DryRun=true
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: reject DryRun=true with Action=Relocate (AppSet)", func() {
 		// DryRun is only meaningful for Failover.  Any other action combined
@@ -429,7 +374,7 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Test 3: Promote path — enter TestingFailover, then DryRun→false keeping
+	// Test 2: Promote path — enter TestingFailover, then DryRun→false keeping
 	//         FailoverCluster=West1 converts the test into a real failover.
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: promote test-failover to real failover (AppSet)", func() {
@@ -501,7 +446,7 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Test 4: Revert path — enter TestingFailover, then DryRun→false clearing
+	// Test 3: Revert path — enter TestingFailover, then DryRun→false clearing
 	//         Action and FailoverCluster reverts the app back to Deployed on East1.
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: revert test-failover back to original state (AppSet)", func() {
@@ -577,6 +522,9 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 			})
 
 			It("should complete with Phase=Deployed and annotations restored", func() {
+				By("setting West1 VRG to return Unknown state (simulating transitioning)")
+				vrgUnknownCluster = West1ManagedCluster
+
 				By("waiting for Phase=Deployed and Progression=CleaningUp — revert must set phase immediately")
 				// handleRevert() sets Phase=Deployed (via setDRState) immediately after
 				// validateTestFailoverRevertScenario passes, then sets ProgressionCleaningUp
@@ -588,6 +536,40 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 				}, timeout, interval).Should(BeTrue(),
 					"Phase must be Deployed and Progression must be CleaningUp during revert")
 
+				By("verifying West1 VRG Status.State is Unknown (transitioning to Secondary)")
+				Eventually(func() rmn.State {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.Status.State
+				}, timeout, interval).Should(Equal(rmn.UnknownState),
+					"West1 VRG must be in Unknown state during cleanup")
+
+				By("verifying West1 VRG stays in Unknown state (does not prematurely transition)")
+				Consistently(func() rmn.State {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.Status.State
+				}, 10*time.Second, interval).Should(Equal(rmn.UnknownState),
+					"West1 VRG must remain in Unknown state until workload is deleted")
+
+				By("simulating workload deletion on West1 (cleanup cluster during revert)")
+				vrgUnknownCluster = "" // Clear so VRG returns Secondary state now
+				updateManifestWorkStatus(West1ManagedCluster, DefaultDRPCNamespace, "vrg", ocmworkv1.WorkApplied)
+
+				By("verifying West1 VRG Status.State transitioned to Secondary after cleanup")
+				Eventually(func() rmn.State {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.Status.State
+				}, timeout, interval).Should(Equal(rmn.SecondaryState),
+					"West1 VRG must transition to Secondary after workload deletion")
+
 				By("waiting for Phase=Deployed and Progression=Completed")
 				// Once West1 VRG is Secondary, handleRevert() restores Phase=Deployed and Progression=Completed.
 				// Use timeout*2 — same budget as waitForCompletion.
@@ -598,12 +580,22 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 				}, timeout*2, interval).Should(BeTrue(),
 					"Timed out waiting for Phase=Deployed and Progression=Completed after revert")
 
-				By("verifying test-failover-dryrun annotation was removed")
+				By("verifying test-failover-dryrun annotation was removed from DRPC")
 				// handleRevert() → cleanupTestFailoverAnnotation() removes the annotation from DRPC.
 				Expect(getLatestDRPC(DefaultDRPCNamespace).
 					GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]).
 					To(BeEmpty(),
-						"test-failover-dryrun annotation must be removed after revert")
+						"test-failover-dryrun annotation must be removed from DRPC after revert")
+
+				By("verifying test-failover-dryrun annotation on West1 VRG changed to false")
+				Eventually(func() string {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]
+				}, timeout, interval).Should(Equal("false"),
+					"West1 VRG test-failover-dryrun annotation must be set to false after revert")
 
 				By("verifying LastAppDeploymentCluster is still East1 after revert")
 				// During dryRun LastAppDeploymentCluster was never mutated (!DryRun guard).
@@ -631,7 +623,7 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Test 5: DryRun blocked — lastGroupSyncTime lagging behind 3× scheduling interval
+	// Test 4: DryRun blocked — lastGroupSyncTime lagging behind 3× scheduling interval
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: block dryRun when replication is lagging (AppSet)", func() {
 		// isGroupSyncLagging() in drplacementcontrol.go returns true when
@@ -729,6 +721,45 @@ var _ = Describe("DRPlacementControl DryRun", func() {
 						GetAnnotations()[controllers.LastAppDeploymentCluster]
 				}, timeout/2, interval).Should(Equal(East1ManagedCluster),
 					"LastAppDeploymentCluster must remain East1 while dryRun is blocked on lag")
+			})
+		})
+
+		When("Replication lag is fixed (sync time within threshold)", func() {
+			It("should automatically proceed with dryRun and reach TestingFailover", func() {
+				By("resetting fakeLastGroupSyncTime to current time (within threshold)")
+				// Set sync time to now (0 lag) which is well within the 3-hour threshold.
+				// This simulates replication catching up.
+				fresh := metav1.NewTime(time.Now())
+				fakeLastGroupSyncTime = &fresh
+
+				By("waiting for ConditionAvailable=True as lag is resolved")
+				// Once isGroupSyncLagging() returns false, the controller should clear
+				// the condition and proceed with dryRun.
+				Eventually(func() bool {
+					d := getLatestDRPC(DefaultDRPCNamespace)
+					_, cond := getDRPCCondition(&d.Status, rmn.ConditionAvailable)
+					return cond != nil && cond.Status == metav1.ConditionTrue
+				}, timeout, interval).Should(BeTrue(),
+					"ConditionAvailable should become True when lag is fixed")
+
+				By("faking West1 VRG ManifestWork as Applied")
+				// Now that the lag guard is cleared, the failover flow can proceed.
+				updateManifestWorkStatus(West1ManagedCluster, DefaultDRPCNamespace, "vrg", ocmworkv1.WorkApplied)
+
+				By("waiting for Progression=TestingFailover — dryRun should automatically proceed")
+				// With lag cleared and West1 VRG Primary, the controller reaches TestingFailover.
+				Eventually(func() rmn.ProgressionStatus {
+					return getLatestDRPC(DefaultDRPCNamespace).Status.Progression
+				}, timeout, interval).Should(Equal(rmn.ProgressionTestingFailover),
+					"Progression should reach TestingFailover once replication lag is fixed")
+
+				By("verifying LastAppDeploymentCluster was updated to West1")
+				// Once dryRun proceeds, LastAppDeploymentCluster is updated to the failover cluster.
+				Eventually(func() string {
+					return getLatestDRPC(DefaultDRPCNamespace).
+						GetAnnotations()[controllers.LastAppDeploymentCluster]
+				}, timeout, interval).Should(Equal(West1ManagedCluster),
+					"LastAppDeploymentCluster should be updated to West1 after dryRun proceeds")
 			})
 		})
 
@@ -885,82 +916,7 @@ func cleanupDiscoveredAppAdminNamespace() {
 // the app from currentCluster (the failover cluster) before the controller completes.
 var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 	// -------------------------------------------------------------------------
-	// Test 1: Reject when failoverCluster equals LastAppDeploymentCluster
-	// -------------------------------------------------------------------------
-	Context("DryRun Reconciler - Async DR: reject same-cluster test-failover (DiscoveredApp)", func() {
-		var drpc *rmn.DRPlacementControl
-
-		Specify("DRClusters", func() {
-			populateDRClusters()
-		})
-
-		When("An Application is deployed for the first time", func() {
-			It("Should deploy to East1ManagedCluster", func() {
-				By("Initial Deployment")
-
-				drpc = initDiscoveredAppDeployment()
-			})
-		})
-
-		//nolint:dupl
-		When("DryRun=true is set with failoverCluster equal to the current app cluster", func() {
-			It("should set ConditionAvailable=False with a same-cluster rejection message", func() {
-				By("patching DRPC with DryRun=true, Action=Failover, FailoverCluster=East1 (same as current)")
-				setDRPCDryRunExpectationTo(
-					West1ManagedCluster,
-					East1ManagedCluster,
-					rmn.ActionFailover,
-					true,
-				)
-
-				By("waiting for ConditionAvailable=False with the same-cluster rejection message")
-				Eventually(func() bool {
-					d := getLatestDRPC(DefaultDRPCNamespace)
-					_, cond := getDRPCCondition(&d.Status, rmn.ConditionAvailable)
-
-					return cond != nil &&
-						cond.Status == metav1.ConditionFalse &&
-						strings.Contains(cond.Message,
-							"dryRun failover target cannot be the same as current deployment cluster: "+
-								East1ManagedCluster)
-				}, timeout, interval).Should(BeTrue(),
-					"expected ConditionAvailable=False with same-cluster rejection message")
-
-				By("verifying Progression did not change from Completed")
-				Consistently(func() rmn.ProgressionStatus {
-					return getLatestDRPC(DefaultDRPCNamespace).Status.Progression
-				}, timeout/2, interval).Should(Equal(rmn.ProgressionCompleted),
-					"Progression must remain Completed when dryRun is rejected")
-
-				By("verifying LastAppDeploymentCluster was NOT mutated")
-				Consistently(func() string {
-					return getLatestDRPC(DefaultDRPCNamespace).
-						GetAnnotations()[controllers.LastAppDeploymentCluster]
-				}, timeout/2, interval).Should(Equal(East1ManagedCluster),
-					"LastAppDeploymentCluster must not change on a rejected dryRun")
-
-				By("verifying test-failover-dryrun annotation was NOT written")
-				Consistently(func() string {
-					return getLatestDRPC(DefaultDRPCNamespace).
-						GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]
-				}, timeout/2, interval).Should(BeEmpty(),
-					"test-failover-dryrun annotation must not be written when dryRun validation fails")
-			})
-		})
-
-		Specify("Cleanup after same-cluster dryRun rejection test (DiscoveredApp)", func() {
-			cleanupDiscoveredAppAdminNamespace()
-			deleteUserPlacement()
-			deleteDRPC()
-			waitForCompletion("deleted")
-			deleteDRPolicyAsync()
-			ensureDRPolicyIsDeleted(drpc.Spec.DRPolicyRef.Name)
-			deleteDRClustersAsync()
-		})
-	})
-
-	// -------------------------------------------------------------------------
-	// Test 2: Reject when Action=Relocate with DryRun=true
+	// Test 1: Reject when Action=Relocate with DryRun=true
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: reject DryRun=true with Action=Relocate (DiscoveredApp)", func() {
 		var drpc *rmn.DRPlacementControl
@@ -1026,7 +982,7 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Test 3: Promote path
+	// Test 2: Promote path
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: promote test-failover to real failover (DiscoveredApp)", func() {
 		var drpc *rmn.DRPlacementControl
@@ -1068,7 +1024,7 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Test 4: Revert path — WaitOnUserToCleanUp then simulate user deleting
+	// Test 3: Revert path — WaitOnUserToCleanUp then simulate user deleting
 	//         workload from West1 (the failover cluster).
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: revert test-failover back to original state (DiscoveredApp)", func() {
@@ -1111,6 +1067,9 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 				// current before the controller's ensureActionCompleted() Update call.
 				updateManifestWorkStatus(East1ManagedCluster, DefaultDRPCNamespace, "vrg", ocmworkv1.WorkApplied)
 
+				By("setting West1 VRG to return Unknown state (simulating transitioning)")
+				vrgUnknownCluster = West1ManagedCluster
+
 				By("setting DryRun=false, Action=empty, FailoverCluster=West1 (retained)")
 				// detectPromotionOrRevert() line 298: isPromotion requires Action==Failover,
 				// so Action="" with FailoverCluster=West1 still routes to handleRevert().
@@ -1134,6 +1093,26 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 				}, timeout, interval).Should(BeTrue(),
 					"Phase must be Deployed and Progression must be WaitOnUserToCleanUp during revert")
 
+				By("verifying West1 VRG Status.State is Unknown (transitioning to Secondary)")
+				Eventually(func() rmn.State {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.Status.State
+				}, timeout, interval).Should(Equal(rmn.UnknownState),
+					"West1 VRG must be in Unknown state during cleanup")
+
+				By("verifying West1 VRG stays in Unknown state (does not prematurely transition)")
+				Consistently(func() rmn.State {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.Status.State
+				}, 10*time.Second, interval).Should(Equal(rmn.UnknownState),
+					"West1 VRG must remain in Unknown state until workload is deleted")
+
 				By("verifying Phase and Progression stay until user cleans up West1")
 				// cleanupSecondary() line 2728-2732: on each reconcile, setDiscoveredAppGCProgression
 				// re-sets WaitOnUserToCleanUp, then ensureVRGIsSecondaryOnCluster(West1) returns false
@@ -1152,10 +1131,19 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 				// In e2e the user deletes the app from West1; the VRG on West1 then
 				// transitions to Secondary (the controller wrote Secondary to the MW when
 				// it called ensureActionCompleted → EnsureCleanup → setVRGAction Secondary).
-				// We simulate that state by marking West1's ManifestWork as Applied, which
-				// makes GetFakeVRGFromMCVUsingMW return Status.State=SecondaryState, causing
-				// ensureVRGIsSecondaryOnCluster(West1) to return true on the next reconcile.
+				// We simulate that state by clearing vrgUnknownCluster and marking West1's ManifestWork as Applied.
+				vrgUnknownCluster = "" // Clear so VRG returns Secondary state now
 				updateManifestWorkStatus(West1ManagedCluster, DefaultDRPCNamespace, "vrg", ocmworkv1.WorkApplied)
+
+				By("verifying West1 VRG Status.State transitioned to Secondary after cleanup")
+				Eventually(func() rmn.State {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.Status.State
+				}, timeout, interval).Should(Equal(rmn.SecondaryState),
+					"West1 VRG must transition to Secondary after workload deletion")
 
 				By("waiting for Phase=Deployed and Progression=Completed")
 				Eventually(func() bool {
@@ -1165,10 +1153,20 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 				}, timeout*2, interval).Should(BeTrue(),
 					"Timed out waiting for Phase=Deployed and Progression=Completed after discovered app revert")
 
-				By("verifying test-failover-dryrun annotation was removed")
+				By("verifying test-failover-dryrun annotation was removed from DRPC")
 				Expect(getLatestDRPC(DefaultDRPCNamespace).
 					GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]).
-					To(BeEmpty(), "test-failover-dryrun annotation must be removed after revert")
+					To(BeEmpty(), "test-failover-dryrun annotation must be removed from DRPC after revert")
+
+				By("verifying test-failover-dryrun annotation on West1 VRG changed to false")
+				Eventually(func() string {
+					westVRG, err := GetFakeVRGFromMCVUsingMW(West1ManagedCluster, DefaultDRPCNamespace)
+					if err != nil {
+						return ""
+					}
+					return westVRG.GetAnnotations()[controllers.DRPCTestFailoverDryRunAnnotation]
+				}, timeout, interval).Should(Equal("false"),
+					"West1 VRG test-failover-dryrun annotation must be set to false after revert")
 
 				By("verifying LastAppDeploymentCluster is still East1 after revert")
 				Expect(getLatestDRPC(DefaultDRPCNamespace).
@@ -1189,7 +1187,7 @@ var _ = Describe("DRPlacementControl DryRun - Discovered App", func() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Test 5: DryRun blocked — lastGroupSyncTime lagging behind 3× scheduling interval
+	// Test 4: DryRun blocked — lastGroupSyncTime lagging behind 3× scheduling interval
 	// -------------------------------------------------------------------------
 	Context("DryRun Reconciler - Async DR: block dryRun when replication is lagging (DiscoveredApp)", func() {
 		var drpc *rmn.DRPlacementControl

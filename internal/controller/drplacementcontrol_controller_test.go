@@ -268,6 +268,9 @@ func resetToggleUIDChecks() {
 
 var fakeSecondaryFor string
 
+// vrgUnknownCluster: cluster name where VRG should return Unknown state (for discovered app cleanup simulation)
+var vrgUnknownCluster string
+
 /*func setFakeSecondary(clusterName string) {
 	fakeSecondaryFor = clusterName
 }*/
@@ -383,13 +386,18 @@ func GetFakeVRGFromMCVUsingMW(managedCluster, resourceNamespace string,
 	vrg.Generation = 1
 	vrg.Status.ObservedGeneration = 1
 
-	switch vrg.Spec.ReplicationState {
-	case rmn.Primary:
-		vrg.Status.State = rmn.PrimaryState
-	case rmn.Secondary:
-		vrg.Status.State = rmn.SecondaryState
-	default:
+	// Check if this cluster should return Unknown state (for discovered app cleanup simulation)
+	if vrgUnknownCluster == managedCluster {
 		vrg.Status.State = rmn.UnknownState
+	} else {
+		switch vrg.Spec.ReplicationState {
+		case rmn.Primary:
+			vrg.Status.State = rmn.PrimaryState
+		case rmn.Secondary:
+			vrg.Status.State = rmn.SecondaryState
+		default:
+			vrg.Status.State = rmn.UnknownState
+		}
 	}
 
 	vrg.Status.PrepareForFinalSyncComplete = true
