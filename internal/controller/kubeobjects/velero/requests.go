@@ -646,7 +646,22 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 		"errors", backup.Status.Errors,
 		"failure", backup.Status.FailureReason,
 		"validation errors", backup.Status.ValidationErrors,
+		"volume snapshots attempted", backup.Status.VolumeSnapshotsAttempted,
+		"volume snapshots completed", backup.Status.VolumeSnapshotsCompleted,
+		"csi volume snapshots attempted", backup.Status.CSIVolumeSnapshotsAttempted,
+		"csi volume snapshots completed", backup.Status.CSIVolumeSnapshotsCompleted,
+		"backup item operations attempted", backup.Status.BackupItemOperationsAttempted,
+		"backup item operations completed", backup.Status.BackupItemOperationsCompleted,
+		"backup item operations failed", backup.Status.BackupItemOperationsFailed,
+		"queue position", backup.Status.QueuePosition,
 	)
+
+	if backup.Status.HookStatus != nil {
+		log.Info("Backup hooks",
+			"hooks attempted", backup.Status.HookStatus.HooksAttempted,
+			"hooks failed", backup.Status.HookStatus.HooksFailed,
+		)
+	}
 
 	if backup.Status.StartTimestamp != nil {
 		log.Info("Backup", "start", backup.Status.StartTimestamp.Time)
@@ -671,7 +686,17 @@ func restoreStatusLog(restore *velero.Restore, log logr.Logger) {
 		"errors", restore.Status.Errors,
 		"failure", restore.Status.FailureReason,
 		"validation errors", restore.Status.ValidationErrors,
+		"restore item operations attempted", restore.Status.RestoreItemOperationsAttempted,
+		"restore item operations completed", restore.Status.RestoreItemOperationsCompleted,
+		"restore item operations failed", restore.Status.RestoreItemOperationsFailed,
 	)
+
+	if restore.Status.HookStatus != nil {
+		log.Info("Restore hooks",
+			"hooks attempted", restore.Status.HookStatus.HooksAttempted,
+			"hooks failed", restore.Status.HookStatus.HooksFailed,
+		)
+	}
 
 	if restore.Status.StartTimestamp != nil {
 		log.Info("Restore", "start", restore.Status.StartTimestamp.Time)
