@@ -37,7 +37,7 @@ def deploy_argocd(cluster):
         path,
         "--namespace",
         "argocd",
-        "--server-side=true",
+        server_side=True,
         context=cluster,
     )
 
