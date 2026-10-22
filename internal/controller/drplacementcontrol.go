@@ -2770,7 +2770,7 @@ deployProgressions are used to indicate progression during initial deployment pr
 	deployProgressions := {
 		ProgressionCreatingMW,
 		ProgressionUpdatingPlRule,
-		ProgressionEnsuringVolSyncSetup,
+		ProgressionEnsuringSecondarySetup,
 		ProgressionSettingupVolsyncDest,
 		ProgressionCompleted,
 	}
@@ -2788,7 +2788,7 @@ failoverProgressions are used to indicate progression during failover action pro
 	postFailoverProgressions := {
 		ProgressionFailingOverToCluster,
 		ProgressionWaitingForResourceRestore,
-		ProgressionEnsuringVolSyncSetup,
+		ProgressionEnsuringSecondarySetup,
 		ProgressionSettingupVolsyncDest,
 		ProgressionWaitForReadiness,
 		ProgressionCleanupReadiness,
@@ -2818,7 +2818,7 @@ relocateProgressions are used to indicate progression during relocate action pro
 		ProgressionWaitingForResourceRestore,
 		ProgressionWaitForReadiness,
 		ProgressionUpdatedPlacement,
-		ProgressionEnsuringVolSyncSetup,
+		ProgressionEnsuringSecondarySetup,
 		ProgressionSettingupVolsyncDest,
 	}
 
