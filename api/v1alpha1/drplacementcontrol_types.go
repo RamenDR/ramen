@@ -134,7 +134,7 @@ const (
 	ProgressionWaitOnGlobalAction                  = ProgressionStatus("WaitOnGlobalAction")
 	ProgressionWaitingForResourceRestore           = ProgressionStatus("WaitingForResourceRestore")
 	ProgressionUpdatedPlacement                    = ProgressionStatus("UpdatedPlacement")
-	ProgressionEnsuringVolSyncSetup                = ProgressionStatus("EnsuringVolSyncSetup")
+	ProgressionEnsuringSecondarySetup              = ProgressionStatus("EnsuringSecondarySetup")
 	ProgressionSettingupVolsyncDest                = ProgressionStatus("SettingUpVolSyncDest")
 	ProgressionDeleting                            = ProgressionStatus("Deleting")
 	ProgressionDeleted                             = ProgressionStatus("Deleted")
