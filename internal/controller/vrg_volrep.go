@@ -464,8 +464,11 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 		skip    bool = true
 	)
 
-	// if PVC protection is complete, return
-	if pvc.Annotations[pvcVRAnnotationProtectedKey] == pvcVRAnnotationProtectedValue {
+	// if PVC protection is complete, return. Both the protected annotation and the protection
+	// finalizer are required, as the annotation alone can be inherited by a PVC that was cloned
+	// or restored (e.g. by KubeVirt/CDI) from another PVC that Ramen had already protected.
+	if pvc.Annotations[pvcVRAnnotationProtectedKey] == pvcVRAnnotationProtectedValue &&
+		slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
 		return !requeue, !skip
 	}
 
