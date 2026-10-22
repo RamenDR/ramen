@@ -419,8 +419,8 @@ open-cluster-management.io/api v0.15.0 h1:lRee1KOlGHZb2scTA7ff9E9Fxt2hJc7jpkHnaC
 open-cluster-management.io/api v0.15.0/go.mod h1:9erZEWEn4bEqh0nIX2wA7f/s3KCuFycQdBrPrRzi0QM=
 open-cluster-management.io/managed-serviceaccount v0.5.0 h1:yEFTlwPp3tecorzHLwa71mIJzwQtxcwRUnUhRF4OX0U=
 open-cluster-management.io/managed-serviceaccount v0.5.0/go.mod h1:pvSKkwFynokhtV7ksN1z0BNWQ37bG8FudOfmjn55ciA=
-open-cluster-management.io/multicloud-operators-channel v0.15.0 h1:5DjxcZrhQhS/+A+zYx0/tUqKqE8m4mped3Gb9aRt6CE=
-open-cluster-management.io/multicloud-operators-channel v0.15.0/go.mod h1:GDMO5IyXlLAuVW7EOrYPsRe1u3JPaNGWTWsGTPPlTXc=
+open-cluster-management.io/multicloud-operators-channel v0.16.0 h1:9gi8M5ojsRK+2EMtUMC/1g1I4H4bl0+lS7CKtRCtp44=
+open-cluster-management.io/multicloud-operators-channel v0.16.0/go.mod h1:FCYH3p9NVhsUP5eks0bXDUKdnQ/N/BgGoP18kX/Q52U=
 open-cluster-management.io/multicloud-operators-subscription v0.16.0 h1:rsup8obE4AYZmhJHjZznQqFX3FUII9o200uRinmgbqg=
 open-cluster-management.io/multicloud-operators-subscription v0.16.0/go.mod h1:STpELsVS/jEHuc/GlnILVV0Wii4/i7twUpsiS8HFoTE=
 sigs.k8s.io/controller-runtime v0.21.0 h1:CYfjpEuicjUecRk+KAeyYh+ouUBn4llGyDYytIGcJS8=
