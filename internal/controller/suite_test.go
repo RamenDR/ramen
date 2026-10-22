@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	Recipe "github.com/ramendr/recipe/api/v1alpha1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
+	clifecyclev1alpha1 "github.com/stolostron/cluster-lifecycle-api/klusterletconfig/v1alpha1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"go.uber.org/zap/zapcore"
@@ -225,6 +226,9 @@ var _ = BeforeSuite(func() {
 	Expect(velero.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	err = clrapiv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clifecyclev1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = clusterv1alpha1.AddToScheme(scheme.Scheme)
