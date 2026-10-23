@@ -4,15 +4,23 @@
 package workloads
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os/exec"
+	"strings"
+	"time"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/yaml"
 
+	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 	"github.com/ramendr/ramen/e2e/util"
@@ -22,27 +30,101 @@ const (
 	deploymentName           = "deploy"
 	deploymentAppName        = "busybox"
 	deploymentPath           = "workloads/deployment/base"
-	deploymentPVCName        = "busybox-pvc"
 	deploymentSelectResource = "deployment"
 
 	//nolint:lll
 	// deploymentMinimumReplicasAvailable is added in a deployment when it has its minimum replicas required available.
 	// https://github.com/kubernetes/kubernetes/blob/95bff1b249e048b7e36ae857d7478dd2ac05346a/pkg/controller/deployment/util/deployment_util.go#L97
 	deploymentMinimumReplicasAvailable = "MinimumReplicasAvailable"
+
+	kustomizeBuildTimeout = 2 * time.Minute
 )
 
 type Deployment struct {
-	Name    string
-	Branch  string
-	PVCSpec config.PVCSpec
+	Name     string
+	Branch   string
+	PVCSpec  config.PVCSpec
+	PVCNames []string
 }
 
-func NewDeployment(branch string, pvcSpec config.PVCSpec) types.Workload {
-	return &Deployment{
-		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
-		Branch:  branch,
-		PVCSpec: pvcSpec,
+func NewDeployment(repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
+	pvcNames, err := fetchDeploymentPVCNames(repo.URL, repo.Branch)
+	if err != nil {
+		return nil, err
 	}
+
+	return &Deployment{
+		Name:     fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
+		Branch:   repo.Branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: pvcNames,
+	}, nil
+}
+
+// fetchDeploymentPVCNames builds the deployment kustomization from the git repo and returns the
+// PersistentVolumeClaim names in the rendered manifests.
+func fetchDeploymentPVCNames(repoURL, branch string) ([]string, error) {
+	url := repoURL + "/" + deploymentPath + "?ref=" + branch
+
+	manifests, err := downloadManifests(url)
+	if err != nil {
+		return nil, err
+	}
+
+	pvcNames := make([]string, 0, len(manifests))
+
+	for _, manifest := range manifests {
+		pvc, ok, err := unmarshalPVC(manifest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse manifest in kustomization %q: %w", url, err)
+		}
+
+		if ok {
+			pvcNames = append(pvcNames, pvc.GetName())
+		}
+	}
+
+	if len(pvcNames) == 0 {
+		return nil, fmt.Errorf("no persistent volume claims found in kustomization %q", url)
+	}
+
+	return pvcNames, nil
+}
+
+func downloadManifests(url string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), kustomizeBuildTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "kubectl", "kustomize", url).Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build kustomization %q: %w", url, err)
+	}
+
+	docs := strings.Split(string(out), "---\n")
+	manifests := make([]string, 0, len(docs))
+
+	for _, doc := range docs {
+		if strings.TrimSpace(doc) == "" {
+			continue
+		}
+
+		manifests = append(manifests, doc)
+	}
+
+	return manifests, nil
+}
+
+func unmarshalPVC(doc string) (*unstructured.Unstructured, bool, error) {
+	obj := &unstructured.Unstructured{}
+	if err := yaml.Unmarshal([]byte(doc), obj); err != nil {
+		return nil, false, err
+	}
+
+	if obj.GetAPIVersion() != corev1.SchemeGroupVersion.String() || obj.GetKind() != "PersistentVolumeClaim" {
+		return nil, false, nil
+	}
+
+	return obj, true, nil
 }
 
 func (w Deployment) GetAppName() string {
@@ -95,6 +177,12 @@ func (w Deployment) GetOperations(namespace string) []*recipe.Operation {
 	}
 }
 
+type jsonPatch struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value"`
+}
+
 func (w Deployment) Kustomize() string {
 	if w.PVCSpec.StorageClassName == "" && w.PVCSpec.AccessModes == "" {
 		return ""
@@ -105,23 +193,41 @@ func (w Deployment) Kustomize() string {
 		scName = w.PVCSpec.StorageClassName
 	}
 
-	accessMode := "ReadWriteOnce"
+	accessMode := string(corev1.ReadWriteOnce)
 	if w.PVCSpec.AccessModes != "" {
 		accessMode = w.PVCSpec.AccessModes
 	}
 
-	patch := `{
-				"patches": [{
-					"target": {
-						"kind": "PersistentVolumeClaim",
-						"name": "busybox-pvc"
-					},
-					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + scName +
-		`\n- op: add\n  path: /spec/accessModes\n  value: [` + accessMode + `]"
-				}]
-			}`
+	ops, err := json.Marshal([]jsonPatch{
+		{Op: "replace", Path: "/spec/storageClassName", Value: scName},
+		{Op: "add", Path: "/spec/accessModes", Value: []string{accessMode}},
+	})
+	if err != nil {
+		panic(err) // Kustomize() has no error return
+	}
 
-	return patch
+	patches := make(argocd.KustomizePatches, 0, len(w.PVCNames))
+
+	for _, pvcName := range w.PVCNames {
+		patches = append(patches, argocd.KustomizePatch{
+			Target: &argocd.KustomizeSelector{
+				KustomizeResId: argocd.KustomizeResId{
+					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+					Name:         pvcName,
+				},
+			},
+			Patch: string(ops),
+		})
+	}
+
+	kustomize := &argocd.ApplicationSourceKustomize{Patches: patches}
+
+	out, err := json.Marshal(kustomize)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(out)
 }
 
 func (w Deployment) GetResources() error {
@@ -159,7 +265,13 @@ func (w Deployment) Health(ctx types.TestContext, cluster *types.Cluster) error 
 			condition.Reason, deploymentMinimumReplicasAvailable, cluster.Name)
 	}
 
-	return checkPVCHealth(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
+	for _, pvcName := range w.PVCNames {
+		if err := checkPVCHealth(ctx, cluster, ctx.AppNamespace(), pvcName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Status returns the deployment status across managed clusters.
@@ -187,17 +299,25 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
-	if err != nil {
-		return types.WorkloadStatus{}, err
+	pvcsFound := 0
+
+	for _, pvcName := range w.PVCNames {
+		pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
+		if err != nil {
+			return types.WorkloadStatus{}, err
+		}
+
+		if pvcExist {
+			pvcsFound++
+		}
 	}
 
 	var status types.ApplicationStatus
 
 	switch {
-	case deploymentExist && pvcExist:
+	case deploymentExist && pvcsFound == len(w.PVCNames):
 		status = types.ApplicationFound
-	case deploymentExist || pvcExist:
+	case deploymentExist || pvcsFound > 0:
 		status = types.ApplicationPartial
 	default:
 		status = types.ApplicationNotFound
