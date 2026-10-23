@@ -49,7 +49,7 @@ func TestDR(dt *testing.T) {
 			panic("unknown pvcSpec")
 		}
 
-		workload, err := workloads.New(tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
+		workload, err := workloads.New(tc.Workload, Ctx.Config().Repo, pvcSpec)
 		if err != nil {
 			panic(err)
 		}
