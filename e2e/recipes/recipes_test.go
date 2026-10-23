@@ -239,7 +239,7 @@ func createWorkload(t *testing.T, cfg *config.Config) types.Workload {
 
 	pvcSpec := cfg.PVCSpecs[0]
 
-	workload, err := workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
+	workload, err := workloads.New("deploy", cfg.Repo, pvcSpec)
 	if err != nil {
 		t.Fatalf("error creating workload: %v", err)
 	}
