@@ -258,7 +258,7 @@ Detailed progress indicator for the current operation.
 
 - `CreatingMW` - Creating ManifestWork for VRG
 - `UpdatingPlRule` - Updating Placement Rule
-- `EnsuringVolSyncSetup` - Setting up VolSync (if enabled)
+- `EnsuringSecondarySetup` - Ensuring secondary replication setup
 - `SettingUpVolSyncDest` - Setting up VolSync destination
 - `Completed` - Operation finished successfully
 
@@ -274,6 +274,7 @@ Post-failover (after creating VRG on failover cluster):
 
 - `FailingOverToCluster` - Executing failover to target cluster
 - `WaitingForResourceRestore` - Waiting for resources to restore
+- `EnsuringSecondarySetup` - Ensuring secondary replication setup
 - `WaitForReadiness` - Waiting for application to become ready
 - `UpdatedPlacement` - Placement has been updated
 - `Completed` - Operation finished successfully
@@ -296,6 +297,7 @@ Post-relocate (after creating VRG on preferred cluster):
 - `WaitingForResourceRestore` - Waiting for resources to restore
 - `WaitForReadiness` - Waiting for application to become ready
 - `UpdatedPlacement` - Placement has been updated
+- `EnsuringSecondarySetup` - Ensuring secondary replication setup
 - `Completed` - Operation finished successfully
 - `CleaningUp` - Cleaning up resources on source cluster
 

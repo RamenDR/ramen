@@ -346,6 +346,7 @@ func runPVCInit() {
 	}
 
 	for {
+		//nolint:gosec // G703: PVC_MOUNT_PATH is set by the operator, not external input
 		if _, err := os.Stat(mountPath); err == nil {
 			return
 		}

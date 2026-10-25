@@ -85,7 +85,8 @@ func (r RestoreRequest) EndTime() metav1.Time {
 	return metav1.Now()
 }
 
-func (r BackupRequest) Status(log logr.Logger) error  { return backupRealStatusProcess(r.backup, log) }
+func (r BackupRequest) Status(log logr.Logger) error { return backupRealStatusProcess(r.backup, log) }
+
 func (r RestoreRequest) Status(log logr.Logger) error { return restoreStatusProcess(r.restore, log) }
 
 type (
@@ -93,9 +94,10 @@ type (
 	RestoreRequests struct{ restores *velero.RestoreList }
 )
 
-func (r BackupRequests) Count() int                     { return len(r.backups.Items) }
-func (r RestoreRequests) Count() int                    { return len(r.restores.Items) }
-func (r BackupRequests) Get(i int) kubeobjects.Request  { return BackupRequest{&r.backups.Items[i]} }
+func (r BackupRequests) Count() int                    { return len(r.backups.Items) }
+func (r RestoreRequests) Count() int                   { return len(r.restores.Items) }
+func (r BackupRequests) Get(i int) kubeobjects.Request { return BackupRequest{&r.backups.Items[i]} }
+
 func (r RestoreRequests) Get(i int) kubeobjects.Request { return RestoreRequest{&r.restores.Items[i]} }
 
 type RequestsManager struct{}
@@ -647,11 +649,11 @@ func backupStatusLog(backup *velero.Backup, log logr.Logger) {
 	)
 
 	if backup.Status.StartTimestamp != nil {
-		log.Info("Backup", "start", backup.Status.StartTimestamp)
+		log.Info("Backup", "start", backup.Status.StartTimestamp.Time)
 	}
 
 	if backup.Status.CompletionTimestamp != nil {
-		log.Info("Backup", "finish", backup.Status.CompletionTimestamp)
+		log.Info("Backup", "finish", backup.Status.CompletionTimestamp.Time)
 	}
 
 	if backup.Status.Progress != nil {
@@ -672,11 +674,11 @@ func restoreStatusLog(restore *velero.Restore, log logr.Logger) {
 	)
 
 	if restore.Status.StartTimestamp != nil {
-		log.Info("Restore", "start", restore.Status.StartTimestamp)
+		log.Info("Restore", "start", restore.Status.StartTimestamp.Time)
 	}
 
 	if restore.Status.CompletionTimestamp != nil {
-		log.Info("Restore", "finish", restore.Status.CompletionTimestamp)
+		log.Info("Restore", "finish", restore.Status.CompletionTimestamp.Time)
 	}
 
 	if restore.Status.Progress != nil {

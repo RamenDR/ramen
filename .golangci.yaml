@@ -31,6 +31,12 @@ linters:
       template: |
         SPDX-FileCopyrightText: The RamenDR authors
         SPDX-License-Identifier: Apache-2.0
+    gosec:
+      excludes:
+        # Matches any string containing words like "secret". That hits API
+        # keys and annotation names, not credentials, and the fix is a nolint
+        # comment.
+        - G101
     misspell:
       locale: US
     promlinter:
@@ -141,7 +147,7 @@ linters:
     - gocritic
     - gocyclo
     #  - golint // Fully deprecated, remove this line once an alternative is enabled for the same
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
     - govet

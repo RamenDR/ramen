@@ -45,7 +45,6 @@ const (
 	destinationVolumeHandleAnnotation = "ramendr.openshift.io/destination-volume-handle"
 )
 
-//nolint:gosec
 const (
 	// secretRef keys
 	controllerPublishSecretName        = "csi.storage.k8s.io/controller-publish-secret-name"
@@ -465,8 +464,11 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 		skip    bool = true
 	)
 
-	// if PVC protection is complete, return
-	if pvc.Annotations[pvcVRAnnotationProtectedKey] == pvcVRAnnotationProtectedValue {
+	// if PVC protection is complete, return. Both the protected annotation and the protection
+	// finalizer are required, as the annotation alone can be inherited by a PVC that was cloned
+	// or restored (e.g. by KubeVirt/CDI) from another PVC that Ramen had already protected.
+	if pvc.Annotations[pvcVRAnnotationProtectedKey] == pvcVRAnnotationProtectedValue &&
+		slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
 		return !requeue, !skip
 	}
 
@@ -1030,7 +1032,7 @@ func (v *VRGInstance) pvcUnprotectVolRepIfDeleted(
 		return
 	}
 
-	log.Info("PVC unprotect VR", "deletion time", pvc.GetDeletionTimestamp())
+	log.Info("PVC unprotect VR", "deletion time", rmnutil.TimeString(pvc.GetDeletionTimestamp()))
 	v.pvcUnprotectVolRep(pvc, log)
 
 	return
@@ -2419,7 +2421,7 @@ func (v *VRGInstance) isPVCSyncedInVGR(pvc *corev1.PersistentVolumeClaim,
 		v.log.Info("Skipping sync time update - VGR sync time is not after PVC creation",
 			"pvc", pvc.Name,
 			"pvcCreationTime", pvc.CreationTimestamp,
-			"vgrSyncTime", vgrSyncTime)
+			"vgrSyncTime", vgrSyncTime.Time)
 
 		return false
 	}
@@ -2428,7 +2430,7 @@ func (v *VRGInstance) isPVCSyncedInVGR(pvc *corev1.PersistentVolumeClaim,
 		v.groupAlreadyHasThisSyncTime(pvc.Name, vgrSyncTime) {
 		v.log.Info("Skipping sync time update - PVC joined after this VGR sync time",
 			"pvc", pvc.Name,
-			"vgrSyncTime", vgrSyncTime)
+			"vgrSyncTime", vgrSyncTime.Time)
 
 		return false
 	}

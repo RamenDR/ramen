@@ -18,7 +18,7 @@ import (
 )
 
 func (d *DRPCInstance) EnsureSecondaryReplicationSetup(srcCluster string) error {
-	d.setProgression(rmn.ProgressionEnsuringVolSyncSetup) // TODO: Update progression string
+	d.setProgression(rmn.ProgressionEnsuringSecondarySetup)
 
 	// Create or update the destination VRG
 	opResult, err := d.createOrUpdateSecondaryManifestWork(srcCluster)
