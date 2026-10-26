@@ -76,7 +76,7 @@ type Deployer interface {
 // nolint:interfacebloat
 type Workload interface {
 	// Can differ based on the workload, hence part of the Workload interface
-	Kustomize() string
+	Kustomize() (string, error)
 
 	GetName() string
 	GetAppName() string

@@ -199,14 +199,8 @@ func CreateSubscription(ctx types.TestContext, s Subscription) error {
 		},
 	}
 
-	if w.Kustomize() != "" {
-		subscription.Spec.PackageOverrides = []*subscriptionv1.Overrides{}
-		subscription.Spec.PackageOverrides = append(subscription.Spec.PackageOverrides, &subscriptionv1.Overrides{
-			PackageName: "kustomization",
-			PackageOverrides: []subscriptionv1.PackageOverride{
-				{RawExtension: runtime.RawExtension{Raw: []byte("{\"value\": " + w.Kustomize() + "}")}},
-			},
-		})
+	if err := setSubscriptionKustomize(subscription, w); err != nil {
+		return err
 	}
 
 	err := ctx.Env().Hub.Client.Create(ctx.Context(), subscription)
@@ -221,6 +215,26 @@ func CreateSubscription(ctx types.TestContext, s Subscription) error {
 	}
 
 	log.Debugf("Created subscription \"%s/%s\" in cluster %q", managementNamespace, name, ctx.Env().Hub.Name)
+
+	return nil
+}
+
+func setSubscriptionKustomize(subscription *subscriptionv1.Subscription, w types.Workload) error {
+	kustomize, err := w.Kustomize()
+	if err != nil {
+		return fmt.Errorf("failed to kustomize workload %q: %w", w.GetName(), err)
+	}
+
+	if kustomize == "" {
+		return nil
+	}
+
+	subscription.Spec.PackageOverrides = []*subscriptionv1.Overrides{{
+		PackageName: "kustomization",
+		PackageOverrides: []subscriptionv1.PackageOverride{{
+			RawExtension: runtime.RawExtension{Raw: []byte("{\"value\": " + kustomize + "}")},
+		}},
+	}}
 
 	return nil
 }
@@ -380,10 +394,15 @@ func CreateApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 		},
 	}
 
-	if w.Kustomize() != "" {
+	kustomize, err := w.Kustomize()
+	if err != nil {
+		return fmt.Errorf("failed to kustomize workload %q: %w", w.GetName(), err)
+	}
+
+	if kustomize != "" {
 		patches := &argocdv1alpha1hack.ApplicationSourceKustomize{}
 
-		err := yaml.Unmarshal([]byte(w.Kustomize()), patches)
+		err = yaml.Unmarshal([]byte(kustomize), patches)
 		if err != nil {
 			return fmt.Errorf("unable to unmarshal Patches (%v)", err)
 		}
@@ -391,7 +410,7 @@ func CreateApplicationSet(ctx types.TestContext, a ApplicationSet) error {
 		appset.Spec.Template.Spec.Source.Kustomize = patches
 	}
 
-	err := ctx.Env().Hub.Client.Create(ctx.Context(), appset)
+	err = ctx.Env().Hub.Client.Create(ctx.Context(), appset)
 	if err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return err
@@ -450,7 +469,10 @@ func CreateKustomizationFile(ctx types.TestContext, dir string) error {
 		return err
 	}
 
-	patch := w.Kustomize()
+	patch, err := w.Kustomize()
+	if err != nil {
+		return fmt.Errorf("failed to kustomize workload %q: %w", w.GetName(), err)
+	}
 
 	var jsonContent CombinedData
 
