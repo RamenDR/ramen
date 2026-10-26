@@ -4,6 +4,7 @@
 package workloads
 
 import (
+	"encoding/json"
 	"fmt"
 
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
@@ -13,6 +14,7 @@ import (
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	virtv1 "kubevirt.io/api/core/v1"
 
+	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
 )
@@ -73,25 +75,63 @@ func (w *VM) GetOperations(namespace string) []*recipe.Operation {
 }
 
 func (w *VM) Kustomize() (string, error) {
-	patch := `{
-				"patches": [{
-					"target": {
-						"kind": "VirtualMachine",
-						"name": "vm"
-					},
-					"patch": "- op: add\n  path: /spec/template/spec/domain/devices/interfaces/0/bridge\n  value: {}"
-				},
-				{
-					"target": {
-						"kind": "PersistentVolumeClaim",
-						"name": "root-disk"
-					},
-					"patch": "- op: replace\n  path: /spec/storageClassName\n  value: ` + w.PVCSpec.StorageClassName +
-		`\n- op: add\n  path: /spec/accessModes\n  value: [` + w.PVCSpec.AccessModes + `]"
-				}]
-			}`
+	if w.PVCSpec.StorageClassName == "" && w.PVCSpec.AccessModes == "" {
+		return "", nil
+	}
 
-	return patch, nil
+	scName := "rook-ceph-block"
+	if w.PVCSpec.StorageClassName != "" {
+		scName = w.PVCSpec.StorageClassName
+	}
+
+	accessMode := "ReadWriteOnce"
+	if w.PVCSpec.AccessModes != "" {
+		accessMode = w.PVCSpec.AccessModes
+	}
+
+	vmOps, err := json.Marshal([]jsonPatch{{
+		Op:    "add",
+		Path:  "/spec/template/spec/domain/devices/interfaces/0/bridge",
+		Value: struct{}{},
+	}})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal VM patch: %w", err)
+	}
+
+	pvcOps, err := json.Marshal([]jsonPatch{
+		{Op: "replace", Path: "/spec/storageClassName", Value: scName},
+		{Op: "add", Path: "/spec/accessModes", Value: []string{accessMode}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal PVC patch: %w", err)
+	}
+
+	kustomize := &argocd.ApplicationSourceKustomize{
+		Patches: argocd.KustomizePatches{{
+			Target: &argocd.KustomizeSelector{
+				KustomizeResId: argocd.KustomizeResId{
+					KustomizeGvk: argocd.KustomizeGvk{Kind: "VirtualMachine"},
+					Name:         vmAppName,
+				},
+			},
+			Patch: string(vmOps),
+		}, {
+			Target: &argocd.KustomizeSelector{
+				KustomizeResId: argocd.KustomizeResId{
+					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+					Name:         vmPVCName,
+				},
+			},
+			Patch: string(pvcOps),
+		}},
+	}
+
+	out, err := json.Marshal(kustomize)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal kustomize: %w", err)
+	}
+
+	return string(out), nil
 }
 
 func (w *VM) GetResources() error {
