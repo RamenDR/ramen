@@ -72,7 +72,7 @@ func (w *VM) GetOperations(namespace string) []*recipe.Operation {
 	return nil
 }
 
-func (w *VM) Kustomize() string {
+func (w *VM) Kustomize() (string, error) {
 	patch := `{
 				"patches": [{
 					"target": {
@@ -91,7 +91,7 @@ func (w *VM) Kustomize() string {
 				}]
 			}`
 
-	return patch
+	return patch, nil
 }
 
 func (w *VM) GetResources() error {
