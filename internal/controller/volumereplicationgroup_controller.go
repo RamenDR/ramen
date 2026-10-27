@@ -608,7 +608,7 @@ const (
 	RestoredByRamen                  = "True"
 
 	// StorageClass label
-	StorageIDLabel = "ramendr.openshift.io/storageid"
+	StorageIDLabel = util.StorageIDLabel
 
 	// StorageClass offloaded label
 	StorageOffloadedLabel = "ramendr.openshift.io/offloaded"
@@ -623,7 +623,7 @@ const (
 	GlobalReplicationLabel = "ramendr.openshift.io/global"
 
 	// Maintenance mode label
-	MModesLabel = "ramendr.openshift.io/maintenancemodes"
+	MModesLabel = util.MModesLabel
 
 	// VolumeReplicationClass and VolumeGroupReplicationClass schedule parameter key
 	ReplicationClassScheduleKey = "schedulingInterval"

@@ -496,14 +496,12 @@ var _ = Describe("DRPCPredicateDRCluster", func() {
 	})
 })
 
-const globalVGRLabel = "ramendr.openshift.io/global-vgr"
-
 func makeDRPCWithLabel(name, namespace, vgrLabel string, action rmn.DRAction,
 	failover, preferred string,
 ) *rmn.DRPlacementControl {
 	labels := map[string]string{}
 	if vgrLabel != "" {
-		labels[globalVGRLabel] = vgrLabel
+		labels[controllers.GlobalVGRLabel] = vgrLabel
 	}
 
 	return &rmn.DRPlacementControl{
