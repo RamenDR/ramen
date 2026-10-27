@@ -64,7 +64,7 @@ const (
 
 	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 
-	IsSubmarinerEnabledAnnotation    = "drplacementcontrol.ramendr.openshift.io/is-submariner-enabled"
+	IsSubmarinerEnabledAnnotation    = rmnutil.IsSubmarinerEnabledAnnotation
 	IsSubmarinerEnabledAnnotationVal = "true"
 )
 

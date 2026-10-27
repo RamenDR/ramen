@@ -13,6 +13,7 @@ const (
 	LabelOwnerName          = "ramendr.openshift.io/owner-name"
 
 	MModesLabel                           = "ramendr.openshift.io/maintenancemodes"
+	StorageIDLabel                        = "ramendr.openshift.io/storageid"
 	SClassLabel                           = "ramendr.openshift.io/storageclass"
 	NFClassLabel                          = "ramendr.openshift.io/networkfenceclass"
 	VSClassLabel                          = "ramendr.openshift.io/volumesnapshotclass"
