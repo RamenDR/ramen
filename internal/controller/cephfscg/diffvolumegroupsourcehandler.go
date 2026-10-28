@@ -236,7 +236,7 @@ func (h *diffVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 		}
 
 		// Check if ready
-		if IsVGSReady(currentVGS) {
+		if util.VolumeGroupSnapshotIsReady(currentVGS) {
 			logger.Info("Reusing existing ready current VGS", "name", currentVGS.GetName())
 
 			return false, nil
@@ -390,7 +390,7 @@ func (h *diffVolumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		return nil, fmt.Errorf("no current VolumeGroupSnapshot found")
 	}
 
-	if !IsVGSReady(vgs) {
+	if !util.VolumeGroupSnapshotIsReady(vgs) {
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
 

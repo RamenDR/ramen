@@ -268,7 +268,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		return nil, fmt.Errorf("failed to get volume group snapshot: %w", err)
 	}
 
-	if !IsVGSReady(vgs) {
+	if !util.VolumeGroupSnapshotIsReady(vgs) {
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
 
