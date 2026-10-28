@@ -293,7 +293,7 @@ func (v *VSHandler) createOrUpdateRD(
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	storageclass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageclass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +543,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 ) {
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
-	storageClass, err := v.getStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rsSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -2230,7 +2230,7 @@ func (v *VSHandler) ModifyRSSpecForCephFS(rsSpec *ramendrv1alpha1.VolSyncReplica
 }
 
 func (v *VSHandler) GetVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
-	storageClass, err := v.getStorageClass(storageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, storageClassName)
 	if err != nil {
 		return "", err
 	}
@@ -2272,24 +2272,6 @@ func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClass *stor
 	}
 
 	return matchedVolumeSnapshotClassName, nil
-}
-
-func (v *VSHandler) getStorageClass(storageClassName *string) (*storagev1.StorageClass, error) {
-	if storageClassName == nil || *storageClassName == "" {
-		err := fmt.Errorf("no storageClassName given, cannot proceed")
-		v.log.Error(err, "Failed to get StorageClass")
-
-		return nil, err
-	}
-
-	storageClass := &storagev1.StorageClass{}
-	if err := v.client.Get(v.ctx, types.NamespacedName{Name: *storageClassName}, storageClass); err != nil {
-		v.log.Error(err, "Failed to get StorageClass", "name", storageClassName)
-
-		return nil, fmt.Errorf("error getting storage class (%w)", err)
-	}
-
-	return storageClass, nil
 }
 
 func isDefaultVolumeSnapshotClass(volumeSnapshotClass snapv1.VolumeSnapshotClass) bool {
@@ -2846,7 +2828,7 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 ) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvcName", rd.GetName(), "snapshotRef", snapshotRef, "snapRestoreSize", snapRestoreSize)
 
-	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}

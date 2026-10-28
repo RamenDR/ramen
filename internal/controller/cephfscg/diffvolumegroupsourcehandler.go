@@ -542,7 +542,7 @@ func (h *diffVolumeGroupSourceHandler) resolveProvisioner(
 	}
 
 	if pvc.Spec.StorageClassName != nil {
-		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
+		storageClass, err := util.GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
 		if err != nil {
 			logger.Error(err, "Failed to get storage class for restored PVC", "RestoredPVC", pvcName)
 

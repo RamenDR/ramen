@@ -323,7 +323,7 @@ func (m *rgdMachine) CreateReplicationDestinations(
 
 	diffEnabled := util.IsDiffSyncEnabled(m.ReplicationGroupDestination.GetAnnotations())
 
-	storageClass, err := GetStorageClass(ctx, m.Client, rdSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(ctx, m.Client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		m.Logger.Error(err, "Failed to get StorageClass for provider lookup", "PVCName", rdSpec.ProtectedPVC.Name)
 
