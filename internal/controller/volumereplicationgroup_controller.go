@@ -587,6 +587,9 @@ type VRGInstance struct {
 	objectStorers        map[string]cachedObjectStorer
 	s3StoreAccessors     []s3StoreAccessor
 	result               ctrl.Result
+	// selectedNonCGVolRep is set for this reconcile when PVC classification
+	// chooses VolumeReplication because the peer is not grouping.
+	selectedNonCGVolRep bool
 }
 
 // struct with pv with volrepclass and volsync
@@ -1015,6 +1018,9 @@ func (v *VRGInstance) separatePVCsUsingOnlySC(storageClass *storagev1.StorageCla
 		for _, replicationClass := range v.replClassList.Items {
 			if storageClass.Provisioner == replicationClass.Spec.Provisioner {
 				v.volRepPVCs = append(v.volRepPVCs, *pvc)
+				// No peer class is present, so this match is individual VolumeReplication.
+				v.useNonConsistencyGroupVolRep(false)
+
 				replicationClassMatchFound = true
 
 				break
@@ -1042,6 +1048,10 @@ func (v *VRGInstance) separatePVCUsingPeerClassAndSC(peerClasses []ramendrv1alph
 		if peerClass.ReplicationID != "" {
 			replicationClass := v.findReplicationClassUsingPeerClass(peerClass, storageClass)
 			if replicationClass != nil {
+				// Grouping comes from the peer class discovered for this StorageClass.
+				// False selects individual VolumeReplication; true selects a consistency group.
+				v.useNonConsistencyGroupVolRep(peerClass.Grouping)
+
 				// label VolRep PVCs if peerClass.grouping is enabled
 				if peerClass.Grouping {
 					if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
@@ -1801,6 +1811,7 @@ func (v *VRGInstance) updateVRGConditionsAndStatus(result ctrl.Result) ctrl.Resu
 	// Check if as Secondary things would be updated accordingly, should protectedPVC be cleared?
 	// cleanupProtectedPVCs
 	v.updateVRGConditions()
+	v.reconcileVRGNonConsistencyGroupDeprecation()
 
 	return v.updateVRGStatus(result)
 }

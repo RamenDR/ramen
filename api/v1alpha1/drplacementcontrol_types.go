@@ -264,6 +264,11 @@ type DRPlacementControlStatus struct {
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 	ResourceConditions VRGConditions      `json:"resourceConditions,omitempty"`
 
+	// warnings lists deprecated features in use. Each entry has a stable name
+	// and a human-readable message, so more than one deprecation can be reported
+	// together. The list is empty when none apply.
+	Warnings []Warning `json:"warnings,omitempty"`
+
 	// LastUpdateTime is when was the last time a condition or the overall status was updated
 	LastUpdateTime *metav1.Time `json:"lastUpdateTime,omitempty"`
 
