@@ -416,7 +416,7 @@ func (c *cgHandler) GetLatestImageFromRGD(rgd *ramendrv1alpha1.ReplicationGroupD
 		c.logger.Info("Get latest image from RGD for PVC", "LatestImage", *latestImage)
 	}
 
-	if !isLatestImageReady(latestImage) {
+	if !volsync.IsLatestImageReady(latestImage) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationGroupDestination %s",
 			rgd.Name)
 		c.logger.Error(noSnapErr, "No latestImage",

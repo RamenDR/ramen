@@ -1826,7 +1826,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 		return err
 	}
 
-	if !isLatestImageReady(latestImage) {
+	if !IsLatestImageReady(latestImage) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdSpec.ProtectedPVC.Name)
 		v.log.Error(noSnapErr, "No latestImage", "rdSpec", rdSpec)
 
@@ -2423,7 +2423,7 @@ func (v *VSHandler) IsRDDataProtected(pvcName, pvcNamespace string) (bool, error
 		return false, err
 	}
 
-	return isLatestImageReady(latestImage), nil
+	return IsLatestImageReady(latestImage), nil
 }
 
 func (v *VSHandler) PrecreateDestPVCIfEnabled(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
@@ -2470,12 +2470,8 @@ func (v *VSHandler) IsCopyMethodDirect() bool {
 	return v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect
 }
 
-func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
-	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
-		return false
-	}
-
-	return true
+func IsLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
+	return latestImage != nil && latestImage.Name != "" && latestImage.Kind == VolumeSnapshotKind
 }
 
 func getReplicationSourceName(pvcName string) string {
@@ -2728,7 +2724,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 ) (*corev1.PersistentVolumeClaim, error) {
-	if !isLatestImageReady(snapshotRef) {
+	if !IsLatestImageReady(snapshotRef) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rd.GetName())
 		v.log.Error(noSnapErr, "No latestImage")
 
