@@ -1631,7 +1631,10 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 		r.savedDRActionCount = annotation
 	}
 
-	r.updateResourceCondition(ctx, drpc, userPlacement, log, vrgs)
+	vrg := r.updateResourceCondition(ctx, drpc, userPlacement, log, vrgs)
+	if vrg != nil {
+		r.reconcileDRPCNonConsistencyGroupDeprecation(drpc, vrg, log)
+	}
 
 	// set metrics if DRPC is not being deleted and if finalizer exists
 	if !isBeingDeleted(drpc, userPlacement) && controllerutil.ContainsFinalizer(drpc, DRPCFinalizer) {
@@ -1668,17 +1671,18 @@ func (r *DRPlacementControlReconciler) updateDRPCStatus(
 // updateResourceCondition updates DRPC status sub-resource with updated status from VRG if one exists,
 // - The status update is NOT intended for a VRG that should be cleaned up on a peer cluster
 // It also updates DRPC ConditionProtected based on current state of VRG.
+// It returns the VRG used for the update, or nil when none was selected.
 //
 //nolint:funlen,cyclop
 func (r *DRPlacementControlReconciler) updateResourceCondition(
 	ctx context.Context, drpc *rmn.DRPlacementControl, userPlacement client.Object,
 	log logr.Logger, vrgs map[string]*rmn.VolumeReplicationGroup,
-) {
+) *rmn.VolumeReplicationGroup {
 	vrgNamespace, err := selectVRGNamespace(r.Client, log, drpc, userPlacement)
 	if err != nil {
 		log.Info("Failed to select VRG namespace", "error", err)
 
-		return
+		return nil
 	}
 
 	clusterName := r.clusterForVRGStatus(drpc, userPlacement, log)
@@ -1686,7 +1690,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 		log.Info("Unable to determine managed cluster from which to inspect VRG, " +
 			"skipping processing ResourceConditions")
 
-		return
+		return nil
 	}
 
 	// Retrieve VRG either from argument or fetch from managed cluster/S3 store
@@ -1694,7 +1698,7 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 	if vrg == nil {
 		log.Info("No valid VRG found, skipping update")
 
-		return
+		return nil
 	}
 
 	// Update DRPC with VRG details
@@ -1731,6 +1735,8 @@ func (r *DRPlacementControlReconciler) updateResourceCondition(
 
 	updateDRPCProtectedCondition(drpc, vrg, clusterName)
 	updateDRPCReplicationHealthyCondition(drpc, vrg)
+
+	return vrg
 }
 
 // getVRG retrieves a VRG either from the provided map or fetches it from the managed cluster/S3 store.

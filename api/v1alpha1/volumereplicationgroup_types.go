@@ -453,6 +453,11 @@ type VolumeReplicationGroupStatus struct {
 	// Conditions are the list of VRG's summary conditions and their status.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// warnings lists deprecated features in use. Each entry has a stable name
+	// and a human-readable message, so more than one deprecation can be reported
+	// together. The list is empty when none apply.
+	Warnings []Warning `json:"warnings,omitempty"`
+
 	// observedGeneration is the last generation change the operator has dealt with
 	//+optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
