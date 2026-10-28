@@ -3609,13 +3609,9 @@ func (v *VSHandler) UndoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim) erro
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}
 
-	val, ok := pv.ObjectMeta.Annotations[PVAnnotationRetentionKey]
-	if !ok || val != PVAnnotationRetentionValue {
+	if !util.UndoPVRetention(pv, PVAnnotationRetentionKey, PVAnnotationRetentionValue) {
 		return nil
 	}
-
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
-	delete(pv.ObjectMeta.Annotations, PVAnnotationRetentionKey)
 
 	v.log.Info("Undoing PV retention for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
 

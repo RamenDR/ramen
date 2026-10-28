@@ -276,6 +276,18 @@ func AddAnnotation(obj client.Object, key, value string) bool {
 	return !added
 }
 
+func UndoPVRetention(pv *corev1.PersistentVolume, annotationKey, annotationValue string) bool {
+	val, ok := pv.ObjectMeta.Annotations[annotationKey]
+	if !ok || val != annotationValue {
+		return false
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
+	delete(pv.ObjectMeta.Annotations, annotationKey)
+
+	return true
+}
+
 func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {
 	currentOwnerRefs := obj.GetOwnerReferences()
 

@@ -607,7 +607,7 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// PVC may not be deleted). This is achieved by clearing the required claim ref.
 	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
 	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
-		undoPVRetention(&pv)
+		rmnutil.UndoPVRetention(&pv, pvVRAnnotationRetentionKey, pvVRAnnotationRetentionValue)
 	}
 
 	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
@@ -674,16 +674,6 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 
 	return v.addAnnotationForResource(pv, "PersistentVolume", pvVRAnnotationRetentionKey,
 		pvVRAnnotationRetentionValue, log)
-}
-
-// undoPVRetention updates the PV reclaim policy back to its saved state
-func undoPVRetention(pv *corev1.PersistentVolume) {
-	if v, ok := pv.ObjectMeta.Annotations[pvVRAnnotationRetentionKey]; !ok || v != pvVRAnnotationRetentionValue {
-		return
-	}
-
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
-	delete(pv.ObjectMeta.Annotations, pvVRAnnotationRetentionKey)
 }
 
 func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
