@@ -664,16 +664,13 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, v.instance.Namespace, v.instance.Name, err)
 	}
 
-	// Check reclaimPolicy of PV, if already set to retain
-	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+	if !rmnutil.RetainPV(pv, pvVRAnnotationRetentionKey, pvVRAnnotationRetentionValue) {
 		return nil
 	}
 
-	// if not retained, retain PV, and add an annotation to denote this is updated for VR needs
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
+	log.Info("Retaining PV for VolRep PVC", "pvName", pv.Name, "pvcName", pvc.Name)
 
-	return v.addAnnotationForResource(pv, "PersistentVolume", pvVRAnnotationRetentionKey,
-		pvVRAnnotationRetentionValue, log)
+	return v.reconciler.Update(v.ctx, pv)
 }
 
 func (v *VRGInstance) generateArchiveAnnotation(gen int64) string {
