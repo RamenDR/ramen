@@ -303,7 +303,7 @@ func (h *volumeGroupSourceHandler) restorePVCsFromSnapshots(
 				vgs.GetNamespace()+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
 		}
 
-		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
+		storageClass, err := util.GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
 		if err != nil {
 			return nil, err
 		}
