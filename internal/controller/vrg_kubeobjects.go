@@ -275,6 +275,31 @@ const (
 	vrgGenerationNumberBitCount = 64
 )
 
+// kubeObjectsCaptureRetryLimitExceeded records a genuine capture failure against the retry budget
+// and reports whether RecipeMaxAttempts has been exceeded. A capture that is merely still in
+// progress (backups New/Queued/InProgress/Finalizing) reports "kube objects group capturing
+// incomplete"; that is not a failure and must not accrue toward RecipeMaxAttempts, or
+// slow-but-healthy backups would be reported as failed while they are still running.
+func (v *VRGInstance) kubeObjectsCaptureRetryLimitExceeded(err error) bool {
+	if err.Error() == "kube objects group capturing incomplete" {
+		return false
+	}
+
+	rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
+	if !ok {
+		v.reconciler.recipeRetries.Store(v.namespacedName, 0)
+	}
+
+	val, ok := rStatus.(int)
+	if ok {
+		val++
+	}
+
+	v.reconciler.recipeRetries.Store(v.namespacedName, val)
+
+	return val > RecipeMaxAttempts
+}
+
 // nolint: funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
@@ -300,19 +325,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
 		veleroNamespaceName, annotations, requests, log)
 	if err != nil {
-		rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
-		if !ok {
-			v.reconciler.recipeRetries.Store(v.namespacedName, 0)
-		}
-
-		val, ok := rStatus.(int)
-		if ok {
-			val++
-		}
-
-		v.reconciler.recipeRetries.Store(v.namespacedName, val)
-
-		if val > RecipeMaxAttempts {
+		if v.kubeObjectsCaptureRetryLimitExceeded(err) {
 			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more than max attempts")
 
 			return
