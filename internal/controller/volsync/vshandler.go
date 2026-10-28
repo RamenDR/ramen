@@ -3574,19 +3574,9 @@ func (v *VSHandler) RetainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}
 
-	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+	if !util.RetainPV(pv, PVAnnotationRetentionKey, PVAnnotationRetentionValue) {
 		return nil
 	}
-
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
-
-	annotations := pv.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-
-	annotations[PVAnnotationRetentionKey] = PVAnnotationRetentionValue
-	pv.SetAnnotations(annotations)
 
 	v.log.Info("Retaining PV for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
 

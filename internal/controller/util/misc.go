@@ -276,6 +276,17 @@ func AddAnnotation(obj client.Object, key, value string) bool {
 	return !added
 }
 
+func RetainPV(pv *corev1.PersistentVolume, annotationKey, annotationValue string) bool {
+	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+		return false
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
+	AddAnnotation(pv, annotationKey, annotationValue)
+
+	return true
+}
+
 func UndoPVRetention(pv *corev1.PersistentVolume, annotationKey, annotationValue string) bool {
 	val, ok := pv.ObjectMeta.Annotations[annotationKey]
 	if !ok || val != annotationValue {
