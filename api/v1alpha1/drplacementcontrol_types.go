@@ -86,6 +86,13 @@ const (
 	// agree on the DR action and target cluster.
 	ConditionGlobalAction = "GlobalAction"
 
+	// DeprecatedWarnings is True while the workload's VolumeReplicationGroup reports
+	// a deprecated protection path. The reason and message identify which
+	// deprecation applies. Today that is VolumeReplication without a consistency
+	// group, and the condition is removed once that path is no longer used.
+	// Later deprecations should use this same condition.
+	ConditionDeprecatedWarnings = "DeprecatedWarnings"
+
 	// NetworkMappingLoaded condition indicates whether the network-mapping ConfigMap was
 	// successfully loaded for this DRPC.
 	//

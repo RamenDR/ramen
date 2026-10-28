@@ -74,6 +74,13 @@ const (
 	// Visibility mirror of the VR/VGR Replicating condition (status, reason, CSI message).
 	// Left unset when the VR does not report Replicating.
 	VRGConditionTypeReplicationHealthy = "ReplicationHealthy"
+
+	// DeprecatedWarnings is True while a deprecated protection path is in use.
+	// The reason and message identify which deprecation applies. Today that is
+	// VolumeReplication without a consistency group, and the condition is
+	// removed once that path is no longer used. Later deprecations should use
+	// this same condition instead of adding another condition type.
+	VRGConditionTypeDeprecatedWarnings = "DeprecatedWarnings"
 )
 
 // VRG condition reasons
