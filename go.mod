@@ -27,6 +27,7 @@ require (
 	github.com/ramendr/ramen/api v0.1.0
 	github.com/ramendr/recipe v0.0.0-20260511145713-454117f61334
 	github.com/red-hat-storage/external-snapshotter/client/v8 v8.2.1-0.20250602100552-7549f3bd7096
+	github.com/stolostron/cluster-lifecycle-api v0.0.0-20260330032750-43755d6ceb09
 	github.com/stolostron/multicloud-operators-placementrule v1.2.4-1-20220311-8eedb3f.0.20230828200208-cd3c119a7fa0
 	github.com/stretchr/testify v1.12.1
 	github.com/vmware-tanzu/velero v1.18.4
