@@ -27,7 +27,7 @@ func (v *VSHandler) CreateCurrentStateSnapshot(
 	namespace := rdSpec.ProtectedPVC.Namespace
 	snapshotName := fmt.Sprintf("current-state-%s", pvcName)
 
-	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return "", err
 	}
@@ -145,7 +145,7 @@ func (v *VSHandler) ReconcileDiffLocalRD(
 		return nil, err
 	}
 
-	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (v *VSHandler) ReconcileDiffLocalRS(
 		return nil, err
 	}
 
-	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
