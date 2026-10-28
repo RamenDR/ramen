@@ -841,3 +841,7 @@ func (c *cgHandler) CleanupFinalSyncIfNeeded(rgs *ramendrv1alpha1.ReplicationGro
 
 	return c.ensureFinalSyncCleanup(rgs)
 }
+
+func isFinalSyncComplete(rgs *ramendrv1alpha1.ReplicationGroupSource) bool {
+	return rgs.Status.LastManualSync == volsync.FinalSyncTriggerString
+}
