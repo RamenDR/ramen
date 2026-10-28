@@ -194,36 +194,6 @@ func (v *VRGInstance) reconcileVGRAsSecondary(vrNamespacedName types.NamespacedN
 	return requeueResult, ready, !skip
 }
 
-func (v *VRGInstance) addAnnotationForResource(resource client.Object, resourceType, annotationKey,
-	annotationValue string, log logr.Logger,
-) error {
-	annotations := resource.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-
-	// Check if the annotation is already set
-	if currentValue, exists := annotations[annotationKey]; exists && currentValue == annotationValue {
-		log.Info(fmt.Sprintf("%s annotation already set to the desired value", resourceType), "resource", resource.GetName())
-
-		return nil
-	}
-
-	annotations[annotationKey] = annotationValue
-	resource.SetAnnotations(annotations)
-
-	if err := v.reconciler.Update(v.ctx, resource); err != nil {
-		return fmt.Errorf("failed to update %s (%s/%s) annotation (%s) belonging to VolumeReplicationGroup (%s/%s), %w",
-			resourceType, resource.GetNamespace(), resource.GetName(), annotationKey,
-			v.instance.Namespace, v.instance.Name, err)
-	}
-
-	log.Info(fmt.Sprintf("%s (%s/%s) annotation (%s) successfully updated to %s",
-		resourceType, resource.GetNamespace(), resource.GetName(), annotationKey, annotationValue))
-
-	return nil
-}
-
 func (v *VRGInstance) isVGRandVGRCArchivedAlready(vgr *volrep.VolumeGroupReplication, log logr.Logger) bool {
 	vgrc, err := v.getVGRCFromVGR(vgr)
 	if err != nil {
@@ -1154,7 +1124,9 @@ func (v *VRGInstance) findAndApplyPVMapping(vgrc *volrep.VolumeGroupReplicationC
 func (v *VRGInstance) addArchivedAnnotationForVGRandVGRC(vgr *volrep.VolumeGroupReplication, log logr.Logger) error {
 	value := v.generateArchiveAnnotation(vgr.Generation)
 
-	err := v.addAnnotationForResource(vgr, "VolumeGroupReplication", pvcVRAnnotationArchivedKey, value, log)
+	err := rmnutil.NewResourceUpdater(vgr).
+		AddAnnotation(pvcVRAnnotationArchivedKey, value).
+		Update(v.ctx, v.reconciler.Client)
 	if err != nil {
 		return err
 	}
@@ -1170,7 +1142,9 @@ func (v *VRGInstance) addArchivedAnnotationForVGRandVGRC(vgr *volrep.VolumeGroup
 
 	value = v.generateArchiveAnnotation(vgrc.Generation)
 
-	return v.addAnnotationForResource(&vgrc, "VolumeGroupReplicationContent", pvcVRAnnotationArchivedKey, value, log)
+	return rmnutil.NewResourceUpdater(&vgrc).
+		AddAnnotation(pvcVRAnnotationArchivedKey, value).
+		Update(v.ctx, v.reconciler.Client)
 }
 
 func (v *VRGInstance) restoreVGRsAndVGRCsForVolRep(result *ctrl.Result) error {

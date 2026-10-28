@@ -535,7 +535,9 @@ func (v *VRGInstance) protectPVC(pvc *corev1.PersistentVolumeClaim, log logr.Log
 
 	// Annotate that PVC protection is complete, skip if being deleted
 	if !rmnutil.ResourceIsDeleted(pvc) {
-		if err := v.addProtectedAnnotationForPVC(pvc, log); err != nil {
+		if err := rmnutil.NewResourceUpdater(pvc).
+			AddAnnotation(pvcVRAnnotationProtectedKey, pvcVRAnnotationProtectedValue).
+			Update(v.ctx, v.reconciler.Client); err != nil {
 			log.Info("Requeuing, as annotating PersistentVolumeClaim failed", "errorValue", err)
 
 			msg := "Failed to add protected annotatation to PVC"
@@ -746,7 +748,7 @@ func (v *VRGInstance) uploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim
 		return errors.New(msg)
 	}
 
-	if err := v.addArchivedAnnotationForPVC(pvc, log); err != nil {
+	if err := v.addArchivedAnnotationForPVC(pvc); err != nil {
 		msg := fmt.Sprintf("failed to add archived annotation: %s", err)
 		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name,
 			VRGConditionReasonClusterDataAnnotationFailed, msg)
@@ -2515,13 +2517,10 @@ func (v *VRGInstance) deleteVR(vrNamespacedName types.NamespacedName, log logr.L
 	return v.ensureVRDeletedFromAPIServer(vrNamespacedName, cr, log)
 }
 
-func (v *VRGInstance) addProtectedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
-	return v.addAnnotationForResource(pvc, "PersistentVolumeClaim", pvcVRAnnotationProtectedKey,
-		pvcVRAnnotationProtectedValue, log)
-}
-
-func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim, log logr.Logger) error {
-	err := v.addAnnotationForResource(pvc, "PersistentVolumeClaim", pvcVRAnnotationArchivedKey, rmnutil.HashPVC(pvc), log)
+func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeClaim) error {
+	err := rmnutil.NewResourceUpdater(pvc).
+		AddAnnotation(pvcVRAnnotationArchivedKey, rmnutil.HashPVC(pvc)).
+		Update(v.ctx, v.reconciler.Client)
 	if err != nil {
 		return err
 	}
@@ -2534,7 +2533,9 @@ func (v *VRGInstance) addArchivedAnnotationForPVC(pvc *corev1.PersistentVolumeCl
 
 	value := v.generateArchiveAnnotation(pv.Generation)
 
-	return v.addAnnotationForResource(&pv, "PersistentVolume", pvcVRAnnotationArchivedKey, value, log)
+	return rmnutil.NewResourceUpdater(&pv).
+		AddAnnotation(pvcVRAnnotationArchivedKey, value).
+		Update(v.ctx, v.reconciler.Client)
 }
 
 // s3KeyPrefix returns the S3 key prefix of cluster data of this VRG.
