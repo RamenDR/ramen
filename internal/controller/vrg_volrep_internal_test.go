@@ -4,6 +4,7 @@
 package controllers
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 )
@@ -211,5 +215,135 @@ func TestUpdateDRPCReplicationHealthyCondition(t *testing.T) {
 
 	if cond := meta.FindStatusCondition(drpc.Status.Conditions, ramendrv1alpha1.ConditionReplicationHealthy); cond != nil {
 		t.Errorf("ReplicationHealthy = %+v, want absent", cond)
+	}
+}
+
+// existingPV builds a PV, as found on the cluster, left behind by a deleted claim.
+func existingPV(phase corev1.PersistentVolumePhase, claimRef *corev1.ObjectReference) *corev1.PersistentVolume {
+	return &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: "pv-a"},
+		Spec: corev1.PersistentVolumeSpec{
+			StorageClassName:              "sc",
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+			ClaimRef:                      claimRef,
+		},
+		Status: corev1.PersistentVolumeStatus{Phase: phase},
+	}
+}
+
+func staleClaimRef() *corev1.ObjectReference {
+	return &corev1.ObjectReference{
+		Kind:            "PersistentVolumeClaim",
+		APIVersion:      "v1",
+		Namespace:       "vrg-ns",
+		Name:            "pvc-a",
+		UID:             "stale-uid",
+		ResourceVersion: "12345",
+	}
+}
+
+// asyncRestoreVRG builds a VRGInstance for an async VRG restoring PVs, backed by a fake client
+// holding the supplied existing PV.
+func asyncRestoreVRG(t *testing.T, pv *corev1.PersistentVolume) *VRGInstance {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme: %v", err)
+	}
+
+	return &VRGInstance{
+		reconciler: &VolumeReplicationGroupReconciler{
+			Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(pv).Build(),
+		},
+		ctx: context.TODO(),
+		log: logr.Discard(),
+		instance: &ramendrv1alpha1.VolumeReplicationGroup{
+			ObjectMeta: metav1.ObjectMeta{Name: "vrg", Namespace: "vrg-ns"},
+			Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
+				ReplicationState: ramendrv1alpha1.Primary,
+				Async:            &ramendrv1alpha1.VRGAsyncSpec{},
+			},
+		},
+	}
+}
+
+func assertPVAdopted(t *testing.T, claimRef *corev1.ObjectReference) {
+	t.Helper()
+
+	v := asyncRestoreVRG(t, existingPV(corev1.VolumeReleased, claimRef))
+
+	// The backed up PV references the claim being restored.
+	if err := v.validateExistingPV(existingPV(corev1.VolumeReleased, staleClaimRef())); err != nil {
+		t.Fatalf("validateExistingPV() = %v, want nil", err)
+	}
+
+	got := &corev1.PersistentVolume{}
+	if err := v.reconciler.Get(context.TODO(), types.NamespacedName{Name: "pv-a"}, got); err != nil {
+		t.Fatalf("Get PV: %v", err)
+	}
+
+	if got.Annotations[RestoreAnnotation] != RestoredByRamen {
+		t.Errorf("annotation %s = %q, want %q", RestoreAnnotation, got.Annotations[RestoreAnnotation], RestoredByRamen)
+	}
+
+	if claimRef == nil {
+		if got.Spec.ClaimRef != nil {
+			t.Errorf("ClaimRef = %+v, want nil", got.Spec.ClaimRef)
+		}
+
+		return
+	}
+
+	// UID, ResourceVersion and APIVersion are cleared so the PV can bind to the restored claim.
+	want := corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "vrg-ns", Name: "pvc-a"}
+	if got.Spec.ClaimRef == nil || *got.Spec.ClaimRef != want {
+		t.Errorf("ClaimRef = %+v, want %+v", got.Spec.ClaimRef, want)
+	}
+}
+
+func TestValidateExistingPVAdoptsReleasedPV(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		claimRef *corev1.ObjectReference
+	}{
+		{name: "stale claimRef is cleared for rebinding", claimRef: staleClaimRef()},
+		{name: "nil claimRef", claimRef: nil},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertPVAdopted(t, tt.claimRef)
+		})
+	}
+}
+
+// TestValidateExistingPVDoesNotAdoptAvailablePV ensures only Released PVs are adopted; an unbound PV
+// in any other phase that was not restored by Ramen is still rejected.
+func TestValidateExistingPVDoesNotAdoptAvailablePV(t *testing.T) {
+	t.Parallel()
+
+	v := asyncRestoreVRG(t, existingPV(corev1.VolumeAvailable, staleClaimRef()))
+
+	if err := v.validateExistingPV(existingPV(corev1.VolumeAvailable, staleClaimRef())); err == nil {
+		t.Fatal("validateExistingPV() = nil, want error for unannotated Available PV")
+	}
+
+	got := &corev1.PersistentVolume{}
+	if err := v.reconciler.Get(context.TODO(), types.NamespacedName{Name: "pv-a"}, got); err != nil {
+		t.Fatalf("Get PV: %v", err)
+	}
+
+	if _, ok := got.Annotations[RestoreAnnotation]; ok {
+		t.Errorf("annotation %s set on PV that should not be adopted", RestoreAnnotation)
+	}
+
+	if got.Spec.ClaimRef.UID != "stale-uid" {
+		t.Errorf("ClaimRef.UID = %q, want unchanged %q", got.Spec.ClaimRef.UID, "stale-uid")
 	}
 }
