@@ -8,7 +8,6 @@ rules:
   - ""
   resources:
   - configmaps
-  - persistentvolumes
   verbs:
   - create
   - get
@@ -50,6 +49,7 @@ rules:
   - ""
   resources:
   - persistentvolumeclaims
+  - persistentvolumes
   - secrets
   verbs:
   - create
