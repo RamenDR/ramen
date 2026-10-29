@@ -2860,6 +2860,14 @@ func restoreClusterDataObjects[
 	return numRestored, nil
 }
 
+func clearPVClaimRef(pv *corev1.PersistentVolume) {
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
+	}
+}
+
 func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error {
 	// In case of sync mode, the pv is never deleted as part of the
 	// failover/relocate process. Hence, the restore may not be
@@ -2879,6 +2887,61 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	return nil
 }
 
+func (v *VRGInstance) updateExistingPVForAdoption(pv *corev1.PersistentVolume) error {
+	clearPVClaimRef(pv)
+	addRestoreAnnotation(pv)
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		return fmt.Errorf("failed to update existing PV for adoption: %v, err: %w", pv.Name, err)
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) validateBoundExistingPV(pv *corev1.PersistentVolume, existingPV *corev1.PersistentVolume,
+	log logr.Logger,
+) error {
+	var pvc corev1.PersistentVolumeClaim
+
+	pvcNamespacedName := types.NamespacedName{Name: pv.Spec.ClaimRef.Name, Namespace: pv.Spec.ClaimRef.Namespace}
+	if err := v.reconciler.Get(v.ctx, pvcNamespacedName, &pvc); err != nil {
+		return fmt.Errorf("found bound PV %s to claim %s but unable to validate claim exists: %w", existingPV.GetName(),
+			pvcNamespacedName.String(), err)
+	}
+
+	if rmnutil.ResourceIsDeleted(&pvc) {
+		return fmt.Errorf("existing bound PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
+			pvcNamespacedName.String(), pvc.DeletionTimestamp)
+	}
+
+	// If the PV is bound and matches with the PV we would have restored then return now
+	if v.pvMatches(existingPV, pv) {
+		log.Info("Existing PV matches and is bound to the same claim")
+
+		return nil
+	}
+
+	return fmt.Errorf("existing PV (%s) is bound and doesn't match with the PV to be restored", existingPV.GetName())
+}
+
+// adoptReleasedExistingPV adopts an existing Released PV if its stale claimRef, when present, matches the claim
+// of the backed up PV. Returns error if the claims do not match or the adoption update fails.
+func (v *VRGInstance) adoptReleasedExistingPV(pv *corev1.PersistentVolume, existingPV *corev1.PersistentVolume,
+	log logr.Logger,
+) error {
+	if existingPV.Spec.ClaimRef != nil && pv.Spec.ClaimRef != nil &&
+		(existingPV.Spec.ClaimRef.Namespace != pv.Spec.ClaimRef.Namespace ||
+			existingPV.Spec.ClaimRef.Name != pv.Spec.ClaimRef.Name) {
+		return fmt.Errorf("released PV %s claim %s/%s does not match backed up claim %s/%s", existingPV.Name,
+			existingPV.Spec.ClaimRef.Namespace, existingPV.Spec.ClaimRef.Name,
+			pv.Spec.ClaimRef.Namespace, pv.Spec.ClaimRef.Name)
+	}
+
+	log.Info("PV exists and is Released - adopting it")
+
+	return v.updateExistingPVForAdoption(existingPV)
+}
+
 // validateExistingPV validates if an existing PV matches the passed in PV for certain fields. Returns error
 // if a match fails or a match is not possible given the state of the existing PV
 func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
@@ -2890,27 +2953,7 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	}
 
 	if existingPV.Status.Phase == corev1.VolumeBound {
-		var pvc corev1.PersistentVolumeClaim
-
-		pvcNamespacedName := types.NamespacedName{Name: pv.Spec.ClaimRef.Name, Namespace: pv.Spec.ClaimRef.Namespace}
-		if err := v.reconciler.Get(v.ctx, pvcNamespacedName, &pvc); err != nil {
-			return fmt.Errorf("found bound PV %s to claim %s but unable to validate claim exists: %w", existingPV.GetName(),
-				pvcNamespacedName.String(), err)
-		}
-
-		if rmnutil.ResourceIsDeleted(&pvc) {
-			return fmt.Errorf("existing bound PV %s claim %s deletion timestamp non-zero %v", existingPV.GetName(),
-				pvcNamespacedName.String(), pvc.DeletionTimestamp)
-		}
-
-		// If the PV is bound and matches with the PV we would have restored then return now
-		if v.pvMatches(existingPV, pv) {
-			log.Info("Existing PV matches and is bound to the same claim")
-
-			return nil
-		}
-
-		return fmt.Errorf("existing PV (%s) is bound and doesn't match with the PV to be restored", existingPV.GetName())
+		return v.validateBoundExistingPV(pv, existingPV, log)
 	}
 
 	log.Info("PV exists and is not bound", "phase", existingPV.Status.Phase)
@@ -2923,10 +2966,13 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 		return v.updateExistingPVForSync(existingPV)
 	}
 
+	if v.instance.Spec.Async != nil && existingPV.Status.Phase == corev1.VolumeReleased {
+		return v.adoptReleasedExistingPV(pv, existingPV, log)
+	}
+
 	// PV is not bound
 	// In async case, just checking that the PV has the ramen restore annotation is good
-	if existingPV.ObjectMeta.Annotations != nil &&
-		existingPV.ObjectMeta.Annotations[RestoreAnnotation] == RestoredByRamen {
+	if existingPV.GetAnnotations()[RestoreAnnotation] == RestoredByRamen {
 		// Should we check and see if PV in being deleted? Should we just treat it as exists
 		// and then we don't care if deletion takes place later, which is what we do now?
 		log.Info("PV exists and managed by Ramen")
@@ -3082,12 +3128,7 @@ func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume, sc *storagev
 func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 	pv.ResourceVersion = ""
 	delete(pv.Labels, pvLeftBehindLabelKey)
-
-	if pv.Spec.ClaimRef != nil {
-		pv.Spec.ClaimRef.UID = ""
-		pv.Spec.ClaimRef.ResourceVersion = ""
-		pv.Spec.ClaimRef.APIVersion = ""
-	}
+	clearPVClaimRef(pv)
 
 	// If the PV was annotated with a destination volume handle during S3 upload,
 	// replace the CSI volumeHandle so the PV references the correct volume on
