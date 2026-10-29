@@ -179,7 +179,7 @@ func (w *NoHooks) GetChecks(namespace string) []*recipe.Check { return nil }
 
 func (w *NoHooks) GetOperations(namespace string) []*recipe.Operation { return nil }
 
-func (w *NoHooks) Kustomize() string { return "" }
+func (w *NoHooks) Kustomize() (string, error) { return "", nil }
 
 func (w *NoHooks) Health(ctx types.TestContext, cluster *types.Cluster) error { return nil }
 
@@ -239,7 +239,7 @@ func createWorkload(t *testing.T, cfg *config.Config) types.Workload {
 
 	pvcSpec := cfg.PVCSpecs[0]
 
-	workload, err := workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
+	workload, err := workloads.New("deploy", cfg.Repo, pvcSpec)
 	if err != nil {
 		t.Fatalf("error creating workload: %v", err)
 	}
