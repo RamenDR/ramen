@@ -39,5 +39,11 @@ without downloading a different toolchain.
 To build with a different Go version, use the `GO_VERSION` build argument:
 
 ```sh
-podman build --build-arg GO_VERSION=1.25 -t ${IMG} .
+podman build --build-arg GO_VERSION=1.26 -t ${IMG} .
 ```
+
+Podman can reuse a cached `golang` image for that tag. Pass `--pull=always` to
+refresh it before a CVE rebuild. See the
+[upstream Go CVE check][upstream-go-cve].
+
+[upstream-go-cve]: dev/cve.md#checking-the-upstream-ramen-repository
