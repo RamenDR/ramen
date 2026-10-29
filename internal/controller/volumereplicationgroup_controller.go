@@ -432,7 +432,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
@@ -606,6 +606,9 @@ const (
 	pvVRAnnotationRetentionValue     = "retained"
 	RestoreAnnotation                = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
 	RestoredByRamen                  = "True"
+
+	// PV label, set on PVs left behind on the Secondary cluster in Sync (MetroDR) mode. The value is the UID of the VRG
+	pvLeftBehindLabelKey = "ramendr.openshift.io/pv-left-behind-by-ramen"
 
 	// StorageClass label
 	StorageIDLabel = util.StorageIDLabel
@@ -1356,6 +1359,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
 		return v.result
+	}
+
+	if err := v.deleteLeftBehindPVs(); err != nil {
+		v.log.Info("Deleting PVs left behind failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
 	}
 
 	if v.hasGlobalVGRLabel() {
