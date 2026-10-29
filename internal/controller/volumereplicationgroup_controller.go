@@ -607,6 +607,9 @@ const (
 	RestoreAnnotation                = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
 	RestoredByRamen                  = "True"
 
+	// PV label, set on PVs left behind on the Secondary cluster in Sync (MetroDR) mode. The value is the UID of the VRG
+	pvLeftBehindLabelKey = "ramendr.openshift.io/pv-left-behind-by-ramen"
+
 	// StorageClass label
 	StorageIDLabel = util.StorageIDLabel
 
@@ -1356,6 +1359,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		v.log.Info("Requeuing as reconciling VolumeReplication for deletion failed")
 
 		return v.result
+	}
+
+	if err := v.undoPVRetentionForLeftBehindPVs(); err != nil {
+		v.log.Info("Undoing PV retention for PVs left behind failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
 	}
 
 	if v.hasGlobalVGRLabel() {

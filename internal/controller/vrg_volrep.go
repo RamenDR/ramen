@@ -608,6 +608,13 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
 	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		undoPVRetention(&pv)
+	} else {
+		// The PV stays retained, mark it so it can be found and cleaned up when this VRG is deleted
+		if pv.Labels == nil {
+			pv.Labels = map[string]string{}
+		}
+
+		pv.Labels[pvLeftBehindLabelKey] = string(v.instance.UID)
 	}
 
 	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
@@ -676,8 +683,49 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 		pvVRAnnotationRetentionValue, log)
 }
 
+// undoPVRetentionForLeftBehindPVs undoes the PV retention for the PVs left behind by a Sync (MetroDR) VRG that is
+// being deleted as Secondary. The PVs are found by the left behind label, as their PVCs are already removed when
+// the workload moved to the peer cluster. Only PVs in the Released phase are cleaned up, others are left alone.
+func (v *VRGInstance) undoPVRetentionForLeftBehindPVs() error {
+	if v.instance.Spec.Sync == nil || v.instance.Spec.ReplicationState != ramendrv1alpha1.Secondary {
+		return nil
+	}
+
+	pvList := &corev1.PersistentVolumeList{}
+	// Use the API reader, as the cache may not yet reflect the labels written by preparePVCForVRDeletion
+	if err := v.reconciler.APIReader.List(v.ctx, pvList,
+		client.MatchingLabels{pvLeftBehindLabelKey: string(v.instance.UID)}); err != nil {
+		return fmt.Errorf("failed to list PersistentVolumes left behind by VRG %s/%s, %w",
+			v.instance.Namespace, v.instance.Name, err)
+	}
+
+	var errs []error
+
+	for idx := range pvList.Items {
+		pv := &pvList.Items[idx]
+
+		if pv.Status.Phase != corev1.VolumeReleased {
+			continue
+		}
+
+		undoPVRetention(pv)
+
+		if err := v.reconciler.Update(v.ctx, pv); err != nil {
+			errs = append(errs, fmt.Errorf("failed to undo retention of PersistentVolume %s, %w", pv.Name, err))
+
+			continue
+		}
+
+		v.log.Info("Undid PV retention for PV left behind", "pv", pv.Name)
+	}
+
+	return errors.Join(errs...)
+}
+
 // undoPVRetention updates the PV reclaim policy back to its saved state
 func undoPVRetention(pv *corev1.PersistentVolume) {
+	delete(pv.Labels, pvLeftBehindLabelKey)
+
 	if v, ok := pv.ObjectMeta.Annotations[pvVRAnnotationRetentionKey]; !ok || v != pvVRAnnotationRetentionValue {
 		return
 	}
@@ -3030,6 +3078,8 @@ func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume, sc *storagev
 // to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
 func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 	pv.ResourceVersion = ""
+	delete(pv.Labels, pvLeftBehindLabelKey)
+
 	if pv.Spec.ClaimRef != nil {
 		pv.Spec.ClaimRef.UID = ""
 		pv.Spec.ClaimRef.ResourceVersion = ""
