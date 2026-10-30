@@ -1495,6 +1495,8 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 		if numOfRestoredRes != 0 {
 			return v.updateVRGConditionsAndStatus(v.result)
 		}
+
+		v.result.Requeue = false
 	}
 
 	if err := v.pvcsDeselectedUnprotect(); err != nil {
