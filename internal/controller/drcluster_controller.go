@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strings"
@@ -614,14 +615,47 @@ func (u *drclusterInstance) getCIDRSFromDRCC() (sets.String, error) {
 }
 
 // checkDetectedCIDRsConfigured checks that all CIDRs detected by the storage provisioner
-// are configured in DRCluster.Spec. Owns the InvalidCIDRsDetected metric.
+// are configured in DRCluster.Spec. A detected CIDR is considered configured if it is
+// an exact match or a subnet of any configured CIDR.
+// Owns the InvalidCIDRsDetected metric.
 func checkDetectedCIDRsConfigured(
-	cidrsFromDRCC, cidrsFromDRCluster sets.String,
+	detectedCIDRs, configuredCIDRs sets.String,
 	conditions *[]metav1.Condition, observedGeneration int64,
 	metrics InvalidCIDRsDetectedMetrics,
 ) error {
-	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
+	// parse all configured CIDRs into netip.Prefix once; format was already validated
+	configuredPrefixes := make([]netip.Prefix, 0, len(configuredCIDRs))
+	for cidr := range configuredCIDRs {
+		prefix, err := util.ParseCIDR(cidr)
+		if err != nil {
+			return err
+		}
+
+		configuredPrefixes = append(configuredPrefixes, prefix)
+	}
+
+	unconfiguredCIDRs := []string{}
+
+	for detectedCIDR := range detectedCIDRs {
+		// detected CIDRs come from the storage provisioner and are not format validated;
+		// report an unparsable one as unconfigured instead of failing the whole check
+		detectedPrefix, err := util.ParseCIDR(detectedCIDR)
+		if err != nil {
+			unconfiguredCIDRs = append(unconfiguredCIDRs, detectedCIDR)
+
+			continue
+		}
+
+		isConfigured := slices.ContainsFunc(configuredPrefixes, func(configuredPrefix netip.Prefix) bool {
+			return util.IsSubnetOf(detectedPrefix, configuredPrefix)
+		})
+		if !isConfigured {
+			unconfiguredCIDRs = append(unconfiguredCIDRs, detectedCIDR)
+		}
+	}
+
 	if len(unconfiguredCIDRs) > 0 {
+		slices.Sort(unconfiguredCIDRs)
 		msg := fmt.Sprintf("detected CIDRs not configured: %s", strings.Join(unconfiguredCIDRs, ", "))
 		setCIDRsValidatedConditionDetectedCIDRsUnconfigured(conditions, observedGeneration, msg)
 		metrics.InvalidCIDRsDetected.Set(1)
@@ -633,14 +667,43 @@ func checkDetectedCIDRsConfigured(
 }
 
 // checkUndetectedCIDRsFound checks if DRCluster has CIDRs not detected by the storage provisioner.
-// Owns the UndetectedCIDRsFound metric. Returns true if undetected CIDRs were found.
+// A configured CIDR is considered detected if it is an exact match or a supernet of any detected
+// CIDR. Owns the UndetectedCIDRsFound metric. Returns true if undetected CIDRs were found.
 func checkUndetectedCIDRsFound(
-	cidrsFromDRCC, cidrsFromDRCluster sets.String,
+	detectedCIDRs, configuredCIDRs sets.String,
 	conditions *[]metav1.Condition, observedGeneration int64,
 	metrics UndetectedCIDRsFoundMetrics,
 ) bool {
-	undetectedCIDRs := cidrsFromDRCluster.Difference(cidrsFromDRCC).List()
+	// parse all detected CIDRs into netip.Prefix once; an unparsable one is already reported
+	// by checkDetectedCIDRsConfigured, so it is skipped here
+	detectedPrefixes := make([]netip.Prefix, 0, len(detectedCIDRs))
+
+	for cidr := range detectedCIDRs {
+		if prefix, err := util.ParseCIDR(cidr); err == nil {
+			detectedPrefixes = append(detectedPrefixes, prefix)
+		}
+	}
+
+	undetectedCIDRs := []string{}
+
+	for configuredCIDR := range configuredCIDRs {
+		configuredPrefix, err := util.ParseCIDR(configuredCIDR)
+		if err != nil {
+			undetectedCIDRs = append(undetectedCIDRs, configuredCIDR)
+
+			continue
+		}
+
+		isDetected := slices.ContainsFunc(detectedPrefixes, func(detectedPrefix netip.Prefix) bool {
+			return util.IsSubnetOf(detectedPrefix, configuredPrefix)
+		})
+		if !isDetected {
+			undetectedCIDRs = append(undetectedCIDRs, configuredCIDR)
+		}
+	}
+
 	if len(undetectedCIDRs) > 0 {
+		slices.Sort(undetectedCIDRs)
 		setCIDRsValidatedConditionUndetectedCIDRsFound(conditions, observedGeneration,
 			fmt.Sprintf("warning: CIDRs not detected by storage provisioner: %s",
 				strings.Join(undetectedCIDRs, ", ")))
