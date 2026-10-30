@@ -36,18 +36,6 @@ func (v *VRGInstance) globalVGRNamespacedName() types.NamespacedName {
 	}
 }
 
-func (v *VRGInstance) isGloballyOffloadedByPeerClasses(scName string) (bool, string) {
-	for idx := range v.instance.Spec.Async.PeerClasses {
-		pc := &v.instance.Spec.Async.PeerClasses[idx]
-
-		if scName == pc.StorageClassName && pc.Global {
-			return true, pc.GroupReplicationID
-		}
-	}
-
-	return false, ""
-}
-
 func (v *VRGInstance) addGlobalVGRLabel(grID string) error {
 	// Label value doubles as the global VGR resource name, derived from GroupReplicationID.
 	vgrLabel := rmnutil.GlobalVGRName(grID)
@@ -62,50 +50,6 @@ func (v *VRGInstance) addGlobalVGRLabel(grID string) error {
 	}
 
 	return nil
-}
-
-func (v *VRGInstance) hasGlobalPeerClass() bool {
-	for idx := range v.instance.Spec.Async.PeerClasses {
-		if v.instance.Spec.Async.PeerClasses[idx].Global {
-			return true
-		}
-	}
-
-	return false
-}
-
-// processGloballyOffloadedPVCs validates that all offloaded PVCs in the list are
-// globally offloaded, and that all PVCs share the same GroupReplicationID. If so,
-// the VRG is labeled with the global VGR label.
-func (v *VRGInstance) processGloballyOffloadedPVCs(pvcList *corev1.PersistentVolumeClaimList) error {
-	if !v.hasGlobalPeerClass() {
-		return nil
-	}
-
-	var grID string
-
-	for idx := range pvcList.Items {
-		pvc := &pvcList.Items[idx]
-
-		pvcGlobal, pvcGRID := v.isGloballyOffloadedByPeerClasses(*pvc.Spec.StorageClassName)
-
-		if !pvcGlobal {
-			return fmt.Errorf("peerClass for StorageClass (%s) is not globally offloaded for PVC (%s/%s)",
-				*pvc.Spec.StorageClassName, pvc.GetNamespace(), pvc.GetName())
-		}
-
-		if idx == 0 {
-			grID = pvcGRID
-
-			continue
-		}
-
-		if pvcGRID != grID {
-			return fmt.Errorf("not all PVCs share the same GroupReplicationID, cannot use global VGR")
-		}
-	}
-
-	return v.addGlobalVGRLabel(grID)
 }
 
 // isGlobalStateInConsensus checks that all VRGs sharing the same global VGR label
