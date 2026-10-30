@@ -322,7 +322,7 @@ func CreateOrUpdateConfigMap(
 		Name:      configMapName,
 	}
 
-	updateDrClusterOperatorFromSubscription(ctx, r, defaultRamenConfig, log)
+	subscriptionFound := updateDrClusterOperatorFromSubscription(ctx, r, defaultRamenConfig, log)
 
 	if err := r.Get(ctx, key, configMap); err != nil {
 		if !k8serrors.IsNotFound(err) {
@@ -344,7 +344,16 @@ func CreateOrUpdateConfigMap(
 		return nil, err
 	}
 
-	copyDrClusterOperatorSubscriptionFields(&merged, defaultRamenConfig)
+	// Only overwrite dr-cluster operator subscription fields when we
+	// successfully retrieved the hub subscription. When the lookup fails
+	// (e.g. transient TLS timeout), preserve whatever the existing
+	// ConfigMap already has rather than replacing it with empty defaults.
+	if subscriptionFound {
+		copyDrClusterOperatorSubscriptionFields(&merged, defaultRamenConfig)
+	} else {
+		log.Info("hub subscription not found; preserving existing drClusterOperator config",
+			"namespace", configMap.Namespace, "name", configMap.Name)
+	}
 
 	return configMapUpdate(ctx, c, configMap, &merged, log)
 }
@@ -551,15 +560,15 @@ func applyDrClusterOperatorFromSubscription(
 func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader client.Reader,
 	cfg *ramendrv1alpha1.RamenConfig,
 	log logr.Logger,
-) {
+) bool {
 	if ControllerType != ramendrv1alpha1.DRHubType || cfg == nil {
-		return
+		return false
 	}
 
 	sub := findHubOperatorSubscription(ctx, apiReader, log)
 
 	if sub == nil || sub.Spec == nil {
-		return
+		return false
 	}
 
 	applyDrClusterOperatorFromSubscription(sub, cfg)
@@ -569,6 +578,8 @@ func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader clie
 		cfg.KubeObjectProtection.VeleroNamespaceName = veleroNamespaceNameDefaultOCP
 		cfg.RamenOpsNamespace = openshiftDROpsNamespace
 	}
+
+	return true
 }
 
 func RamenOperandsNamespace(config ramendrv1alpha1.RamenConfig) string {
