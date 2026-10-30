@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strings"
@@ -613,15 +614,45 @@ func (u *drclusterInstance) getCIDRSFromDRCC() (sets.String, error) {
 	return cidrsFromDRCC, nil
 }
 
+// isCIDRContained reports whether detectedCIDR is contained within any of the configuredCIDRs.
+// A detected CIDR is contained if it is an exact match or a subnet of a configured CIDR.
+func isCIDRContained(detectedCIDR netip.Prefix, configuredCIDRs []netip.Prefix) bool {
+	for _, configuredCIDR := range configuredCIDRs {
+		if util.IsSubnetOf(configuredCIDR, detectedCIDR) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // checkDetectedCIDRsConfigured checks that all CIDRs detected by the storage provisioner
-// are configured in DRCluster.Spec. Owns the InvalidCIDRsDetected metric.
+// are configured in DRCluster.Spec. A detected CIDR is considered configured if it is
+// an exact match or fully contained within any configured CIDR (subnet containment).
+// Owns the InvalidCIDRsDetected metric.
 func checkDetectedCIDRsConfigured(
 	cidrsFromDRCC, cidrsFromDRCluster sets.String,
 	conditions *[]metav1.Condition, observedGeneration int64,
 	metrics InvalidCIDRsDetectedMetrics,
 ) error {
-	unconfiguredCIDRs := cidrsFromDRCC.Difference(cidrsFromDRCluster).List()
+	// parse all configured CIDRs into netip.Prefix once; format was already validated
+	configuredCIDRs := make([]netip.Prefix, 0, len(cidrsFromDRCluster))
+	for cidr := range cidrsFromDRCluster {
+		configuredCIDRs = append(configuredCIDRs, netip.MustParsePrefix(cidr).Masked())
+	}
+
+	unconfiguredCIDRs := []string{}
+
+	for cidrFromDRCC := range cidrsFromDRCC {
+		detectedCIDR := netip.MustParsePrefix(cidrFromDRCC).Masked()
+
+		if !isCIDRContained(detectedCIDR, configuredCIDRs) {
+			unconfiguredCIDRs = append(unconfiguredCIDRs, cidrFromDRCC)
+		}
+	}
+
 	if len(unconfiguredCIDRs) > 0 {
+		slices.Sort(unconfiguredCIDRs)
 		msg := fmt.Sprintf("detected CIDRs not configured: %s", strings.Join(unconfiguredCIDRs, ", "))
 		setCIDRsValidatedConditionDetectedCIDRsUnconfigured(conditions, observedGeneration, msg)
 		metrics.InvalidCIDRsDetected.Set(1)
@@ -634,6 +665,11 @@ func checkDetectedCIDRsConfigured(
 
 // checkUndetectedCIDRsFound checks if DRCluster has CIDRs not detected by the storage provisioner.
 // Owns the UndetectedCIDRsFound metric. Returns true if undetected CIDRs were found.
+//
+// TODO: may be updated to use subnet containment — a configured CIDR that acts as a supernet
+// for any detected CIDR may not need to be reported as undetected. Currently uses exact string
+// set difference which may produce warnings when the admin configures a supernet
+// (e.g. 10.131.0.0/23) to cover detected subnets (e.g. 10.131.0.33/32).
 func checkUndetectedCIDRsFound(
 	cidrsFromDRCC, cidrsFromDRCluster sets.String,
 	conditions *[]metav1.Condition, observedGeneration int64,
