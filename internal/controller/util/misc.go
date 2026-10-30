@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"net"
+	"net/netip"
 	"reflect"
 	"strings"
 
@@ -519,4 +521,36 @@ func GetRemoteServiceNameForDiffRDFromPVCName(pvcName, rdNamespace string) strin
 	diffLocalName := GetLocalServiceNameForDiffRD(GetReplicationDestinationName(pvcName))
 
 	return fmt.Sprintf("%s.%s.svc.clusterset.local", diffLocalName, rdNamespace)
+}
+
+// IsSubnetOf reports whether subnet is fully contained within supernet.
+func IsSubnetOf(subnet, supernet netip.Prefix) bool {
+	// Supernet must contain the subnet network address.
+	ipInRange := supernet.Contains(subnet.Addr())
+
+	// Supernet has fewer network bits (more IPs), while subnet has more network bits (fewer IPs).
+	// For example, /23 (supernet) covers more IPs than /32 (subnet).
+	// Supernet prefix length must be less than or equal to subnet prefix length.
+	bitsInRange := supernet.Bits() <= subnet.Bits()
+
+	return ipInRange && bitsInRange
+}
+
+// ParseCIDR parses cidr into a netip.Prefix with host bits cleared (10.0.0.5/24 -> 10.0.0.0/24).
+// It uses net.ParseCIDR rather than netip.ParsePrefix so that it accepts exactly what the CIDR
+// format validation accepts (e.g. 10.0.0.0/024), and never fails on a validated value.
+func ParseCIDR(cidr string) (netip.Prefix, error) {
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+
+	addr, ok := netip.AddrFromSlice(network.IP)
+	if !ok {
+		return netip.Prefix{}, fmt.Errorf("invalid CIDR %q", cidr)
+	}
+
+	ones, _ := network.Mask.Size()
+
+	return netip.PrefixFrom(addr, ones).Masked(), nil
 }
