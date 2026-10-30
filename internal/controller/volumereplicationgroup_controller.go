@@ -1495,6 +1495,8 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 		if numOfRestoredRes != 0 {
 			return v.updateVRGConditionsAndStatus(v.result)
 		}
+
+		v.result.Requeue = false
 	}
 
 	if err := v.pvcsDeselectedUnprotect(); err != nil {
@@ -1651,7 +1653,7 @@ func (v *VRGInstance) reconcileAsPrimary() {
 	}
 
 	vrg := v.instance
-	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
+	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync) || v.result.Requeue
 	v.reconcileVolRepsAsPrimary()
 
 	if vrg.Spec.PrepareForFinalSync {
