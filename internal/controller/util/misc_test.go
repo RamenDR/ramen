@@ -4,6 +4,8 @@
 package util_test
 
 import (
+	"net/netip"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/validation"
@@ -60,4 +62,76 @@ var _ = Describe("misc", func() {
 
 	originalPVCName := util.GetLocalServiceNameForRD("normal-pvc-name")
 	Expect(originalPVCName).Should(Equal("volsync-rsync-tls-dst-normal-pvc-name"))
+})
+
+var _ = Describe("IsSubnetOf", func() {
+	// exact match — detected CIDR is identical to configured CIDR
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/23"),
+		netip.MustParsePrefix("10.131.0.0/23"),
+	)).Should(BeTrue())
+
+	// subnet containment — detected /32 host within configured /23 supernet
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.33/32"),
+		netip.MustParsePrefix("10.131.0.0/23"),
+	)).Should(BeTrue())
+
+	// subnet containment — detected /24 within configured /23 supernet
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/24"),
+		netip.MustParsePrefix("10.131.0.0/23"),
+	)).Should(BeTrue())
+
+	// detected is broader than configured — /22 is not a subnet of /23
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/22"),
+		netip.MustParsePrefix("10.131.0.0/23"),
+	)).Should(BeFalse())
+
+	// detected IP is outside the configured supernet entirely
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("203.0.113.5/32"),
+		netip.MustParsePrefix("10.131.0.0/23"),
+	)).Should(BeFalse())
+
+	// detected starts at same address but is broader — address matches, bits don't
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("192.168.0.0/23"),
+		netip.MustParsePrefix("192.168.1.0/24"),
+	)).Should(BeFalse())
+})
+
+var _ = Describe("ParseCIDR", func() {
+	// host bits are cleared — 10.0.0.5/24 becomes the network 10.0.0.0/24
+	prefix, err := util.ParseCIDR("10.0.0.5/24")
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(prefix).Should(Equal(netip.MustParsePrefix("10.0.0.0/24")))
+
+	// leading zero prefix length is accepted by net.ParseCIDR but rejected by netip.ParsePrefix
+	prefix, err = util.ParseCIDR("10.0.0.0/024")
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(prefix).Should(Equal(netip.MustParsePrefix("10.0.0.0/24")))
+
+	// IPv6 with leading zero prefix length
+	prefix, err = util.ParseCIDR("fd00::/064")
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(prefix).Should(Equal(netip.MustParsePrefix("fd00::/64")))
+
+	// single host
+	prefix, err = util.ParseCIDR("10.131.0.33/32")
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(prefix).Should(Equal(netip.MustParsePrefix("10.131.0.33/32")))
+
+	// IPv4-mapped IPv6 stays IPv6, it is not converted to the IPv4 10.0.0.0/24
+	prefix, err = util.ParseCIDR("::ffff:10.0.0.0/120")
+	Expect(err).ShouldNot(HaveOccurred())
+	Expect(prefix.Addr().Is4()).Should(BeFalse())
+	Expect(prefix.Bits()).Should(Equal(120))
+
+	// invalid values return an error
+	for _, invalid := range []string{"", "not-a-cidr", "10.0.0.0", "10.0.0.0/33", "1111.51.100.14/24"} {
+		_, err = util.ParseCIDR(invalid)
+		Expect(err).Should(HaveOccurred(), invalid)
+	}
 })
