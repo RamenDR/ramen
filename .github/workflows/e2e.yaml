@@ -17,7 +17,7 @@
 #
 #   Risk              | Mitigation
 #   ------------------+--------------------------------------------------
-#   Unauthorized PRs  | The auth job verifies the PR author is listed in
+#   Unauthorized PRs  | The start job verifies the PR author is listed in
 #                     | the OWNERS file (from the base branch) before
 #                     | the test job runs any PR code.
 #   GITHUB_TOKEN      | Scoped to read-only (permissions: contents: read).
@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  auth:
+  start:
     runs-on: ubuntu-24.04
     outputs:
       head_sha: ${{ steps.head.outputs.head_sha }}
@@ -79,7 +79,7 @@ jobs:
             sys.exit(1)
 
   test:
-    needs: auth
+    needs: start
     permissions:
       contents: read
     runs-on: [self-hosted, e2e-rdr]
@@ -88,7 +88,7 @@ jobs:
     - name: Checkout PR
       uses: actions/checkout@v7
       with:
-        ref: ${{ needs.auth.outputs.head_sha }}
+        ref: ${{ needs.start.outputs.head_sha }}
         persist-credentials: false
         allow-unsafe-pr-checkout: true  # See security section above
 
