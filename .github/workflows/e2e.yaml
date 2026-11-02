@@ -80,6 +80,8 @@ jobs:
 
   test:
     needs: auth
+    permissions:
+      contents: read
     runs-on: [self-hosted, e2e-rdr]
 
     steps:
