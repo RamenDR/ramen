@@ -60,7 +60,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-      pull-requests: read
+      pull-requests: write
       statuses: write
     runs-on: ubuntu-24.04
     outputs:
@@ -74,6 +74,7 @@ jobs:
       run: pip install pyyaml
 
     - name: Check e2e authorization
+      id: auth
       env:
         AUTHOR: ${{ github.event.comment.user.login }}
       shell: python3 {0}
@@ -87,8 +88,12 @@ jobs:
         author = os.environ["AUTHOR"]
 
         if author not in users:
-            print(f"::warning::User {author} is not in the e2e group. "
-                  "Add yourself to the OWNERS file to run the e2e workflow.")
+            error = f"e2e could not start. @{author} is not in the e2e group in OWNERS."
+            recovery = "Add yourself to the OWNERS file to run the e2e workflow."
+            with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                out.write(f"error={error}\n")
+                out.write(f"recovery={recovery}\n")
+            print(f"::warning::{error}")
             sys.exit(1)
 
     # Publish head_sha only when the comment is not older than the oldest
@@ -101,6 +106,13 @@ jobs:
         PR_NUMBER: ${{ github.event.issue.number }}
         COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
       run: |
+        fail() {
+          echo "error=$1" >> "$GITHUB_OUTPUT"
+          echo "recovery=$2" >> "$GITHUB_OUTPUT"
+          echo "::warning::$1"
+          exit 1
+        }
+
         head_sha="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)"
         echo "head_sha=$head_sha"
         oldest_run_created_at="$(gh api \
@@ -108,14 +120,12 @@ jobs:
             --jq '[.workflow_runs[].created_at] | min // empty')"
         echo "oldest_run_created_at=$oldest_run_created_at"
         if [ -z "$oldest_run_created_at" ]; then
-          echo "::warning::No workflow run for $head_sha yet." \
-              "Add a new /test e2e comment when the push has been recorded."
-          exit 1
+          fail "e2e could not start because no workflow run for the pull request head has been recorded yet." \
+              "Please add a new \`/test e2e\` comment when the push has been recorded."
         fi
         if [[ "$COMMENT_CREATED_AT" < "$oldest_run_created_at" ]]; then
-          echo "::warning::Pull request head $head_sha changed after the /test e2e comment." \
-              "Add a new /test e2e comment when the pull request is ready for testing."
-          exit 1
+          fail "e2e could not start because the PR was updated after the \`/test e2e\` comment was added." \
+              "Please add a new \`/test e2e\` comment when the PR is ready for testing."
         fi
         echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
 
@@ -130,6 +140,38 @@ jobs:
             -f context="$CONTEXT" \
             -f description="e2e started" \
             -f target_url="$RUN_URL"
+
+    # Runs when authorization or the head check fails, and after they pass.
+    # A failed comment does not fail the job.
+    - name: Comment on the pull request
+      if: '!cancelled()'
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.issue.number }}
+        ERROR: ${{ steps.auth.outputs.error || steps.head.outputs.error }}
+        RECOVERY: ${{ steps.auth.outputs.recovery || steps.head.outputs.recovery }}
+        AUTHOR: ${{ github.event.comment.user.login }}
+        JOB_STATUS: ${{ job.status }}
+        HEAD_SHA: ${{ steps.head.outputs.head_sha }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        if [ -n "$ERROR" ]; then
+          body="$(printf 'Hey @%s, %s' "$AUTHOR" "$ERROR")"
+          if [ -n "$RECOVERY" ]; then
+            body="$(printf '%s\n\n%s' "$body" "$RECOVERY")"
+          fi
+        elif [ "$JOB_STATUS" = success ]; then
+          body="$(printf 'Hey @%s, [e2e run %s#%s](%s) started for %s.' \
+              "$AUTHOR" "$RUN_NUMBER" "$RUN_ATTEMPT" "$RUN_URL" "${HEAD_SHA:0:12}")"
+        else
+          exit 0
+        fi
+        echo "comment: $body"
+        gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --raw-field body="$body"
 
   test:
     needs: start
@@ -268,6 +310,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: write
       statuses: write
     steps:
     - name: Compute test duration
@@ -323,3 +366,31 @@ jobs:
             -f context="$CONTEXT" \
             -f description="$description" \
             -f target_url="$RUN_URL"
+
+    # A canceled test gets a comment and does not change the status.
+    # always() posts the result when an earlier finish step failed.
+    # A failed comment does not fail the job.
+    - name: Comment on the pull request
+      if: always()
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.issue.number }}
+        TEST_RESULT: ${{ needs.test.result }}
+        AUTHOR: ${{ github.event.comment.user.login }}
+        HEAD_SHA: ${{ needs.start.outputs.head_sha }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        case "$TEST_RESULT" in
+          success) verb=passed ;;
+          failure) verb=failed ;;
+          cancelled) verb=canceled ;;
+          *) exit 0 ;;
+        esac
+        body="$(printf 'Hey @%s, [e2e run %s#%s](%s) %s for %s.' \
+            "$AUTHOR" "$RUN_NUMBER" "$RUN_ATTEMPT" "$RUN_URL" "$verb" "${HEAD_SHA:0:12}")"
+        echo "comment: $body"
+        gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --raw-field body="$body"
