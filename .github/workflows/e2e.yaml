@@ -37,6 +37,8 @@ env:
   # Limit number of drenv workers.
   MAX_WORKERS: 4
   BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+  CONTEXT: e2e / test
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
 
 jobs:
   start:
@@ -59,6 +61,7 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
+      statuses: write
     runs-on: ubuntu-24.04
     outputs:
       head_sha: ${{ steps.head.outputs.head_sha }}
@@ -115,6 +118,18 @@ jobs:
           exit 1
         fi
         echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+    - name: Post pending e2e status
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ steps.head.outputs.head_sha }}
+      run: |
+        gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state=pending \
+            -f context="$CONTEXT" \
+            -f description="e2e started" \
+            -f target_url="$RUN_URL"
 
   test:
     needs: start
@@ -243,3 +258,68 @@ jobs:
       run: |
         source ../venv
         drenv cleanup envs/regional-dr.yaml
+
+  finish:
+    # Wait until start and test complete (success or failure).
+    needs: [start, test]
+    # Skip if start failed.
+    if: always() && needs.start.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      statuses: write
+    steps:
+    - name: Compute test duration
+      id: test
+      if: needs.test.result == 'success' || needs.test.result == 'failure'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        test_job="$(gh api \
+            "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+            --jq '.jobs[] | select(.name == "test")')"
+        started_at="$(echo "$test_job" | jq --raw-output .started_at)"
+        completed_at="$(echo "$test_job" | jq --raw-output .completed_at)"
+        started_s="$(date -d "$started_at" +%s)"
+        completed_s="$(date -d "$completed_at" +%s)"
+        secs="$((completed_s - started_s))"
+        if [ "$secs" -ge 3600 ]; then
+          duration="$((secs / 3600))h$((secs % 3600 / 60))m$((secs % 60))s"
+        elif [ "$secs" -ge 60 ]; then
+          duration="$((secs / 60))m$((secs % 60))s"
+        else
+          duration="${secs}s"
+        fi
+        echo "duration=$duration"
+        echo "duration=$duration" >> "$GITHUB_OUTPUT"
+
+    - name: Post e2e status
+      # A canceled test leaves the pending status, so the newer run can replace it.
+      # Duration is optional. always() posts the result when that step failed.
+      if: always() && (needs.test.result == 'success' || needs.test.result == 'failure')
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ needs.start.outputs.head_sha }}
+        TEST_RESULT: ${{ needs.test.result }}
+        DURATION: ${{ steps.test.outputs.duration }}
+      run: |
+        if [ "$TEST_RESULT" = success ]; then
+          state=success
+          description=successful
+        else
+          state=failure
+          description=failed
+        fi
+        if [ -n "$DURATION" ]; then
+          description="$description in $DURATION"
+        fi
+        echo "e2e status: $state ($description)"
+        gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context="$CONTEXT" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
