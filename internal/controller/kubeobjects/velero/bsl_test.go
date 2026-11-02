@@ -28,7 +28,7 @@ func TestBSLSpec(t *testing.T) {
 		CACertificates: []byte("ca-bundle"),
 	}
 
-	spec := velero.BSLSpec(loc)
+	spec := velero.BSLSpec(loc, true)
 
 	assert.Equal(t, "aws", spec.Provider)
 	require.NotNil(t, spec.ObjectStorage)
@@ -43,8 +43,24 @@ func TestBSLSpec(t *testing.T) {
 	}, spec.Config)
 	assert.Same(t, secretKeyRef, spec.Credential)
 
-	// Backup sync must stay disabled so Velero does not re-create the Backup CRs
-	// that Ramen deletes after each capture.
+	// With disableBackupSync=true (capture side), backup sync must be disabled so
+	// Velero does not re-create the Backup CRs that Ramen deletes after each capture.
 	require.NotNil(t, spec.BackupSyncPeriod)
 	assert.Zero(t, spec.BackupSyncPeriod.Duration)
+}
+
+func TestBSLSpecBackupSyncEnabled(t *testing.T) {
+	loc := kubeobjects.StorageLocation{
+		S3URL:     "https://s3.example.com",
+		Bucket:    "bucket",
+		Region:    "us-east-1",
+		KeyPrefix: "ns/vrg/kube-objects/1/",
+	}
+
+	spec := velero.BSLSpec(loc, false)
+
+	// With disableBackupSync=false (recover side), backup sync must stay enabled so
+	// Velero imports the dummy Backup CR status from S3; otherwise the backup fails
+	// with "backup already exists in object storage" and the restore fails.
+	assert.Nil(t, spec.BackupSyncPeriod)
 }

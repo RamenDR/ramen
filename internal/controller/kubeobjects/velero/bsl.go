@@ -18,13 +18,14 @@ import (
 
 func (w objectWriter) bslCreateOrUpdate(
 	loc kubeobjects.StorageLocation,
+	disableBackupSync bool,
 	labels map[string]string,
 	backupLocation *velero.BackupStorageLocation,
 ) error {
 	op, err := controllerruntime.CreateOrUpdate(w.ctx, w.Client, backupLocation, func() error {
 		backupLocation.TypeMeta = veleroTypeMeta("BackupStorageLocation")
 		backupLocation.ObjectMeta.Labels = labels
-		backupLocation.Spec = bslSpec(loc)
+		backupLocation.Spec = bslSpec(loc, disableBackupSync)
 		util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
 
 		return nil
@@ -40,8 +41,20 @@ func (w objectWriter) bslCreateOrUpdate(
 
 // bslSpec returns the spec of the BackupStorageLocation that stores kube objects
 // protect and recover requests at loc.
-func bslSpec(loc kubeobjects.StorageLocation) velero.BackupStorageLocationSpec {
-	return velero.BackupStorageLocationSpec{
+//
+// disableBackupSync controls Velero's backup-sync for this BSL:
+//   - On the capture (protect) side, Ramen explicitly manages the Backup CR
+//     lifecycle (deleting it after each capture cycle), so backup-sync must be
+//     disabled; otherwise Velero re-creates the deleted Backup CRs from S3,
+//     confusing the capture-resume logic and inflating the recipeRetries counter.
+//   - On the recover (restore) side, Ramen creates a dummy Backup CR and relies
+//     on backup-sync to import the real backup's status from S3. Disabling sync
+//     there leaves the dummy Backup in phase New, so Velero's backup controller
+//     tries to run it as a fresh backup and fails it with "backup already exists
+//     in object storage", which in turn fails the restore. So sync must stay
+//     enabled on that side.
+func bslSpec(loc kubeobjects.StorageLocation, disableBackupSync bool) velero.BackupStorageLocationSpec {
+	spec := velero.BackupStorageLocationSpec{
 		Provider: "aws",
 		StorageType: velero.StorageType{
 			ObjectStorage: &velero.ObjectStorageLocation{
@@ -57,12 +70,14 @@ func bslSpec(loc kubeobjects.StorageLocation) velero.BackupStorageLocationSpec {
 			"checksumAlgorithm": "",
 		},
 		Credential: loc.SecretKeyRef,
-		// Disable Velero's backup-sync for this BSL.  Ramen explicitly manages the
-		// Backup CR lifecycle (delete after each cycle); if sync were enabled Velero
-		// would re-create deleted Backup CRs from S3, confusing the capture-resume logic
-		// and inflating the recipeRetries counter.
-		BackupSyncPeriod: &metav1.Duration{},
 	}
+
+	if disableBackupSync {
+		// A zero duration disables Velero's backup-sync for this BSL.
+		spec.BackupSyncPeriod = &metav1.Duration{}
+	}
+
+	return spec
 }
 
 func isBSLAvailable(bsl velero.BackupStorageLocation) bool {
