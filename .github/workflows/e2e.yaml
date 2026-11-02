@@ -3,36 +3,32 @@
 
 # yamllint disable rule:line-length
 ---
-# Security of pull_request_target with forked PR checkout
+# Security of checking out a pull request from an issue comment
 #
-# This workflow uses pull_request_target to ensure the workflow file always
-# comes from the base branch (main) and cannot be modified by a PR author.
-# This is required to enforce the authorization check - using pull_request
-# would allow a fork PR to remove the check and run arbitrary code on
-# self-hosted runners.
+# issue_comment runs this file from the default branch. A pull request
+# cannot change it to skip the authorization check.
 #
-# The test job checks out and executes PR code (allow-unsafe-pr-checkout)
-# in the pull_request_target security context. This is considered safe
-# because of the following controls and restrictions:
+# The test job checks out and runs the commit start verified. This is
+# safe because of the following controls:
 #
 #   Risk              | Mitigation
 #   ------------------+--------------------------------------------------
-#   Unauthorized PRs  | The start job verifies the PR author is listed in
-#                     | the OWNERS file (from the base branch) before
-#                     | the test job runs any PR code.
-#   GITHUB_TOKEN      | Scoped to read-only (permissions: contents: read).
-#                     | For fork PRs, pull_request also enforces read-only,
-#                     | so there is no additional exposure.
+#   Unauthorized runs | start verifies the comment author is listed in
+#                     | OWNERS (from the default branch) before the test
+#                     | job runs any pull request code.
+#   Stale comment     | start publishes the head only when the comment is
+#                     | not older than the oldest workflow run for that SHA.
+#   GITHUB_TOKEN      | The test job is contents: read. It cannot push,
+#                     | comment, or change a status.
+#   Git credentials   | The test checkout sets persist-credentials: false,
+#                     | so the job token is not stored in .git/config.
 #   Repo secrets      | Not used by this workflow. Do NOT add secrets
 #                     | without reviewing the security implications.
-#   Actions cache     | Not used by this workflow. Do NOT add actions/cache
-#                     | since pull_request_target can write to the default
-#                     | branch cache, enabling cache poisoning attacks.
 name: e2e
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -44,21 +40,30 @@ env:
 
 jobs:
   start:
+    # A pull request comment with a line that is exactly "/test e2e".
+    # fromJSON supplies a real newline. An expression string has no \n escape.
+    if: >-
+      github.event.issue.pull_request &&
+      contains(
+        format('{0}{1}{0}', fromJSON('"\n"'), github.event.comment.body),
+        format('{0}/test e2e{0}', fromJSON('"\n"'))
+      )
     # A new event waits for this check. Cancelling it would cancel the test.
     # queue: max keeps every pending start. The default queue keeps one and
     # cancels the rest.
     concurrency:
-      group: ${{ github.workflow }}-start-${{ github.event.pull_request.number }}
+      group: ${{ github.workflow }}-start-${{ github.event.issue.number }}
       cancel-in-progress: false
       queue: max
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-24.04
     outputs:
       head_sha: ${{ steps.head.outputs.head_sha }}
     steps:
-    - name: Select pull request head
-      id: head
-      run: echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-
+    # The default branch, for OWNERS. This is not the commit under test.
     - name: Checkout base branch
       uses: actions/checkout@v7
 
@@ -67,7 +72,7 @@ jobs:
 
     - name: Check e2e authorization
       env:
-        AUTHOR: ${{ github.event.pull_request.user.login }}
+        AUTHOR: ${{ github.event.comment.user.login }}
       shell: python3 {0}
       run: |
         import os
@@ -83,11 +88,39 @@ jobs:
                   "Add yourself to the OWNERS file to run the e2e workflow.")
             sys.exit(1)
 
+    # Publish head_sha only when the comment is not older than the oldest
+    # workflow run for that SHA. That run is the push-time proxy.
+    - name: Verify pull request head
+      id: head
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.issue.number }}
+        COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+      run: |
+        head_sha="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)"
+        echo "head_sha=$head_sha"
+        oldest_run_created_at="$(gh api \
+            "repos/$REPO/actions/runs?head_sha=$head_sha&per_page=100" \
+            --jq '[.workflow_runs[].created_at] | min // empty')"
+        echo "oldest_run_created_at=$oldest_run_created_at"
+        if [ -z "$oldest_run_created_at" ]; then
+          echo "::warning::No workflow run for $head_sha yet." \
+              "Add a new /test e2e comment when the push has been recorded."
+          exit 1
+        fi
+        if [[ "$COMMENT_CREATED_AT" < "$oldest_run_created_at" ]]; then
+          echo "::warning::Pull request head $head_sha changed after the /test e2e comment." \
+              "Add a new /test e2e comment when the pull request is ready for testing."
+          exit 1
+        fi
+        echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
   test:
     needs: start
     # One self-hosted run per pull request. The next test cancels this one.
     concurrency:
-      group: ${{ github.workflow }}-test-${{ github.event.pull_request.number }}
+      group: ${{ github.workflow }}-test-${{ github.event.issue.number }}
       cancel-in-progress: true
     permissions:
       contents: read
@@ -99,7 +132,6 @@ jobs:
       with:
         ref: ${{ needs.start.outputs.head_sha }}
         persist-credentials: false
-        allow-unsafe-pr-checkout: true  # See security section above
 
     - name: Build ramen-operator container
       run: make docker-build
