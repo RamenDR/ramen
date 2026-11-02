@@ -42,13 +42,15 @@ env:
   MAX_WORKERS: 4
   BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
 
-# Cancel the in-progress workflow when PR is refreshed.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
   start:
+    # A new event waits for this check. Cancelling it would cancel the test.
+    # queue: max keeps every pending start. The default queue keeps one and
+    # cancels the rest.
+    concurrency:
+      group: ${{ github.workflow }}-start-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-24.04
     outputs:
       head_sha: ${{ steps.head.outputs.head_sha }}
@@ -83,6 +85,10 @@ jobs:
 
   test:
     needs: start
+    # One self-hosted run per pull request. The next test cancels this one.
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: read
     runs-on: [self-hosted, e2e-rdr]
