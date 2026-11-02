@@ -87,6 +87,7 @@ jobs:
       uses: actions/checkout@v7
       with:
         ref: ${{ needs.auth.outputs.head_sha }}
+        persist-credentials: false
         allow-unsafe-pr-checkout: true  # See security section above
 
     - name: Build ramen-operator container
