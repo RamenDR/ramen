@@ -64,14 +64,17 @@ jobs:
       run: pip install pyyaml
 
     - name: Check e2e authorization
+      env:
+        AUTHOR: ${{ github.event.pull_request.user.login }}
       shell: python3 {0}
       run: |
+        import os
         import yaml, sys
 
         with open("OWNERS") as f:
             users = yaml.safe_load(f)["e2e"]
 
-        author = "${{ github.event.pull_request.user.login }}"
+        author = os.environ["AUTHOR"]
 
         if author not in users:
             print(f"::warning::User {author} is not in the e2e group. "
