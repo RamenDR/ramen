@@ -50,7 +50,13 @@ concurrency:
 jobs:
   auth:
     runs-on: ubuntu-24.04
+    outputs:
+      head_sha: ${{ steps.head.outputs.head_sha }}
     steps:
+    - name: Select pull request head
+      id: head
+      run: echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+
     - name: Checkout base branch
       uses: actions/checkout@v7
 
@@ -80,7 +86,7 @@ jobs:
     - name: Checkout PR
       uses: actions/checkout@v7
       with:
-        ref: ${{ github.event.pull_request.head.sha }}
+        ref: ${{ needs.auth.outputs.head_sha }}
         allow-unsafe-pr-checkout: true  # See security section above
 
     - name: Build ramen-operator container
