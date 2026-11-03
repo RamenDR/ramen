@@ -741,6 +741,10 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (bool, error) {
 	met := true
 
+	if d.syncPeersAreOffloaded() {
+		return met, nil
+	}
+
 	d.setProgression(rmn.ProgressionWaitForFencing)
 
 	fenced, err := d.checkClusterFenced(curHomeCluster, d.drClusters)
@@ -1999,6 +2003,27 @@ func allPeerClassesOffloaded(peerClasses []rmn.PeerClass) bool {
 	}
 
 	return true
+}
+
+// syncPeersAreOffloaded reports that at least one VRG has spec.sync peers and
+// every such peer is offloaded. An empty spec.sync is ignored. A non-offloaded
+// peer means fencing is still required.
+func (d *DRPCInstance) syncPeersAreOffloaded() bool {
+	sawPeers := false
+
+	for _, vrg := range d.vrgs {
+		if vrg == nil || vrg.Spec.Sync == nil || len(vrg.Spec.Sync.PeerClasses) == 0 {
+			continue
+		}
+
+		if !allPeerClassesOffloaded(vrg.Spec.Sync.PeerClasses) {
+			return false
+		}
+
+		sawPeers = true
+	}
+
+	return sawPeers
 }
 
 // updateVRGOptionalFields ensures that the optional fields in the VRG object are up to date.
