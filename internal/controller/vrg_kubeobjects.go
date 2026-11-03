@@ -33,6 +33,8 @@ import (
 
 var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
 
+var errKubeObjectsGroupCaptureIncomplete = fmt.Errorf("kube objects group capturing incomplete")
+
 const RecipeMaxAttempts = 10
 
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
@@ -277,11 +279,11 @@ const (
 
 // kubeObjectsCaptureRetryLimitExceeded records a genuine capture failure against the retry budget
 // and reports whether RecipeMaxAttempts has been exceeded. A capture that is merely still in
-// progress (backups New/Queued/InProgress/Finalizing) reports "kube objects group capturing
-// incomplete"; that is not a failure and must not accrue toward RecipeMaxAttempts, or
-// slow-but-healthy backups would be reported as failed while they are still running.
+// progress (backups New/Queued/InProgress/Finalizing) surfaces as errKubeObjectsGroupCaptureIncomplete;
+// that is not a failure and must not accrue toward RecipeMaxAttempts, or slow-but-healthy backups would
+// be reported as failed while they are still running.
 func (v *VRGInstance) kubeObjectsCaptureRetryLimitExceeded(err error) bool {
-	if err.Error() == "kube objects group capturing incomplete" {
+	if errors.Is(err, errKubeObjectsGroupCaptureIncomplete) {
 		return false
 	}
 
@@ -496,7 +498,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			if requestsCompletedCount < requestsProcessedCount {
 				log.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
 
-				return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
+				return allEssentialStepsFailed, errKubeObjectsGroupCaptureIncomplete
 			}
 		}
 	}
