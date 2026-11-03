@@ -607,17 +607,15 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 
 		return err
 	}
-	// For Async mode, we want to change the retention policy back to delete
-	// and remove the annotation.
-	// For Sync mode, we don't want to set the retention policy to delete as
-	// both the primary and the secondary VRG map to the same volume. The only
-	// state where a delete retention policy is required for the sync mode is
-	// when the VRG is primary.
-	// Further, the PV will go to Available state, when the workload is moved back
-	// to the current cluster, in case the PVC has been deleted (cases like STS the
-	// PVC may not be deleted). This is achieved by clearing the required claim ref.
-	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
-	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+	// Async, a primary, and offloaded storage restore the PV reclaim policy to Delete
+	// and remove the retention annotation. Sync without an offloaded StorageClass keeps
+	// Retain on a secondary, because both clusters use the same volume. A StorageClass
+	// lookup failure keeps Retain. When that workload moves back, the PV becomes
+	// Available if its PVC was deleted (a StatefulSet may not delete the PVC).
+	// updateExistingPVForSync clears the claim ref so the PV can bind to a recreated PVC.
+	if v.instance.Spec.Async != nil ||
+		v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary ||
+		v.pvcsAreOffloaded([]*corev1.PersistentVolumeClaim{pvc}) {
 		undoPVRetention(&pv)
 	} else {
 		// The PV stays retained, mark it so it can be found and cleaned up when this VRG is deleted
