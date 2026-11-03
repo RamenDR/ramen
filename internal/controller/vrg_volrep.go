@@ -369,28 +369,32 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 
 // updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC
 func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) error {
-	// IF MetroDR, skip PVC update
-	if v.instance.Spec.Sync != nil {
+	if v.isNonOffloadedSync(v.pvcIsOffloaded(pvc)) {
 		return nil
 	}
 
 	storageClass, err := v.getStorageClass(pvc)
 	if err != nil {
-		v.log.Info(fmt.Sprintf("Failed to get the storageclass for pvc %s",
-			pvc.GetName()))
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass for pvc %s", pvc.GetName()))
 
-		return fmt.Errorf("failed to get the storageclass for pvc %s (%w)",
-			pvc.GetName(), err)
+		return fmt.Errorf("failed to get the storageclass for pvc %s (%w)", pvc.GetName(), err)
 	}
 
-	_, selectVolumeGroup := v.isCGEnabled(pvc)
+	if v.instance.Spec.Async != nil {
+		_, selectVolumeGroup := v.isCGEnabled(pvc)
 
-	_, err = v.selectReplicationClass(pvc, selectVolumeGroup)
-	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+		if _, err = v.selectReplicationClass(pvc, selectVolumeGroup); err != nil {
+			return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+				v.instance.Name, err)
+		}
 	}
 
+	return v.recordProtectedPVC(pvc, storageClass)
+}
+
+func (v *VRGInstance) recordProtectedPVC(
+	pvc *corev1.PersistentVolumeClaim, storageClass *storagev1.StorageClass,
+) error {
 	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	if protectedPVC == nil {
 		protectedPVC = v.addProtectedPVC(pvc.GetNamespace(), pvc.GetName())
@@ -2976,15 +2980,20 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 
 	log.Info("PV exists and is not bound", "phase", existingPV.Status.Phase)
 
-	// PV is not bound
-	// In sync case, we will update it to match with what we want to restore
-	if v.instance.Spec.Sync != nil {
-		log.Info("PV exists and will be updated for sync")
+	if v.instance.Spec.Async == nil {
+		offloaded, err := v.pvStorageIsOffloaded(pv)
+		if err != nil {
+			return err
+		}
 
-		return v.updateExistingPVForSync(existingPV)
+		if !offloaded {
+			log.Info("PV exists and will be updated for sync")
+
+			return v.updateExistingPVForSync(existingPV)
+		}
 	}
 
-	if v.instance.Spec.Async != nil && existingPV.Status.Phase == corev1.VolumeReleased {
+	if existingPV.Status.Phase == corev1.VolumeReleased {
 		return v.adoptReleasedExistingPV(pv, existingPV, log)
 	}
 
@@ -3282,10 +3291,10 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 }
 
 // updatePVClusterIDForRestore sets CSI volumeAttributes.clusterID from the target
-// cluster's StorageClass parameters, when present. Skipped for sync/metro DR, where
-// updateExistingPVForSync reuses the same PV via cleanupPVForRestore.
+// cluster's StorageClass parameters, when present. Sync without an offloaded
+// StorageClass reuses the same PV, so there is no clusterID to rewrite.
 func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, sc *storagev1.StorageClass) {
-	if v.instance.Spec.Sync != nil {
+	if v.isNonOffloadedSync(rmnutil.HasLabel(sc, StorageOffloadedLabel)) {
 		return
 	}
 
