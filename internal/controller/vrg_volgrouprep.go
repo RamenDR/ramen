@@ -1033,8 +1033,8 @@ func (v *VRGInstance) deleteVGR(vrNamespacedName types.NamespacedName, log logr.
 func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamespacedName types.NamespacedName,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
-	// Metro DR (Sync mode) doesn't use VolumeGroupReplication
-	if v.instance.Spec.Sync != nil {
+	// Sync without an offloaded StorageClass does not use a VolumeGroupReplication.
+	if v.instance.Spec.Sync != nil && !v.offloadedSync(v.pvcsAreOffloaded([]*corev1.PersistentVolumeClaim{pvc})) {
 		return nil
 	}
 
@@ -1074,8 +1074,9 @@ func (v *VRGInstance) annotateWithDestinationVolumeHandleForVolGroupRep(vrNamesp
 // annotateWithDestinationVolumeGroupHandle looks up the VolumeGroupReplication
 // and annotates the VGRC with the destination volume group handle if available.
 func (v *VRGInstance) annotateWithDestinationVolumeGroupHandle(vrNamespacedName types.NamespacedName) error {
-	// Metro DR (Sync mode) doesn't use VolumeGroupReplication
-	if v.instance.Spec.Sync != nil {
+	// Sync without an offloaded StorageClass does not use a VolumeGroupReplication.
+	if v.instance.Spec.Sync != nil && !v.offloadedSync(len(v.volRepPVCs) > 0 &&
+		v.pvcsAreOffloaded([]*corev1.PersistentVolumeClaim{&v.volRepPVCs[0]})) {
 		return nil
 	}
 

@@ -54,6 +54,27 @@ func (v *VRGInstance) pvcsAreOffloaded(pvcs []*corev1.PersistentVolumeClaim) boo
 	return util.HasLabel(storageClass, StorageOffloadedLabel)
 }
 
+// offloadedSync reports that spec.async is nil and the StorageClass is offloaded.
+// The caller checks spec.sync. A lookup failure is not offloaded.
+func (v *VRGInstance) offloadedSync(offloaded bool) bool {
+	return v.instance.Spec.Async == nil && offloaded
+}
+
+func (v *VRGInstance) pvStorageIsOffloaded(pv *corev1.PersistentVolume) bool {
+	if pv == nil || pv.Spec.StorageClassName == "" {
+		return false
+	}
+
+	scName := pv.Spec.StorageClassName
+
+	storageClass, err := v.getStorageClassFromSCName(&scName)
+	if err != nil {
+		return false
+	}
+
+	return util.HasLabel(storageClass, StorageOffloadedLabel)
+}
+
 func (v *VRGInstance) isOffloadedByPeerClasses(
 	sc *storagev1.StorageClass, peerClasses []ramendrv1alpha1.PeerClass,
 ) (bool, error) {
