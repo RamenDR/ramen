@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -323,6 +324,48 @@ func TestValidateExistingPVAdoptsReleasedPV(t *testing.T) {
 	}
 }
 
+// TestValidateExistingPVAdoptsReleasedPVForOffloadedSync covers failback onto a cluster still
+// holding the PV retained when it went secondary. Nothing annotates that PV as restored by Ramen,
+// so rejecting it would leave the VRG unable to become primary.
+func TestValidateExistingPVAdoptsReleasedPVForOffloadedSync(t *testing.T) {
+	t.Parallel()
+
+	v := syncRestoreVRG(t, existingPV(corev1.VolumeReleased, staleClaimRef()), true)
+
+	if err := v.validateExistingPV(existingPV(corev1.VolumeReleased, staleClaimRef())); err != nil {
+		t.Fatalf("validateExistingPV() = %v, want nil", err)
+	}
+
+	got := &corev1.PersistentVolume{}
+	if err := v.reconciler.Get(context.TODO(), types.NamespacedName{Name: "pv-a"}, got); err != nil {
+		t.Fatalf("Get PV: %v", err)
+	}
+
+	if got.Spec.ClaimRef.UID != "" {
+		t.Errorf("ClaimRef.UID = %q, want cleared", got.Spec.ClaimRef.UID)
+	}
+
+	if got.Annotations[RestoreAnnotation] != RestoredByRamen {
+		t.Errorf("annotation %s = %q, want %q", RestoreAnnotation, got.Annotations[RestoreAnnotation], RestoredByRamen)
+	}
+}
+
+// TestValidateExistingPVErrorsOnUnreadableStorageClass covers a sync VRG that cannot read the
+// StorageClass of the PV being restored. Treating that as not offloaded sends the PV down the
+// shared storage path, which rewrites it against the class the cluster still has.
+func TestValidateExistingPVErrorsOnUnreadableStorageClass(t *testing.T) {
+	t.Parallel()
+
+	v := syncRestoreVRG(t, existingPV(corev1.VolumeReleased, staleClaimRef()), true)
+
+	backedUp := existingPV(corev1.VolumeReleased, staleClaimRef())
+	backedUp.Spec.StorageClassName = "sc-gone"
+
+	if err := v.validateExistingPV(backedUp); err == nil {
+		t.Fatal("validateExistingPV() = nil, want an error for an unreadable StorageClass")
+	}
+}
+
 // TestValidateExistingPVDoesNotAdoptAvailablePV ensures only Released PVs are adopted; an unbound PV
 // in any other phase that was not restored by Ramen is still rejected.
 func TestValidateExistingPVDoesNotAdoptAvailablePV(t *testing.T) {
@@ -345,5 +388,134 @@ func TestValidateExistingPVDoesNotAdoptAvailablePV(t *testing.T) {
 
 	if got.Spec.ClaimRef.UID != "stale-uid" {
 		t.Errorf("ClaimRef.UID = %q, want unchanged %q", got.Spec.ClaimRef.UID, "stale-uid")
+	}
+}
+
+func assertProtectedPVCsRecorded(t *testing.T, offloaded bool, want int) {
+	t.Helper()
+
+	v := syncRestoreVRG(t, existingPV(corev1.VolumeAvailable, nil), offloaded)
+
+	if err := v.updateProtectedPVCs(restoredPVC()); err != nil {
+		t.Fatalf("updateProtectedPVCs() = %v, want nil", err)
+	}
+
+	protected := v.instance.Status.ProtectedPVCs
+	if len(protected) != want {
+		t.Fatalf("ProtectedPVCs = %d, want %d", len(protected), want)
+	}
+
+	if want == 0 {
+		return
+	}
+
+	if protected[0].StorageClassName == nil || *protected[0].StorageClassName != "sc" {
+		t.Errorf("StorageClassName = %v, want sc", protected[0].StorageClassName)
+	}
+
+	if len(protected[0].AccessModes) != 1 {
+		t.Errorf("AccessModes = %v, want the PVC access modes", protected[0].AccessModes)
+	}
+}
+
+// TestUpdateProtectedPVCsForSync covers recording the PVC fields on restore. Metro DR records
+// nothing, because it reuses the same volume on both clusters.
+func TestUpdateProtectedPVCsForSync(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		offloaded bool
+		want      int
+	}{
+		{name: "offloaded sync records the PVC", offloaded: true, want: 1},
+		{name: "sync records nothing", offloaded: false, want: 0},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assertProtectedPVCsRecorded(t, tt.offloaded, tt.want)
+		})
+	}
+}
+
+// TestUpdatePVClusterIDForRestoreForSync covers rewriting the PV clusterID for the target cluster.
+func TestUpdatePVClusterIDForRestoreForSync(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		offloaded bool
+		want      string
+	}{
+		{name: "offloaded sync rewrites clusterID", offloaded: true, want: "target-cluster"},
+		{name: "sync keeps the clusterID", offloaded: false, want: "source-cluster"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			v := syncRestoreVRG(t, existingPV(corev1.VolumeAvailable, nil), tt.offloaded)
+
+			pv := existingPV(corev1.VolumeAvailable, nil)
+			pv.Spec.CSI = &corev1.CSIPersistentVolumeSource{
+				Driver:           "driver",
+				VolumeHandle:     "handle",
+				VolumeAttributes: map[string]string{clusterIDKey: "source-cluster"},
+			}
+
+			v.updatePVClusterIDForRestore(pv, offloadedSC(tt.offloaded))
+
+			if got := pv.Spec.CSI.VolumeAttributes[clusterIDKey]; got != tt.want {
+				t.Errorf("clusterID = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Test helpers
+
+// syncRestoreVRG builds a VRGInstance for a sync VRG restoring PVs, backed by a fake client
+// holding the supplied existing PV, with its StorageClass offloaded or not.
+func syncRestoreVRG(t *testing.T, pv *corev1.PersistentVolume, offloaded bool) *VRGInstance {
+	t.Helper()
+
+	v := asyncRestoreVRG(t, pv)
+	v.instance.Spec.Async = nil
+	v.instance.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{}
+	v.storageClassCache = map[string]*storagev1.StorageClass{"sc": offloadedSC(offloaded)}
+
+	return v
+}
+
+// offloadedSC builds the StorageClass of the restored PVs, carrying a clusterID for this cluster.
+func offloadedSC(offloaded bool) *storagev1.StorageClass {
+	labels := map[string]string{}
+	if offloaded {
+		labels[StorageOffloadedLabel] = ""
+	}
+
+	return &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{Name: "sc", Labels: labels},
+		Parameters: map[string]string{clusterIDKey: "target-cluster"},
+	}
+}
+
+// restoredPVC builds a PVC as restored from S3, before it is recorded as protected.
+func restoredPVC() *corev1.PersistentVolumeClaim {
+	scName := "sc"
+
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "pvc-a", Namespace: "vrg-ns"},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			StorageClassName: &scName,
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		},
 	}
 }
