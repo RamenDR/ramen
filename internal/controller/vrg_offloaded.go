@@ -78,6 +78,13 @@ func (v *VRGInstance) rejectOffloadedPVCsWithoutPeers(pvcList *corev1.Persistent
 	return nil
 }
 
+// isNonOffloadedSync reports whether the VRG is sync and the storage is not offloaded.
+// That case needs no VolumeReplication, VolumeGroupReplication or PV rewrite.
+// A VRG with both Spec.Async and Spec.Sync set takes the async path.
+func (v *VRGInstance) isNonOffloadedSync(offloaded bool) bool {
+	return v.instance.Spec.Async == nil && !offloaded
+}
+
 func (v *VRGInstance) isOffloadedByPeerClasses(
 	sc *storagev1.StorageClass, peerClasses []ramendrv1alpha1.PeerClass,
 ) (bool, error) {
