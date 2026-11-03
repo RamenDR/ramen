@@ -1954,9 +1954,51 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 	switch d.drType {
 	case DRTypeSync:
 		d.updateVRGSyncSpec(vrgFromCluster, generatedVRG)
+
+		if syncSpecReplacesOffloadedAsync(generatedVRG) {
+			generatedVRG.Spec.Async = nil
+		}
 	case DRTypeAsync:
 		d.updateVRGAsyncSpec(vrgFromCluster, generatedVRG)
+
+		if asyncSpecReplacesOffloadedSync(generatedVRG) {
+			generatedVRG.Spec.Sync = nil
+		}
 	}
+}
+
+// syncSpecReplacesOffloadedAsync reports that spec.sync now has peers and the
+// spec.async still on the VRG belongs to offloaded storage.
+func syncSpecReplacesOffloadedAsync(vrg *rmn.VolumeReplicationGroup) bool {
+	if vrg.Spec.Sync == nil || len(vrg.Spec.Sync.PeerClasses) == 0 || vrg.Spec.Async == nil {
+		return false
+	}
+
+	return allPeerClassesOffloaded(vrg.Spec.Async.PeerClasses)
+}
+
+// asyncSpecReplacesOffloadedSync reports that spec.async now has offloaded peers
+// and spec.sync is still set.
+func asyncSpecReplacesOffloadedSync(vrg *rmn.VolumeReplicationGroup) bool {
+	if vrg.Spec.Sync == nil || vrg.Spec.Async == nil {
+		return false
+	}
+
+	return allPeerClassesOffloaded(vrg.Spec.Async.PeerClasses)
+}
+
+func allPeerClassesOffloaded(peerClasses []rmn.PeerClass) bool {
+	if len(peerClasses) == 0 {
+		return false
+	}
+
+	for i := range peerClasses {
+		if !peerClasses[i].Offloaded {
+			return false
+		}
+	}
+
+	return true
 }
 
 // updateVRGOptionalFields ensures that the optional fields in the VRG object are up to date.
