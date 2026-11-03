@@ -106,7 +106,7 @@ else
     sudo --user github curl --fail --location --output "${RUNNER_DIR}/${tarball}" "$url"
 
     echo "Verifying checksum..."
-    actual=$(sha256sum "${RUNNER_DIR}/${tarball}" | awk '{ print $1 }')
+    actual=$(sudo --user github sha256sum "${RUNNER_DIR}/${tarball}" | awk '{ print $1 }')
     if [[ "$actual" != "$RUNNER_DIGEST" ]]; then
         echo "Checksum mismatch for ${tarball}:" >&2
         echo "  expected: ${RUNNER_DIGEST}" >&2
