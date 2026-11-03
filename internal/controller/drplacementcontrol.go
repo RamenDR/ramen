@@ -741,6 +741,15 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (bool, error) {
 	met := true
 
+	// Fencing needs a NetworkFenceClass for the provisioner, and no offloaded
+	// storage provider ships one, so the Fenced condition never becomes true.
+	if syncPeersAreOffloaded(d.vrgs) {
+		d.log.Info("Skipping fencing, sync peers are offloaded",
+			"cluster", curHomeCluster, "vrgsSeen", len(d.vrgs))
+
+		return met, nil
+	}
+
 	d.setProgression(rmn.ProgressionWaitForFencing)
 
 	fenced, err := d.checkClusterFenced(curHomeCluster, d.drClusters)
@@ -1957,6 +1966,44 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 	case DRTypeAsync:
 		d.updateVRGAsyncSpec(vrgFromCluster, generatedVRG)
 	}
+}
+
+// allPeerClassesOffloaded reports whether every peer class is offloaded.
+// An empty list is not offloaded.
+func allPeerClassesOffloaded(peerClasses []rmn.PeerClass) bool {
+	if len(peerClasses) == 0 {
+		return false
+	}
+
+	for i := range peerClasses {
+		if !peerClasses[i].Offloaded {
+			return false
+		}
+	}
+
+	return true
+}
+
+// syncPeersAreOffloaded reports whether at least one VRG has spec.sync peer
+// classes and all of them are offloaded. Returns false when no VRG has sync
+// peer classes, and when any one of them is not offloaded, so fencing is still
+// required in both cases.
+func syncPeersAreOffloaded(vrgs map[string]*rmn.VolumeReplicationGroup) bool {
+	sawPeers := false
+
+	for _, vrg := range vrgs {
+		if vrg == nil || vrg.Spec.Sync == nil || len(vrg.Spec.Sync.PeerClasses) == 0 {
+			continue
+		}
+
+		if !allPeerClassesOffloaded(vrg.Spec.Sync.PeerClasses) {
+			return false
+		}
+
+		sawPeers = true
+	}
+
+	return sawPeers
 }
 
 // updateVRGOptionalFields ensures that the optional fields in the VRG object are up to date.
