@@ -38,6 +38,22 @@ func isOffloadedByPeerClass(scName, sID string, peerClass *ramendrv1alpha1.PeerC
 	return true
 }
 
+// pvcsAreOffloaded reports that these PVCs use an offloaded StorageClass.
+// The first PVC is enough, because a mix of offloaded and non-offloaded PVCs is rejected.
+// A StorageClass lookup failure is treated as not offloaded.
+func (v *VRGInstance) pvcsAreOffloaded(pvcs []*corev1.PersistentVolumeClaim) bool {
+	if len(pvcs) == 0 {
+		return false
+	}
+
+	storageClass, err := v.getStorageClass(pvcs[0])
+	if err != nil {
+		return false
+	}
+
+	return util.HasLabel(storageClass, StorageOffloadedLabel)
+}
+
 func (v *VRGInstance) isOffloadedByPeerClasses(
 	sc *storagev1.StorageClass, peerClasses []ramendrv1alpha1.PeerClass,
 ) (bool, error) {
