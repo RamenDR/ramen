@@ -65,6 +65,92 @@ func TestCheckMetroSupportUsingPeerClass(t *testing.T) {
 	}
 }
 
+func TestSyncPeersAreOffloaded(t *testing.T) {
+	t.Parallel()
+
+	asyncVRG := &rmn.VolumeReplicationGroup{
+		Spec: rmn.VolumeReplicationGroupSpec{
+			Async: &rmn.VRGAsyncSpec{PeerClasses: []rmn.PeerClass{{Offloaded: true}}},
+		},
+	}
+
+	tests := []struct {
+		name string
+		vrgs map[string]*rmn.VolumeReplicationGroup
+		want bool
+	}{
+		{
+			name: "no VRGs requires fencing",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{},
+			want: false,
+		},
+		{
+			name: "offloaded sync peers skip fencing",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{"c1": syncVRG(true)},
+			want: true,
+		},
+		{
+			name: "a non-offloaded sync peer requires fencing",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{"c1": syncVRG(false)},
+			want: false,
+		},
+		{
+			name: "one non-offloaded peer among offloaded ones requires fencing",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{"c1": syncVRG(true, false)},
+			want: false,
+		},
+		{
+			name: "every VRG must agree",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{
+				"c1": syncVRG(true),
+				"c2": syncVRG(false),
+			},
+			want: false,
+		},
+		{
+			name: "a VRG without sync peers does not veto",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{
+				"c1": syncVRG(true),
+				"c2": syncVRG(),
+			},
+			want: true,
+		},
+		{
+			name: "an empty sync peer list alone requires fencing",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{"c1": syncVRG()},
+			want: false,
+		},
+		{
+			name: "spec.sync nil requires fencing",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{"c1": {}},
+			want: false,
+		},
+		{
+			name: "spec.async is not read",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{"c1": asyncVRG},
+			want: false,
+		},
+		{
+			name: "a nil VRG is skipped",
+			vrgs: map[string]*rmn.VolumeReplicationGroup{
+				"c1": syncVRG(true),
+				"c2": nil,
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := syncPeersAreOffloaded(tt.vrgs); got != tt.want {
+				t.Errorf("syncPeersAreOffloaded() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // Test helpers
 
 func metroPeerClass(offloaded bool, storageIDs ...string) rmn.PeerClass {
@@ -73,5 +159,18 @@ func metroPeerClass(offloaded bool, storageIDs ...string) rmn.PeerClass {
 		StorageClassName: "sc",
 		StorageID:        storageIDs,
 		Offloaded:        offloaded,
+	}
+}
+
+func syncVRG(offloaded ...bool) *rmn.VolumeReplicationGroup {
+	peers := make([]rmn.PeerClass, len(offloaded))
+	for i := range offloaded {
+		peers[i] = rmn.PeerClass{Offloaded: offloaded[i]}
+	}
+
+	return &rmn.VolumeReplicationGroup{
+		Spec: rmn.VolumeReplicationGroupSpec{
+			Sync: &rmn.VRGSyncSpec{PeerClasses: peers},
+		},
 	}
 }
