@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	offloadedTestProvisioner = "k8s.io/minikube-hostpath"
-	offloadedTestStorageID   = "sid-1"
-	offloadedTestGroupID     = "grid-1"
-	offloadedTestSCName      = "standard"
-	offloadedTestSelectorKey = "ramendr.openshift.io/class"
-	offloadedTestSelectorVal = "chosen"
-	offloadedTestInterval    = "5m"
+	offloadedTestProvisioner  = "k8s.io/minikube-hostpath"
+	offloadedTestStorageID    = "sid-1"
+	offloadedTestGroupID      = "grid-1"
+	offloadedTestSCName       = "standard"
+	offloadedTestSelectorKey  = "ramendr.openshift.io/class"
+	offloadedTestSelectorVal  = "chosen"
+	offloadedTestInterval     = "5m"
+	offloadedTestZeroInterval = "0m"
 )
 
 func TestSelectOffloadedVGRClass(t *testing.T) {
@@ -66,33 +67,56 @@ func TestSelectOffloadedVGRClass(t *testing.T) {
 			wantName: "labeled",
 		},
 		{
-			name: "sync selects a class without reading a schedule",
+			name: "sync selects a zero interval class",
 			classes: []*volrep.VolumeGroupReplicationClass{
-				offloadedTestClass("sync-class", offloadedTestInterval, offloadedTestStorageID, false, false),
+				offloadedTestClass("sync-class", offloadedTestZeroInterval, offloadedTestStorageID, false, false),
 			},
 			wantName: "sync-class",
 		},
 		{
-			name: "sync reports a miss without an interval",
+			name: "sync rejects a scheduled class",
+			classes: []*volrep.VolumeGroupReplicationClass{
+				offloadedTestClass("scheduled", offloadedTestInterval, offloadedTestStorageID, false, false),
+			},
+			wantErr:    "zero schedulingInterval",
+			errWithout: offloadedTestInterval,
+		},
+		{
+			name: "sync prefers the zero interval class over a scheduled one",
+			classes: []*volrep.VolumeGroupReplicationClass{
+				offloadedTestClass("scheduled", offloadedTestInterval, offloadedTestStorageID, false, false),
+				offloadedTestClass("zero", offloadedTestZeroInterval, offloadedTestStorageID, false, false),
+			},
+			wantName: "zero",
+		},
+		{
+			name: "sync selects a class without a schedulingInterval",
+			classes: []*volrep.VolumeGroupReplicationClass{
+				offloadedTestClass("no-interval", "", offloadedTestStorageID, false, false),
+			},
+			wantName: "no-interval",
+		},
+		{
+			name: "sync reports a miss without quoting an interval",
 			classes: []*volrep.VolumeGroupReplicationClass{
 				offloadedTestClass("wrong-storage", offloadedTestInterval, "other-sid", false, false),
 			},
 			wantErr:    "provisioner, storageID and groupReplicationID",
-			errWithout: "schedulingInterval",
+			errWithout: offloadedTestInterval,
 		},
 		{
 			name: "several matches use the default class",
 			classes: []*volrep.VolumeGroupReplicationClass{
-				offloadedTestClass("plain", offloadedTestInterval, offloadedTestStorageID, false, false),
-				offloadedTestClass("defaulted", offloadedTestInterval, offloadedTestStorageID, false, true),
+				offloadedTestClass("plain", offloadedTestZeroInterval, offloadedTestStorageID, false, false),
+				offloadedTestClass("defaulted", offloadedTestZeroInterval, offloadedTestStorageID, false, true),
 			},
 			wantName: "defaulted",
 		},
 		{
 			name: "several matches without a default annotation fail",
 			classes: []*volrep.VolumeGroupReplicationClass{
-				offloadedTestClass("one", offloadedTestInterval, offloadedTestStorageID, false, false),
-				offloadedTestClass("two", offloadedTestInterval, offloadedTestStorageID, false, false),
+				offloadedTestClass("one", offloadedTestZeroInterval, offloadedTestStorageID, false, false),
+				offloadedTestClass("two", offloadedTestZeroInterval, offloadedTestStorageID, false, false),
 			},
 			wantErr: "no default annotation",
 		},
