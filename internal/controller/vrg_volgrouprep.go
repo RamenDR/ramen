@@ -674,7 +674,8 @@ func (v *VRGInstance) reconcileMissingVGR(vrNamespacedName types.NamespacedName,
 		vrMissing = true
 	)
 
-	if v.instance.Spec.Async == nil {
+	// Sync without an offloaded StorageClass does not use a VolumeGroupReplication.
+	if v.isNonOffloadedSync(len(pvcs) > 0 && v.pvcIsOffloaded(pvcs[0])) {
 		return !vrMissing, !requeue
 	}
 
