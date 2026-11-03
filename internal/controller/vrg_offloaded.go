@@ -243,7 +243,13 @@ func offloadedVGRClassMatches(
 		return false
 	}
 
-	if schedule != nil && vgrClass.Spec.Parameters[ReplicationClassScheduleKey] != *schedule {
+	interval := vgrClass.Spec.Parameters[ReplicationClassScheduleKey]
+
+	if schedule != nil {
+		if interval != *schedule {
+			return false
+		}
+	} else if !schedulingIntervalIsZero(interval) {
 		return false
 	}
 
@@ -279,8 +285,8 @@ func (v *VRGInstance) offloadedStorageClassIDs(
 // selectOffloadedVGRClass selects a VolumeGroupReplicationClass for offloaded storage.
 // Match is provisioner, storageID, and groupReplicationID. When Spec.Async is set, the
 // list uses ReplicationClassSelector and the class scheduling interval must equal
-// SchedulingInterval. Sync has no selector and no interval, so every class is listed
-// and the schedule is not compared.
+// SchedulingInterval. Sync has no selector, so every class is listed, and a class
+// with a non-zero schedulingInterval is rejected.
 func (v *VRGInstance) selectOffloadedVGRClass(pvc *corev1.PersistentVolumeClaim) (client.Object, error) {
 	provisioner, storageID, groupReplicationID, err := v.offloadedStorageClassIDs(pvc)
 	if err != nil {
@@ -324,7 +330,8 @@ func (v *VRGInstance) selectOffloadedVGRClass(pvc *corev1.PersistentVolumeClaim)
 					"groupReplicationID and schedulingInterval %s", *schedule)
 		}
 
-		return nil, fmt.Errorf("no VolumeGroupReplicationClass found to match provisioner, storageID and groupReplicationID")
+		return nil, fmt.Errorf("no VolumeGroupReplicationClass found to match provisioner, " +
+			"storageID and groupReplicationID with a zero schedulingInterval")
 	case 1:
 		return matches[0], nil
 	}

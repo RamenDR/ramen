@@ -2174,6 +2174,12 @@ func dRPolicySupportsMetro(drpolicy *rmn.DRPolicy, drClusterIDsToNames map[strin
 	return false, nil, nil
 }
 
+// metroPeerHasStorageIDs reports whether a sync peer class carries usable storage IDs. An
+// offloaded peer has one per cluster, because each cluster identifies the volume separately.
+func metroPeerHasStorageIDs(peer *rmn.PeerClass) bool {
+	return len(peer.StorageID) == 1 || (peer.Offloaded && len(peer.StorageID) == 2)
+}
+
 func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy, drClusterIDsToNames map[string]string) (bool, [][]string) {
 	if len(drPolicy.Status.Sync.PeerClasses) == 0 {
 		return false, nil
@@ -2186,7 +2192,7 @@ func checkMetroSupportUsingPeerClass(drPolicy *rmn.DRPolicy, drClusterIDsToNames
 	metroClustersInPolicy := [][]string{}
 
 	for idx := range drPolicy.Status.Sync.PeerClasses {
-		if len(drPolicy.Status.Sync.PeerClasses[idx].StorageID) != 1 {
+		if !metroPeerHasStorageIDs(&drPolicy.Status.Sync.PeerClasses[idx]) {
 			continue
 		}
 

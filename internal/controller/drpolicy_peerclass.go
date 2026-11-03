@@ -263,6 +263,8 @@ func getVGRID(scName string, cl classLists, vgrcIdx int, inSID string, schedule 
 		return ""
 	}
 
+	// A class with "0m" does not match a policy with "", though
+	// schedulingIntervalIsZero treats both as zero.
 	if cl.vgrClasses[vgrcIdx].Spec.Parameters[ReplicationClassScheduleKey] != schedule {
 		return ""
 	}
@@ -486,6 +488,11 @@ func getSyncPeers(scName string, clusterID string, sID string, cls []classLists)
 				break
 			}
 
+			// Offloaded storage is not paired on storageID equality.
+			if util.HasLabel(cl.sClasses[idx], StorageOffloadedLabel) {
+				break
+			}
+
 			// TODO: Check provisioner match?
 
 			peers = append(peers, peerInfo{
@@ -516,24 +523,38 @@ func findPeers(cls []classLists, scName string, startClsIdx int, schedule string
 	}
 
 	sID := cls[startClsIdx].sClasses[scIdx].Labels[StorageIDLabel]
+	offloaded := util.HasLabel(cls[startClsIdx].sClasses[scIdx], StorageOffloadedLabel)
+
+	// Offloaded storage does not use storageID equality to decide sync versus async.
+	if offloaded {
+		peers := getOffloadedPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
+		if schedulingIntervalIsZero(schedule) {
+			return peers, []peerInfo{}
+		}
+
+		return []peerInfo{}, peers
+	}
+
+	// A zero interval is metro, so differing storageIDs are not paired as async.
 	// TODO: Check if Sync is non-nil?
 	syncPeers := getSyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx+1:])
-
-	offloaded := util.HasLabel(cls[startClsIdx].sClasses[scIdx], StorageOffloadedLabel)
 	asyncPeers := []peerInfo{}
 
-	// Offloaded peers are built by getOffloadedPeers and stay on the async list.
-	if schedule != "" {
-		if offloaded {
-			asyncPeers = getOffloadedPeers(
-				scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule,
-			)
-		} else {
-			asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
-		}
+	if !schedulingIntervalIsZero(schedule) {
+		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
 	}
 
 	return syncPeers, asyncPeers
+}
+
+// schedulingIntervalIsZero reports whether schedule is empty or parses to a
+// zero duration. An unparsable value is not zero, so the caller keeps the
+// async path. This picks the sync or async list; getVGRID compares schedules
+// as written instead.
+func schedulingIntervalIsZero(schedule string) bool {
+	secs, err := util.SecondsFromSchedulingInterval(schedule)
+
+	return err == nil && secs == 0
 }
 
 // unionStorageClasses returns a union of all StorageClass names found in all clusters in the passed in classLists
