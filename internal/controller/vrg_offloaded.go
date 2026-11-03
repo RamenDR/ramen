@@ -15,6 +15,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -181,6 +182,77 @@ func (v *VRGInstance) processGloballyOffloadedPVCs(pvcList *corev1.PersistentVol
 	}
 
 	return v.addGlobalVGRLabel(grID)
+}
+
+// --- Offloaded VolumeGroupReplicationClass selection ---
+
+//nolint:unused // called by selectOffloadedVGRClass, wired in a later commit
+func offloadedVGRClassMatches(
+	vgrClass *volrep.VolumeGroupReplicationClass,
+	provisioner, storageID, groupReplicationID string,
+) bool {
+	if vgrClass.Spec.Provisioner != provisioner {
+		return false
+	}
+
+	if vgrClass.GetLabels()[StorageIDLabel] != storageID {
+		return false
+	}
+
+	return vgrClass.GetLabels()[GroupReplicationIDLabel] == groupReplicationID
+}
+
+// selectOffloadedVGRClass selects a VolumeGroupReplicationClass for offloaded storage.
+// Match is provisioner, storageID, and groupReplicationID. Scheduling interval is not
+// compared: the storage provider owns replication timing. Classes are listed here so
+// selection does not depend on Spec.Async.
+//
+//nolint:unused // called when offloaded VGR creation is wired to sync and async
+func (v *VRGInstance) selectOffloadedVGRClass(pvc *corev1.PersistentVolumeClaim) (client.Object, error) {
+	storageClass, err := v.getStorageClass(pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
+	if !ok {
+		return nil, fmt.Errorf("missing %s label in StorageClass (%s)", StorageIDLabel, storageClass.GetName())
+	}
+
+	groupReplicationID, ok := storageClass.GetLabels()[GroupReplicationIDLabel]
+	if !ok {
+		return nil, fmt.Errorf("missing %s label in StorageClass (%s)", GroupReplicationIDLabel, storageClass.GetName())
+	}
+
+	vgrClassList := &volrep.VolumeGroupReplicationClassList{}
+	if err := v.reconciler.List(v.ctx, vgrClassList); err != nil {
+		return nil, fmt.Errorf("failed to list VolumeGroupReplicationClasses (%w)", err)
+	}
+
+	matches := []client.Object{}
+
+	for idx := range vgrClassList.Items {
+		vgrClass := &vgrClassList.Items[idx]
+		if !offloadedVGRClassMatches(vgrClass, storageClass.Provisioner, storageID, groupReplicationID) {
+			continue
+		}
+
+		matches = append(matches, vgrClass)
+	}
+
+	switch len(matches) {
+	case 0:
+		v.log.Info("No VolumeGroupReplicationClass found for offloaded storage",
+			"provisioner", storageClass.Provisioner,
+			"storageID", storageID,
+			"groupReplicationID", groupReplicationID)
+
+		return nil, fmt.Errorf("no VolumeGroupReplicationClass found to match provisioner, storageID and groupReplicationID")
+	case 1:
+		return matches[0], nil
+	}
+
+	return v.filterDefaultVRC(matches, "VolumeGroupReplicationClass")
 }
 
 func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
