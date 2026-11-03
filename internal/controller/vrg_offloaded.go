@@ -85,6 +85,21 @@ func (v *VRGInstance) isNonOffloadedSync(offloaded bool) bool {
 	return v.instance.Spec.Async == nil && !offloaded
 }
 
+func (v *VRGInstance) pvStorageIsOffloaded(pv *corev1.PersistentVolume) (bool, error) {
+	if pv == nil || pv.Spec.StorageClassName == "" {
+		return false, nil
+	}
+
+	scName := pv.Spec.StorageClassName
+
+	storageClass, err := v.getStorageClassFromSCName(&scName)
+	if err != nil {
+		return false, err
+	}
+
+	return util.HasLabel(storageClass, StorageOffloadedLabel), nil
+}
+
 func (v *VRGInstance) isOffloadedByPeerClasses(
 	sc *storagev1.StorageClass, peerClasses []ramendrv1alpha1.PeerClass,
 ) (bool, error) {
