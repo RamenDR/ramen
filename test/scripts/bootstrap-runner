@@ -126,7 +126,8 @@ if ! sudo --user github test -f "$RUNNER_DIR/.runner"; then
     echo "Next steps:"
     echo "  1. Visit https://github.com/RamenDR/ramen/settings/actions/runners/new?arch=x64&os=linux"
     echo "  2. Configure the runner:"
-    echo "     sudo --user github ${RUNNER_DIR}/config.sh --url <repo-url> --token <token>"
+    # --login is required to preserve the PATH for the service.
+    echo "     sudo --login --user github ${RUNNER_DIR}/config.sh --url <repo-url> --token <token>"
     echo "  3. Start the service:"
     echo "     sudo bash -c 'cd ${RUNNER_DIR} && ./svc.sh install github && ./svc.sh start'"
 elif [[ "$needs_install" == true ]]; then
