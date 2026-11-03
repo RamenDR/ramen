@@ -128,9 +128,9 @@ if ! sudo --user github test -f "$RUNNER_DIR/.runner"; then
     echo "  2. Configure the runner:"
     echo "     sudo --user github ${RUNNER_DIR}/config.sh --url <repo-url> --token <token>"
     echo "  3. Start the service:"
-    echo "     cd ${RUNNER_DIR} && sudo ./svc.sh install github && sudo ./svc.sh start"
+    echo "     sudo bash -c 'cd ${RUNNER_DIR} && ./svc.sh install github && ./svc.sh start'"
 elif [[ "$needs_install" == true ]]; then
     echo ""
     echo "To apply the update, restart the runner service:"
-    echo "  cd ${RUNNER_DIR} && sudo ./svc.sh stop && sudo ./svc.sh start"
+    echo "  sudo bash -c 'cd ${RUNNER_DIR} && ./svc.sh stop && ./svc.sh start'"
 fi
