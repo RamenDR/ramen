@@ -887,6 +887,16 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 	return !requeue, false, nil
 }
 
+func (v *VRGInstance) volumeGroupReplicationClassForPVC(
+	pvc *corev1.PersistentVolumeClaim, offloaded bool,
+) (client.Object, error) {
+	if offloaded {
+		return v.selectOffloadedVGRClass(pvc)
+	}
+
+	return v.selectVolumeReplicationClass(pvc, true)
+}
+
 // createVGR creates a VolumeGroupReplication CR
 //
 //nolint:funlen,cyclop
@@ -900,7 +910,7 @@ func (v *VRGInstance) createVGR(vrNamespacedName types.NamespacedName,
 
 	offloaded := rmnutil.HasLabel(storageClass, StorageOffloadedLabel)
 
-	volumeGroupReplicationClass, err := v.selectVolumeReplicationClass(pvcs[0], true)
+	volumeGroupReplicationClass, err := v.volumeGroupReplicationClassForPVC(pvcs[0], offloaded)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeGroupReplicationClass (%s) %w",
 			v.instance.Name, err)
