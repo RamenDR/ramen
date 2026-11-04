@@ -522,7 +522,7 @@ func findPeers(cls []classLists, scName string, startClsIdx int, schedule string
 
 	// Offloaded storage does not use storageID equality to decide sync versus async.
 	// getOffloadedPeers builds the peer. A zero interval files it as sync, and a
-	// non-zero interval files it as async. Non-offloaded pairing is unchanged.
+	// non-zero interval files it as async.
 	if offloaded {
 		peers := getOffloadedPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
 		if schedulingIntervalIsZero(schedule) {
@@ -532,11 +532,14 @@ func findPeers(cls []classLists, scName string, startClsIdx int, schedule string
 		return []peerInfo{}, peers
 	}
 
+	// Non-offloaded sync peers share a storageID. A zero interval is metro, so it
+	// does not build async peers for classes whose storageIDs differ. A non-zero
+	// interval pairs those classes the same way as before.
 	// TODO: Check if Sync is non-nil?
 	syncPeers := getSyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx+1:])
 	asyncPeers := []peerInfo{}
 
-	if schedule != "" {
+	if !schedulingIntervalIsZero(schedule) {
 		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
 	}
 
