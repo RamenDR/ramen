@@ -248,9 +248,6 @@ func restoreRealCreate(
 	if !ok {
 		_, err := backupRequestCreate(
 			w, loc,
-			// Recover side: this is a dummy Backup CR whose status Velero must
-			// import from S3 via backup-sync, so sync must stay enabled.
-			false,
 			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
 			requestNamespaceName, backupName,
 			labels,
@@ -379,9 +376,6 @@ func (RequestsManager) ProtectRequestCreate(
 	backup, err := backupRequestCreate(
 		objectWriter{ctx: ctx, Client: k8sclient, log: log},
 		loc,
-		// Capture side: Ramen deletes the Backup CR after each cycle, so
-		// backup-sync must be disabled to stop Velero re-creating it from S3.
-		true,
 		getBackupSpecFromObjectsSpec(objectsSpec),
 		requestNamespaceName,
 		captureName,
@@ -496,7 +490,6 @@ type objectWriter struct {
 func backupRequestCreate(
 	w objectWriter,
 	loc kubeobjects.StorageLocation,
-	disableBackupSync bool,
 	backupSpec velero.BackupSpec,
 	requestsNamespaceName string,
 	requestName string,
@@ -510,7 +503,7 @@ func backupRequestCreate(
 		},
 	}
 
-	err := w.bslCreateOrUpdate(loc, disableBackupSync, labels, backupLocation)
+	err := w.bslCreateOrUpdate(loc, labels, backupLocation)
 	if err != nil {
 		w.log.Error(err, "")
 
