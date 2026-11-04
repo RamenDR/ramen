@@ -293,7 +293,7 @@ func (v *VSHandler) createOrUpdateRD(
 ) {
 	l := v.log.WithValues("rdSpec", rdSpec)
 
-	storageclass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageclass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +543,7 @@ func (v *VSHandler) createOrUpdateRS(rsSpec ramendrv1alpha1.VolSyncReplicationSo
 ) {
 	l := v.log.WithValues("rsSpec", rsSpec, "runFinalSync", runFinalSync)
 
-	storageClass, err := v.getStorageClass(rsSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rsSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -1826,7 +1826,7 @@ func (v *VSHandler) EnsurePVCfromRD(rdSpec ramendrv1alpha1.VolSyncReplicationDes
 		return err
 	}
 
-	if !isLatestImageReady(latestImage) {
+	if !IsLatestImageReady(latestImage) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rdSpec.ProtectedPVC.Name)
 		v.log.Error(noSnapErr, "No latestImage", "rdSpec", rdSpec)
 
@@ -2230,7 +2230,7 @@ func (v *VSHandler) ModifyRSSpecForCephFS(rsSpec *ramendrv1alpha1.VolSyncReplica
 }
 
 func (v *VSHandler) GetVolumeSnapshotClassFromPVCStorageClass(storageClassName *string) (string, error) {
-	storageClass, err := v.getStorageClass(storageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, storageClassName)
 	if err != nil {
 		return "", err
 	}
@@ -2272,24 +2272,6 @@ func (v *VSHandler) getVolumeSnapshotClassFromPVCStorageClass(storageClass *stor
 	}
 
 	return matchedVolumeSnapshotClassName, nil
-}
-
-func (v *VSHandler) getStorageClass(storageClassName *string) (*storagev1.StorageClass, error) {
-	if storageClassName == nil || *storageClassName == "" {
-		err := fmt.Errorf("no storageClassName given, cannot proceed")
-		v.log.Error(err, "Failed to get StorageClass")
-
-		return nil, err
-	}
-
-	storageClass := &storagev1.StorageClass{}
-	if err := v.client.Get(v.ctx, types.NamespacedName{Name: *storageClassName}, storageClass); err != nil {
-		v.log.Error(err, "Failed to get StorageClass", "name", storageClassName)
-
-		return nil, fmt.Errorf("error getting storage class (%w)", err)
-	}
-
-	return storageClass, nil
 }
 
 func isDefaultVolumeSnapshotClass(volumeSnapshotClass snapv1.VolumeSnapshotClass) bool {
@@ -2441,7 +2423,7 @@ func (v *VSHandler) IsRDDataProtected(pvcName, pvcNamespace string) (bool, error
 		return false, err
 	}
 
-	return isLatestImageReady(latestImage), nil
+	return IsLatestImageReady(latestImage), nil
 }
 
 func (v *VSHandler) PrecreateDestPVCIfEnabled(rdSpec ramendrv1alpha1.VolSyncReplicationDestinationSpec,
@@ -2488,12 +2470,8 @@ func (v *VSHandler) IsCopyMethodDirect() bool {
 	return v.destinationCopyMethod == volsyncv1alpha1.CopyMethodDirect
 }
 
-func isLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
-	if latestImage == nil || latestImage.Name == "" || latestImage.Kind != VolumeSnapshotKind {
-		return false
-	}
-
-	return true
+func IsLatestImageReady(latestImage *corev1.TypedLocalObjectReference) bool {
+	return latestImage != nil && latestImage.Name != "" && latestImage.Kind == VolumeSnapshotKind
 }
 
 func getReplicationSourceName(pvcName string) string {
@@ -2746,7 +2724,7 @@ func (v *VSHandler) setupLocalRS(rd *volsyncv1alpha1.ReplicationDestination,
 	rdSpec *ramendrv1alpha1.VolSyncReplicationDestinationSpec,
 	snapshotRef *corev1.TypedLocalObjectReference,
 ) (*corev1.PersistentVolumeClaim, error) {
-	if !isLatestImageReady(snapshotRef) {
+	if !IsLatestImageReady(snapshotRef) {
 		noSnapErr := fmt.Errorf("unable to find LatestImage from ReplicationDestination %s", rd.GetName())
 		v.log.Error(noSnapErr, "No latestImage")
 
@@ -2846,7 +2824,7 @@ func (v *VSHandler) createPVCFromSnapshot(rd *volsyncv1alpha1.ReplicationDestina
 ) (*corev1.PersistentVolumeClaim, error) {
 	l := v.log.WithValues("pvcName", rd.GetName(), "snapshotRef", snapshotRef, "snapRestoreSize", snapRestoreSize)
 
-	storageClass, err := v.getStorageClass(rdSpec.ProtectedPVC.StorageClassName)
+	storageClass, err := util.GetStorageClass(v.ctx, v.client, rdSpec.ProtectedPVC.StorageClassName)
 	if err != nil {
 		return nil, err
 	}
@@ -3574,19 +3552,9 @@ func (v *VSHandler) RetainPVForPVC(pvc corev1.PersistentVolumeClaim) error {
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}
 
-	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+	if !util.RetainPV(pv, PVAnnotationRetentionKey, PVAnnotationRetentionValue) {
 		return nil
 	}
-
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
-
-	annotations := pv.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-
-	annotations[PVAnnotationRetentionKey] = PVAnnotationRetentionValue
-	pv.SetAnnotations(annotations)
 
 	v.log.Info("Retaining PV for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
 
@@ -3609,13 +3577,9 @@ func (v *VSHandler) UndoPVRetentionForPVC(pvc corev1.PersistentVolumeClaim) erro
 			pvc.Spec.VolumeName, pvc.Namespace, pvc.Name, err)
 	}
 
-	val, ok := pv.ObjectMeta.Annotations[PVAnnotationRetentionKey]
-	if !ok || val != PVAnnotationRetentionValue {
+	if !util.UndoPVRetention(pv, PVAnnotationRetentionKey, PVAnnotationRetentionValue) {
 		return nil
 	}
-
-	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
-	delete(pv.ObjectMeta.Annotations, PVAnnotationRetentionKey)
 
 	v.log.Info("Undoing PV retention for VolSync PVC", "pvName", pv.Name, "pvcName", pvc.Name)
 

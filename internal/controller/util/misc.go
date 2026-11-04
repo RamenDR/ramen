@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -274,6 +275,44 @@ func AddAnnotation(obj client.Object, key, value string) bool {
 	}
 
 	return !added
+}
+
+func RetainPV(pv *corev1.PersistentVolume, annotationKey, annotationValue string) bool {
+	if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimRetain {
+		return false
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimRetain
+	AddAnnotation(pv, annotationKey, annotationValue)
+
+	return true
+}
+
+func UndoPVRetention(pv *corev1.PersistentVolume, annotationKey, annotationValue string) bool {
+	val, ok := pv.ObjectMeta.Annotations[annotationKey]
+	if !ok || val != annotationValue {
+		return false
+	}
+
+	pv.Spec.PersistentVolumeReclaimPolicy = corev1.PersistentVolumeReclaimDelete
+	delete(pv.ObjectMeta.Annotations, annotationKey)
+
+	return true
+}
+
+func GetStorageClass(
+	ctx context.Context, k8sClient client.Client, storageClassName *string,
+) (*storagev1.StorageClass, error) {
+	if storageClassName == nil || *storageClassName == "" {
+		return nil, fmt.Errorf("no storageClassName given, cannot proceed")
+	}
+
+	storageClass := &storagev1.StorageClass{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: *storageClassName}, storageClass); err != nil {
+		return nil, fmt.Errorf("error getting storage class (%w)", err)
+	}
+
+	return storageClass, nil
 }
 
 func AddOwnerReference(obj, owner metav1.Object, scheme *runtime.Scheme) (bool, error) {

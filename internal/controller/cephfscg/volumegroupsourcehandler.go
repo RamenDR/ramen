@@ -268,7 +268,7 @@ func (h *volumeGroupSourceHandler) RestoreVolumesFromVolumeGroupSnapshot(
 		return nil, fmt.Errorf("failed to get volume group snapshot: %w", err)
 	}
 
-	if !IsVGSReady(vgs) {
+	if !util.VolumeGroupSnapshotIsReady(vgs) {
 		return nil, fmt.Errorf("can't restore volume group snapshot: volume group snapshot is not ready to be used")
 	}
 
@@ -303,7 +303,7 @@ func (h *volumeGroupSourceHandler) restorePVCsFromSnapshots(
 				vgs.GetNamespace()+"/"+*vs.Spec.Source.PersistentVolumeClaimName, err)
 		}
 
-		storageClass, err := GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
+		storageClass, err := util.GetStorageClass(ctx, h.Client, pvc.Spec.StorageClassName)
 		if err != nil {
 			return nil, err
 		}
