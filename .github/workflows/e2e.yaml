@@ -24,11 +24,20 @@
 #                     | so the job token is not stored in .git/config.
 #   Repo secrets      | Not used by this workflow. Do NOT add secrets
 #                     | without reviewing the security implications.
+#   Skipped status    | skip reads the pull request file list from the API.
+#                     | It does not check out the pull request. It posts
+#                     | success only when e2e is not required.
 name: e2e
 
 on:
   issue_comment:
     types: [created]
+  # ramen runs on every pull request, including a docs-only change.
+  # requested starts skip when that run is queued. The file list is
+  # already on the pull request.
+  workflow_run:
+    workflows: [ramen]
+    types: [requested]
 
 permissions:
   contents: read
@@ -44,7 +53,10 @@ jobs:
   start:
     # A pull request comment with a line that is exactly "/test e2e".
     # fromJSON supplies a real newline. An expression string has no \n escape.
+    # workflow_run has no comment. Require issue_comment so that event
+    # does not evaluate the comment body.
     if: >-
+      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       contains(
         format('{0}{1}{0}', fromJSON('"\n"'), github.event.comment.body),
@@ -394,3 +406,116 @@ jobs:
         echo "comment: $body"
         gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
             --raw-field body="$body"
+
+  # Posts a success status when this change does not require e2e.
+  skip:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+    - name: Check if e2e is required
+      id: check
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      shell: python3 {0}
+      run: |
+        import json
+        import os
+        import re
+        import subprocess, sys
+
+        # A changed file that matches any pattern does not require e2e.
+        # Each pattern is matched against the full path.
+        SKIP = [
+            r"^docs/.*",
+            r"^website/.*",
+            r"^.*\.md",
+        ]
+
+        def gh(*args):
+            return subprocess.run(
+                ["gh", "api", *args],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip()
+
+        repo = os.environ["REPO"]
+        head_sha = os.environ["HEAD_SHA"]
+        head_owner, _ = os.environ["HEAD_REPOSITORY"].split("/", 1)
+        head_branch = os.environ["HEAD_BRANCH"]
+
+        # A fork commit is not a commit of this repository, so searching
+        # commits here returns no pull request. List pull requests from
+        # that fork branch and keep the one with this head. The same SHA
+        # is the same content, so the first result is enough.
+        pr_number = gh(
+            f"repos/{repo}/pulls?state=open&head={head_owner}:{head_branch}",
+            "--jq", "[.[] | select(.head.sha == env.HEAD_SHA) | .number][0]",
+        )
+        if not pr_number:
+            sys.exit(f"::error::no pull request for {head_sha}")
+
+        print(f"pull request: {pr_number}")
+        print(f"head: {head_sha}")
+
+        changed_files = int(gh(f"repos/{repo}/pulls/{pr_number}", "--jq", ".changed_files"))
+        if changed_files == 0:
+            print("no changed files")
+            sys.exit(0)
+
+        # GitHub returns at most 3000 file records. A shorter list than
+        # changed_files hides a later file, so this change cannot be skipped.
+        # A rename lists the new name and the old name. Either one can
+        # require e2e. Count records before adding the old name.
+        changes = gh(
+            "--paginate",
+            f"repos/{repo}/pulls/{pr_number}/files",
+            "--jq", ".[] | {filename, previous_filename}",
+        ).splitlines()
+        if len(changes) != changed_files:
+            print(f"file list is incomplete: {len(changes)} of {changed_files}")
+            sys.exit(0)
+
+        names = []
+        for line in changes:
+            change = json.loads(line)
+            names.append(change["filename"])
+            if change["previous_filename"]:
+                names.append(change["previous_filename"])
+
+        skip_re = re.compile("|".join(f"(?:{pattern})" for pattern in SKIP))
+        requires_e2e = [name for name in names if not skip_re.fullmatch(name)]
+        if requires_e2e:
+            print("These files require e2e:")
+            for name in requires_e2e:
+                print(f"  {name}")
+            sys.exit(0)
+
+        # Every changed file matches SKIP.
+        with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+            out.write("skip=true\n")
+
+    - name: Post skipped e2e status
+      id: status
+      if: steps.check.outputs.skip == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        SKIP_DESCRIPTION: skipped - this change does not require e2e
+      run: |
+        echo "e2e status: success ($SKIP_DESCRIPTION)"
+        gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state=success \
+            -f context="$CONTEXT" \
+            -f description="$SKIP_DESCRIPTION"

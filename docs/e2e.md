@@ -26,6 +26,15 @@ The test runs the commit that was current when the comment was added.
 If an e2e test is already started for the same PR, the existing job will be
 canceled.
 
+### Skipping e2e
+
+The e2e job is skipped when every changed file matches a pattern in the `SKIP`
+list in [e2e.yaml](../.github/workflows/e2e.yaml). The pull request gets a
+successful `e2e / test` status, `skipped - this change does not require e2e`.
+
+To skip e2e for another kind of change, add a regular expression to that list.
+Each pattern is matched against the full path of a changed file.
+
 ### Comments
 
 The workflow comments on the pull request when the test starts:
