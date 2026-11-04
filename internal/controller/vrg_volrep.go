@@ -1618,6 +1618,42 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	return v.selectReplicationClassForStorageClass(storageClass, selectVolumeGroup)
 }
 
+// selectVolumeReplicationClassForStorageClass returns the VolumeReplicationClass that
+// matches the given StorageClass and the VRG schedule.
+func (v *VRGInstance) selectVolumeReplicationClassForStorageClass(
+	storageClass *storagev1.StorageClass,
+) (*volrep.VolumeReplicationClass, error) {
+	obj, err := v.selectReplicationClassForStorageClass(storageClass, false)
+	if err != nil {
+		return nil, err
+	}
+
+	vrc, ok := obj.(*volrep.VolumeReplicationClass)
+	if !ok {
+		return nil, fmt.Errorf("unexpected replication class type %T", obj)
+	}
+
+	return vrc, nil
+}
+
+// selectVolumeGroupReplicationClassForStorageClass returns the VolumeGroupReplicationClass
+// that matches the given StorageClass and the VRG schedule.
+func (v *VRGInstance) selectVolumeGroupReplicationClassForStorageClass(
+	storageClass *storagev1.StorageClass,
+) (*volrep.VolumeGroupReplicationClass, error) {
+	obj, err := v.selectReplicationClassForStorageClass(storageClass, true)
+	if err != nil {
+		return nil, err
+	}
+
+	vgrc, ok := obj.(*volrep.VolumeGroupReplicationClass)
+	if !ok {
+		return nil, fmt.Errorf("unexpected group replication class type %T", obj)
+	}
+
+	return vgrc, nil
+}
+
 // selectReplicationClassForStorageClass returns the VolumeReplicationClass, or the
 // VolumeGroupReplicationClass if selectVolumeGroup is set, that matches the given
 // StorageClass and the VRG schedule.
@@ -3044,39 +3080,56 @@ func (v *VRGInstance) updatePVNodeAffinityForRestore(
 		return nil
 	}
 
-	replicationClass, err := v.selectReplicationClassForStorageClass(sc, false)
+	topologyVal, classKind, className, err := v.accessibleTopologyForStorageClass(sc)
 	if err != nil {
-		v.log.Info("Could not find matching VRC for PV, skipping node affinity from topology",
+		v.log.Info("Could not find matching VRC or VGRC for PV, skipping node affinity from topology",
 			"PV", pv.Name, "error", err)
 
 		return nil
 	}
 
-	vrc, ok := replicationClass.(*volrep.VolumeReplicationClass)
-	if !ok {
-		return fmt.Errorf("unexpected replication class type %T for PV %s", replicationClass, pv.Name)
-	}
-
-	topologyVal := vrc.Spec.Parameters[VRCParameterAccessibleTopology]
 	if topologyVal == "" {
 		return nil
 	}
 
 	affinity, err := accessibleTopologyToNodeAffinity(topologyVal)
 	if err != nil {
-		return fmt.Errorf("failed to create node affinity from accessible topology in VRC %s for PV %s: %w",
-			vrc.Name, pv.Name, err)
+		return fmt.Errorf("failed to create node affinity from accessible topology in %s %s for PV %s: %w",
+			classKind, className, pv.Name, err)
 	}
 
 	if affinity != nil {
 		pv.Spec.NodeAffinity = affinity
-		v.log.Info("Set PV node affinity from VRC accessible topology", "PV", pv.Name, "VRC", vrc.Name)
+		v.log.Info("Set PV node affinity from accessible topology",
+			"PV", pv.Name, classKind, className)
 	}
 
 	return nil
 }
 
+// accessibleTopologyForStorageClass returns the accessibleTopology parameter from a
+// matching VRC, or from a matching VGRC when no VRC is found (VGRC-only configs).
+func (v *VRGInstance) accessibleTopologyForStorageClass(
+	sc *storagev1.StorageClass,
+) (topologyVal, classKind, className string, err error) {
+	vrc, vrcErr := v.selectVolumeReplicationClassForStorageClass(sc)
+	if vrcErr == nil {
+		return vrc.Spec.Parameters[VRCParameterAccessibleTopology], "VRC", vrc.Name, nil
+	}
+
+	vgrc, vgrcErr := v.selectVolumeGroupReplicationClassForStorageClass(sc)
+	if vgrcErr != nil {
+		return "", "", "", fmt.Errorf("no matching VRC (%v) or VGRC (%v)", vrcErr, vgrcErr)
+	}
+
+	return vgrc.Spec.Parameters[VRCParameterAccessibleTopology], "VGRC", vgrc.Name, nil
+}
+
 func accessibleTopologyToNodeAffinity(topologyJSON string) (*corev1.VolumeNodeAffinity, error) {
+	if strings.TrimSpace(topologyJSON) == "null" {
+		return nil, fmt.Errorf("accessible topology must be a JSON array, got null")
+	}
+
 	var segments []map[string]string
 
 	if err := json.Unmarshal([]byte(topologyJSON), &segments); err != nil {
