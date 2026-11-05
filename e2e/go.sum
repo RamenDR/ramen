@@ -445,8 +445,8 @@ kubevirt.io/containerized-data-importer-api v1.60.3-0.20241105012228-50fbed985de
 kubevirt.io/containerized-data-importer-api v1.60.3-0.20241105012228-50fbed985de9/go.mod h1:SDJjLGhbPyayDqAqawcGmVNapBp0KodOQvhKPLVGCQU=
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 h1:QMrd0nKP0BGbnxTqakhDZAUhGKxPiPiN5gSDqKUmGGc=
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90/go.mod h1:018lASpFYBsYN6XwmA2TIrPCx6e0gviTd/ZNtSitKgc=
-open-cluster-management.io/api v0.15.0 h1:lRee1KOlGHZb2scTA7ff9E9Fxt2hJc7jpkHnaCbvkOU=
-open-cluster-management.io/api v0.15.0/go.mod h1:9erZEWEn4bEqh0nIX2wA7f/s3KCuFycQdBrPrRzi0QM=
+open-cluster-management.io/api v1.4.0 h1:pHcuT0dljNVWqiMmwo7OjJ+CW8lZODBzAFJ5u4cgiqg=
+open-cluster-management.io/api v1.4.0/go.mod h1:/qLKuMbMS1+MpirTjaw4BoS3INKG8jV3s5J7iju48tg=
 open-cluster-management.io/managed-serviceaccount v0.5.0 h1:yEFTlwPp3tecorzHLwa71mIJzwQtxcwRUnUhRF4OX0U=
 open-cluster-management.io/managed-serviceaccount v0.5.0/go.mod h1:pvSKkwFynokhtV7ksN1z0BNWQ37bG8FudOfmjn55ciA=
 open-cluster-management.io/multicloud-operators-channel v0.16.0 h1:9gi8M5ojsRK+2EMtUMC/1g1I4H4bl0+lS7CKtRCtp44=
