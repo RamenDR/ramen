@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -1653,9 +1654,28 @@ func (v *VRGInstance) getPVCForVRNSName(vrNamespacedName types.NamespacedName) (
 // functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
 // to either receive pvc NamespacedName or pvc itself as an additional argument.
 
-//nolint:funlen,cyclop,gocognit,nestif,gocyclo
 func (v *VRGInstance) selectVolumeReplicationClass(
 	pvc *corev1.PersistentVolumeClaim, selectVolumeGroup bool,
+) (client.Object, error) {
+	storageClass, err := v.getStorageClass(pvc)
+	if err != nil {
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
+			pvc.GetName()))
+
+		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
+			pvc.GetName(), err)
+	}
+
+	return v.selectReplicationClassForStorageClass(storageClass, selectVolumeGroup)
+}
+
+// selectReplicationClassForStorageClass returns the VolumeReplicationClass, or the
+// VolumeGroupReplicationClass if selectVolumeGroup is set, that matches the given
+// StorageClass and the VRG schedule.
+//
+//nolint:funlen,cyclop,gocognit,nestif,gocyclo
+func (v *VRGInstance) selectReplicationClassForStorageClass(
+	storageClass *storagev1.StorageClass, selectVolumeGroup bool,
 ) (client.Object, error) {
 	if err := v.updateReplicationClassList(); err != nil {
 		return nil, err
@@ -1665,15 +1685,6 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 		v.log.Info("No VolumeReplicationClass and VolumeGroupReplicationClass available")
 
 		return nil, fmt.Errorf("no VolumeReplicationClass and VolumeGroupReplicationClass available")
-	}
-
-	storageClass, err := v.getStorageClass(pvc)
-	if err != nil {
-		v.log.Info(fmt.Sprintf("Failed to get the storageclass of pvc %s",
-			pvc.GetName()))
-
-		return nil, fmt.Errorf("failed to get the storageclass of pvc %s (%w)",
-			pvc.GetName(), err)
 	}
 
 	matchingReplicationClassList := []client.Object{}
@@ -3077,6 +3088,104 @@ func (v *VRGInstance) processPVSecrets(pv *corev1.PersistentVolume, sc *storagev
 	return nil
 }
 
+func (v *VRGInstance) updatePVNodeAffinityForRestore(
+	pv *corev1.PersistentVolume, sc *storagev1.StorageClass,
+) error {
+	if v.instance.Spec.Async == nil {
+		return nil
+	}
+
+	topologyVal, classKind, className, err := v.accessibleTopologyForStorageClass(sc)
+	if err != nil {
+		v.log.Info("Could not find matching VRC or VGRC for PV, skipping node affinity from topology",
+			"PV", pv.Name, "error", err)
+
+		return nil
+	}
+
+	if topologyVal == "" {
+		return nil
+	}
+
+	affinity, err := accessibleTopologyToNodeAffinity(topologyVal)
+	if err != nil {
+		return fmt.Errorf("failed to create node affinity from accessible topology in %s %s for PV %s: %w",
+			classKind, className, pv.Name, err)
+	}
+
+	if affinity != nil {
+		pv.Spec.NodeAffinity = affinity
+		v.log.Info("Set PV node affinity from accessible topology",
+			"PV", pv.Name, classKind, className)
+	}
+
+	return nil
+}
+
+// accessibleTopologyForStorageClass returns the accessibleTopology parameter from a
+// matching VRC, or from a matching VGRC when no VRC is found (VGRC-only configs).
+func (v *VRGInstance) accessibleTopologyForStorageClass(
+	sc *storagev1.StorageClass,
+) (topologyVal, classKind, className string, err error) {
+	for _, selectGroup := range []bool{false, true} {
+		obj, err := v.selectReplicationClassForStorageClass(sc, selectGroup)
+		if err != nil {
+			continue
+		}
+
+		switch c := obj.(type) {
+		case *volrep.VolumeReplicationClass:
+			return c.Spec.Parameters[VRCParameterAccessibleTopology], "VRC", c.Name, nil
+		case *volrep.VolumeGroupReplicationClass:
+			return c.Spec.Parameters[VRCParameterAccessibleTopology], "VGRC", c.Name, nil
+		}
+	}
+
+	return "", "", "", fmt.Errorf("no matching VRC or VGRC for storage class %s", sc.Name)
+}
+
+func accessibleTopologyToNodeAffinity(topologyJSON string) (*corev1.VolumeNodeAffinity, error) {
+	if strings.TrimSpace(topologyJSON) == "null" {
+		return nil, fmt.Errorf("accessible topology must be a JSON array, got null")
+	}
+
+	var segments []map[string]string
+
+	if err := json.Unmarshal([]byte(topologyJSON), &segments); err != nil {
+		return nil, fmt.Errorf("failed to parse accessible topology: %w", err)
+	}
+
+	if len(segments) == 0 {
+		return nil, nil
+	}
+
+	var terms []corev1.NodeSelectorTerm
+
+	for _, seg := range segments {
+		var exprs []corev1.NodeSelectorRequirement
+
+		for key, val := range seg {
+			exprs = append(exprs, corev1.NodeSelectorRequirement{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{val},
+			})
+		}
+
+		if len(exprs) > 0 {
+			terms = append(terms, corev1.NodeSelectorTerm{MatchExpressions: exprs})
+		}
+	}
+
+	if len(terms) == 0 {
+		return nil, nil
+	}
+
+	return &corev1.VolumeNodeAffinity{
+		Required: &corev1.NodeSelector{NodeSelectorTerms: terms},
+	}, nil
+}
+
 // cleanupForRestore cleans up required PV or PVC fields, to ensure restore succeeds
 // to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
 func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
@@ -3107,7 +3216,12 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 
 	v.updatePVClusterIDForRestore(pv, sc)
 
-	return v.processPVSecrets(pv, sc)
+	err = v.processPVSecrets(pv, sc)
+	if err != nil {
+		return err
+	}
+
+	return v.updatePVNodeAffinityForRestore(pv, sc)
 }
 
 // updatePVClusterIDForRestore sets CSI volumeAttributes.clusterID from the target
