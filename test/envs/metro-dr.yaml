@@ -31,7 +31,7 @@ templates:
           - name: olm
           - name: csi-addons
           - name: rook-operator
-          - name: odf-external-snapshotter
+          - name: external-snapshotter
   - name: "hub-cluster"
     driver: "$vm"
     container_runtime: containerd
@@ -63,7 +63,7 @@ templates:
           - name: rook-pool
       - addons:
           - name: olm
-          - name: odf-external-snapshotter
+          - name: external-snapshotter
           - name: csi-addons
 
 profiles:
