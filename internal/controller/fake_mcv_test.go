@@ -200,7 +200,9 @@ func (f FakeMCVGetter) DeleteManagedClusterView(clusterName, mcvName string, log
 }
 
 func (f FakeMCVGetter) GetNSFromManagedCluster(managedCluster, resourceName string) (*corev1.Namespace, error) {
-	return nil, nil
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: resourceName},
+	}, nil
 }
 
 func (f FakeMCVGetter) GetRecipeFromManagedCluster(managedCluster, resourceName,
