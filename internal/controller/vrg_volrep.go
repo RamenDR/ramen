@@ -1618,42 +1618,6 @@ func (v *VRGInstance) selectVolumeReplicationClass(
 	return v.selectReplicationClassForStorageClass(storageClass, selectVolumeGroup)
 }
 
-// selectVolumeReplicationClassForStorageClass returns the VolumeReplicationClass that
-// matches the given StorageClass and the VRG schedule.
-func (v *VRGInstance) selectVolumeReplicationClassForStorageClass(
-	storageClass *storagev1.StorageClass,
-) (*volrep.VolumeReplicationClass, error) {
-	obj, err := v.selectReplicationClassForStorageClass(storageClass, false)
-	if err != nil {
-		return nil, err
-	}
-
-	vrc, ok := obj.(*volrep.VolumeReplicationClass)
-	if !ok {
-		return nil, fmt.Errorf("unexpected replication class type %T", obj)
-	}
-
-	return vrc, nil
-}
-
-// selectVolumeGroupReplicationClassForStorageClass returns the VolumeGroupReplicationClass
-// that matches the given StorageClass and the VRG schedule.
-func (v *VRGInstance) selectVolumeGroupReplicationClassForStorageClass(
-	storageClass *storagev1.StorageClass,
-) (*volrep.VolumeGroupReplicationClass, error) {
-	obj, err := v.selectReplicationClassForStorageClass(storageClass, true)
-	if err != nil {
-		return nil, err
-	}
-
-	vgrc, ok := obj.(*volrep.VolumeGroupReplicationClass)
-	if !ok {
-		return nil, fmt.Errorf("unexpected group replication class type %T", obj)
-	}
-
-	return vgrc, nil
-}
-
 // selectReplicationClassForStorageClass returns the VolumeReplicationClass, or the
 // VolumeGroupReplicationClass if selectVolumeGroup is set, that matches the given
 // StorageClass and the VRG schedule.
@@ -3112,17 +3076,21 @@ func (v *VRGInstance) updatePVNodeAffinityForRestore(
 func (v *VRGInstance) accessibleTopologyForStorageClass(
 	sc *storagev1.StorageClass,
 ) (topologyVal, classKind, className string, err error) {
-	vrc, vrcErr := v.selectVolumeReplicationClassForStorageClass(sc)
-	if vrcErr == nil {
-		return vrc.Spec.Parameters[VRCParameterAccessibleTopology], "VRC", vrc.Name, nil
+	for _, selectGroup := range []bool{false, true} {
+		obj, err := v.selectReplicationClassForStorageClass(sc, selectGroup)
+		if err != nil {
+			continue
+		}
+
+		switch c := obj.(type) {
+		case *volrep.VolumeReplicationClass:
+			return c.Spec.Parameters[VRCParameterAccessibleTopology], "VRC", c.Name, nil
+		case *volrep.VolumeGroupReplicationClass:
+			return c.Spec.Parameters[VRCParameterAccessibleTopology], "VGRC", c.Name, nil
+		}
 	}
 
-	vgrc, vgrcErr := v.selectVolumeGroupReplicationClassForStorageClass(sc)
-	if vgrcErr != nil {
-		return "", "", "", fmt.Errorf("no matching VRC (%v) or VGRC (%v)", vrcErr, vgrcErr)
-	}
-
-	return vgrc.Spec.Parameters[VRCParameterAccessibleTopology], "VGRC", vgrc.Name, nil
+	return "", "", "", fmt.Errorf("no matching VRC or VGRC for storage class %s", sc.Name)
 }
 
 func accessibleTopologyToNodeAffinity(topologyJSON string) (*corev1.VolumeNodeAffinity, error) {
