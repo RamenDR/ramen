@@ -23,6 +23,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.28.3
 	github.com/onsi/gomega v1.40.0
 	github.com/operator-framework/api v0.27.0
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/ramendr/ramen/api v0.1.0
 	github.com/ramendr/recipe v0.0.0-20260511145713-454117f61334
