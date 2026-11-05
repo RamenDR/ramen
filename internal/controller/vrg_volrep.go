@@ -2879,8 +2879,26 @@ func (v *VRGInstance) updateExistingPVForSync(pv *corev1.PersistentVolume) error
 	return nil
 }
 
+func (v *VRGInstance) updateExistingPVForAdoption(pv *corev1.PersistentVolume) error {
+	if pv.Spec.ClaimRef != nil {
+		pv.Spec.ClaimRef.UID = ""
+		pv.Spec.ClaimRef.ResourceVersion = ""
+		pv.Spec.ClaimRef.APIVersion = ""
+	}
+
+	addRestoreAnnotation(pv)
+
+	if err := v.reconciler.Update(v.ctx, pv); err != nil {
+		return fmt.Errorf("failed to update existing PV for adoption: %v, err: %w", pv.Name, err)
+	}
+
+	return nil
+}
+
 // validateExistingPV validates if an existing PV matches the passed in PV for certain fields. Returns error
 // if a match fails or a match is not possible given the state of the existing PV
+//
+//nolint:cyclop
 func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 	log := v.log.WithValues("PV", pv.Name)
 
@@ -2921,6 +2939,12 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 		log.Info("PV exists and will be updated for sync")
 
 		return v.updateExistingPVForSync(existingPV)
+	}
+
+	if v.instance.Spec.Async != nil && existingPV.Status.Phase == corev1.VolumeReleased {
+		log.Info("PV exists and is Released - adopting it")
+
+		return v.updateExistingPVForAdoption(existingPV)
 	}
 
 	// PV is not bound
