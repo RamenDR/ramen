@@ -1867,6 +1867,66 @@ var _ = Describe("DRPlacementControl - EnableDiff Annotation Propagation", func(
 	})
 })
 
+var _ = Describe("DRPlacementControl - ResyncOnPrimary Annotation Propagation", func() {
+	BeforeEach(func() {
+		populateDRClusters()
+	})
+
+	AfterEach(func() {
+		err := forceCleanupClusterAfterAErrorTest()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	setDRPCResyncOnPrimaryAnnotation := func(present bool) {
+		retryErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			drpc := getLatestDRPC(DefaultDRPCNamespace)
+
+			annotations := drpc.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+
+			if present {
+				annotations[rmnutil.ResyncOnPrimaryAnnotation] = "true"
+			} else {
+				delete(annotations, rmnutil.ResyncOnPrimaryAnnotation)
+			}
+
+			drpc.SetAnnotations(annotations)
+
+			return k8sClient.Update(context.TODO(), drpc)
+		})
+		Expect(retryErr).NotTo(HaveOccurred())
+	}
+
+	vrgHasResyncOnPrimaryAnnotation := func() bool {
+		vrg, err := getVRGFromManifestWork(East1ManagedCluster)
+		if err != nil {
+			return false
+		}
+
+		return vrg.GetAnnotations()[rmnutil.ResyncOnPrimaryAnnotation] == "true"
+	}
+
+	It("Should propagate ResyncOnPrimaryAnnotation presence from DRPC to VRG in ManifestWork", func(ctx SpecContext) {
+		_, _ = InitialDeploymentAsync(DefaultDRPCNamespace, UserPlacementRuleName, East1ManagedCluster,
+			UsePlacementRule)
+
+		waitForCompletion(string(rmn.Deployed))
+
+		Expect(vrgHasResyncOnPrimaryAnnotation()).To(BeFalse())
+
+		setDRPCResyncOnPrimaryAnnotation(true)
+		Eventually(vrgHasResyncOnPrimaryAnnotation, timeout, interval).Should(BeTrue())
+
+		setDRPCResyncOnPrimaryAnnotation(false)
+		Eventually(vrgHasResyncOnPrimaryAnnotation, timeout, interval).Should(BeFalse())
+
+		deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
+		deleteDRPC()
+	})
+})
+
 var _ = Describe("DRPlacementControl Reconciler Errors", func() {
 	BeforeEach(func() {
 		populateDRClusters()
