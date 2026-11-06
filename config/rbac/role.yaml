@@ -182,6 +182,7 @@ rules:
   - cluster.open-cluster-management.io
   resources:
   - managedclusters
+  - restores
   verbs:
   - get
   - list
@@ -221,6 +222,17 @@ rules:
   - placements/finalizers
   verbs:
   - update
+- apiGroups:
+  - config.open-cluster-management.io
+  resources:
+  - klusterletconfigs
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - csiaddons.openshift.io
   resources:
