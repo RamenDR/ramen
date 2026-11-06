@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/yaml"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -25,6 +27,8 @@ type configMapSubscriptionCase struct {
 	controllerType   ramendrv1alpha1.ControllerType
 	existing         *ramendrv1alpha1.RamenConfig
 	withSubscription bool
+	listFails        bool
+	wantErr          bool
 	wantCatalog      string
 }
 
@@ -112,7 +116,9 @@ func TestCreateOrUpdateConfigMapSubscriptionLookup(t *testing.T) {
 	populated := populatedDrClusterConfig(namespace)
 	subscription := hubOperatorSubscription(namespace)
 
-	for _, tt := range configMapSubscriptionCases(populated) {
+	cases := append(configMapSubscriptionCases(populated), configMapSubscriptionErrorCases(populated)...)
+
+	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			assertConfigMapCatalog(t, scheme, namespace, subscription, tt)
 		})
@@ -268,6 +274,33 @@ func configMapSubscriptionCases(populated *ramendrv1alpha1.RamenConfig) []config
 	}
 }
 
+// configMapSubscriptionErrorCases covers a failed Subscription list and an
+// absent Subscription CRD (OLM not installed).
+func configMapSubscriptionErrorCases(populated *ramendrv1alpha1.RamenConfig) []configMapSubscriptionCase {
+	return []configMapSubscriptionCase{
+		{
+			name:           "hub keeps existing catalog when subscription list fails",
+			controllerType: ramendrv1alpha1.DRHubType,
+			existing:       populated,
+			listFails:      true,
+			wantCatalog:    "old-catalog",
+		},
+		{
+			name:           "hub returns error when config is empty and subscription list fails",
+			controllerType: ramendrv1alpha1.DRHubType,
+			existing:       &ramendrv1alpha1.RamenConfig{},
+			listFails:      true,
+			wantErr:        true,
+		},
+		{
+			name:           "hub returns error when configmap is missing and subscription list fails",
+			controllerType: ramendrv1alpha1.DRHubType,
+			listFails:      true,
+			wantErr:        true,
+		},
+	}
+}
+
 func assertConfigMapCatalog(
 	t *testing.T,
 	scheme *runtime.Scheme,
@@ -278,13 +311,19 @@ func assertConfigMapCatalog(
 	t.Helper()
 
 	ControllerType = tt.controllerType
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		configMapCaseObjects(t, namespace, subscription, tt)...,
-	).Build()
+	fakeClient := configMapFakeClient(t, scheme, namespace, subscription, tt)
 
 	_, err := CreateOrUpdateConfigMap(
 		context.Background(), fakeClient, fakeClient, DefaultRamenConfig(tt.controllerType), logr.Discard(),
 	)
+	if tt.wantErr {
+		if err == nil {
+			t.Fatal("expected subscription list error")
+		}
+
+		return
+	}
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +332,29 @@ func assertConfigMapCatalog(
 	if got.DrClusterOperator.CatalogSourceName != tt.wantCatalog {
 		t.Errorf("CatalogSourceName = %q, want %q", got.DrClusterOperator.CatalogSourceName, tt.wantCatalog)
 	}
+}
+
+func configMapFakeClient(
+	t *testing.T,
+	scheme *runtime.Scheme,
+	namespace string,
+	subscription *operatorsv1alpha1.Subscription,
+	tt configMapSubscriptionCase,
+) client.Client {
+	t.Helper()
+
+	builder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		configMapCaseObjects(t, namespace, subscription, tt)...,
+	)
+	if tt.listFails {
+		builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+				return errors.New("subscription list failed")
+			},
+		})
+	}
+
+	return builder.Build()
 }
 
 func configMapCaseObjects(
