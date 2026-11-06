@@ -4,7 +4,7 @@
 apiVersion: ramendr.openshift.io/v1alpha1
 kind: DRPolicy
 metadata:
-  name: dr-policy-$interval
+  name: $policy_name
 spec:
   drClusters:
   - $cluster1
