@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"net/netip"
 	"reflect"
 	"strings"
 
@@ -519,4 +520,16 @@ func GetRemoteServiceNameForDiffRDFromPVCName(pvcName, rdNamespace string) strin
 	diffLocalName := GetLocalServiceNameForDiffRD(GetReplicationDestinationName(pvcName))
 
 	return fmt.Sprintf("%s.%s.svc.clusterset.local", diffLocalName, rdNamespace)
+}
+
+// IsSubnetOf reports whether subnet is fully contained within supernet.
+func IsSubnetOf(supernet, subnet netip.Prefix) bool {
+	// subnet's network address must fall within the supernet's IP range
+	ipInRange := supernet.Contains(subnet.Addr())
+
+	// supernet has a shorter prefix (more IPs), subnet has a longer prefix (fewer IPs)
+	// ensure subnet does not cover a broader range than the supernet
+	bitsInRange := supernet.Bits() <= subnet.Bits()
+
+	return ipInRange && bitsInRange
 }

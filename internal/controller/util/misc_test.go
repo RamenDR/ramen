@@ -4,6 +4,8 @@
 package util_test
 
 import (
+	"net/netip"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/validation"
@@ -60,4 +62,42 @@ var _ = Describe("misc", func() {
 
 	originalPVCName := util.GetLocalServiceNameForRD("normal-pvc-name")
 	Expect(originalPVCName).Should(Equal("volsync-rsync-tls-dst-normal-pvc-name"))
+})
+
+var _ = Describe("IsSubnetOf", func() {
+	// exact match — detected CIDR is identical to configured CIDR
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/23"),
+		netip.MustParsePrefix("10.131.0.0/23"),
+	)).Should(BeTrue())
+
+	// subnet containment — detected /32 host within configured /23 supernet
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/23"),
+		netip.MustParsePrefix("10.131.0.33/32"),
+	)).Should(BeTrue())
+
+	// subnet containment — detected /24 within configured /23 supernet
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/23"),
+		netip.MustParsePrefix("10.131.0.0/24"),
+	)).Should(BeTrue())
+
+	// detected is broader than configured — /22 is not a subnet of /23
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/23"),
+		netip.MustParsePrefix("10.131.0.0/22"),
+	)).Should(BeFalse())
+
+	// detected IP is outside the configured supernet entirely
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("10.131.0.0/23"),
+		netip.MustParsePrefix("203.0.113.5/32"),
+	)).Should(BeFalse())
+
+	// detected starts at same address but is broader — address matches, bits don't
+	Expect(util.IsSubnetOf(
+		netip.MustParsePrefix("192.168.1.0/24"),
+		netip.MustParsePrefix("192.168.0.0/23"),
+	)).Should(BeFalse())
 })

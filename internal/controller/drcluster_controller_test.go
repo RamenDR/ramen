@@ -29,12 +29,19 @@ import (
 
 var NFClassCount int // Number of NFCs to simulate (0=disabled, 1=single, 2+=multiple)
 
+// testDetectedCIDRs overrides the detected CIDRs in generateDRCC() for subnet containment tests.
+// Set before the test and reset to nil in a defer.
+var testDetectedCIDRs []string
+
 var cidrs = [][]string{
 	{"198.51.100.17/24", "198.51.100.18/24", "198.51.100.19/24"}, // valid CIDR
 	{"198.51.100.20/24", "198.51.100.21/24", "198.51.100.22/24"}, // valid CIDR
 	{"198.51.100.23/24", "198.51.100.24/24", "198.51.100.25/24"}, // valid CIDR
 
 	{"1111.51.100.14/24", "aaa.51.100.15/24", "00.51.100.16/24"}, // invalid CIDR
+
+	{"198.51.100.0/22"}, // supernet covering cidrs[0], cidrs[1], cidrs[2]
+	{"203.0.113.5/32"},  // IP outside 198.51.100.0/22
 }
 
 var baseNF = &csiaddonsv1alpha1.NetworkFence{
@@ -88,10 +95,15 @@ func generateDRCC() *ramen.DRClusterConfig {
 
 	drcc.Status.NetworkFenceClasses = nfClasses
 
+	detectedCIDRs := cidrs[0]
+	if testDetectedCIDRs != nil {
+		detectedCIDRs = testDetectedCIDRs
+	}
+
 	drcc.Status.StorageAccessDetails = []ramen.StorageAccessDetail{
 		{
 			StorageProvisioner: "fake.ramen.com",
-			CIDRs:              cidrs[0],
+			CIDRs:              detectedCIDRs,
 		},
 	}
 
@@ -1250,6 +1262,118 @@ var _ = Describe("DRClusterController", func() {
 						false,
 					)
 				})
+		})
+
+		When("detected CIDRs are subnets of a configured supernet", func() {
+			It("reports validated with CIDRsValidated reason UndetectedCIDRsFound", func() {
+				NFClassCount = 1
+				testDetectedCIDRs = cidrs[0] // detected: 198.51.100.17/24, .18/24, .19/24
+
+				defer func() {
+					NFClassCount = 0
+					testDetectedCIDRs = nil
+				}()
+
+				// configured supernet 198.51.100.0/22 contains all detected /24s;
+				// the supernet itself is not literally detected so UndetectedCIDRsFound is expected
+				drcluster.Spec.CIDRs = cidrs[4]
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonValidated),
+					Ignore(),
+					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(ramen.ReasonUndetectedCIDRsFound),
+					ContainSubstring("CIDRs not detected by storage provisioner"),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
+			})
+		})
+
+		When("detected CIDRs are subnets of a configured supernet with extra undetected CIDRs", func() {
+			It("reports validated with CIDRsValidated reason UndetectedCIDRsFound", func() {
+				NFClassCount = 1
+				testDetectedCIDRs = cidrs[0] // detected: 198.51.100.17/24, .18/24, .19/24
+
+				defer func() {
+					NFClassCount = 0
+					testDetectedCIDRs = nil
+				}()
+
+				// configured: supernet 198.51.100.0/22 + extra undetected 192.168.1.0/24
+				drcluster.Spec.CIDRs = append(cidrs[4], "192.168.1.0/24")
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(controllers.DRClusterConditionReasonValidated),
+					Ignore(),
+					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionTrue,
+					Equal(ramen.ReasonUndetectedCIDRsFound),
+					ContainSubstring("CIDRs not detected by storage provisioner"),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
+			})
+		})
+
+		When("detected CIDR is outside the configured supernet", func() {
+			It("reports NOT validated with reason DetectedCIDRsUnconfigured", func() {
+				NFClassCount = 1
+				testDetectedCIDRs = cidrs[5] // detected: 203.0.113.5/32 — outside 198.51.100.0/22
+
+				defer func() {
+					NFClassCount = 0
+					testDetectedCIDRs = nil
+				}()
+
+				// configured supernet 198.51.100.0/22 does not contain 203.0.113.5/32
+				drcluster.Spec.CIDRs = cidrs[4]
+				drcluster = updateDRClusterParameters(drcluster)
+				updateDRClusterManifestWorkStatus(k8sClient, apiReader, drcluster.Name)
+				updateDRClusterConfigMWStatus(k8sClient, apiReader, drcluster.Name)
+
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(controllers.ReasonValidationFailed),
+					ContainSubstring("CIDRs validation failed"),
+					ramen.DRClusterValidated,
+					false,
+				)
+				objectConditionExpectEventually(
+					apiReader,
+					drcluster,
+					metav1.ConditionFalse,
+					Equal(ramen.ReasonDetectedCIDRsUnconfigured),
+					ContainSubstring("detected CIDRs not configured"),
+					ramen.DRClusterConditionTypeCIDRsValidated,
+					false,
+				)
+			})
 		})
 
 		When("deleting a DRCluster", func() {
