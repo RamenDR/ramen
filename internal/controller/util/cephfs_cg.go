@@ -28,6 +28,8 @@ const (
 
 	RGDOwnerLabel        = "ramendr.openshift.io/rgd"
 	RGSOwnerLabel string = "ramendr.openshift.io/rgs"
+
+	StorageIDLabel = "ramendr.openshift.io/storageid"
 )
 
 func IsReplicationGroupDestinationReady(
@@ -100,46 +102,45 @@ func GetVolumeGroupSnapshotClassFromPVCsStorageClass(
 	ctx context.Context,
 	k8sClient client.Client,
 	volumeGroupSnapshotClassSelector metav1.LabelSelector,
-	pvcsConsistencyGroupSelector metav1.LabelSelector,
-	namespace []string,
+	storageClassName string,
 	logger logr.Logger,
 ) (string, error) {
+	if storageClassName == "" {
+		err := fmt.Errorf("no storageClassName given, cannot resolve volumegroupsnapshotclass")
+		logger.Error(err, "Failed to get VolumeGroupSnapshotClass")
+
+		return "", err
+	}
+
 	volumeGroupSnapshotClasses, err := GetVolumeGroupSnapshotClasses(ctx, k8sClient, volumeGroupSnapshotClassSelector)
 	if err != nil {
 		return "", err
 	}
 
-	pvcs, err := ListPVCsByPVCSelector(ctx, k8sClient, logger, pvcsConsistencyGroupSelector, namespace, false)
-	if err != nil {
+	storageClass := &storagev1.StorageClass{}
+
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass); err != nil {
 		return "", err
-	}
-
-	storageClassProviders := []string{}
-
-	for _, pvc := range pvcs.Items {
-		storageClass := &storagev1.StorageClass{}
-
-		if err := k8sClient.Get(ctx,
-			types.NamespacedName{Name: *pvc.Spec.StorageClassName},
-			storageClass,
-		); err != nil {
-			return "", err
-		}
-
-		storageClassProviders = append(storageClassProviders, storageClass.Provisioner)
 	}
 
 	var matchedVolumeGroupSnapshotClassName string
 
 	for _, volumeGroupSnapshotClass := range volumeGroupSnapshotClasses {
-		if VolumeGroupSnapshotClassMatchStorageProviders(volumeGroupSnapshotClass, storageClassProviders) {
+		// The storageID of the VolumeGroupSnapshotClass must match the one of the StorageClass,
+		// only if the VolumeGroupSnapshotClass has a storageID, otherwise skip the check.
+		sIDFromVGSC := volumeGroupSnapshotClass.GetLabels()[StorageIDLabel]
+		if sIDFromVGSC != "" && sIDFromVGSC != storageClass.GetLabels()[StorageIDLabel] {
+			continue
+		}
+
+		if storageClass.Provisioner == volumeGroupSnapshotClass.GetDriver() {
 			matchedVolumeGroupSnapshotClassName = volumeGroupSnapshotClass.GetName()
 		}
 	}
 
 	if matchedVolumeGroupSnapshotClassName == "" {
 		noVSCFoundErr := fmt.Errorf("unable to find matching volumegroupsnapshotclass for storage provisioner %s",
-			storageClassProviders)
+			storageClass.Provisioner)
 		logger.Error(noVSCFoundErr, "No VolumeGroupSnapshotClass found")
 
 		return "", noVSCFoundErr
