@@ -60,6 +60,10 @@ const (
 	// has been created
 	DRClusterConditionTypeFenced = "Fenced"
 
+	DRClusterConditionS3UpdateFailed = "S3ConditionUpdateFailed"
+
+	DRClusterConditionS3Healthy = "S3Healthy"
+
 	// CIDRsValidated indicates the validation state of CIDRs configured in the DRCluster
 	// against CIDRs detected by the storage provisioner in DRClusterConfig StorageAccessDetails.
 	DRClusterConditionTypeCIDRsValidated = "CIDRsValidated"
