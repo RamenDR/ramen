@@ -303,6 +303,27 @@ func copyDrClusterOperatorSubscriptionFields(dst, src *ramendrv1alpha1.RamenConf
 	d.ClusterServiceVersionName = s.ClusterServiceVersionName
 }
 
+func drClusterOperatorFieldsEmpty(cfg *ramendrv1alpha1.RamenConfig) bool {
+	dco := cfg.DrClusterOperator
+
+	return dco.ChannelName == "" &&
+		dco.PackageName == "" &&
+		dco.NamespaceName == "" &&
+		dco.CatalogSourceName == "" &&
+		dco.CatalogSourceNamespaceName == "" &&
+		dco.ClusterServiceVersionName == ""
+}
+
+func applyDrClusterOperatorDefaults(cfg *ramendrv1alpha1.RamenConfig) {
+	dco := &cfg.DrClusterOperator
+	dco.ChannelName = drClusterOperatorChannelNameOrDefault(cfg)
+	dco.PackageName = drClusterOperatorPackageNameOrDefault(cfg)
+	dco.NamespaceName = drClusterOperatorNamespaceNameOrDefault(cfg)
+	dco.CatalogSourceName = drClusterOperatorCatalogSourceNameOrDefault(cfg)
+	dco.CatalogSourceNamespaceName = drClusterOperatorCatalogSourceNamespaceNameOrDefault(cfg)
+	dco.ClusterServiceVersionName = drClusterOperatorClusterServiceVersionNameOrDefault(cfg)
+}
+
 func CreateOrUpdateConfigMap(
 	ctx context.Context,
 	c client.Client,
@@ -322,16 +343,45 @@ func CreateOrUpdateConfigMap(
 		Name:      configMapName,
 	}
 
-	updateDrClusterOperatorFromSubscription(ctx, r, defaultRamenConfig, log)
+	subscriptionFound := updateDrClusterOperatorFromSubscription(ctx, r, defaultRamenConfig, log)
 
 	if err := r.Get(ctx, key, configMap); err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return nil, err
 		}
 
-		return configMapCreate(ctx, c, key.Name, defaultRamenConfig, log)
+		return createMissingConfigMap(ctx, c, key.Name, defaultRamenConfig, subscriptionFound, log)
 	}
 
+	return updateExistingConfigMap(ctx, c, configMap, defaultRamenConfig, subscriptionFound, log)
+}
+
+func createMissingConfigMap(
+	ctx context.Context,
+	c client.Client,
+	configMapName string,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	subscriptionFound bool,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
+	// A hub with no subscription and no ConfigMap yet still stores the
+	// built-in defaults. DR-cluster controllers keep the hub-provided
+	// ConfigMap content and do not fill local defaults.
+	if ControllerType == ramendrv1alpha1.DRHubType && !subscriptionFound {
+		applyDrClusterOperatorDefaults(defaultRamenConfig)
+	}
+
+	return configMapCreate(ctx, c, configMapName, defaultRamenConfig, log)
+}
+
+func updateExistingConfigMap(
+	ctx context.Context,
+	c client.Client,
+	configMap *corev1.ConfigMap,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	subscriptionFound bool,
+	log logr.Logger,
+) (*ramendrv1alpha1.RamenConfig, error) {
 	defaultYAML, err := yaml.Marshal(defaultRamenConfig)
 	if err != nil {
 		return nil, err
@@ -344,9 +394,37 @@ func CreateOrUpdateConfigMap(
 		return nil, err
 	}
 
-	copyDrClusterOperatorSubscriptionFields(&merged, defaultRamenConfig)
+	setHubDrClusterOperatorFields(&merged, defaultRamenConfig, configMap, subscriptionFound, log)
 
 	return configMapUpdate(ctx, c, configMap, &merged, log)
+}
+
+// setHubDrClusterOperatorFields sets the hub dr-cluster operator subscription
+// fields. When the subscription lookup fails and the ConfigMap already has
+// those fields, they are kept. When it has none, the defaults are stored
+// DR cluster controllers skip this because their ConfigMap comes from the hub.
+func setHubDrClusterOperatorFields(
+	merged *ramendrv1alpha1.RamenConfig,
+	defaultRamenConfig *ramendrv1alpha1.RamenConfig,
+	configMap *corev1.ConfigMap,
+	subscriptionFound bool,
+	log logr.Logger,
+) {
+	if ControllerType != ramendrv1alpha1.DRHubType {
+		return
+	}
+
+	switch {
+	case subscriptionFound:
+		copyDrClusterOperatorSubscriptionFields(merged, defaultRamenConfig)
+	case drClusterOperatorFieldsEmpty(merged):
+		applyDrClusterOperatorDefaults(merged)
+		log.Info("hub subscription not found; applying default drClusterOperator config",
+			"namespace", configMap.Namespace, "name", configMap.Name)
+	default:
+		log.Info("hub subscription not found; preserving existing drClusterOperator config",
+			"namespace", configMap.Namespace, "name", configMap.Name)
+	}
 }
 
 func configMapCreate(
@@ -551,15 +629,15 @@ func applyDrClusterOperatorFromSubscription(
 func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader client.Reader,
 	cfg *ramendrv1alpha1.RamenConfig,
 	log logr.Logger,
-) {
+) bool {
 	if ControllerType != ramendrv1alpha1.DRHubType || cfg == nil {
-		return
+		return false
 	}
 
 	sub := findHubOperatorSubscription(ctx, apiReader, log)
 
 	if sub == nil || sub.Spec == nil {
-		return
+		return false
 	}
 
 	applyDrClusterOperatorFromSubscription(sub, cfg)
@@ -569,6 +647,8 @@ func updateDrClusterOperatorFromSubscription(ctx context.Context, apiReader clie
 		cfg.KubeObjectProtection.VeleroNamespaceName = veleroNamespaceNameDefaultOCP
 		cfg.RamenOpsNamespace = openshiftDROpsNamespace
 	}
+
+	return true
 }
 
 func RamenOperandsNamespace(config ramendrv1alpha1.RamenConfig) string {
