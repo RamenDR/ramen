@@ -3,10 +3,8 @@
 
 from pathlib import Path
 
-VERSION = "v1.17.7"
-BASE_URL = (
-    f"https://raw.githubusercontent.com/rook/rook/refs/tags/{VERSION}/deploy/examples"
-)
+VERSION = "release-1.20"
+BASE_URL = f"https://raw.githubusercontent.com/rook/rook/{VERSION}/deploy/examples"
 IMPORT_SCRIPT_URL = f"{BASE_URL}/import-external-cluster.sh"
 CREATE_EXTERNAL_CLUSTER_RESOURCES_URL = (
     f"{BASE_URL}/create-external-cluster-resources.py"
