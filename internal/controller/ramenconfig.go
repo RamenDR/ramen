@@ -14,6 +14,7 @@ import (
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	configv1alpha1 "k8s.io/component-base/config/v1alpha1"
@@ -607,6 +608,12 @@ func findHubOperatorSubscription(ctx context.Context, apiReader client.Reader,
 
 	subList := &operatorsv1alpha1.SubscriptionList{}
 	if err := apiReader.List(ctx, subList, client.InNamespace(ns)); err != nil {
+		// The Subscription CRD is absent when OLM is not installed. That is a
+		// valid deployment, not a failed lookup.
+		if meta.IsNoMatchError(err) {
+			return nil, nil
+		}
+
 		return nil, fmt.Errorf("list operators.coreos.com subscriptions: %w", err)
 	}
 

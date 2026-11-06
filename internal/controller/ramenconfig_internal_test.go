@@ -11,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,8 +29,23 @@ type configMapSubscriptionCase struct {
 	existing         *ramendrv1alpha1.RamenConfig
 	withSubscription bool
 	listFails        bool
+	listNoMatch      bool
 	wantErr          bool
 	wantCatalog      string
+}
+
+// listError returns the error the fake client should return from List, if any.
+func (tt configMapSubscriptionCase) listError() error {
+	switch {
+	case tt.listFails:
+		return errors.New("subscription list failed")
+	case tt.listNoMatch:
+		return &meta.NoKindMatchError{
+			GroupKind: operatorsv1alpha1.SchemeGroupVersion.WithKind("Subscription").GroupKind(),
+		}
+	default:
+		return nil
+	}
 }
 
 func TestCopyDrClusterOperatorSubscriptionFieldsFound(t *testing.T) {
@@ -298,6 +314,19 @@ func configMapSubscriptionErrorCases(populated *ramendrv1alpha1.RamenConfig) []c
 			listFails:      true,
 			wantErr:        true,
 		},
+		{
+			name:           "hub stores defaults when config is empty and subscription CRD is absent",
+			controllerType: ramendrv1alpha1.DRHubType,
+			existing:       &ramendrv1alpha1.RamenConfig{},
+			listNoMatch:    true,
+			wantCatalog:    drClusterOperatorCatalogSourceNameDefault,
+		},
+		{
+			name:           "hub stores defaults when configmap is created and subscription CRD is absent",
+			controllerType: ramendrv1alpha1.DRHubType,
+			listNoMatch:    true,
+			wantCatalog:    drClusterOperatorCatalogSourceNameDefault,
+		},
 	}
 }
 
@@ -346,10 +375,10 @@ func configMapFakeClient(
 	builder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		configMapCaseObjects(t, namespace, subscription, tt)...,
 	)
-	if tt.listFails {
+	if listErr := tt.listError(); listErr != nil {
 		builder = builder.WithInterceptorFuncs(interceptor.Funcs{
 			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
-				return errors.New("subscription list failed")
+				return listErr
 			},
 		})
 	}
