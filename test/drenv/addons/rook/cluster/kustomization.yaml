@@ -32,4 +32,4 @@ patches:
       # Custom Ceph image with RBD group mirroring (consistency groups) support.
       - op: replace
         path: /spec/cephVersion/image
-        value: ghcr.io/nikhil-ladha/rbd-group-mirroring:latest
+        value: quay.ceph.io/ceph-ci/ceph:wip-rbd-cgsm-base
