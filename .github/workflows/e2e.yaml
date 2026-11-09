@@ -81,6 +81,8 @@ jobs:
     # The default branch, for OWNERS. This is not the commit under test.
     - name: Checkout base branch
       uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Install PyYAML
       run: pip install pyyaml
