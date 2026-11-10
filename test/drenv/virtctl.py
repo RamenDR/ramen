@@ -14,6 +14,7 @@ def ssh(
     local_ssh=True,
     local_ssh_opts=(),
     context=None,
+    env=None,
 ):
     """
     Run ssh command via virtctl.
@@ -30,8 +31,7 @@ def ssh(
     if identity_file:
         cmd.extend(("--identity-file", identity_file))
     if local_ssh:
-        cmd.append("--local-ssh")
         for opt in local_ssh_opts:
             cmd.extend(("--local-ssh-opts", opt))
-    cmd.extend((vm, "--command", command))
-    return commands.run(*cmd)
+    cmd.extend((f"vmi/{vm}", "--command", command))
+    return commands.run(*cmd, env=env)
