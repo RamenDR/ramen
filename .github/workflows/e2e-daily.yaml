@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Create virtual environment
         run: hack/make-venv .venv
