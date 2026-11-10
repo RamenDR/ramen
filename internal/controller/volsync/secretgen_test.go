@@ -9,17 +9,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	ramenmanager "github.com/ramendr/ramen/internal/manager"
 )
 
 var _ = Describe("Secretgen", func() {
@@ -132,43 +133,34 @@ var _ = Describe("Secretgen", func() {
 		})
 	})
 
-	Describe("Reconcile volsync rsync secret when the secret is not visible in the cache", func() {
-		const hiddenSecretName = "test-secret-hidden"
+	Describe("Repair existing volsync rsync secret metadata", func() {
+		const existingSecretName = "test-secret-existing"
 
 		var (
 			existingSecret *corev1.Secret
-			filteredClient client.Client
-			cancelCache    context.CancelFunc
+			hubClient      client.Client
+			cancelManager  context.CancelFunc
 		)
 
 		BeforeEach(func() {
-			// Client using a cache filtered like the ramen operator cache: only secrets with the created-by-ramen
-			// label are cached. The suite client is not filtered since other tests use unlabelled secrets.
-			filteredCache, err := cache.New(testEnv.Config, cache.Options{
-				Scheme: scheme.Scheme,
-				ByObject: map[client.Object]cache.ByObject{
-					&corev1.Secret{}: {Label: labels.SelectorFromSet(labels.Set{rmnutil.CreatedByRamenLabel: "true"})},
-				},
-			})
+			hubManager, err := ramenmanager.NewManager(testEnv.Config, ctrl.Options{
+				Scheme:  scheme.Scheme,
+				Metrics: metrics.Options{BindAddress: "0"},
+			}, ramendrv1alpha1.DRHubType)
 			Expect(err).NotTo(HaveOccurred())
 
-			var cacheCtx context.Context
+			var managerCtx context.Context
 
-			cacheCtx, cancelCache = context.WithCancel(ctx)
+			managerCtx, cancelManager = context.WithCancel(ctx)
 
 			go func() {
 				defer GinkgoRecover()
 
-				Expect(filteredCache.Start(cacheCtx)).To(Succeed())
+				Expect(hubManager.Start(managerCtx)).To(Succeed())
 			}()
 
-			Expect(filteredCache.WaitForCacheSync(cacheCtx)).To(BeTrue())
-
-			filteredClient, err = client.New(testEnv.Config, client.Options{
-				Scheme: scheme.Scheme,
-				Cache:  &client.CacheOptions{Reader: filteredCache},
-			})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(hubManager.GetCache().WaitForCacheSync(managerCtx)).To(BeTrue())
+			hubClient = hubManager.GetClient()
 
 			// Old owner of the existing secret
 			oldOwner := &corev1.ConfigMap{
@@ -179,10 +171,10 @@ var _ = Describe("Secretgen", func() {
 			}
 			Expect(k8sClient.Create(ctx, oldOwner)).To(Succeed())
 
-			// Existing secret without ramen labels, as if filtered out of the cache
+			// Existing secret without Ramen labels and with an old owner reference.
 			existingSecret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      hiddenSecretName,
+					Name:      existingSecretName,
 					Namespace: testNamespace.GetName(),
 					OwnerReferences: []metav1.OwnerReference{
 						{
@@ -202,37 +194,32 @@ var _ = Describe("Secretgen", func() {
 		})
 
 		AfterEach(func() {
-			cancelCache()
+			cancelManager()
 		})
 
-		It("Should label the existing secret and return its data", func() {
-			// The secret is not labeled, so it is hidden from the filtered cache
-			hidden := &corev1.Secret{}
-			err := filteredClient.Get(ctx, client.ObjectKeyFromObject(existingSecret), hidden)
-			Expect(kerrors.IsNotFound(err)).To(BeTrue())
-
-			secret, err := volsync.ReconcileVolSyncReplicationSecret(ctx, filteredClient, owner,
-				hiddenSecretName, testNamespace.GetName(), logger)
+		It("Should add the Ramen labels and set the current owner reference", func() {
+			secret, err := volsync.ReconcileVolSyncReplicationSecret(ctx, hubClient, owner,
+				existingSecretName, testNamespace.GetName(), logger)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Existing PSK must be preserved and returned
 			Expect(string(secret.Data["psk.txt"])).To(Equal("volsyncramen:existing"))
 
-			// Labels must be added so the secret enters the filtered cache
+			// Ramen labels must be added to the existing secret.
 			Expect(secret.GetLabels()).To(HaveKeyWithValue(rmnutil.CreatedByRamenLabel, "true"))
 			Expect(secret.GetLabels()).To(HaveKeyWithValue(rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue))
 
-			// The labeled secret must now be visible in the filtered cache
 			stored := &corev1.Secret{}
 
 			Eventually(func() error {
-				return filteredClient.Get(ctx, client.ObjectKeyFromObject(existingSecret), stored)
+				return hubClient.Get(ctx, client.ObjectKeyFromObject(existingSecret), stored)
 			}, maxWait, interval).Should(Succeed())
 
 			Expect(string(stored.Data["psk.txt"])).To(Equal("volsyncramen:existing"))
+			Expect(stored.GetLabels()).To(HaveKeyWithValue(rmnutil.CreatedByRamenLabel, "true"))
 			Expect(stored.GetLabels()).To(HaveKeyWithValue(rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue))
 
-			// The old owner must be replaced by the current owner as the controller of the existing secret
+			// The stale owner must be replaced by the current controller owner.
 			Expect(stored.GetOwnerReferences()).To(HaveLen(1))
 			Expect(stored.GetOwnerReferences()[0].Name).To(Equal(owner.GetName()))
 			Expect(stored.GetOwnerReferences()[0].Controller).To(HaveValue(BeTrue()))
