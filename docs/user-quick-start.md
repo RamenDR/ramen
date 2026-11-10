@@ -193,7 +193,7 @@ clusters. *Ramen* makes this easy using minikube, but you need enough resources:
 
    ```
    curl --fail --silent --show-error --location --output virtctl \
-       https://github.com/kubevirt/kubevirt/releases/download/v1.6.0/virtctl-v1.6.0-linux-amd64
+       https://github.com/kubevirt/kubevirt/releases/download/v1.9.1/virtctl-v1.9.1-linux-amd64
    sudo install virtctl /usr/local/bin
    rm virtctl
    virtctl version

@@ -116,9 +116,9 @@ TOOLS = [
     },
     {
         "name": "virtctl",
-        "version": "v1.6.0",
+        "version": "v1.9.1",
         "url": "https://github.com/kubevirt/kubevirt/releases/download/{version}/virtctl-{version}-{goos}-{goarch}",
-        "digest": "a14455a7f27734a2329cde779289133d859bbedf37bf93fdf2eeea6ea0efe693",
+        "digest": "c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a",
         "verify": ["virtctl", "version", "--client"],
     },
     {
