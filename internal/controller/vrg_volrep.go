@@ -385,7 +385,7 @@ func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) err
 
 	_, selectVolumeGroup := v.isCGEnabled(pvc)
 
-	_, err = v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
+	_, err = v.selectReplicationClass(pvc, selectVolumeGroup)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -419,7 +419,7 @@ func (v *VRGInstance) setPVCStorageIdentifiers(
 
 	// We should always take rID from VRClass and not grID, and for !offloaded
 	// VRC will be present (is a pre-requisite)
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
+	volumeReplicationClass, err := v.selectReplicationClass(pvc, false)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -1583,7 +1583,7 @@ func (v *VRGInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 		return err
 	}
 
-	volumeReplicationClass, err := v.selectVolumeReplicationClass(pvc, false)
+	volumeReplicationClass, err := v.selectReplicationClass(pvc, false)
 	if err != nil {
 		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
 			v.instance.Name, err)
@@ -1659,7 +1659,7 @@ func (v *VRGInstance) getPVCForVRNSName(vrNamespacedName types.NamespacedName) (
 // functions to be changed would be processVRAsPrimary(), processVRAsSecondary()
 // to either receive pvc NamespacedName or pvc itself as an additional argument.
 
-func (v *VRGInstance) selectVolumeReplicationClass(
+func (v *VRGInstance) selectReplicationClass(
 	pvc *corev1.PersistentVolumeClaim, selectVolumeGroup bool,
 ) (client.Object, error) {
 	storageClass, err := v.getStorageClass(pvc)
