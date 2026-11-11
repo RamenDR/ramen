@@ -8,6 +8,8 @@ from pathlib import Path
 from drenv import kubectl
 from drenv import ssh
 from drenv import virtctl
+from drenv import commands
+from drenv import temporary_kubeconfig
 
 PACKAGE_DIR = Path(__file__).parent
 
@@ -57,36 +59,46 @@ def delete_vm(cluster):
 def verify_ssh(cluster):
     """
     Verify that we can run commands via ssh.
+
+    Uses an isolated kubeconfig to prevent race conditions when tests
+    run in parallel (drenv starts dr1 and dr2 tests concurrently).
     """
-    delay = 5
+    with temporary_kubeconfig(f"drenv-kubevirt-{cluster}.") as env:
+        # Set the isolated kubeconfig to use this cluster's context
+        kubeconfig = env["KUBECONFIG"]
+        kubectl.config("use-context", cluster, "--kubeconfig", kubeconfig)
+        delay = 5
 
-    # When running in a vm in the blr lab we need 16 retires. Locally the
-    # second attempt succeeds.
-    retries = 30
+        # When running in a vm in the blr lab we need 16 retires. Locally the
+        # second attempt succeeds.
+        retries = 30
 
-    for i in range(retries):
-        time.sleep(delay)
-        print(f"Last entries in /var/log/ramen.log (attempt {i + 1}/{retries})")
-        try:
-            out = virtctl.ssh(
-                "testvm",
-                "tail -6 /var/log/ramen.log",
-                username="cirros",
-                namespace=NAMESPACE,
-                identity_file=ssh.PRIVATE_KEY,
-                local_ssh=True,
-                local_ssh_opts=(
-                    "-o UserKnownHostsFile=/dev/null",
-                    "-o StrictHostKeyChecking=no",
-                    "-o LogLevel=DEBUG",
-                ),
-                context=cluster,
-            )
-        except Exception as e:
-            print(f"{e}")
-            print(f"Retrying in {delay} seconds...")
+        commands.run("kubectl", "config", "use-context", cluster)
+
+        for i in range(retries):
+            time.sleep(delay)
+            print(f"Last entries in /var/log/ramen.log (attempt {i + 1}/{retries})")
+            try:
+                out = virtctl.ssh(
+                    "testvm",
+                    "tail -6 /var/log/ramen.log",
+                    username="cirros",
+                    namespace=NAMESPACE,
+                    identity_file=ssh.PRIVATE_KEY,
+                    local_ssh=True,
+                    local_ssh_opts=(
+                        "-o UserKnownHostsFile=/dev/null",
+                        "-o StrictHostKeyChecking=no",
+                        "-o LogLevel=DEBUG",
+                    ),
+                    context=cluster,
+                    env=env,
+                )
+            except Exception as e:
+                print(f"{e}")
+                print(f"Retrying in {delay} seconds...")
+            else:
+                print(out)
+                break
         else:
-            print(out)
-            break
-    else:
-        raise RuntimeError("Failed to connect to VM via ssh")
+            raise RuntimeError("Failed to connect to VM via ssh")
