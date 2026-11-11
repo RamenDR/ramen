@@ -448,9 +448,61 @@ jobs:
         # A changed file that matches any pattern does not require e2e.
         # Each pattern is matched against the full path.
         SKIP = [
+            # Documentation.
             r"^docs/.*",
             r"^website/.*",
+            r"^examples/.*",
             r"^.*\.md",
+
+            # Repository metadata. Read from the default branch, so a
+            # change in a pull request cannot affect e2e.
+            r"^CODEOWNERS$",
+            r"^DCO$",
+            r"^LICENSE$",
+            r"^LICENSES/.*",
+            r"^OWNERS$",
+
+            # GitHub configuration. e2e.yaml is always run from the
+            # default branch (issue_comment and workflow_run triggers),
+            # and other workflows cannot affect the e2e jobs.
+            r"^\.github/.*",
+
+            # Lint, format, and editor configuration.
+            r"^\.golangci\.yaml$",
+            r"^\.flake8$",
+            r"^\.mdformat\.toml$",
+            r"^\.coderabbit\.yaml$",
+            r"^\.reuse/.*",
+            r"^\.gitignore$",
+            r"^\.vimrc\.example$",
+
+            # Tooling metadata. PROJECT is used to generate the OLM
+            # bundles, which e2e does not use yet.
+            r"^PROJECT$",
+
+            # Unit tests. None of them runs during e2e.
+            r"^internal/.*_test\.go$",
+
+            # Tests of e2e helpers. The e2e tests in the e2e directory
+            # (main_test.go, dr_test.go, validation_test.go) are the
+            # tests we run, so they are not matched here.
+            r"^e2e/.*/.*_test\.go$",
+
+            # Unused e2e sample configs. config.yaml.sample is used to
+            # build the run config, so it is not matched here.
+            r"^e2e/config-.*\.yaml\.sample$",
+
+            # Standalone tools and tests under test/ that e2e does not
+            # use. The drenv package, env files, and scripts are used,
+            # but the pytest tests of drenv and the envs never run during
+            # e2e.
+            r"^test/timestamp/.*",
+            r"^test/gitlap/.*",
+            r"^test/.*_test\.py$",
+
+            # Test data. Used only by the tests skipped above. Go
+            # tooling ignores testdata directories in builds.
+            r"^.*/testdata/.*",
         ]
 
         def gh(*args):
