@@ -52,15 +52,25 @@ env:
 jobs:
   start:
     # A pull request comment with a line that is exactly "/test e2e".
-    # fromJSON supplies a real newline. An expression string has no \n escape.
-    # workflow_run has no comment. Require issue_comment so that event
-    # does not evaluate the comment body.
+    # GitHub keeps the line endings of the comment as submitted, so the
+    # line may end with LF or CRLF (#2965). Padding the body with LF lets
+    # both needles match the first line, and the LF needle match the last
+    # line, which may have no line ending.
+    # fromJSON supplies real newlines. An expression string has no \n
+    # escape. workflow_run has no comment. Require issue_comment so that
+    # event does not evaluate the comment body.
     if: >-
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      contains(
-        format('{0}{1}{0}', fromJSON('"\n"'), github.event.comment.body),
-        format('{0}/test e2e{0}', fromJSON('"\n"'))
+      (
+        contains(
+          format('{0}{1}{0}', fromJSON('"\n"'), github.event.comment.body),
+          format('{0}/test e2e{0}', fromJSON('"\n"'))
+        ) ||
+        contains(
+          format('{0}{1}{0}', fromJSON('"\n"'), github.event.comment.body),
+          format('{0}/test e2e{1}', fromJSON('"\n"'), fromJSON('"\r\n"'))
+        )
       )
     # A new event waits for this check. Cancelling it would cancel the test.
     # queue: max keeps every pending start. The default queue keeps one and
