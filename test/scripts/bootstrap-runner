@@ -106,7 +106,7 @@ else
     sudo --user github curl --fail --location --output "${RUNNER_DIR}/${tarball}" "$url"
 
     echo "Verifying checksum..."
-    actual=$(sha256sum "${RUNNER_DIR}/${tarball}" | awk '{ print $1 }')
+    actual=$(sudo --user github sha256sum "${RUNNER_DIR}/${tarball}" | awk '{ print $1 }')
     if [[ "$actual" != "$RUNNER_DIGEST" ]]; then
         echo "Checksum mismatch for ${tarball}:" >&2
         echo "  expected: ${RUNNER_DIGEST}" >&2
@@ -126,11 +126,12 @@ if ! sudo --user github test -f "$RUNNER_DIR/.runner"; then
     echo "Next steps:"
     echo "  1. Visit https://github.com/RamenDR/ramen/settings/actions/runners/new?arch=x64&os=linux"
     echo "  2. Configure the runner:"
-    echo "     sudo --user github ${RUNNER_DIR}/config.sh --url <repo-url> --token <token>"
+    # --login is required to preserve the PATH for the service.
+    echo "     sudo --login --user github ${RUNNER_DIR}/config.sh --url <repo-url> --token <token>"
     echo "  3. Start the service:"
-    echo "     cd ${RUNNER_DIR} && sudo ./svc.sh install github && sudo ./svc.sh start"
+    echo "     sudo bash -c 'cd ${RUNNER_DIR} && ./svc.sh install github && ./svc.sh start'"
 elif [[ "$needs_install" == true ]]; then
     echo ""
     echo "To apply the update, restart the runner service:"
-    echo "  cd ${RUNNER_DIR} && sudo ./svc.sh stop && sudo ./svc.sh start"
+    echo "  sudo bash -c 'cd ${RUNNER_DIR} && ./svc.sh stop && ./svc.sh start'"
 fi

@@ -27,17 +27,18 @@ jobs:
         os:
           - ubuntu-24.04
         python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14-dev"
+          - "3.12"  # RHEL 10
+          - "3.13"  # Debian 13
+          - "3.14"  # Ubuntu 26.04
+          - "3.15"  # Current
     runs-on: ${{ matrix.os }}
     env:
       DRIVER: "container"
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup python
         uses: actions/setup-python@v7
@@ -103,13 +104,16 @@ jobs:
       matrix:
         os:
           # arm64, 3 cpus (M1), 7 GiB RAM, no nested virtalization.
-          - macos-latest
+          - macos-26
+          - xcode-27
         python-version:
-          - "3.13"
+          - "3.15"  # Current
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout ramen
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup python
         uses: actions/setup-python@v7
@@ -156,19 +160,20 @@ jobs:
         os:
           - ubuntu-24.04
         python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14-dev"
+          - "3.12"  # RHEL 10
+          - "3.13"  # Debian 13
+          - "3.14"  # Ubuntu 26.04
+          - "3.15"  # Current
         include:
           # arm64, 3 cpus (M1), 7 GiB RAM, no nested virtalization.
-          - os: macos-14
-            python-version: "3.13"
+          - os: xcode-27
+            python-version: "3.15"  # Current
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup python
         uses: actions/setup-python@v7
@@ -199,11 +204,13 @@ jobs:
       matrix:
         os:
           - ubuntu-24.04
-          - macos-latest
+          - xcode-27
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup go
         uses: actions/setup-go@v7

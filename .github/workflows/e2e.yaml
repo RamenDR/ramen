@@ -3,36 +3,41 @@
 
 # yamllint disable rule:line-length
 ---
-# Security of pull_request_target with forked PR checkout
+# Security of checking out a pull request from an issue comment
 #
-# This workflow uses pull_request_target to ensure the workflow file always
-# comes from the base branch (main) and cannot be modified by a PR author.
-# This is required to enforce the authorization check - using pull_request
-# would allow a fork PR to remove the check and run arbitrary code on
-# self-hosted runners.
+# issue_comment runs this file from the default branch. A pull request
+# cannot change it to skip the authorization check.
 #
-# The test job checks out and executes PR code (allow-unsafe-pr-checkout)
-# in the pull_request_target security context. This is considered safe
-# because of the following controls and restrictions:
+# The test job checks out and runs the commit start verified. This is
+# safe because of the following controls:
 #
 #   Risk              | Mitigation
 #   ------------------+--------------------------------------------------
-#   Unauthorized PRs  | The auth job verifies the PR author is listed in
-#                     | the OWNERS file (from the base branch) before
-#                     | the test job runs any PR code.
-#   GITHUB_TOKEN      | Scoped to read-only (permissions: contents: read).
-#                     | For fork PRs, pull_request also enforces read-only,
-#                     | so there is no additional exposure.
+#   Unauthorized runs | start verifies the comment author is listed in
+#                     | OWNERS (from the default branch) before the test
+#                     | job runs any pull request code.
+#   Stale comment     | start publishes the head only when the comment is
+#                     | not older than the oldest workflow run for that SHA.
+#   GITHUB_TOKEN      | The test job is contents: read. It cannot push,
+#                     | comment, or change a status.
+#   Git credentials   | The test checkout sets persist-credentials: false,
+#                     | so the job token is not stored in .git/config.
 #   Repo secrets      | Not used by this workflow. Do NOT add secrets
 #                     | without reviewing the security implications.
-#   Actions cache     | Not used by this workflow. Do NOT add actions/cache
-#                     | since pull_request_target can write to the default
-#                     | branch cache, enabling cache poisoning attacks.
+#   Skipped status    | skip reads the pull request file list from the API.
+#                     | It does not check out the pull request. It posts
+#                     | success only when e2e is not required.
 name: e2e
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+  # ramen runs on every pull request, including a docs-only change.
+  # requested starts skip when that run is queued. The file list is
+  # already on the pull request.
+  workflow_run:
+    workflows: [ramen]
+    types: [requested]
 
 permissions:
   contents: read
@@ -41,47 +46,163 @@ env:
   # Limit number of drenv workers.
   MAX_WORKERS: 4
   BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-
-# Cancel the in-progress workflow when PR is refreshed.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  CONTEXT: e2e / test
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
 
 jobs:
-  auth:
+  start:
+    # A pull request comment with a line that is exactly "/test e2e".
+    # fromJSON supplies a real newline. An expression string has no \n escape.
+    # workflow_run has no comment. Require issue_comment so that event
+    # does not evaluate the comment body.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(
+        format('{0}{1}{0}', fromJSON('"\n"'), github.event.comment.body),
+        format('{0}/test e2e{0}', fromJSON('"\n"'))
+      )
+    # A new event waits for this check. Cancelling it would cancel the test.
+    # queue: max keeps every pending start. The default queue keeps one and
+    # cancels the rest.
+    concurrency:
+      group: ${{ github.workflow }}-start-${{ github.event.issue.number }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+      statuses: write
     runs-on: ubuntu-24.04
+    outputs:
+      head_sha: ${{ steps.head.outputs.head_sha }}
     steps:
+    # The default branch, for OWNERS. This is not the commit under test.
     - name: Checkout base branch
       uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Install PyYAML
       run: pip install pyyaml
 
     - name: Check e2e authorization
+      id: auth
+      env:
+        AUTHOR: ${{ github.event.comment.user.login }}
       shell: python3 {0}
       run: |
+        import os
         import yaml, sys
 
         with open("OWNERS") as f:
             users = yaml.safe_load(f)["e2e"]
 
-        author = "${{ github.event.pull_request.user.login }}"
+        author = os.environ["AUTHOR"]
 
         if author not in users:
-            print(f"::warning::User {author} is not in the e2e group. "
-                  "Add yourself to the OWNERS file to run the e2e workflow.")
+            error = f"e2e could not start. @{author} is not in the e2e group in OWNERS."
+            recovery = "Add yourself to the OWNERS file to run the e2e workflow."
+            with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                out.write(f"error={error}\n")
+                out.write(f"recovery={recovery}\n")
+            print(f"::warning::{error}")
             sys.exit(1)
 
+    # Publish head_sha only when the comment is not older than the oldest
+    # workflow run for that SHA. That run is the push-time proxy.
+    - name: Verify pull request head
+      id: head
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.issue.number }}
+        COMMENT_CREATED_AT: ${{ github.event.comment.created_at }}
+      run: |
+        fail() {
+          echo "error=$1" >> "$GITHUB_OUTPUT"
+          echo "recovery=$2" >> "$GITHUB_OUTPUT"
+          echo "::warning::$1"
+          exit 1
+        }
+
+        head_sha="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)"
+        echo "head_sha=$head_sha"
+        oldest_run_created_at="$(gh api \
+            "repos/$REPO/actions/runs?head_sha=$head_sha&per_page=100" \
+            --jq '[.workflow_runs[].created_at] | min // empty')"
+        echo "oldest_run_created_at=$oldest_run_created_at"
+        if [ -z "$oldest_run_created_at" ]; then
+          fail "e2e could not start because no workflow run for the pull request head has been recorded yet." \
+              "Please add a new \`/test e2e\` comment when the push has been recorded."
+        fi
+        if [[ "$COMMENT_CREATED_AT" < "$oldest_run_created_at" ]]; then
+          fail "e2e could not start because the PR was updated after the \`/test e2e\` comment was added." \
+              "Please add a new \`/test e2e\` comment when the PR is ready for testing."
+        fi
+        echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+    - name: Post pending e2e status
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ steps.head.outputs.head_sha }}
+      run: |
+        gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state=pending \
+            -f context="$CONTEXT" \
+            -f description="e2e started" \
+            -f target_url="$RUN_URL"
+
+    # Runs when authorization or the head check fails, and after they pass.
+    # A failed comment does not fail the job.
+    - name: Comment on the pull request
+      if: '!cancelled()'
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.issue.number }}
+        ERROR: ${{ steps.auth.outputs.error || steps.head.outputs.error }}
+        RECOVERY: ${{ steps.auth.outputs.recovery || steps.head.outputs.recovery }}
+        AUTHOR: ${{ github.event.comment.user.login }}
+        JOB_STATUS: ${{ job.status }}
+        HEAD_SHA: ${{ steps.head.outputs.head_sha }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        if [ -n "$ERROR" ]; then
+          body="$(printf 'Hey @%s, %s' "$AUTHOR" "$ERROR")"
+          if [ -n "$RECOVERY" ]; then
+            body="$(printf '%s\n\n%s' "$body" "$RECOVERY")"
+          fi
+        elif [ "$JOB_STATUS" = success ]; then
+          body="$(printf 'Hey @%s, [e2e run %s#%s](%s) started for %s.' \
+              "$AUTHOR" "$RUN_NUMBER" "$RUN_ATTEMPT" "$RUN_URL" "${HEAD_SHA:0:12}")"
+        else
+          exit 0
+        fi
+        echo "comment: $body"
+        gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --raw-field body="$body"
+
   test:
-    needs: auth
+    needs: start
+    # One self-hosted run per pull request. The next test cancels this one.
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
     runs-on: [self-hosted, e2e-rdr]
 
     steps:
     - name: Checkout PR
       uses: actions/checkout@v7
       with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        allow-unsafe-pr-checkout: true  # See security section above
+        ref: ${{ needs.start.outputs.head_sha }}
+        persist-credentials: false
 
     - name: Build ramen-operator container
       run: make docker-build
@@ -193,3 +314,210 @@ jobs:
       run: |
         source ../venv
         drenv cleanup envs/regional-dr.yaml
+
+  finish:
+    # Wait until start and test complete (success or failure).
+    needs: [start, test]
+    # Skip if start failed.
+    if: always() && needs.start.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+      statuses: write
+    steps:
+    - name: Compute test duration
+      id: test
+      if: needs.test.result == 'success' || needs.test.result == 'failure'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+      run: |
+        test_job="$(gh api \
+            "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+            --jq '.jobs[] | select(.name == "test")')"
+        started_at="$(echo "$test_job" | jq --raw-output .started_at)"
+        completed_at="$(echo "$test_job" | jq --raw-output .completed_at)"
+        started_s="$(date -d "$started_at" +%s)"
+        completed_s="$(date -d "$completed_at" +%s)"
+        secs="$((completed_s - started_s))"
+        if [ "$secs" -ge 3600 ]; then
+          duration="$((secs / 3600))h$((secs % 3600 / 60))m$((secs % 60))s"
+        elif [ "$secs" -ge 60 ]; then
+          duration="$((secs / 60))m$((secs % 60))s"
+        else
+          duration="${secs}s"
+        fi
+        echo "duration=$duration"
+        echo "duration=$duration" >> "$GITHUB_OUTPUT"
+
+    - name: Post e2e status
+      # A canceled test leaves the pending status, so the newer run can replace it.
+      # Duration is optional. always() posts the result when that step failed.
+      if: always() && (needs.test.result == 'success' || needs.test.result == 'failure')
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ needs.start.outputs.head_sha }}
+        TEST_RESULT: ${{ needs.test.result }}
+        DURATION: ${{ steps.test.outputs.duration }}
+      run: |
+        if [ "$TEST_RESULT" = success ]; then
+          state=success
+          description=successful
+        else
+          state=failure
+          description=failed
+        fi
+        if [ -n "$DURATION" ]; then
+          description="$description in $DURATION"
+        fi
+        echo "e2e status: $state ($description)"
+        gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context="$CONTEXT" \
+            -f description="$description" \
+            -f target_url="$RUN_URL"
+
+    # A canceled test gets a comment and does not change the status.
+    # always() posts the result when an earlier finish step failed.
+    # A failed comment does not fail the job.
+    - name: Comment on the pull request
+      if: always()
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.issue.number }}
+        TEST_RESULT: ${{ needs.test.result }}
+        AUTHOR: ${{ github.event.comment.user.login }}
+        HEAD_SHA: ${{ needs.start.outputs.head_sha }}
+        RUN_NUMBER: ${{ github.run_number }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        case "$TEST_RESULT" in
+          success) verb=passed ;;
+          failure) verb=failed ;;
+          cancelled) verb=canceled ;;
+          *) exit 0 ;;
+        esac
+        body="$(printf 'Hey @%s, [e2e run %s#%s](%s) %s for %s.' \
+            "$AUTHOR" "$RUN_NUMBER" "$RUN_ATTEMPT" "$RUN_URL" "$verb" "${HEAD_SHA:0:12}")"
+        echo "comment: $body"
+        gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --raw-field body="$body"
+
+  # Posts a success status when this change does not require e2e.
+  skip:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+    - name: Check if e2e is required
+      id: check
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      shell: python3 {0}
+      run: |
+        import json
+        import os
+        import re
+        import subprocess, sys
+
+        # A changed file that matches any pattern does not require e2e.
+        # Each pattern is matched against the full path.
+        SKIP = [
+            r"^docs/.*",
+            r"^website/.*",
+            r"^.*\.md",
+        ]
+
+        def gh(*args):
+            return subprocess.run(
+                ["gh", "api", *args],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+            ).stdout.strip()
+
+        repo = os.environ["REPO"]
+        head_sha = os.environ["HEAD_SHA"]
+        head_owner, _ = os.environ["HEAD_REPOSITORY"].split("/", 1)
+        head_branch = os.environ["HEAD_BRANCH"]
+
+        # A fork commit is not a commit of this repository, so searching
+        # commits here returns no pull request. List pull requests from
+        # that fork branch and keep the one with this head. The same SHA
+        # is the same content, so the first result is enough.
+        pr_number = gh(
+            f"repos/{repo}/pulls?state=open&head={head_owner}:{head_branch}",
+            "--jq", "[.[] | select(.head.sha == env.HEAD_SHA) | .number][0]",
+        )
+        if not pr_number:
+            sys.exit(f"::error::no pull request for {head_sha}")
+
+        print(f"pull request: {pr_number}")
+        print(f"head: {head_sha}")
+
+        changed_files = int(gh(f"repos/{repo}/pulls/{pr_number}", "--jq", ".changed_files"))
+        if changed_files == 0:
+            print("no changed files")
+            sys.exit(0)
+
+        # GitHub returns at most 3000 file records. A shorter list than
+        # changed_files hides a later file, so this change cannot be skipped.
+        # A rename lists the new name and the old name. Either one can
+        # require e2e. Count records before adding the old name.
+        changes = gh(
+            "--paginate",
+            f"repos/{repo}/pulls/{pr_number}/files",
+            "--jq", ".[] | {filename, previous_filename}",
+        ).splitlines()
+        if len(changes) != changed_files:
+            print(f"file list is incomplete: {len(changes)} of {changed_files}")
+            sys.exit(0)
+
+        names = []
+        for line in changes:
+            change = json.loads(line)
+            names.append(change["filename"])
+            if change["previous_filename"]:
+                names.append(change["previous_filename"])
+
+        skip_re = re.compile("|".join(f"(?:{pattern})" for pattern in SKIP))
+        requires_e2e = [name for name in names if not skip_re.fullmatch(name)]
+        if requires_e2e:
+            print("These files require e2e:")
+            for name in requires_e2e:
+                print(f"  {name}")
+            sys.exit(0)
+
+        # Every changed file matches SKIP.
+        with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+            out.write("skip=true\n")
+
+    - name: Post skipped e2e status
+      id: status
+      if: steps.check.outputs.skip == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        SKIP_DESCRIPTION: skipped - this change does not require e2e
+      run: |
+        echo "e2e status: success ($SKIP_DESCRIPTION)"
+        gh api --method POST "repos/$REPO/statuses/$HEAD_SHA" \
+            -f state=success \
+            -f context="$CONTEXT" \
+            -f description="$SKIP_DESCRIPTION"

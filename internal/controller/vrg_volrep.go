@@ -614,6 +614,13 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
 	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
 		undoPVRetention(&pv)
+	} else {
+		// The PV stays retained, mark it so it can be found and cleaned up when this VRG is deleted
+		if pv.Labels == nil {
+			pv.Labels = map[string]string{}
+		}
+
+		pv.Labels[pvLeftBehindLabelKey] = string(v.instance.UID)
 	}
 
 	delete(pv.Annotations, pvcVRAnnotationArchivedKey)
@@ -680,6 +687,50 @@ func (v *VRGInstance) retainPVForPVC(pvc corev1.PersistentVolumeClaim, log logr.
 
 	return v.addAnnotationForResource(pv, "PersistentVolume", pvVRAnnotationRetentionKey,
 		pvVRAnnotationRetentionValue, log)
+}
+
+// deleteLeftBehindPVs deletes the PV objects left behind by a Sync (MetroDR) VRG that is being deleted as Secondary.
+// The PVs are found by the left behind label, as their PVCs are already removed when the workload moved to the peer
+// cluster. Only PVs in the Released phase are cleaned up, others are left alone.
+// The reclaim policy is intentionally kept as Retain so that Kubernetes does NOT issue a CSI DeleteVolume call,
+// preventing accidental data loss (e.g. when disabling DR while data is still live on the peer cluster).
+func (v *VRGInstance) deleteLeftBehindPVs() error {
+	if v.instance.Spec.Sync == nil || v.instance.Spec.ReplicationState != ramendrv1alpha1.Secondary {
+		return nil
+	}
+
+	pvList := &corev1.PersistentVolumeList{}
+	if err := v.reconciler.List(v.ctx, pvList,
+		client.MatchingLabels{pvLeftBehindLabelKey: string(v.instance.UID)}); err != nil {
+		return fmt.Errorf("failed to list PersistentVolumes left behind by VRG %s/%s, %w",
+			v.instance.Namespace, v.instance.Name, err)
+	}
+
+	var errs []error
+
+	for idx := range pvList.Items {
+		pv := &pvList.Items[idx]
+
+		if pv.Status.Phase != corev1.VolumeReleased {
+			continue
+		}
+
+		if rmnutil.ResourceIsDeleted(pv) {
+			continue
+		}
+
+		if err := v.reconciler.Delete(v.ctx, pv); err != nil && !k8serrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to delete PersistentVolume %s left behind by VRG %s/%s, %w",
+				pv.Name, v.instance.Namespace, v.instance.Name, err))
+
+			continue
+		}
+
+		v.log.Info(fmt.Sprintf("Deleted PV %s left behind by VRG %s/%s",
+			pv.Name, v.instance.Namespace, v.instance.Name))
+	}
+
+	return errors.Join(errs...)
 }
 
 // undoPVRetention updates the PV reclaim policy back to its saved state
@@ -3155,6 +3206,8 @@ func accessibleTopologyToNodeAffinity(topologyJSON string) (*corev1.VolumeNodeAf
 // to a new cluster, and rebinding the PVC to an existing PV with the same claimRef
 func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 	pv.ResourceVersion = ""
+	delete(pv.Labels, pvLeftBehindLabelKey)
+
 	if pv.Spec.ClaimRef != nil {
 		pv.Spec.ClaimRef.UID = ""
 		pv.Spec.ClaimRef.ResourceVersion = ""

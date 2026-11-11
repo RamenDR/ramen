@@ -37,7 +37,7 @@ patches:
     patch: |-
       - op: replace
         path: /data/plugin
-        value: quay.io/nladha/cephcsi:cg
+        value: quay.io/nladha/cephcsi:cg-09-11
   - target:
       kind: Deployment
       name: rook-ceph-operator

@@ -36,6 +36,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           fetch-depth: 0  # enableGitInfo needs history for last-modified dates
 
       - name: Scan docs content for unsafe HTML/JS

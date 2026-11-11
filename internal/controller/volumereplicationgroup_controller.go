@@ -432,7 +432,7 @@ func filterPVC(reader client.Reader, pvc *corev1.PersistentVolumeClaim, log logr
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;update;patch;create
+// +kubebuilder:rbac:groups=core,resources=persistentvolumes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationdestinations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
@@ -606,6 +606,9 @@ const (
 	pvVRAnnotationRetentionValue     = "retained"
 	RestoreAnnotation                = "volumereplicationgroups.ramendr.openshift.io/ramen-restore"
 	RestoredByRamen                  = "True"
+
+	// PV label, set on PVs left behind on the Secondary cluster in Sync (MetroDR) mode. The value is the UID of the VRG
+	pvLeftBehindLabelKey = "ramendr.openshift.io/pv-left-behind-by-ramen"
 
 	// StorageClass label
 	StorageIDLabel = util.StorageIDLabel
@@ -846,112 +849,6 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync
 	return v.separateAsyncPVCs(pvcList)
-}
-
-func isOffloadedByPeerClass(scName, sID string, peerClass *ramendrv1alpha1.PeerClass) bool {
-	if scName != peerClass.StorageClassName {
-		return false
-	}
-
-	if !slices.Contains(peerClass.StorageID, sID) {
-		return false
-	}
-
-	if !peerClass.Offloaded {
-		return false
-	}
-
-	return true
-}
-
-func (v *VRGInstance) isOffloadedByPeerClasses(sc *storagev1.StorageClass) (bool, error) {
-	if !util.HasLabel(sc, StorageIDLabel) {
-		return false, fmt.Errorf("missing %s label in StorageClass (%s)", StorageIDLabel, sc.GetName())
-	}
-
-	sID := sc.GetLabels()[StorageIDLabel]
-
-	for idx := range v.instance.Spec.Async.PeerClasses {
-		if isOffloadedByPeerClass(sc.GetName(), sID, &v.instance.Spec.Async.PeerClasses[idx]) {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
-// processOffloadedPVCs ensures either all PVCs for the VRG are offloaded, or none are. IF all are offloaded then
-// the VR PVC list is updated with the PVC list
-//
-//nolint:gocognit,cyclop,funlen
-func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaimList) (bool, error) {
-	if len(v.instance.Spec.Async.PeerClasses) == 0 {
-		return false, nil
-	}
-
-	offloaded := false
-
-	for idx := range pvcList.Items {
-		pvc := &pvcList.Items[idx]
-
-		storageClass, err := v.getStorageClass(pvc)
-		if err != nil {
-			return false, err
-		}
-
-		pvcOffloadedBySC := util.HasLabel(storageClass, StorageOffloadedLabel)
-
-		pvcOffloadedByPeer, err := v.isOffloadedByPeerClasses(storageClass)
-		if err != nil {
-			return false, err
-		}
-
-		if pvcOffloadedByPeer != pvcOffloadedBySC {
-			return false, fmt.Errorf(
-				"mismatched peerClass offload support (%t) with current StorageClass "+
-					"(%s) offload support (%t) for PVC (%s/%s)",
-				pvcOffloadedByPeer,
-				*pvc.Spec.StorageClassName,
-				pvcOffloadedBySC,
-				pvc.GetName(),
-				pvc.GetNamespace(),
-			)
-		}
-
-		if idx == 0 {
-			if pvcOffloadedBySC {
-				offloaded = true
-			}
-
-			continue
-		}
-
-		if pvcOffloadedBySC == offloaded {
-			continue
-		}
-
-		return false, fmt.Errorf("invalid list of PVCs to protect, found a mix of offloaded and non-offloaded PVCs")
-	}
-
-	if !offloaded {
-		return offloaded, nil
-	}
-
-	for idx := range pvcList.Items {
-		pvc := &pvcList.Items[idx]
-
-		if err := v.addVolRepConsistencyGroupLabel(pvc); err != nil {
-			return offloaded, fmt.Errorf("failed to label offloaded PVC %s/%s for consistency group (%w)",
-				pvc.GetNamespace(), pvc.GetName(), err)
-		}
-	}
-
-	v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
-	copy(v.volRepPVCs, pvcList.Items)
-
-	v.log.Info(fmt.Sprintf("Found %d PVCs targeted for offloaded protection", len(v.volRepPVCs)))
-
-	return offloaded, nil
 }
 
 // addVolRepConsistencyGroupLabel ensures that the given PVC is labeled as part of a consistency group.
@@ -1358,6 +1255,12 @@ func (v *VRGInstance) processForDeletion() ctrl.Result {
 		return v.result
 	}
 
+	if err := v.deleteLeftBehindPVs(); err != nil {
+		v.log.Info("Deleting PVs left behind failed", "error", err)
+
+		return ctrl.Result{Requeue: true}
+	}
+
 	if v.hasGlobalVGRLabel() {
 		if v.deleteGlobalVGR() {
 			return ctrl.Result{Requeue: true}
@@ -1495,6 +1398,8 @@ func (v *VRGInstance) processAsPrimary() ctrl.Result {
 		if numOfRestoredRes != 0 {
 			return v.updateVRGConditionsAndStatus(v.result)
 		}
+
+		v.result.Requeue = false
 	}
 
 	if err := v.pvcsDeselectedUnprotect(); err != nil {
@@ -1651,7 +1556,7 @@ func (v *VRGInstance) reconcileAsPrimary() {
 	}
 
 	vrg := v.instance
-	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync)
+	v.result.Requeue = v.reconcileVolSyncAsPrimary(&finalSyncPrepared.volSync) || v.result.Requeue
 	v.reconcileVolRepsAsPrimary()
 
 	if vrg.Spec.PrepareForFinalSync {
@@ -2422,52 +2327,6 @@ func (r *VolumeReplicationGroupReconciler) filterGlobalVGRVRGs(
 	}
 
 	log.Info("Enqueuing VRGs for shared VGR change", "vrgs", names)
-
-	return req
-}
-
-func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(
-	vgr *volrep.VolumeGroupReplication, log logr.Logger,
-) []reconcile.Request {
-	req := []reconcile.Request{}
-
-	// Get VRG owner information from VGR labels
-	ownerNamespace, ownerName, ok := util.OwnerNamespaceNameAndName(vgr.GetLabels())
-	if !ok {
-		log.V(1).Info("VGR does not have owner labels, skipping")
-
-		return req
-	}
-
-	// Fetch the VRG using the owner labels
-	vrg := &ramendrv1alpha1.VolumeReplicationGroup{}
-	vrgNamespacedName := types.NamespacedName{
-		Namespace: ownerNamespace,
-		Name:      ownerName,
-	}
-
-	if err := r.Client.Get(context.TODO(), vrgNamespacedName, vrg); err != nil {
-		if k8serrors.IsNotFound(err) {
-			log.V(1).Info("VRG not found for VGR", "vrg", vrgNamespacedName)
-		} else {
-			log.Error(err, "Failed to get VRG for VGR", "vrg", vrgNamespacedName)
-		}
-
-		return req
-	}
-
-	// Compare VGR's LastSyncTime with VRG's LastGroupSyncTime
-	// If they differ, enqueue the VRG for reconciliation
-	if !reflect.DeepEqual(vgr.Status.LastSyncTime, vrg.Status.LastGroupSyncTime) {
-		req = append(req, reconcile.Request{
-			NamespacedName: vrgNamespacedName,
-		})
-
-		log.Info("Enqueuing VRG for offloaded VGR sync time change",
-			"vrg", vrgNamespacedName,
-			"vgrLastSyncTime", util.TimeString(vgr.Status.LastSyncTime),
-			"vrgLastGroupSyncTime", util.TimeString(vrg.Status.LastGroupSyncTime))
-	}
 
 	return req
 }

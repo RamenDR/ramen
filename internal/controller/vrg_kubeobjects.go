@@ -33,6 +33,8 @@ import (
 
 var ErrWorkflowNotFound = fmt.Errorf("backup or restore workflow not found")
 
+var errKubeObjectsGroupCaptureIncomplete = fmt.Errorf("kube objects group capturing incomplete")
+
 const RecipeMaxAttempts = 10
 
 func kubeObjectsCaptureInterval(kubeObjectProtectionSpec *ramen.KubeObjectProtectionSpec) time.Duration {
@@ -275,6 +277,31 @@ const (
 	vrgGenerationNumberBitCount = 64
 )
 
+// kubeObjectsCaptureRetryLimitExceeded records a genuine capture failure against the retry budget
+// and reports whether RecipeMaxAttempts has been exceeded. A capture that is merely still in
+// progress (backups New/Queued/InProgress/Finalizing) surfaces as errKubeObjectsGroupCaptureIncomplete;
+// that is not a failure and must not accrue toward RecipeMaxAttempts, or slow-but-healthy backups would
+// be reported as failed while they are still running.
+func (v *VRGInstance) kubeObjectsCaptureRetryLimitExceeded(err error) bool {
+	if errors.Is(err, errKubeObjectsGroupCaptureIncomplete) {
+		return false
+	}
+
+	rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
+	if !ok {
+		v.reconciler.recipeRetries.Store(v.namespacedName, 0)
+	}
+
+	val, ok := rStatus.(int)
+	if ok {
+		val++
+	}
+
+	v.reconciler.recipeRetries.Store(v.namespacedName, val)
+
+	return val > RecipeMaxAttempts
+}
+
 // nolint: funlen
 func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	result *ctrl.Result,
@@ -300,19 +327,7 @@ func (v *VRGInstance) kubeObjectsCaptureStartOrResume(
 	allEssentialStepsFailed, err := v.executeCaptureSteps(result, pathName, capturePathName, namePrefix,
 		veleroNamespaceName, annotations, requests, log)
 	if err != nil {
-		rStatus, ok := v.reconciler.recipeRetries.Load(v.namespacedName)
-		if !ok {
-			v.reconciler.recipeRetries.Store(v.namespacedName, 0)
-		}
-
-		val, ok := rStatus.(int)
-		if ok {
-			val++
-		}
-
-		v.reconciler.recipeRetries.Store(v.namespacedName, val)
-
-		if val > RecipeMaxAttempts {
+		if v.kubeObjectsCaptureRetryLimitExceeded(err) {
 			v.kubeObjectsCaptureStatusFalse("KubeObjectsCaptureError", "recipe reconcile failed for more than max attempts")
 
 			return
@@ -483,7 +498,7 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 			if requestsCompletedCount < requestsProcessedCount {
 				log.Info("Kube objects group capturing", "complete", requestsCompletedCount, "total", requestsProcessedCount)
 
-				return allEssentialStepsFailed, fmt.Errorf("kube objects group capturing incomplete")
+				return allEssentialStepsFailed, errKubeObjectsGroupCaptureIncomplete
 			}
 		}
 	}
