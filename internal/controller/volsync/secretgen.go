@@ -23,7 +23,7 @@ import (
 const tlsPSKDataSize = 64
 
 // Creates a new volsync replication secret on the cluster (should be called on the hub cluster).  If the secret
-// already exists, nop
+// already exists, ensure it has the CreatedByRamenLabel and owner reference.
 func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Client, ownerObject metav1.Object,
 	secretName, secretNamespace string, log logr.Logger) (*corev1.Secret, error,
 ) {
@@ -52,9 +52,27 @@ func ReconcileVolSyncReplicationSecret(ctx context.Context, k8sClient client.Cli
 
 	err = k8sClient.Create(ctx, secret)
 	if err != nil {
-		log.Error(err, "Error creating secret", "secretName", secretName)
+		if !kerrors.IsAlreadyExists(err) {
+			log.Error(err, "Error creating secret", "secretName", secretName)
 
-		return nil, fmt.Errorf("error creating secret for volsync (%w)", err)
+			return nil, fmt.Errorf("error creating secret for volsync (%w)", err)
+		}
+
+		log.Info("Secret already exists, adding ramen labels and owner reference",
+			"secretName", secretName)
+
+		// patchBase is a synthetic baseline, not a fetched copy of the existing Secret.
+		// MergeFrom diffs it against secret to produce a metadata patch with secret's labels
+		// and owner reference. Omit StringData so the existing PSK is preserved.
+		secret.StringData = nil
+		patchBase := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: secretNamespace},
+		}
+		patch := client.MergeFrom(patchBase)
+
+		if err := k8sClient.Patch(ctx, secret, patch); err != nil {
+			return nil, fmt.Errorf("error patching existing secret %q for volsync (%w)", secretName, err)
+		}
 	}
 
 	return secret, nil
