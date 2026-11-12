@@ -63,7 +63,7 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		return err
 	}
 
-	if err := util.RunCommand(
+	res := util.RunCommand(
 		ctx.Context(),
 		"kubectl",
 		"apply",
@@ -71,8 +71,9 @@ func (d DiscoveredApp) Deploy(ctx types.TestContext) error {
 		"--namespace", appNamespace,
 		"--kubeconfig", cluster.Kubeconfig,
 		"--timeout=5m",
-	); err != nil {
-		return err
+	)
+	if res.Err != nil {
+		return fmt.Errorf("%w: stdout=%q stderr=%q", res.Err, res.Stdout, res.Stderr)
 	}
 
 	if err = WaitWorkloadHealth(ctx, cluster); err != nil {
@@ -246,7 +247,7 @@ func deleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespa
 		return err
 	}
 
-	return util.RunCommand(
+	res := util.RunCommand(
 		ctx.Context(),
 		"kubectl",
 		"delete",
@@ -256,6 +257,11 @@ func deleteDiscoveredApps(ctx types.TestContext, cluster *types.Cluster, namespa
 		fmt.Sprintf("--wait=%t", wait),
 		"--ignore-not-found",
 	)
+	if res.Err != nil {
+		return fmt.Errorf("%w: stdout=%q stderr=%q", res.Err, res.Stdout, res.Stderr)
+	}
+
+	return nil
 }
 
 // chooseDeployCluster determines which cluster to deploy the discovered
