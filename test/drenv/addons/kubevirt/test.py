@@ -72,8 +72,6 @@ def verify_ssh(cluster):
         # second attempt succeeds.
         retries = 30
 
-        commands.run("kubectl", "config", "use-context", cluster)
-
         for i in range(retries):
             time.sleep(delay)
             print(f"Last entries in /var/log/ramen.log (attempt {i + 1}/{retries})")
