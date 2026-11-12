@@ -115,6 +115,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - name: Setup python
         uses: actions/setup-python@v7
         with:
