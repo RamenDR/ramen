@@ -8,7 +8,6 @@ from pathlib import Path
 from drenv import kubectl
 from drenv import ssh
 from drenv import virtctl
-from drenv import commands
 from drenv import temporary_kubeconfig
 
 PACKAGE_DIR = Path(__file__).parent
@@ -85,7 +84,6 @@ def verify_ssh(cluster):
                     username="cirros",
                     namespace=NAMESPACE,
                     identity_file=ssh.PRIVATE_KEY,
-                    local_ssh=True,
                     local_ssh_opts=(
                         "-o UserKnownHostsFile=/dev/null",
                         "-o StrictHostKeyChecking=no",
