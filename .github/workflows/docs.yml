@@ -3,6 +3,7 @@
 
 # Build the documentation site (website/) and deploy it to GitHub Pages.
 # Requires Settings -> Pages -> Source = "GitHub Actions" (admin, one-time).
+# yamllint disable rule:line-length
 ---
 name: Documentation
 
@@ -34,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0  # enableGitInfo needs history for last-modified dates
@@ -61,19 +62,19 @@ jobs:
           echo "No unsafe HTML/JS patterns found in docs content."
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: website/go.mod
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 22
 
       - name: Setup Hugo
         # Third-party action pinned to a full commit SHA (v3.2.1) so a
         # hijacked tag cannot inject code into the build/deploy job.
-        uses: peaceiris/actions-hugo@2752ce1d29631191ea3f27c23495fa06139a5b78
+        uses: peaceiris/actions-hugo@2752ce1d29631191ea3f27c23495fa06139a5b78  # v3.2.1
         with:
           hugo-version: 0.167.0
           extended: true
@@ -81,7 +82,7 @@ jobs:
       - name: Configure Pages
         id: pages
         if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
 
       - name: Install Node dependencies
         working-directory: website
@@ -98,7 +99,7 @@ jobs:
         run: hugo --minify --gc --baseURL "${BASE_URL}/"
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         with:
           path: website/public
 
@@ -116,4 +117,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
