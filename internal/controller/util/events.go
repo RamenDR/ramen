@@ -8,9 +8,13 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 // This implementation of events infrastructure is mainly based on
@@ -18,6 +22,20 @@ import (
 // https://github.com/openshift/ocs-operator/blob/master/controllers/util/events.go
 const (
 	LastEventValidDuration = 10
+)
+
+const (
+	// NonConsistencyGroupDeprecatedEventInterval is the minimum time between
+	// repeated controller-wide deprecation warnings. The first warning is
+	// emitted when non-consistency-group VolumeReplication is first observed.
+	NonConsistencyGroupDeprecatedEventInterval = 6 * time.Hour
+
+	// NonConsistencyGroupDeprecatedMessage is the stable warning text. It must
+	// not include values that change between reconciles, so event aggregation
+	// and filtering stay reliable.
+	NonConsistencyGroupDeprecatedMessage = "Warning DeprecatedFeature: " +
+		"VolumeReplication without consistency groups is deprecated and will be removed in a future release. " +
+		"Use consistency groups for new and existing workloads."
 )
 
 const (
@@ -96,6 +114,11 @@ const (
 	// EventReasonSwitchFailed is generated when DRPC fails to switch the cluster
 	// where the app is placed
 	EventReasonSwitchFailed = "DRPCClusterSwitchFailed"
+
+	// EventReasonNonConsistencyGroupDeprecated is emitted while VolumeReplication
+	// is used without consistency groups. The reason is stable so users can
+	// filter on it and Kubernetes can aggregate the warning.
+	EventReasonNonConsistencyGroupDeprecated = "NonConsistencyGroupDeprecated"
 )
 
 // EventReporter is custom events reporter type which allows user to limit the events
@@ -105,7 +128,10 @@ type EventReporter struct {
 	// lastReportedEvent will have a last captured event
 	lastReportedEvent map[string]string
 
-	// lastReportedEventTime will be the time of lastReportedEvent
+	// lastReportedEventTime will be the time of lastReportedEvent.
+	// ReportIfNotPresent keys this by namespace and name.
+	// ReportGlobal keys it by event reason, so one warning is shared by every
+	// object and does not replace another event for that object.
 	lastReportedEventTime map[string]time.Time
 
 	// Mutex for protecting concurrent access to the recorder map
@@ -141,6 +167,44 @@ func ReportIfNotPresent(recorder *EventReporter, instance runtime.Object,
 		recorder.lastReportedEvent[nameSpacedName] = eventKey
 		recorder.lastReportedEventTime[nameSpacedName] = time.Now()
 		recorder.recorder.Event(instance, eventType, eventReason, msg)
+	}
+}
+
+// ReportGlobal emits one event for eventReason, then suppresses further events
+// for that reason until interval has elapsed. The limit is per event reason,
+// not per object, so every caller in this controller shares it.
+// now is supplied by the caller so tests can control the clock. A nil recorder
+// does not emit.
+func ReportGlobal(
+	recorder *EventReporter, eventType, eventReason, msg string, interval time.Duration, now time.Time,
+) bool {
+	if recorder == nil || recorder.recorder == nil {
+		return false
+	}
+
+	recorder.mutex.Lock()
+	defer recorder.mutex.Unlock()
+
+	if last, ok := recorder.lastReportedEventTime[eventReason]; ok && now.Before(last.Add(interval)) {
+		return false
+	}
+
+	recorder.lastReportedEventTime[eventReason] = now
+	// A nil instance is dropped by client-go, so the event is recorded on a
+	// synthetic object. The rate limit above does not use that object.
+	recorder.recorder.Event(globalEventInstance(), eventType, eventReason, msg)
+
+	return true
+}
+
+// globalEventInstance is the involved object for a controller-wide event.
+// It is not a real API object. The event is stored in the default namespace.
+func globalEventInstance() runtime.Object {
+	return &corev1.ObjectReference{
+		APIVersion: rmn.GroupVersion.String(),
+		Kind:       "Ramen",
+		Name:       "ramen",
+		Namespace:  metav1.NamespaceDefault,
 	}
 }
 
