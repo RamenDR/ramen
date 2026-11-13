@@ -4,15 +4,23 @@
 package volsync_test
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	"github.com/ramendr/ramen/internal/controller/volsync"
+	ramenmanager "github.com/ramendr/ramen/internal/manager"
 )
 
 var _ = Describe("Secretgen", func() {
@@ -122,6 +130,106 @@ var _ = Describe("Secretgen", func() {
 
 				Expect(secret.Data).To(Equal(existingSecret.Data))
 			})
+		})
+	})
+
+	Describe("Repair existing volsync rsync secret metadata", func() {
+		const existingSecretName = "test-secret-existing"
+
+		var (
+			existingSecret *corev1.Secret
+			hubClient      client.Client
+			cancelManager  context.CancelFunc
+		)
+
+		BeforeEach(func() {
+			hubManager, err := ramenmanager.NewManager(testEnv.Config, ctrl.Options{
+				Scheme:  scheme.Scheme,
+				Metrics: metrics.Options{BindAddress: "0"},
+			}, ramendrv1alpha1.DRHubType)
+			Expect(err).NotTo(HaveOccurred())
+
+			var managerCtx context.Context
+
+			managerCtx, cancelManager = context.WithCancel(ctx)
+
+			go func() {
+				defer GinkgoRecover()
+
+				Expect(hubManager.Start(managerCtx)).To(Succeed())
+			}()
+
+			Expect(hubManager.GetCache().WaitForCacheSync(managerCtx)).To(BeTrue())
+			hubClient = hubManager.GetClient()
+
+			// Old owner of the existing secret
+			oldOwner := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "dummycm-old-owner-",
+					Namespace:    testNamespace.GetName(),
+				},
+			}
+			Expect(hubClient.Create(ctx, oldOwner)).To(Succeed())
+
+			// Existing secret without Ramen labels and with an old owner reference.
+			// It has a non-Ramen label, which must be preserved by the repair.
+			existingSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      existingSecretName,
+					Namespace: testNamespace.GetName(),
+					Labels:    map[string]string{"app": "existing"},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: "v1",
+							Kind:       "ConfigMap",
+							Name:       oldOwner.GetName(),
+							UID:        oldOwner.GetUID(),
+							Controller: ptr.To(true),
+						},
+					},
+				},
+				StringData: map[string]string{
+					"psk.txt": "volsyncramen:existing",
+				},
+			}
+			Expect(hubClient.Create(ctx, existingSecret)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			cancelManager()
+		})
+
+		It("Should add the Ramen labels and set the current owner reference", func() {
+			secret, err := volsync.ReconcileVolSyncReplicationSecret(ctx, hubClient, owner,
+				existingSecretName, testNamespace.GetName(), logger)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Existing PSK must be preserved and returned
+			Expect(string(secret.Data["psk.txt"])).To(Equal("volsyncramen:existing"))
+
+			// Ramen labels must be added to the existing secret.
+			Expect(secret.GetLabels()).To(HaveKeyWithValue(rmnutil.CreatedByRamenLabel, "true"))
+			Expect(secret.GetLabels()).To(HaveKeyWithValue(rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue))
+			Expect(secret.GetLabels()).To(HaveKeyWithValue("app", "existing"))
+
+			stored := &corev1.Secret{}
+
+			// Use hubClient, not k8sClient. k8sClient reads the old secret from the API server
+			// immediately. hubClient reads from the filtered cache, which returns NotFound until
+			// it receives the ADD event for the relabeled secret. Eventually waits for that event.
+			Eventually(func() error {
+				return hubClient.Get(ctx, client.ObjectKeyFromObject(existingSecret), stored)
+			}, maxWait, interval).Should(Succeed())
+
+			Expect(string(stored.Data["psk.txt"])).To(Equal("volsyncramen:existing"))
+			Expect(stored.GetLabels()).To(HaveKeyWithValue(rmnutil.CreatedByRamenLabel, "true"))
+			Expect(stored.GetLabels()).To(HaveKeyWithValue(rmnutil.OCMBackupLabelKey, rmnutil.OCMBackupLabelValue))
+			Expect(stored.GetLabels()).To(HaveKeyWithValue("app", "existing"))
+
+			// The stale owner must be replaced by the current controller owner.
+			Expect(stored.GetOwnerReferences()).To(HaveLen(1))
+			Expect(stored.GetOwnerReferences()[0].Name).To(Equal(owner.GetName()))
+			Expect(stored.GetOwnerReferences()[0].Controller).To(HaveValue(BeTrue()))
 		})
 	})
 })

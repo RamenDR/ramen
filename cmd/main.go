@@ -50,6 +50,7 @@ import (
 	argocdv1alpha1hack "github.com/ramendr/ramen/internal/controller/argocd"
 	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 	_ "github.com/ramendr/ramen/internal/dummy"
+	ramenmanager "github.com/ramendr/ramen/internal/manager"
 )
 
 var (
@@ -312,7 +313,7 @@ func main() {
 
 	ctrlOptions, ramenConfig := buildOptions(restCfg, ramenConfig)
 
-	mgr, err := ctrl.NewManager(restCfg, *ctrlOptions)
+	mgr, err := ramenmanager.NewManager(restCfg, *ctrlOptions, controllers.ControllerType)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
