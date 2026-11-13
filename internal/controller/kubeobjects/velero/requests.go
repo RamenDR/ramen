@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -29,6 +30,10 @@ const (
 	path         = "velero/"
 	protectsPath = path + "backups/"
 	recoversPath = path + "restores/"
+
+	// backupAlreadyExistsError is the exact Velero failure reason emitted when a backup
+	// already exists in object storage. Such backups still contain valid backup data.
+	backupAlreadyExistsError = "backup execution failed: backup already exists in object storage"
 )
 
 // ErrRestoreCompletedWithZeroResources is returned when a restore completes successfully
@@ -269,6 +274,17 @@ func restoreRealCreate(
 	)
 }
 
+// shouldPatchFailedBackup checks if a failed backup should be patched to Completed.
+// Backups that fail with "backup execution failed: backup already exists in object
+// storage" still contain valid backup data, but Velero rejects restores from backups
+// that are not in a completed or partially failed phase. The restore-phase validation
+// was added in https://github.com/velero-io/velero/pull/9792
+// (commit dda779de6501412ecbf33249847f98d074a0543e).
+func shouldPatchFailedBackup(backup *velero.Backup) bool {
+	return backup.Status.Phase == velero.BackupPhaseFailed &&
+		strings.Contains(backup.Status.FailureReason, backupAlreadyExistsError)
+}
+
 func backupDummyStatusProcessAndRestore(
 	backup *velero.Backup,
 	w objectWriter,
@@ -280,8 +296,37 @@ func backupDummyStatusProcessAndRestore(
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted,
-		velero.BackupPhasePartiallyFailed,
-		velero.BackupPhaseFailed:
+		velero.BackupPhasePartiallyFailed:
+		return backupRestore(
+			backup, w,
+			recoverSpec,
+			restoreName,
+			labels,
+		)
+	case velero.BackupPhaseFailed:
+		// Patch failed backups that still have valid data on S3. Backups can fail
+		// with "backup already exists in object storage" but still have valid backup
+		// data. We patch these to Completed so Velero allows restore from them.
+		if shouldPatchFailedBackup(backup) {
+			w.log.V(1).Info("Patching failed backup with valid data",
+				"backup", backup.Name,
+				"reason", backup.Status.FailureReason)
+
+			backupBaseline := backup.DeepCopy()
+			backup.Status.Phase = velero.BackupPhaseCompleted
+
+			// Patch the main resource, not the status subresource. Velero's Backup
+			// CRD does not declare a status subresource, so Status().Patch would
+			// target a non-existent /status endpoint and fail.
+			if err := w.Patch(w.ctx, backup, client.MergeFrom(backupBaseline)); err != nil {
+				backup.Status.Phase = backupBaseline.Status.Phase
+
+				return nil, fmt.Errorf("failed to patch backup status: %w", err)
+			}
+
+			w.log.V(1).Info("Patched backup status to Completed", "backup", backup.Name)
+		}
+
 		return backupRestore(
 			backup, w,
 			recoverSpec,
