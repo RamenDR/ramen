@@ -1224,13 +1224,7 @@ func (v *VSHandler) getPVC(pvcNamespacedName types.NamespacedName) (*corev1.Pers
 }
 
 func (v *VSHandler) ValidateSecretAndAddVRGOwnerRef(secretName string) (bool, error) {
-	secret := &corev1.Secret{}
-
-	err := v.client.Get(v.ctx,
-		types.NamespacedName{
-			Name:      secretName,
-			Namespace: v.owner.GetNamespace(),
-		}, secret)
+	secret, err := getOrPatchSecret(v.ctx, v.client, secretName, v.owner.GetNamespace(), false)
 	if err != nil {
 		if !errors.IsNotFound(err) {
 			v.log.Error(err, "Failed to get secret", "secretName", secretName)
@@ -1259,13 +1253,7 @@ func (v *VSHandler) ValidateSecretAndAddVRGOwnerRef(secretName string) (bool, er
 }
 
 func (v *VSHandler) CopySecretToPVCNamespace(secretName, namespace string) error {
-	secret := &corev1.Secret{}
-
-	err := v.client.Get(v.ctx,
-		types.NamespacedName{
-			Name:      secretName,
-			Namespace: namespace,
-		}, secret)
+	_, err := getOrPatchSecret(v.ctx, v.client, secretName, namespace, true)
 	if err != nil && !errors.IsNotFound(err) {
 		v.log.Error(err, "Failed to get secret", "secretName", secretName)
 
@@ -1273,15 +1261,6 @@ func (v *VSHandler) CopySecretToPVCNamespace(secretName, namespace string) error
 	}
 
 	if err == nil {
-		util.AddLabel(secret, util.CreatedByRamenLabel, "true")
-		util.AddLabel(secret, util.ExcludeFromVeleroBackup, "true")
-
-		if err := v.client.Update(v.ctx, secret); err != nil {
-			v.log.Error(err, "Failed to update existing secret with ramen labels", "secretName", secretName)
-
-			return fmt.Errorf("error updating existing secret with ramen labels (%w)", err)
-		}
-
 		v.log.Info("Secret already exists in the PVC namespace and updated with ramen labels",
 			"secretName", secretName, "pvcNamespace", namespace)
 
@@ -1291,11 +1270,7 @@ func (v *VSHandler) CopySecretToPVCNamespace(secretName, namespace string) error
 	v.log.Info("volsync secret not found in the pvc namespace, will create it", "secretName", secretName,
 		"pvcNamespace", namespace)
 
-	err = v.client.Get(v.ctx,
-		types.NamespacedName{
-			Name:      secretName,
-			Namespace: v.owner.GetNamespace(),
-		}, secret)
+	secret, err := getOrPatchSecret(v.ctx, v.client, secretName, v.owner.GetNamespace(), false)
 	if err != nil {
 		return fmt.Errorf("error getting secret from the admin namespace (%w)", err)
 	}
@@ -1319,6 +1294,67 @@ func (v *VSHandler) CopySecretToPVCNamespace(secretName, namespace string) error
 	}
 
 	return nil
+}
+
+// getOrPatchSecret gets the secret from the cache. If it is not found there, it may exist without the
+// created-by-ramen label (not cached), so patch the label to bring it into the cache. A NotFound error
+// is returned if the secret does not exist at all. If setLabels is true, the ramen and velero
+// exclusion labels are also set
+func getOrPatchSecret(ctx context.Context, k8sClient client.Client, secretName, secretNamespace string,
+	setLabels bool,
+) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: secretNamespace}, secret)
+	if err != nil {
+		if !errors.IsNotFound(err) {
+			return nil, err
+		}
+
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: secretNamespace},
+		}
+
+		if setLabels {
+			util.AddLabel(secret, util.ExcludeFromVeleroBackup, "true")
+		}
+
+		return patchSecret(ctx, k8sClient, secret)
+	}
+
+	if !setLabels {
+		return secret, nil
+	}
+
+	added := util.AddLabel(secret, util.CreatedByRamenLabel, "true")
+	added = util.AddLabel(secret, util.ExcludeFromVeleroBackup, "true") || added
+
+	if added {
+		if err := k8sClient.Update(ctx, secret); err != nil {
+			return nil, fmt.Errorf("error updating existing secret with ramen labels (%w)", err)
+		}
+	}
+
+	return secret, nil
+}
+
+func patchSecret(ctx context.Context, k8sClient client.Client, secret *corev1.Secret,
+) (*corev1.Secret, error) {
+	patchBase := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: secret.GetName(), Namespace: secret.GetNamespace()},
+	}
+
+	patch := client.MergeFrom(patchBase)
+
+	util.AddLabel(secret, util.CreatedByRamenLabel, "true")
+
+	secret.StringData = nil
+
+	if err := k8sClient.Patch(ctx, secret, patch); err != nil {
+		return nil, err
+	}
+
+	return secret, nil
 }
 
 func (v *VSHandler) getRS(name, namespace string) (*volsyncv1alpha1.ReplicationSource, error) {
