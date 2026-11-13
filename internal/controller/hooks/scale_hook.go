@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: The RamenDR authors
+// SPDX-License-Identifier: Apache-2.0
+
 package hooks
 
 import (
@@ -117,12 +120,39 @@ func (s ScaleHook) Execute(log logr.Logger) error {
 
 	resources, err := s.getResourcesToScale()
 	if err != nil {
+		log.Error(err, "Failed to fetch resources to scale",
+			"hook", s.Hook.Name,
+			"namespace", s.Hook.Namespace,
+			"operation", s.Hook.Scale.Operation,
+			"selectResource", s.Hook.SelectResource,
+			"nameSelector", s.Hook.NameSelector,
+			"labelSelector", s.Hook.LabelSelector,
+		)
+
 		return err
 	}
 
 	scaleOp := s.Hook.Scale.Operation
 
-	return s.processResources(resources, scaleOp, log)
+	if err := s.processResources(resources, scaleOp, log); err != nil {
+		log.Error(err, "Failed to process scale operation",
+			"hook", s.Hook.Name,
+			"namespace", s.Hook.Namespace,
+			"operation", scaleOp,
+			"resourcesCount", len(resources),
+		)
+
+		return err
+	}
+
+	log.Info("Scale hook executed successfully",
+		"hook", s.Hook.Name,
+		"namespace", s.Hook.Namespace,
+		"operation", scaleOp,
+		"resourcesScaled", len(resources),
+	)
+
+	return nil
 }
 
 func (s ScaleHook) processResources(resources []client.Object, scaleOp string, log logr.Logger) error {
@@ -178,7 +208,7 @@ func (s ScaleHook) getResourcesToScale() ([]client.Object, error) {
 
 	if len(resources) == 0 {
 		return nil, fmt.Errorf(
-			"no resources found to scale: hook=%s, namespace=%s, selectResource=%s",
+			"no resources found to scale (hook=%q namespace=%q selectResource=%q)",
 			s.Hook.Name, s.Hook.Namespace, s.Hook.SelectResource)
 	}
 
@@ -194,10 +224,10 @@ func (s ScaleHook) scaleResource(resource Resource, operation string, log logr.L
 	case ScaleSync:
 		return s.SyncResource(resource, log)
 	default:
-		return fmt.Errorf("unsupported scale operation: hook=%s, namespace=%s, operation=%s, resource=%s",
+		return fmt.Errorf("unsupported scale operation=%q (hook=%q namespace=%q resource=%q)",
+			operation,
 			s.Hook.Name,
 			s.Hook.Namespace,
-			s.Hook.Scale.Operation,
 			resource.GetObjectMeta().GetName(),
 		)
 	}
@@ -252,29 +282,30 @@ func (s ScaleHook) ScaleDownResource(resource Resource, log logr.Logger) error {
 
 func (s ScaleHook) ScaleUpResource(resource Resource, log logr.Logger) error {
 	resourceName := resource.GetObjectMeta().GetName()
-	resourceNamespace := resource.GetObjectMeta().GetNamespace()
 
 	annotations := resource.GetAnnotations()
 	if annotations == nil {
-		return fmt.Errorf("no annotations found to restore replicas for resource %s/%s hook: %s",
-			resourceNamespace, resourceName, s.Hook.Name)
+		return fmt.Errorf("no annotations found to restore replicas (hook=%q namespace=%q resource=%q)",
+			s.Hook.Name, s.Hook.Namespace, resourceName)
 	}
 
 	origStr, ok := annotations[replicasCountAnnotation]
 	if !ok {
-		return fmt.Errorf("original replicas annotation not found for resource %s/%s hook: %s",
-			resourceNamespace, resourceName, s.Hook.Name)
+		return fmt.Errorf("original replicas annotation not found (hook=%q namespace=%q resource=%q)",
+			s.Hook.Name, s.Hook.Namespace, resourceName)
 	}
 
 	replicaCount, err := strconv.ParseInt(origStr, 10, 32)
 	if err != nil {
-		return fmt.Errorf("invalid original replicas annotation value %s on resource %s/%s hook: %s: %w",
-			origStr, resourceNamespace, resourceName, s.Hook.Name, err)
+		return fmt.Errorf(
+			"invalid original replicas annotation value=%q (hook=%q namespace=%q resource=%q): %w",
+			origStr, s.Hook.Name, s.Hook.Namespace, resourceName, err)
 	}
 
 	if replicaCount < 0 || replicaCount > math.MaxInt32 {
-		return fmt.Errorf("original replicas annotation value %d out of int32 range on resource %s/%s hook: %s",
-			replicaCount, resourceNamespace, resourceName, s.Hook.Name)
+		return fmt.Errorf(
+			"original replicas annotation value=%d out of int32 range (hook=%q namespace=%q resource=%q)",
+			replicaCount, s.Hook.Name, s.Hook.Namespace, resourceName)
 	}
 
 	replicaCount32 := int32(replicaCount)
@@ -282,7 +313,7 @@ func (s ScaleHook) ScaleUpResource(resource Resource, log logr.Logger) error {
 
 	log.Info("Scaling up from annotation",
 		"hook", s.Hook.Name,
-		"namespace", resourceNamespace,
+		"namespace", s.Hook.Namespace,
 		"operation", s.Hook.Scale.Operation,
 		"resource", resourceName,
 		"replicas", replicaCount32,
@@ -294,7 +325,7 @@ func (s ScaleHook) ScaleUpResource(resource Resource, log logr.Logger) error {
 	if err := resource.Update(context.Background(), s.Client); err != nil {
 		log.Error(err, "Failed to update resource during scale up",
 			"hook", s.Hook.Name,
-			"namespace", resourceNamespace,
+			"namespace", s.Hook.Namespace,
 			"operation", s.Hook.Scale.Operation,
 			"resource", resourceName,
 		)
@@ -310,11 +341,11 @@ func (s ScaleHook) SyncResource(resource Resource, log logr.Logger) error {
 	timeout := common.GetHookTimeout(s.Hook)
 
 	name := resource.GetObjectMeta().GetName()
-	namespace := resource.GetObjectMeta().GetNamespace()
 
 	targetPtr := resource.GetReplicasFromSpec()
 	if targetPtr == nil {
-		return fmt.Errorf("sync: .Spec.Replicas is nil for resource %s", name)
+		return fmt.Errorf("sync: .Spec.Replicas is nil (hook=%q namespace=%q resource=%q)",
+			s.Hook.Name, s.Hook.Namespace, name)
 	}
 
 	targetReplicas := *targetPtr
@@ -328,17 +359,17 @@ func (s ScaleHook) SyncResource(resource Resource, log logr.Logger) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("sync timeout: resource %s replicas did not reach %d within %d seconds",
-				name, targetReplicas, timeout)
+			return fmt.Errorf(
+				"sync timeout: replicas did not reach %d within %d seconds (hook=%q namespace=%q resource=%q)",
+				targetReplicas, timeout, s.Hook.Name, s.Hook.Namespace, name)
 
 		case <-ticker.C:
 			refreshed, err := s.refreshResource(s.Reader, resource)
 			if err != nil {
-				log.Info("Error refreshing resource during sync",
+				log.Error(err, "Failed to refresh resource during sync",
 					"hook", s.Hook.Name,
 					"namespace", s.Hook.Namespace,
-					"resource", name,
-					"error", err)
+					"resource", name)
 
 				return err
 			}
@@ -359,7 +390,7 @@ func (s ScaleHook) SyncResource(resource Resource, log logr.Logger) error {
 
 			log.Info("Sync: waiting for target replicas",
 				"hook", s.Hook.Name,
-				"namespace", namespace,
+				"namespace", s.Hook.Namespace,
 				"resource", name,
 				"actualReplicas", actualReplicas,
 				"targetReplicas", targetReplicas,
@@ -378,15 +409,15 @@ func (s ScaleHook) getResourcesBySelector(objList client.ObjectList) ([]client.O
 		nsType, objs, err := getResourcesUsingNameSelector(r, hook, objList)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"error during nameSelector resource lookup: %w, hook=%s, namespace=%s, operation=%s, "+
-					"selectResource=%s, nameSelector=%s",
-				err, hook.Name, hook.Namespace, hook.Scale.Operation, hook.SelectResource, hook.NameSelector,
+				"failed to look up resources using nameSelector (hook=%q namespace=%q operation=%q "+
+					"selectResource=%q nameSelector=%q): %w",
+				hook.Name, hook.Namespace, hook.Scale.Operation, hook.SelectResource, hook.NameSelector, err,
 			)
 		}
 
 		if nsType == InvalidNameSelector {
 			return nil, fmt.Errorf(
-				"invalid nameSelector: %s , hook=%s, namespace=%s, operation=%s, selectResource=%s",
+				"invalid nameSelector=%q (hook=%q namespace=%q operation=%q selectResource=%q)",
 				hook.NameSelector, hook.Name, hook.Namespace, hook.Scale.Operation, hook.SelectResource,
 			)
 		}
@@ -397,9 +428,9 @@ func (s ScaleHook) getResourcesBySelector(objList client.ObjectList) ([]client.O
 	if hook.LabelSelector != nil {
 		if err := getResourcesUsingLabelSelector(r, hook, objList); err != nil {
 			return nil, fmt.Errorf(
-				"error during labelSelector resource lookup: %w, hook=%s, namespace=%s, operation=%s, "+
-					"selectResource=%s, labelSelector=%v",
-				err, hook.Name, hook.Namespace, hook.Scale.Operation, hook.SelectResource, hook.LabelSelector,
+				"failed to look up resources using labelSelector (hook=%q namespace=%q operation=%q "+
+					"selectResource=%q labelSelector=%v): %w",
+				hook.Name, hook.Namespace, hook.Scale.Operation, hook.SelectResource, hook.LabelSelector, err,
 			)
 		}
 
@@ -417,7 +448,7 @@ func (s ScaleHook) getResourceListForType() (client.ObjectList, error) {
 		return &appsv1.StatefulSetList{}, nil
 	default:
 		return nil, fmt.Errorf(
-			"Unsupported resource type for scale hook: hook=%s, namespace=%s, operation=%s, selectResource=%s",
+			"unsupported resource type for scale hook (hook=%q namespace=%q operation=%q selectResource=%q)",
 			s.Hook.Name,
 			s.Hook.Namespace,
 			s.Hook.Scale.Operation,
@@ -437,8 +468,8 @@ func (s ScaleHook) refreshResource(reader client.Reader, resource Resource) (Res
 		err := reader.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, deployment)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"failed to get Deployment resource %s/%s for hook %s: %w",
-				namespace, name, s.Hook.Name, err)
+				"failed to get Deployment resource (hook=%q namespace=%q resource=%q): %w",
+				s.Hook.Name, s.Hook.Namespace, name, err)
 		}
 
 		return DeploymentResource{deployment}, nil
@@ -449,14 +480,15 @@ func (s ScaleHook) refreshResource(reader client.Reader, resource Resource) (Res
 		err := reader.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, statefulset)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"failed to get StatefulSet resource %s/%s for hook %s: %w",
-				namespace, name, s.Hook.Name, err)
+				"failed to get StatefulSet resource (hook=%q namespace=%q resource=%q): %w",
+				s.Hook.Name, s.Hook.Namespace, name, err)
 		}
 
 		return StatefulSetResource{statefulset}, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported resource type for hook %s when fetching resource %s/%s",
-			s.Hook.Name, namespace, name)
+		return nil, fmt.Errorf(
+			"unsupported resource type when fetching resource (hook=%q namespace=%q resource=%q)",
+			s.Hook.Name, s.Hook.Namespace, name)
 	}
 }
