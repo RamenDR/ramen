@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -41,6 +43,10 @@ type DRPolicyReconciler struct {
 	MCVGetter         util.ManagedClusterViewGetter
 	ObjectStoreGetter ObjectStoreGetter
 	RateLimiter       *workqueue.TypedRateLimiter[reconcile.Request]
+
+	// Cached RamenConfig to avoid repeated ConfigMapGet calls
+	ramenConfigMu     sync.RWMutex
+	cachedRamenConfig *ramen.RamenConfig
 }
 
 // ReasonValidationFailed is set when the DRPolicy could not be validated or is not valid
@@ -138,7 +144,7 @@ func (r *DRPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// DRPolicy is marked for deletion
 	if util.ResourceIsDeleted(drpolicy) &&
 		controllerutil.ContainsFinalizer(drpolicy, drPolicyFinalizerName) {
-		return ctrl.Result{}, u.deleteDRPolicy(drclusters, secretsUtil, ramenConfig)
+		return ctrl.Result{}, u.deleteDRPolicy(r, drclusters, secretsUtil, ramenConfig)
 	}
 
 	reason, err := validateDRPolicy(drpolicy, drclusters)
@@ -189,7 +195,7 @@ func (r *DRPolicyReconciler) reconcile(
 		return ctrl.Result{}, u.validatedSetFalse(ReasonDRPolicyConflictFound, err)
 	}
 
-	result, err := r.validateNADs(u)
+	result, err := r.validateNADs(u, ramenConfig)
 	if err != nil || !result.IsZero() {
 		return result, err
 	}
@@ -235,11 +241,18 @@ func isNetworkMappingEnabled(drPolicy *ramen.DRPolicy) bool {
 
 func (r *DRPolicyReconciler) validateNADs(
 	u *drpolicyUpdater,
+	ramenConfig *ramen.RamenConfig,
 ) (ctrl.Result, error) {
 	if !isNetworkMappingEnabled(u.object) {
 		return ctrl.Result{}, nil
 	}
 
+	// 1. Label network mapping ConfigMap for hub backup
+	// This runs on every reconcile to ensure the label is present even if watcher failed
+	if err := r.labelNetworkMappingConfigMap(u.ctx, u.object, ramenConfig, u.log); err != nil {
+		// Return error to trigger automatic retry with exponential backoff
+		return ctrl.Result{}, fmt.Errorf("failed to label network mapping ConfigMap: %w", err)
+	}
 	// NAD validation: ensure that NADs referenced by the network mapping
 	// configuration are present on all clusters in the DRPolicy. Missing NADs
 	// are surfaced through a DRPolicy condition to help users identify and
@@ -495,11 +508,16 @@ type drpolicyUpdater struct {
 	log    logr.Logger
 }
 
-func (u *drpolicyUpdater) deleteDRPolicy(drclusters *ramen.DRClusterList,
+func (u *drpolicyUpdater) deleteDRPolicy(r *DRPolicyReconciler, drclusters *ramen.DRClusterList,
 	secretsUtil *util.SecretsUtil,
 	ramenConfig *ramen.RamenConfig,
 ) error {
 	u.log.Info("delete")
+
+	// Try to remove label, but don't block deletion
+	if err := r.removeNetworkMappingConfigMapLabel(u.ctx, u.object, ramenConfig, u.log); err != nil {
+		u.log.Error(err, "Failed to remove OCM backup label from network mapping ConfigMap")
+	}
 
 	drpcs := ramen.DRPlacementControlList{}
 	if err := secretsUtil.Client.List(secretsUtil.Ctx, &drpcs); err != nil {
@@ -631,14 +649,34 @@ func (r *DRPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap client.Object) []reconcile.Request {
-	if configMap.GetName() != HubOperatorConfigMapName || configMap.GetNamespace() != RamenOperatorNamespace() {
+	cm, ok := configMap.(*corev1.ConfigMap)
+	if !ok {
 		return []reconcile.Request{}
 	}
 
-	labelAdded := util.AddLabel(configMap, util.OCMBackupLabelKey, util.OCMBackupLabelValue)
+	cmNamespace := cm.GetNamespace()
+	cmName := cm.GetName()
+
+	// Route to appropriate handler based on ConfigMap type
+	if cmName == HubOperatorConfigMapName && cmNamespace == RamenOperatorNamespace() {
+		return r.handleHubOperatorConfigMap(ctx, cm)
+	}
+
+	return r.handleNetworkMappingConfigMap(ctx, cm)
+}
+
+// handleHubOperatorConfigMap processes ramen-hub-operator-config ConfigMap changes
+func (r *DRPolicyReconciler) handleHubOperatorConfigMap(ctx context.Context,
+	cm *corev1.ConfigMap,
+) []reconcile.Request {
+	// Invalidate cache when ramen-hub-operator-config changes
+	r.invalidateRamenConfigCache()
+
+	// Add OCM backup label if needed
+	labelAdded := util.AddLabel(cm, util.OCMBackupLabelKey, util.OCMBackupLabelValue)
 
 	if labelAdded {
-		if err := r.Update(context.TODO(), configMap); err != nil {
+		if err := r.Update(ctx, cm); err != nil {
 			r.Log.Error(err, "Failed to add OCM backup label to ramen-hub-operator-config map")
 
 			return []reconcile.Request{}
@@ -646,7 +684,7 @@ func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap cli
 	}
 
 	drpolicies := &ramen.DRPolicyList{}
-	if err := r.Client.List(context.TODO(), drpolicies); err != nil {
+	if err := r.Client.List(ctx, drpolicies); err != nil {
 		return []reconcile.Request{}
 	}
 
@@ -656,6 +694,38 @@ func (r *DRPolicyReconciler) configMapMapFunc(ctx context.Context, configMap cli
 	}
 
 	return requests
+}
+
+// handleNetworkMappingConfigMap processes network mapping ConfigMap changes
+func (r *DRPolicyReconciler) handleNetworkMappingConfigMap(ctx context.Context,
+	cm *corev1.ConfigMap,
+) []reconcile.Request {
+	// Network mapping ConfigMap - check if in ramenOpsNamespace
+	ramenConfig, err := r.getRamenConfig(ctx)
+	if err != nil {
+		r.Log.Error(err, "Failed to get RamenConfig for ConfigMap watch")
+
+		return []reconcile.Request{}
+	}
+
+	// Only process ConfigMaps in ramenOpsNamespace
+	if cm.GetNamespace() != ramenConfig.RamenOpsNamespace {
+		return []reconcile.Request{}
+	}
+
+	// Add OCM backup label if needed
+	if cm.GetLabels()[util.OCMBackupLabelKey] == util.OCMBackupLabelValue {
+		return []reconcile.Request{}
+	}
+
+	// Trigger reconcile for DRPolicies that reference this ConfigMap
+	drpolicies := &ramen.DRPolicyList{}
+	if err := r.Client.List(ctx, drpolicies); err != nil {
+		return []reconcile.Request{}
+	}
+
+	// Label ConfigMap and get reconcile requests
+	return r.labelAndReconcileNetworkMappingConfigMap(ctx, cm, drpolicies)
 }
 
 func (r *DRPolicyReconciler) secretMapFunc(ctx context.Context, secret client.Object) []reconcile.Request {
@@ -1024,6 +1094,250 @@ func clearNADStatus(u *drpolicyUpdater) error {
 
 	if err := u.client.Status().Update(u.ctx, drPolicy); err != nil {
 		return fmt.Errorf("clearing stale NAD status for %s: %w", u.object.Name, err)
+	}
+
+	return nil
+}
+
+// getRamenConfig returns the cached RamenConfig or fetches it if not cached
+func (r *DRPolicyReconciler) getRamenConfig(ctx context.Context) (*ramen.RamenConfig, error) {
+	// Try read lock first for cache hit (fast path)
+	r.ramenConfigMu.RLock()
+	cached := r.cachedRamenConfig
+	r.ramenConfigMu.RUnlock()
+
+	if cached != nil {
+		return cached, nil
+	}
+
+	// Cache miss - acquire write lock to fetch and cache
+	r.ramenConfigMu.Lock()
+	defer r.ramenConfigMu.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine might have cached it)
+	if r.cachedRamenConfig != nil {
+		return r.cachedRamenConfig, nil
+	}
+
+	// Fetch and cache
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		return nil, err
+	}
+
+	r.cachedRamenConfig = ramenConfig
+
+	return ramenConfig, nil
+}
+
+// invalidateRamenConfigCache clears the cached RamenConfig
+func (r *DRPolicyReconciler) invalidateRamenConfigCache() {
+	r.ramenConfigMu.Lock()
+	r.cachedRamenConfig = nil
+	r.ramenConfigMu.Unlock()
+}
+
+// labelAndReconcileNetworkMappingConfigMap adds OCM backup label to a ConfigMap
+// if it's referenced by any DRPolicy, and returns reconcile requests for those DRPolicies.
+func (r *DRPolicyReconciler) labelAndReconcileNetworkMappingConfigMap(
+	ctx context.Context,
+	cm *corev1.ConfigMap,
+	drpolicies *ramen.DRPolicyList,
+) []reconcile.Request {
+	var requests []reconcile.Request
+
+	// Check if ConfigMap is referenced by any DRPolicy
+	for i := range drpolicies.Items {
+		drPolicy := &drpolicies.Items[i]
+		if isNetworkMappingEnabled(drPolicy) &&
+			drPolicy.Spec.NetworkMappingRef.Name == cm.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: drPolicy.GetName()},
+			})
+		}
+	}
+
+	// Opportunistically label if referenced
+	if len(requests) > 0 {
+		labeled, err := r.addOCMBackupLabelToConfigMap(ctx, cm)
+		if err != nil {
+			r.Log.Info("Failed to add OCM backup label in watcher, DRPolicy reconcile will retry",
+				"configMap", cm.Name, "namespace", cm.Namespace, "error", err.Error())
+		} else if labeled {
+			r.Log.Info("Added OCM backup label to network mapping ConfigMap",
+				"configMap", cm.Name, "namespace", cm.Namespace)
+		}
+	}
+
+	return requests
+}
+
+// labelNetworkMappingConfigMap adds OCM backup label to the network mapping ConfigMap
+// referenced by a DRPolicy. Called from the reconcile loop to ensure the label is
+// present even if the watcher failed. Returns error to trigger retry on failure.
+func (r *DRPolicyReconciler) labelNetworkMappingConfigMap(
+	ctx context.Context,
+	drPolicy *ramen.DRPolicy,
+	ramenConfig *ramen.RamenConfig,
+	log logr.Logger,
+) error {
+	// Get the network mapping ConfigMap
+	cm, err := r.getNetworkMappingConfigMap(ctx, drPolicy, ramenConfig, log)
+	if err != nil {
+		return err // Error already formatted, just propagate
+	}
+
+	// Add label (strict - return error on failure)
+	labeled, err := r.addOCMBackupLabelToConfigMap(ctx, cm)
+	if err != nil {
+		return fmt.Errorf("failed to add OCM backup label to network mapping ConfigMap %s/%s: %w",
+			cm.Namespace, cm.Name, err)
+	}
+
+	if labeled {
+		log.Info("Added OCM backup label to network mapping ConfigMap",
+			"configMap", cm.Name, "namespace", cm.Namespace)
+	} else {
+		log.Info("OCM backup label already present on network mapping ConfigMap",
+			"configMap", cm.Name, "namespace", cm.Namespace)
+	}
+
+	return nil
+}
+
+// addOCMBackupLabelToConfigMap attempts to add the OCM backup label to a ConfigMap.
+// Returns true if the label was added, false if already present.
+// Returns error only if the Update call fails.
+func (r *DRPolicyReconciler) addOCMBackupLabelToConfigMap(
+	ctx context.Context,
+	cm *corev1.ConfigMap,
+) (bool, error) {
+	// Check if label needs to be added
+	if !util.AddLabel(cm, util.OCMBackupLabelKey, util.OCMBackupLabelValue) {
+		// Label already present
+		return false, nil
+	}
+
+	// Label was added (in-memory), now persist to API server
+	if err := r.Update(ctx, cm); err != nil {
+		return false, fmt.Errorf("failed to update ConfigMap: %w", err)
+	}
+
+	return true, nil
+}
+
+// getNetworkMappingConfigMap retrieves the network mapping ConfigMap referenced
+// by a DRPolicy. Returns error if ramenOpsNamespace is not configured or if the
+// ConfigMap cannot be retrieved.
+func (r *DRPolicyReconciler) getNetworkMappingConfigMap(
+	ctx context.Context,
+	drPolicy *ramen.DRPolicy,
+	ramenConfig *ramen.RamenConfig,
+	log logr.Logger,
+) (*corev1.ConfigMap, error) {
+	cmNamespace := ramenConfig.RamenOpsNamespace
+	if cmNamespace == "" {
+		return nil, fmt.Errorf("ramenOpsNamespace is not configured in RamenConfig")
+	}
+
+	cmName := drPolicy.Spec.NetworkMappingRef.Name
+
+	cm := &corev1.ConfigMap{}
+	if err := r.Client.Get(ctx, types.NamespacedName{
+		Name:      cmName,
+		Namespace: cmNamespace,
+	}, cm); err != nil {
+		if k8serrors.IsNotFound(err) {
+			log.Info("Network mapping ConfigMap not found",
+				"configMap", cmName, "namespace", cmNamespace)
+
+			return nil, fmt.Errorf("network mapping ConfigMap %s/%s not found: %w",
+				cmNamespace, cmName, err)
+		}
+
+		return nil, fmt.Errorf("failed to get network mapping ConfigMap %s/%s: %w", cmNamespace, cmName, err)
+	}
+
+	return cm, nil
+}
+
+// networkMappingConfigMapStillReferenced reports whether any DRPolicy other than
+// deletingDRPolicy still references the network mapping ConfigMap named cmName.
+func (r *DRPolicyReconciler) networkMappingConfigMapStillReferenced(
+	ctx context.Context,
+	deletingDRPolicy *ramen.DRPolicy,
+	cmName string,
+	log logr.Logger,
+) (bool, error) {
+	drPolicies := &ramen.DRPolicyList{}
+	if err := r.Client.List(ctx, drPolicies); err != nil {
+		return false, fmt.Errorf("failed to list DRPolicies: %w", err)
+	}
+
+	for i := range drPolicies.Items {
+		drPolicy := &drPolicies.Items[i]
+
+		if drPolicy.Name == deletingDRPolicy.Name {
+			continue
+		}
+
+		if isNetworkMappingEnabled(drPolicy) && drPolicy.Spec.NetworkMappingRef.Name == cmName {
+			log.Info("Network mapping ConfigMap still referenced by another DRPolicy, keeping label",
+				"configMap", cmName,
+				"referencingDRPolicy", drPolicy.Name)
+
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// removeNetworkMappingConfigMapLabel removes the OCM backup label from the
+// network mapping ConfigMap if no other DRPolicy references it
+func (r *DRPolicyReconciler) removeNetworkMappingConfigMapLabel(
+	ctx context.Context,
+	deletingDRPolicy *ramen.DRPolicy,
+	ramenConfig *ramen.RamenConfig,
+	log logr.Logger,
+) error {
+	if !isNetworkMappingEnabled(deletingDRPolicy) {
+		return nil
+	}
+
+	cmName := deletingDRPolicy.Spec.NetworkMappingRef.Name
+
+	stillReferenced, err := r.networkMappingConfigMapStillReferenced(ctx, deletingDRPolicy, cmName, log)
+	if err != nil {
+		return err
+	}
+
+	if stillReferenced {
+		return nil
+	}
+
+	// No other DRPolicy references this ConfigMap, get it to remove the label
+	cm, err := r.getNetworkMappingConfigMap(ctx, deletingDRPolicy, ramenConfig, log)
+	if err != nil {
+		// ConfigMap not found is OK during deletion
+		if k8serrors.IsNotFound(err) {
+			log.V(1).Info("Network mapping ConfigMap already deleted, skipping label removal",
+				"configMap", cmName)
+
+			return nil
+		}
+
+		return err
+	}
+
+	// Remove the OCM backup label
+	if util.RemoveLabel(cm, util.OCMBackupLabelKey, nil) {
+		if err := r.Update(ctx, cm); err != nil {
+			return fmt.Errorf("failed to remove OCM backup label: %w", err)
+		}
+
+		log.Info("Removed OCM backup label from network mapping ConfigMap",
+			"configMap", cm.Name, "namespace", cm.Namespace)
 	}
 
 	return nil
