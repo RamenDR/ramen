@@ -817,6 +817,20 @@ func (v *VRGInstance) updateSyncPVCs(pvcList *corev1.PersistentVolumeClaimList) 
 		return err
 	}
 
+	peerClasses := []ramendrv1alpha1.PeerClass{}
+	if v.instance.Spec.Sync != nil {
+		peerClasses = v.instance.Spec.Sync.PeerClasses
+	}
+
+	offloaded, err := v.processOffloadedPVCs(pvcList, peerClasses)
+	if err != nil {
+		return err
+	}
+
+	if offloaded {
+		return v.processGloballyOffloadedPVCs(pvcList, peerClasses)
+	}
+
 	v.volRepPVCs = make([]corev1.PersistentVolumeClaim, len(pvcList.Items))
 	total := copy(v.volRepPVCs, pvcList.Items)
 
@@ -838,13 +852,13 @@ func (v *VRGInstance) updateAsyncPVCs(pvcList *corev1.PersistentVolumeClaimList)
 		return nil
 	}
 
-	offloaded, err := v.processOffloadedPVCs(pvcList)
+	offloaded, err := v.processOffloadedPVCs(pvcList, v.instance.Spec.Async.PeerClasses)
 	if err != nil {
 		return err
 	}
 
 	if offloaded {
-		return v.processGloballyOffloadedPVCs(pvcList)
+		return v.processGloballyOffloadedPVCs(pvcList, v.instance.Spec.Async.PeerClasses)
 	}
 
 	// Separate PVCs targeted for VolRep from PVCs targeted for VolSync

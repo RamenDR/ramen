@@ -741,6 +741,10 @@ func (d *DRPCInstance) checkFailoverPrerequisites(curHomeCluster string) (bool, 
 func (d *DRPCInstance) checkMetroFailoverPrerequisites(curHomeCluster string) (bool, error) {
 	met := true
 
+	if d.syncPeersAreOffloaded() {
+		return met, nil
+	}
+
 	d.setProgression(rmn.ProgressionWaitForFencing)
 
 	fenced, err := d.checkClusterFenced(curHomeCluster, d.drClusters)
@@ -1954,9 +1958,72 @@ func (d *DRPCInstance) updateVRGDRTypeSpec(vrgFromCluster, generatedVRG *rmn.Vol
 	switch d.drType {
 	case DRTypeSync:
 		d.updateVRGSyncSpec(vrgFromCluster, generatedVRG)
+
+		if syncSpecReplacesOffloadedAsync(generatedVRG) {
+			generatedVRG.Spec.Async = nil
+		}
 	case DRTypeAsync:
 		d.updateVRGAsyncSpec(vrgFromCluster, generatedVRG)
+
+		if asyncSpecReplacesOffloadedSync(generatedVRG) {
+			generatedVRG.Spec.Sync = nil
+		}
 	}
+}
+
+// syncSpecReplacesOffloadedAsync reports that spec.sync now has peers and the
+// spec.async still on the VRG belongs to offloaded storage.
+func syncSpecReplacesOffloadedAsync(vrg *rmn.VolumeReplicationGroup) bool {
+	if vrg.Spec.Sync == nil || len(vrg.Spec.Sync.PeerClasses) == 0 || vrg.Spec.Async == nil {
+		return false
+	}
+
+	return allPeerClassesOffloaded(vrg.Spec.Async.PeerClasses)
+}
+
+// asyncSpecReplacesOffloadedSync reports that spec.async now has offloaded peers
+// and spec.sync is still set.
+func asyncSpecReplacesOffloadedSync(vrg *rmn.VolumeReplicationGroup) bool {
+	if vrg.Spec.Sync == nil || vrg.Spec.Async == nil {
+		return false
+	}
+
+	return allPeerClassesOffloaded(vrg.Spec.Async.PeerClasses)
+}
+
+func allPeerClassesOffloaded(peerClasses []rmn.PeerClass) bool {
+	if len(peerClasses) == 0 {
+		return false
+	}
+
+	for i := range peerClasses {
+		if !peerClasses[i].Offloaded {
+			return false
+		}
+	}
+
+	return true
+}
+
+// syncPeersAreOffloaded reports that at least one VRG has spec.sync peers and
+// every such peer is offloaded. An empty spec.sync is ignored. A non-offloaded
+// peer means fencing is still required.
+func (d *DRPCInstance) syncPeersAreOffloaded() bool {
+	sawPeers := false
+
+	for _, vrg := range d.vrgs {
+		if vrg == nil || vrg.Spec.Sync == nil || len(vrg.Spec.Sync.PeerClasses) == 0 {
+			continue
+		}
+
+		if !allPeerClassesOffloaded(vrg.Spec.Sync.PeerClasses) {
+			return false
+		}
+
+		sawPeers = true
+	}
+
+	return sawPeers
 }
 
 // updateVRGOptionalFields ensures that the optional fields in the VRG object are up to date.

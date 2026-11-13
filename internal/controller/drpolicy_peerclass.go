@@ -305,11 +305,11 @@ func getAsyncVRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, 
 	return ""
 }
 
-// getAsyncVGRClassPeer returns:
+// getVGRClassPeer returns:
 //   - common GroupReplicationID if a matching VGRClass pair is found across clA and clB for the
 //     given storageIDs, schedule, and scGrID (when non-empty)
 //   - empty string if no match found
-func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule, scGrID string) string {
+func getVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string, schedule, scGrID string) string {
 	for vgrcAidx := range clA.vgrClasses {
 		grIDA := getVGRID(scName, clA, vgrcAidx, sIDA, schedule, scGrID)
 
@@ -334,9 +334,9 @@ func getAsyncVGRClassPeer(scName string, clA, clB classLists, sIDA, sIDB string,
 	return ""
 }
 
-// isAsyncVGRClassPeerGlobal checks if the VGRClasses with the given GroupReplicationID on both peers
+// isVGRClassPeerGlobal checks if the VGRClasses with the given GroupReplicationID on both peers
 // are labeled as global. Returns true only if both peers have the global label.
-func isAsyncVGRClassPeerGlobal(clA, clB classLists, grID string) bool {
+func isVGRClassPeerGlobal(clA, clB classLists, grID string) bool {
 	hasGlobal := func(cl classLists) bool {
 		for idx := range cl.vgrClasses {
 			if cl.vgrClasses[idx].GetLabels()[GroupReplicationIDLabel] == grID {
@@ -350,23 +350,76 @@ func isAsyncVGRClassPeerGlobal(clA, clB classLists, grID string) bool {
 	return hasGlobal(clA) && hasGlobal(clB)
 }
 
+// getOffloadedPeers pairs scName with the same StorageClass on the remaining clusters.
+// The storageIDs differ and both StorageClasses are offloaded. The peer carries grouping,
+// offloaded, and global. The caller decides whether it belongs on the sync or async list.
+// global is true only when both VolumeGroupReplicationClasses carry the global label.
+func getOffloadedPeers(scName, clusterID, sID string, cls []classLists, schedule string) []peerInfo {
+	peers := []peerInfo{}
+	scGrID := groupReplicationIDForStorageClass(cls[0], scName)
+
+	for _, cl := range cls[1:] {
+		for scIdx := range cl.sClasses {
+			if cl.sClasses[scIdx].GetName() != scName {
+				continue
+			}
+
+			sIDcl := cl.sClasses[scIdx].GetLabels()[StorageIDLabel]
+			if sID == sIDcl {
+				break
+			}
+
+			if !util.HasLabel(cl.sClasses[scIdx], StorageOffloadedLabel) {
+				continue
+			}
+
+			grID := getVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule, scGrID)
+			if grID == "" {
+				continue
+			}
+
+			peers = append(peers, peerInfo{
+				storageClassName:   scName,
+				storageIDs:         []string{sID, sIDcl},
+				clusterIDs:         []string{clusterID, cl.clusterID},
+				groupReplicationID: grID,
+				grouping:           true,
+				offloaded:          true,
+				global:             isVGRClassPeerGlobal(cls[0], cl, grID),
+			})
+
+			break
+		}
+	}
+
+	return peers
+}
+
+func groupReplicationIDForStorageClass(cl classLists, scName string) string {
+	for idx := range cl.sClasses {
+		if cl.sClasses[idx].GetName() == scName {
+			return cl.sClasses[idx].GetLabels()[GroupReplicationIDLabel]
+		}
+	}
+
+	return ""
+}
+
 // getAsyncPeers determines if scName in the first classList has asynchronous peers in the remaining classLists.
 // The clusterID and sID are the corresponding IDs for the first cluster in the classList, and the schedule is
-// the desired asynchronous schedule that requires to be matched.
+// the desired asynchronous schedule that requires to be matched. Offloaded peers are built by getOffloadedPeers.
 // Grouping logic:
-//   - Offloaded storage: Uses VGRC only, grouping = true when VGRC with GroupReplicationID exists.
-//     Additionally, global = true when both peer VGRCs are labeled with GlobalReplicationLabel.
-//   - Non-offloaded storage: Uses VRC and VGRC, grouping = true when both exist with ReplicationID,
+//   - Uses VRC and VGRC, grouping = true when both exist with ReplicationID,
 //     not necessarily requiring them to have identical ReplicationIDs.
 //   - Snapshots: Uses VGSC and VSC, grouping = true when VGSC exists on both clusters for the same storageClass
 //
 // nolint:gocognit,cyclop,ineffassign,funlen,gocyclo
-func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLists, schedule string) []peerInfo {
+func getAsyncPeers(scName, clusterID, sID string, cls []classLists, schedule string) []peerInfo {
 	peers := []peerInfo{}
 
 	for _, cl := range cls[1:] {
 		for scIdx := range cl.sClasses {
-			var grouping, global bool
+			var grouping bool
 
 			var rID, grID string
 
@@ -379,47 +432,26 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 				break
 			}
 
-			// avoid pairing an offloaded SC from one peer to another that is not offloaded
-			if offloaded != util.HasLabel(cl.sClasses[scIdx], StorageOffloadedLabel) {
+			// An offloaded StorageClass is paired by getOffloadedPeers.
+			if util.HasLabel(cl.sClasses[scIdx], StorageOffloadedLabel) {
 				continue
 			}
 
 			// read scGrID from the SC on cls[0] to select the correct VGRClass when multiple
 			// VGRClasses share the same storageID, schedule, and provisioner
-			scGrID := ""
+			scGrID := groupReplicationIDForStorageClass(cls[0], scName)
 
-			for clsIndx := range cls[0].sClasses {
-				if cls[0].sClasses[clsIndx].GetName() == scName {
-					scGrID = cls[0].sClasses[clsIndx].GetLabels()[GroupReplicationIDLabel]
+			grID = getVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule, scGrID)
+			rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
+			grouping = rID != "" && grID != ""
 
-					break
-				}
-			}
+			if rID == "" {
+				grID = ""
 
-			grID = getAsyncVGRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule, scGrID)
-			if offloaded && grID == "" {
-				continue
-			}
-
-			switch offloaded {
-			case true:
-				grouping = true
-
-				if isAsyncVGRClassPeerGlobal(cls[0], cl, grID) {
-					global = true
-				}
-			case false:
-				rID = getAsyncVRClassPeer(scName, cls[0], cl, sID, sIDcl, schedule)
-				grouping = rID != "" && grID != ""
-
-				if rID == "" {
-					grID = ""
-
-					if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
-						grouping = true
-					} else if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
-						continue
-					}
+				if isAsyncVGSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+					grouping = true
+				} else if !isAsyncVSClassPeer(scName, cls[0], cl, sID, sIDcl) {
+					continue
 				}
 			}
 
@@ -430,8 +462,8 @@ func getAsyncPeers(scName, clusterID, sID string, offloaded bool, cls []classLis
 				replicationID:      rID,
 				groupReplicationID: grID,
 				grouping:           grouping,
-				offloaded:          offloaded,
-				global:             global,
+				offloaded:          false,
+				global:             false,
 			})
 
 			break
@@ -486,20 +518,46 @@ func findPeers(cls []classLists, scName string, startClsIdx int, schedule string
 	}
 
 	sID := cls[startClsIdx].sClasses[scIdx].Labels[StorageIDLabel]
-	// TODO: Check if Sync is non-nil?
-	syncPeers := getSyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx+1:])
+	offloaded := util.HasLabel(cls[startClsIdx].sClasses[scIdx], StorageOffloadedLabel)
 
-	offloaded := false
-	if util.HasLabel(cls[startClsIdx].sClasses[scIdx], StorageOffloadedLabel) {
-		offloaded = true
+	// Offloaded storage does not use storageID equality to decide sync versus async.
+	// getOffloadedPeers builds the peer. A zero interval files it as sync, and a
+	// non-zero interval files it as async.
+	if offloaded {
+		peers := getOffloadedPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
+		if schedulingIntervalIsZero(schedule) {
+			return peers, []peerInfo{}
+		}
+
+		return []peerInfo{}, peers
 	}
 
+	// Non-offloaded sync peers share a storageID. A zero interval is metro, so it
+	// does not build async peers for classes whose storageIDs differ. A non-zero
+	// interval pairs those classes the same way as before.
+	// TODO: Check if Sync is non-nil?
+	syncPeers := getSyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx+1:])
 	asyncPeers := []peerInfo{}
-	if schedule != "" {
-		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, offloaded, cls[startClsIdx:], schedule)
+
+	if !schedulingIntervalIsZero(schedule) {
+		asyncPeers = getAsyncPeers(scName, cls[startClsIdx].clusterID, sID, cls[startClsIdx:], schedule)
 	}
 
 	return syncPeers, asyncPeers
+}
+
+// schedulingIntervalIsZero reports whether schedule is empty or a zero duration.
+// An unparsable value is not zero, so the caller keeps the existing async path.
+func schedulingIntervalIsZero(schedule string) bool {
+	if schedule == "" {
+		return true
+	}
+
+	secs, err := util.GetSecondsFromSchedulingInterval(&ramen.DRPolicy{
+		Spec: ramen.DRPolicySpec{SchedulingInterval: schedule},
+	})
+
+	return err == nil && secs == 0
 }
 
 // unionStorageClasses returns a union of all StorageClass names found in all clusters in the passed in classLists

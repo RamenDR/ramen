@@ -498,7 +498,7 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 
 	d.drType = DRTypeAsync
 
-	if !allVRGPeerClassesOffloaded(vrgs) {
+	if drTypeFollowsMetro(drPolicy, vrgs) {
 		isMetro, _, err := dRPolicySupportsMetro(drPolicy, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if DRPolicy supports Metro: %w", err)
@@ -522,9 +522,19 @@ func (r *DRPlacementControlReconciler) createDRPCInstance(
 	return d, nil
 }
 
+// drTypeFollowsMetro reports whether DR type should follow the metro check.
+// A zero interval is metro even when existing VRGs are still async offloaded.
+// A non-zero interval keeps an all-offloaded workload on async, including when
+// the policy also has metro peers. An unparsable interval keeps the old guard.
+func drTypeFollowsMetro(drPolicy *rmn.DRPolicy, vrgs map[string]*rmn.VolumeReplicationGroup) bool {
+	intervalSecs, intervalErr := rmnutil.GetSecondsFromSchedulingInterval(drPolicy)
+
+	return (intervalSecs == 0 && intervalErr == nil) || !allVRGPeerClassesOffloaded(vrgs)
+}
+
 // allVRGPeerClassesOffloaded returns true if every PeerClass across all VRGs
-// has its Offloaded field set to true. When true, the workload uses only
-// offloaded storage classes and should never be treated as metro DR.
+// has its Offloaded field set to true. A non-zero scheduling interval keeps
+// that workload async. A zero interval does not.
 func allVRGPeerClassesOffloaded(vrgs map[string]*rmn.VolumeReplicationGroup) bool {
 	found := false
 

@@ -15,6 +15,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
@@ -37,15 +38,54 @@ func isOffloadedByPeerClass(scName, sID string, peerClass *ramendrv1alpha1.PeerC
 	return true
 }
 
-func (v *VRGInstance) isOffloadedByPeerClasses(sc *storagev1.StorageClass) (bool, error) {
+// pvcsAreOffloaded reports that these PVCs use an offloaded StorageClass.
+// The first PVC is enough, because a mix of offloaded and non-offloaded PVCs is rejected.
+// A StorageClass lookup failure is treated as not offloaded.
+func (v *VRGInstance) pvcsAreOffloaded(pvcs []*corev1.PersistentVolumeClaim) bool {
+	if len(pvcs) == 0 {
+		return false
+	}
+
+	storageClass, err := v.getStorageClass(pvcs[0])
+	if err != nil {
+		return false
+	}
+
+	return util.HasLabel(storageClass, StorageOffloadedLabel)
+}
+
+// offloadedSync reports that spec.async is nil and the StorageClass is offloaded.
+// The caller checks spec.sync. A lookup failure is not offloaded.
+func (v *VRGInstance) offloadedSync(offloaded bool) bool {
+	return v.instance.Spec.Async == nil && offloaded
+}
+
+func (v *VRGInstance) pvStorageIsOffloaded(pv *corev1.PersistentVolume) bool {
+	if pv == nil || pv.Spec.StorageClassName == "" {
+		return false
+	}
+
+	scName := pv.Spec.StorageClassName
+
+	storageClass, err := v.getStorageClassFromSCName(&scName)
+	if err != nil {
+		return false
+	}
+
+	return util.HasLabel(storageClass, StorageOffloadedLabel)
+}
+
+func (v *VRGInstance) isOffloadedByPeerClasses(
+	sc *storagev1.StorageClass, peerClasses []ramendrv1alpha1.PeerClass,
+) (bool, error) {
 	if !util.HasLabel(sc, StorageIDLabel) {
 		return false, fmt.Errorf("missing %s label in StorageClass (%s)", StorageIDLabel, sc.GetName())
 	}
 
 	sID := sc.GetLabels()[StorageIDLabel]
 
-	for idx := range v.instance.Spec.Async.PeerClasses {
-		if isOffloadedByPeerClass(sc.GetName(), sID, &v.instance.Spec.Async.PeerClasses[idx]) {
+	for idx := range peerClasses {
+		if isOffloadedByPeerClass(sc.GetName(), sID, &peerClasses[idx]) {
 			return true, nil
 		}
 	}
@@ -53,9 +93,11 @@ func (v *VRGInstance) isOffloadedByPeerClasses(sc *storagev1.StorageClass) (bool
 	return false, nil
 }
 
-func (v *VRGInstance) isGloballyOffloadedByPeerClasses(scName string) (bool, string) {
-	for idx := range v.instance.Spec.Async.PeerClasses {
-		pc := &v.instance.Spec.Async.PeerClasses[idx]
+func (v *VRGInstance) isGloballyOffloadedByPeerClasses(
+	scName string, peerClasses []ramendrv1alpha1.PeerClass,
+) (bool, string) {
+	for idx := range peerClasses {
+		pc := &peerClasses[idx]
 
 		if scName == pc.StorageClassName && pc.Global {
 			return true, pc.GroupReplicationID
@@ -65,9 +107,9 @@ func (v *VRGInstance) isGloballyOffloadedByPeerClasses(scName string) (bool, str
 	return false, ""
 }
 
-func (v *VRGInstance) hasGlobalPeerClass() bool {
-	for idx := range v.instance.Spec.Async.PeerClasses {
-		if v.instance.Spec.Async.PeerClasses[idx].Global {
+func (v *VRGInstance) hasGlobalPeerClass(peerClasses []ramendrv1alpha1.PeerClass) bool {
+	for idx := range peerClasses {
+		if peerClasses[idx].Global {
 			return true
 		}
 	}
@@ -79,8 +121,11 @@ func (v *VRGInstance) hasGlobalPeerClass() bool {
 // the VR PVC list is updated with the PVC list
 //
 //nolint:gocognit,cyclop,funlen
-func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaimList) (bool, error) {
-	if len(v.instance.Spec.Async.PeerClasses) == 0 {
+func (v *VRGInstance) processOffloadedPVCs(
+	pvcList *corev1.PersistentVolumeClaimList,
+	peerClasses []ramendrv1alpha1.PeerClass,
+) (bool, error) {
+	if len(peerClasses) == 0 {
 		return false, nil
 	}
 
@@ -96,7 +141,7 @@ func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaim
 
 		pvcOffloadedBySC := util.HasLabel(storageClass, StorageOffloadedLabel)
 
-		pvcOffloadedByPeer, err := v.isOffloadedByPeerClasses(storageClass)
+		pvcOffloadedByPeer, err := v.isOffloadedByPeerClasses(storageClass, peerClasses)
 		if err != nil {
 			return false, err
 		}
@@ -152,8 +197,10 @@ func (v *VRGInstance) processOffloadedPVCs(pvcList *corev1.PersistentVolumeClaim
 // processGloballyOffloadedPVCs validates that all offloaded PVCs in the list are
 // globally offloaded, and that all PVCs share the same GroupReplicationID. If so,
 // the VRG is labeled with the global VGR label.
-func (v *VRGInstance) processGloballyOffloadedPVCs(pvcList *corev1.PersistentVolumeClaimList) error {
-	if !v.hasGlobalPeerClass() {
+func (v *VRGInstance) processGloballyOffloadedPVCs(
+	pvcList *corev1.PersistentVolumeClaimList, peerClasses []ramendrv1alpha1.PeerClass,
+) error {
+	if !v.hasGlobalPeerClass(peerClasses) {
 		return nil
 	}
 
@@ -162,7 +209,7 @@ func (v *VRGInstance) processGloballyOffloadedPVCs(pvcList *corev1.PersistentVol
 	for idx := range pvcList.Items {
 		pvc := &pvcList.Items[idx]
 
-		pvcGlobal, pvcGRID := v.isGloballyOffloadedByPeerClasses(*pvc.Spec.StorageClassName)
+		pvcGlobal, pvcGRID := v.isGloballyOffloadedByPeerClasses(*pvc.Spec.StorageClassName, peerClasses)
 
 		if !pvcGlobal {
 			return fmt.Errorf("peerClass for StorageClass (%s) is not globally offloaded for PVC (%s/%s)",
@@ -181,6 +228,74 @@ func (v *VRGInstance) processGloballyOffloadedPVCs(pvcList *corev1.PersistentVol
 	}
 
 	return v.addGlobalVGRLabel(grID)
+}
+
+// --- Offloaded VolumeGroupReplicationClass selection ---
+
+func offloadedVGRClassMatches(
+	vgrClass *volrep.VolumeGroupReplicationClass,
+	provisioner, storageID, groupReplicationID string,
+) bool {
+	if vgrClass.Spec.Provisioner != provisioner {
+		return false
+	}
+
+	if vgrClass.GetLabels()[StorageIDLabel] != storageID {
+		return false
+	}
+
+	return vgrClass.GetLabels()[GroupReplicationIDLabel] == groupReplicationID
+}
+
+// selectOffloadedVGRClass selects a VolumeGroupReplicationClass for offloaded storage.
+// Match is provisioner, storageID, and groupReplicationID. Scheduling interval is not
+// compared: the storage provider owns replication timing. Classes are listed here so
+// selection does not depend on Spec.Async.
+func (v *VRGInstance) selectOffloadedVGRClass(pvc *corev1.PersistentVolumeClaim) (client.Object, error) {
+	storageClass, err := v.getStorageClass(pvc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageID, ok := storageClass.GetLabels()[StorageIDLabel]
+	if !ok {
+		return nil, fmt.Errorf("missing %s label in StorageClass (%s)", StorageIDLabel, storageClass.GetName())
+	}
+
+	groupReplicationID, ok := storageClass.GetLabels()[GroupReplicationIDLabel]
+	if !ok {
+		return nil, fmt.Errorf("missing %s label in StorageClass (%s)", GroupReplicationIDLabel, storageClass.GetName())
+	}
+
+	vgrClassList := &volrep.VolumeGroupReplicationClassList{}
+	if err := v.reconciler.List(v.ctx, vgrClassList); err != nil {
+		return nil, fmt.Errorf("failed to list VolumeGroupReplicationClasses (%w)", err)
+	}
+
+	matches := []client.Object{}
+
+	for idx := range vgrClassList.Items {
+		vgrClass := &vgrClassList.Items[idx]
+		if !offloadedVGRClassMatches(vgrClass, storageClass.Provisioner, storageID, groupReplicationID) {
+			continue
+		}
+
+		matches = append(matches, vgrClass)
+	}
+
+	switch len(matches) {
+	case 0:
+		v.log.Info("No VolumeGroupReplicationClass found for offloaded storage",
+			"provisioner", storageClass.Provisioner,
+			"storageID", storageID,
+			"groupReplicationID", groupReplicationID)
+
+		return nil, fmt.Errorf("no VolumeGroupReplicationClass found to match provisioner, storageID and groupReplicationID")
+	case 1:
+		return matches[0], nil
+	}
+
+	return v.filterDefaultVRC(matches, "VolumeGroupReplicationClass")
 }
 
 func (r *VolumeReplicationGroupReconciler) filterVRGForOffloadedVGR(

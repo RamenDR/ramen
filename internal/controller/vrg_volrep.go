@@ -367,30 +367,41 @@ func (v *VRGInstance) isPVCInUse(pvc *corev1.PersistentVolumeClaim, log logr.Log
 	return !inUse
 }
 
-// updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC
+// updateProtectedPVCs updates the list of ProtectedPVCs with the passed in PVC.
+// Sync without an offloaded StorageClass does not record these fields.
+// Offloaded sync records them without selecting a VolumeReplicationClass, because
+// that selection reads spec.async.
 func (v *VRGInstance) updateProtectedPVCs(pvc *corev1.PersistentVolumeClaim) error {
-	// IF MetroDR, skip PVC update
-	if v.instance.Spec.Sync != nil {
+	if v.instance.Spec.Sync != nil && !v.offloadedSync(v.pvcsAreOffloaded([]*corev1.PersistentVolumeClaim{pvc})) {
 		return nil
 	}
 
 	storageClass, err := v.getStorageClass(pvc)
 	if err != nil {
-		v.log.Info(fmt.Sprintf("Failed to get the storageclass for pvc %s",
-			pvc.GetName()))
+		if v.instance.Spec.Sync != nil {
+			return nil
+		}
 
-		return fmt.Errorf("failed to get the storageclass for pvc %s (%w)",
-			pvc.GetName(), err)
+		v.log.Info(fmt.Sprintf("Failed to get the storageclass for pvc %s", pvc.GetName()))
+
+		return fmt.Errorf("failed to get the storageclass for pvc %s (%w)", pvc.GetName(), err)
 	}
 
-	_, selectVolumeGroup := v.isCGEnabled(pvc)
+	if !v.offloadedSync(rmnutil.HasLabel(storageClass, StorageOffloadedLabel)) {
+		_, selectVolumeGroup := v.isCGEnabled(pvc)
 
-	_, err = v.selectVolumeReplicationClass(pvc, selectVolumeGroup)
-	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+		if _, err = v.selectVolumeReplicationClass(pvc, selectVolumeGroup); err != nil {
+			return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+				v.instance.Name, err)
+		}
 	}
 
+	return v.recordProtectedPVC(pvc, storageClass)
+}
+
+func (v *VRGInstance) recordProtectedPVC(
+	pvc *corev1.PersistentVolumeClaim, storageClass *storagev1.StorageClass,
+) error {
 	protectedPVC := v.findProtectedPVC(pvc.GetNamespace(), pvc.GetName())
 	if protectedPVC == nil {
 		protectedPVC = v.addProtectedPVC(pvc.GetNamespace(), pvc.GetName())
@@ -602,17 +613,15 @@ func (v *VRGInstance) preparePVCForVRDeletion(pvc *corev1.PersistentVolumeClaim,
 
 		return err
 	}
-	// For Async mode, we want to change the retention policy back to delete
-	// and remove the annotation.
-	// For Sync mode, we don't want to set the retention policy to delete as
-	// both the primary and the secondary VRG map to the same volume. The only
-	// state where a delete retention policy is required for the sync mode is
-	// when the VRG is primary.
-	// Further, the PV will go to Available state, when the workload is moved back
-	// to the current cluster, in case the PVC has been deleted (cases like STS the
-	// PVC may not be deleted). This is achieved by clearing the required claim ref.
-	// such that the PV can bind back to a recreated PVC. func ref.: updateExistingPVForSync
-	if v.instance.Spec.Async != nil || v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+	// Async, a primary, and offloaded storage restore the PV reclaim policy to Delete
+	// and remove the retention annotation. Sync without an offloaded StorageClass keeps
+	// Retain on a secondary, because both clusters use the same volume. A StorageClass
+	// lookup failure keeps Retain. When that workload moves back, the PV becomes
+	// Available if its PVC was deleted (a StatefulSet may not delete the PVC).
+	// updateExistingPVForSync clears the claim ref so the PV can bind to a recreated PVC.
+	if v.instance.Spec.Async != nil ||
+		v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary ||
+		v.pvcsAreOffloaded([]*corev1.PersistentVolumeClaim{pvc}) {
 		undoPVRetention(&pv)
 	} else {
 		// The PV stays retained, mark it so it can be found and cleaned up when this VRG is deleted
@@ -2976,9 +2985,8 @@ func (v *VRGInstance) validateExistingPV(pv *corev1.PersistentVolume) error {
 
 	log.Info("PV exists and is not bound", "phase", existingPV.Status.Phase)
 
-	// PV is not bound
-	// In sync case, we will update it to match with what we want to restore
-	if v.instance.Spec.Sync != nil {
+	// PV is not bound. Sync without an offloaded StorageClass reuses that PV.
+	if v.instance.Spec.Sync != nil && !v.offloadedSync(v.pvStorageIsOffloaded(pv)) {
 		log.Info("PV exists and will be updated for sync")
 
 		return v.updateExistingPVForSync(existingPV)
@@ -3282,10 +3290,10 @@ func (v *VRGInstance) cleanupPVForRestore(pv *corev1.PersistentVolume) error {
 }
 
 // updatePVClusterIDForRestore sets CSI volumeAttributes.clusterID from the target
-// cluster's StorageClass parameters, when present. Skipped for sync/metro DR, where
-// updateExistingPVForSync reuses the same PV via cleanupPVForRestore.
+// cluster's StorageClass parameters, when present. Sync without an offloaded
+// StorageClass reuses the PV and does not rewrite clusterID.
 func (v *VRGInstance) updatePVClusterIDForRestore(pv *corev1.PersistentVolume, sc *storagev1.StorageClass) {
-	if v.instance.Spec.Sync != nil {
+	if v.instance.Spec.Sync != nil && !v.offloadedSync(rmnutil.HasLabel(sc, StorageOffloadedLabel)) {
 		return
 	}
 
