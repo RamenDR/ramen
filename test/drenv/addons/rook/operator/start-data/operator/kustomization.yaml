@@ -27,6 +27,9 @@ patches:
       - op: add
         path: /spec/driverSpecDefaults/snapshotPolicy
         value: volumeGroupSnapshot
+      - op: replace
+        path: /spec/driverSpecDefaults/log/verbosity
+        value: 5
   # Custom Ceph-CSI image with RBD group mirroring (consistency groups)
   # support. Rook 1.20 ignores ROOK_CSI_CEPH_IMAGE; CSI plugin images come
   # from this ImageSet ConfigMap.
@@ -38,6 +41,9 @@ patches:
       - op: replace
         path: /data/plugin
         value: quay.io/nladha/cephcsi:cg-09-11
+      - op: replace
+        path: /data/addons
+        value: quay.io/nladha/csiaddons-sidecar:secondary
   - target:
       kind: Deployment
       name: rook-ceph-operator
