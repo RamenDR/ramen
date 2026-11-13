@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -269,6 +270,22 @@ func restoreRealCreate(
 	)
 }
 
+// shouldPatchFailedBackup checks if a failed backup should be patched to Completed.
+// This handles the OADP 1.6.2 compatibility issue where backups that fail with
+// "backup execution failed: backup already exists in object storage" are still valid
+// but OADP 1.6.2+ won't allow restore from them. See: https://github.com/openshift/oadp-operator/issues/...
+func shouldPatchFailedBackup(backup *velero.Backup) bool {
+	if backup.Status.Phase != velero.BackupPhaseFailed {
+		return false
+	}
+
+	if strings.Contains(backup.Status.FailureReason, "backup execution failed: backup already exists in object storage") {
+		return true
+	}
+
+	return false
+}
+
 func backupDummyStatusProcessAndRestore(
 	backup *velero.Backup,
 	w objectWriter,
@@ -280,8 +297,30 @@ func backupDummyStatusProcessAndRestore(
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted,
-		velero.BackupPhasePartiallyFailed,
-		velero.BackupPhaseFailed:
+		velero.BackupPhasePartiallyFailed:
+		return backupRestore(
+			backup, w,
+			recoverSpec,
+			restoreName,
+			labels,
+		)
+	case velero.BackupPhaseFailed:
+		// OADP 1.6.2 workaround: patch failed backups that have valid data on S3.
+		// Backups can fail with "backup already exists in object storage" but still have
+		// valid backup data. We patch these to Completed so OADP allows restore from them.
+		if shouldPatchFailedBackup(backup) {
+			w.log.Info("Patching failed backup with valid data (OADP 1.6.2 workaround)",
+				"backup", backup.Name,
+				"reason", backup.Status.FailureReason)
+			backupBaseline := backup.DeepCopy()
+			backup.Status.Phase = velero.BackupPhaseCompleted
+			if err := w.Patch(w.ctx, backup, client.MergeFrom(backupBaseline)); err != nil {
+				backup.Status.Phase = backupBaseline.Status.Phase
+				return nil, fmt.Errorf("failed to patch backup status: %w", err)
+			}
+			w.log.Info("Successfully patched backup status to Completed", "backup", backup.Name)
+		}
+
 		return backupRestore(
 			backup, w,
 			recoverSpec,
