@@ -95,6 +95,7 @@ rules:
   - cluster.open-cluster-management.io
   resources:
   - managedclusters
+  - restores
   verbs:
   - get
   - list
@@ -133,6 +134,23 @@ rules:
   resources:
   - placements/finalizers
   verbs:
+  - update
+- apiGroups:
+  - config.open-cluster-management.io
+  resources:
+  - klusterletconfigs
+  verbs:
+  - create
+  - list
+  - watch
+- apiGroups:
+  - config.open-cluster-management.io
+  resourceNames:
+  - global
+  resources:
+  - klusterletconfigs
+  verbs:
+  - get
   - update
 - apiGroups:
   - policy.open-cluster-management.io
