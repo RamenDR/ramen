@@ -7,3 +7,7 @@ resources:
   - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.14.0/crds.yaml
   - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.14.0/rbac.yaml
   - https://github.com/csi-addons/kubernetes-csi-addons/releases/download/v0.14.0/setup-controller.yaml
+images:
+  - name: quay.io/csiaddons/k8s-controller
+    newName: quay.io/nladha/csiaddons-controller
+    newTag: secondary

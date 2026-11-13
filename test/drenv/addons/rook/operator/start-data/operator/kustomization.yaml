@@ -38,6 +38,9 @@ patches:
       - op: replace
         path: /data/plugin
         value: quay.io/nladha/cephcsi:cg-09-11
+      - op: replace
+        path: /data/addons
+        value: quay.io/nladha/csiaddons-sidecar:secondary
   - target:
       kind: Deployment
       name: rook-ceph-operator
