@@ -93,7 +93,7 @@ func (w *VM) Kustomize() (string, error) {
 	}
 
 	pvcOps, err := json.Marshal([]jsonPatch{
-		{Op: "replace", Path: "/spec/storageClassName", Value: w.PVCSpec.StorageClassName},
+		{Op: "add", Path: "/spec/storageClassName", Value: w.PVCSpec.StorageClassName},
 		{Op: "add", Path: "/spec/accessModes", Value: []string{w.PVCSpec.AccessModes}},
 	})
 	if err != nil {
