@@ -28,7 +28,7 @@ func TestDeploymentKustomizePVCPatch(t *testing.T) {
 
 	expectedKustomize := `{"patches":[{` +
 		`"patch":"[` +
-		`{\"op\":\"replace\",\"path\":\"/spec/storageClassName\",\"value\":\"test-sc\"},` +
+		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"test-sc\"},` +
 		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteMany\"]}` +
 		`]",` +
 		`"target":{"kind":"PersistentVolumeClaim","name":"busybox-pvc"}` +

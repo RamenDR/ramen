@@ -33,7 +33,7 @@ func TestVMKustomizePatches(t *testing.T) {
 		`"target":{"kind":"VirtualMachine","name":"vm"}` +
 		`},{` +
 		`"patch":"[` +
-		`{\"op\":\"replace\",\"path\":\"/spec/storageClassName\",\"value\":\"test-sc\"},` +
+		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"test-sc\"},` +
 		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteMany\"]}` +
 		`]",` +
 		`"target":{"kind":"PersistentVolumeClaim","name":"root-disk"}` +
