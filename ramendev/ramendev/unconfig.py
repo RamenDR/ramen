@@ -31,12 +31,12 @@ def run(args):
 def delete_hub_dr_resources(hub, clusters, topology):
     # Deleting in reverse order.
 
-    for interval in command.DRPOLICY_INTERVALS:
-        command.info("Deleting dr-policy-%s for %s", interval, topology)
-        template = drenv.template(command.resource(f"{topology}/dr-policy.yaml"))
-        yaml = template.substitute(
-            cluster1=clusters[0], cluster2=clusters[1], interval=interval
-        )
+    c1, c2 = clusters[0], clusters[1]
+    policy_path = command.resource(f"{topology}/dr-policy.yaml")
+    for spec in command.dr_policy_template(topology):
+        command.info("Deleting %s for %s", spec["policy_name"], topology)
+        template = drenv.template(policy_path)
+        yaml = template.substitute(cluster1=c1, cluster2=c2, **spec)
         kubectl.delete(
             "--filename=-",
             "--ignore-not-found",
@@ -47,7 +47,7 @@ def delete_hub_dr_resources(hub, clusters, topology):
 
     command.info("Deleting dr-clusters for %s", topology)
     template = drenv.template(command.resource(f"{topology}/dr-clusters.yaml"))
-    yaml = template.substitute(cluster1=clusters[0], cluster2=clusters[1])
+    yaml = template.substitute(cluster1=c1, cluster2=c2)
     kubectl.delete(
         "--filename=-",
         "--ignore-not-found",

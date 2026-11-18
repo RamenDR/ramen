@@ -43,12 +43,50 @@ def get(kustomization_dir, key, log=print):
     return dest
 
 
+def get_file(key, url, log=print):
+    """
+    Download url to cache path if missing or older than FETCH_THRESHOLD.
+    Return the path to the cached file.
+    """
+    dest = _path(key)
+    if _age(dest) > FETCH_THRESHOLD:
+        _download_url(url, dest, log=log)
+    return dest
+
+
+def refresh_file(key, url, log=print):
+    """
+    Download url to cache path (force refresh).
+    """
+    dest = _path(key)
+    _download_url(url, dest, log=log)
+
+
 def _age(path):
     try:
         mtime = os.path.getmtime(path)
     except FileNotFoundError:
         mtime = 0
     return time.time() - mtime
+
+
+def _download_url(url, dest, log=print):
+    log(f"Fetching {dest}")
+    dest_dir = os.path.dirname(dest)
+    os.makedirs(dest_dir, exist_ok=True)
+    cp = subprocess.run(
+        ["curl", "--no-progress-meter", "--location", "--output", dest, url],
+        capture_output=True,
+        text=True,
+    )
+    if cp.returncode != 0:
+        raise commands.Error(
+            ["curl", "--output", dest, url],
+            cp.stderr or cp.stdout or "curl failed",
+            exitcode=cp.returncode,
+        )
+    with open(dest, "rb") as f:
+        os.fsync(f.fileno())
 
 
 def _fetch(kustomization_dir, dest, log=print):

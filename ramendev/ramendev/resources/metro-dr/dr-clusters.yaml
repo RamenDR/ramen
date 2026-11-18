@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: The RamenDR authors
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRCluster
+metadata:
+  name: $cluster1
+spec:
+  s3ProfileName: minio-on-$cluster1
+---
+apiVersion: ramendr.openshift.io/v1alpha1
+kind: DRCluster
+metadata:
+  name: $cluster2
+spec:
+  s3ProfileName: minio-on-$cluster2
