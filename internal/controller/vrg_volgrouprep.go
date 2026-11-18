@@ -843,6 +843,12 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 
 	log.Info(fmt.Sprintf("Update VolumeGroupReplication %s/%s", volRep.Namespace, volRep.Name))
 
+	// The individual VolumeReplication resources are created by the csi-addons
+	// VolumeGroupReplication controller as children of the VGR, not by ramen.
+	// Label them (best-effort) so they are excluded from third-party backup
+	// tools, mirroring the handling of VGS child VolumeSnapshots.
+	v.labelChildVRsOwnedByVGR(volRep, log)
+
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
 		log.Info("VolumeGroupReplication and VolumeReplicationGroup state match. Proceeding to status check")
 
@@ -885,6 +891,38 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 	}
 
 	return !requeue, false, nil
+}
+
+// labelChildVRsOwnedByVGR labels the VolumeReplication resources that the
+// csi-addons VolumeGroupReplication controller creates as children of the given
+// VGR with the created-by-ramen label. Ramen does not create these VRs directly,
+// so they are labeled here following the same best-effort pattern used for VGS
+// child VolumeSnapshots. Failures are logged and not propagated so that a
+// labeling error does not block replication reconciliation.
+func (v *VRGInstance) labelChildVRsOwnedByVGR(vgr *volrep.VolumeGroupReplication, log logr.Logger) {
+	vrList := &volrep.VolumeReplicationList{}
+	if err := v.reconciler.List(v.ctx, vrList, client.InNamespace(vgr.GetNamespace())); err != nil {
+		log.V(1).Info("Failed to list VolumeReplications to label VGR children", "error", err)
+
+		return
+	}
+
+	for i := range vrList.Items {
+		vr := &vrList.Items[i]
+
+		for _, owner := range vr.GetOwnerReferences() {
+			if owner.Kind == "VolumeGroupReplication" && owner.Name == vgr.GetName() && owner.UID == vgr.GetUID() {
+				if err := rmnutil.NewResourceUpdater(vr).
+					AddLabel(rmnutil.CreatedByRamenLabel, "transitive").
+					Update(v.ctx, v.reconciler.Client); err != nil {
+					log.V(1).Info("Failed to label VGR child VolumeReplication",
+						"volumeReplication", vr.GetName(), "error", err)
+				}
+
+				break
+			}
+		}
+	}
 }
 
 // createVGR creates a VolumeGroupReplication CR
