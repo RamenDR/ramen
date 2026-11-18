@@ -249,20 +249,58 @@ func restoreRealCreate(
 	labels map[string]string,
 	annotations map[string]string,
 ) (*velero.Restore, error) {
-	backupRequest, ok := captureRequest.(BackupRequest)
-	if !ok {
-		_, err := backupRequestCreate(
-			w, loc,
-			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
-			requestNamespaceName, backupName,
-			labels,
-			annotations,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("backup dummy request create: %w", err)
-		}
+	// During restore on a transitioning-to-Primary cluster, keep the BSL in ReadOnly
+	// mode with sync enabled until we verify the backup is synced. This ensures we
+	// get the latest backup from S3 before switching to ReadWrite mode.
+	bslAccessMode := loc.ReplicationState
+	if loc.ReplicationState == "primary" {
+		// Override to secondary mode during restore to keep sync enabled
+		bslAccessMode = "secondary"
+	}
+
+	locForRestore := loc
+	locForRestore.ReplicationState = bslAccessMode
+
+	backupLocation := &velero.BackupStorageLocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: requestNamespaceName,
+			Name:      backupName,
+		},
+	}
+
+	if err := w.bslCreateOrUpdate(locForRestore, labels, backupLocation); err != nil {
+		w.log.Error(err, "Failed to create/update BSL during restore")
 
 		return nil, err
+	}
+
+	// Check BSL availability
+	if err := w.checkBSLAvailability(backupLocation); err != nil {
+		return nil, fmt.Errorf("BSL %s/%s not available for restore: %w",
+			backupLocation.Namespace, backupLocation.Name, err)
+	}
+
+	backupRequest, ok := captureRequest.(BackupRequest)
+	if !ok {
+		// With backup sync enabled, Velero automatically syncs backup CRs from S3.
+		// Wait for the backup to be synced instead of creating a dummy backup CR.
+		backup := &velero.Backup{}
+		key := client.ObjectKey{
+			Namespace: requestNamespaceName,
+			Name:      backupName,
+		}
+
+		if err := w.Client.Get(w.ctx, key, backup); err != nil {
+			if k8serrors.IsNotFound(err) {
+				w.log.Info("Waiting for backup to be synced from S3", "backup", backupName)
+
+				return nil, kubeobjects.RequestProcessingErrorCreate("backup not yet synced from S3")
+			}
+
+			return nil, fmt.Errorf("failed to get backup: %w", err)
+		}
+
+		backupRequest = BackupRequest{backup}
 	}
 
 	return backupDummyStatusProcessAndRestore(
@@ -548,12 +586,24 @@ func backupRequestCreate(
 		},
 	}
 
-	err := w.bslCreateOrUpdate(loc, labels, backupLocation)
-	if err != nil {
-		w.log.Error(err, "")
+	// When creating a backup on Primary, we need to ensure the BSL is in ReadWrite
+	// mode with sync disabled. If the cluster recently transitioned from Secondary
+	// to Primary, the BSL may still be in ReadOnly mode with sync enabled from the
+	// restore phase. Update it now before creating the backup.
+	if loc.ReplicationState == "primary" {
+		// Check if BSL exists and verify last sync completed
+		if err := w.ensureBSLReadyForPrimaryBackup(backupLocation, loc, labels); err != nil {
+			return nil, err
+		}
+	} else {
+		// For secondary or unspecified state, just create/update normally
+		if err := w.bslCreateOrUpdate(loc, labels, backupLocation); err != nil {
+			w.log.Error(err, "Failed to create/update BSL")
 
-		return nil, err
+			return nil, err
+		}
 	}
+
 	// Check BSL availability before creating backup
 	if err := w.checkBSLAvailability(backupLocation); err != nil {
 		return nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",

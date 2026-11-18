@@ -48,12 +48,13 @@ type RequestProcessingError struct{ string }
 // StorageLocation identifies the S3 object store that protect and recover
 // requests read from and write to.
 type StorageLocation struct {
-	S3URL          string
-	Bucket         string
-	Region         string
-	KeyPrefix      string
-	SecretKeyRef   *corev1.SecretKeySelector
-	CACertificates []byte
+	S3URL            string
+	Bucket           string
+	Region           string
+	KeyPrefix        string
+	SecretKeyRef     *corev1.SecretKeySelector
+	CACertificates   []byte
+	ReplicationState string // "primary" or "secondary" - determines BSL accessMode and backupSyncPeriod
 }
 
 type CaptureSpec struct {
