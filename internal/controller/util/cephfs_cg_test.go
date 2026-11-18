@@ -15,7 +15,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -250,48 +249,112 @@ var _ = Describe("CephfsCg", func() {
 			}, timeout, interval).Should(BeNil())
 		})
 		Describe("GetVolumeGroupSnapshotClassFromPVCsStorageClass", func() {
-			It("Should be failed", func() {
-				volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-					context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
+			vgscSelector := metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}
+
+			getVGSC := func(selector metav1.LabelSelector, scName string) (string, error) {
+				return util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
+					context.Background(), k8sClient, selector, scName, testLogger)
+			}
+
+			It("Should fail when no storage class name is given", func() {
+				volumeGroupSnapshotClassName, err := getVGSC(vgscSelector, "")
 				Expect(volumeGroupSnapshotClassName).To(Equal(""))
-				Expect(err).NotTo(BeNil())
-				Expect(err.Error()).To(ContainSubstring("unable to find matching volumegroupsnapshotclass for storage provisioner"))
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("no storageClassName given"))
 			})
-			Context("There is pvc and storage class", func() {
+			It("Should fail when the storage class does not exist", func() {
+				volumeGroupSnapshotClassName, err := getVGSC(vgscSelector, "notexist")
+				Expect(volumeGroupSnapshotClassName).To(Equal(""))
+				Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+			})
+			Context("storage class provisioner does not match the vgsc driver", func() {
+				BeforeEach(func() { CreateSC(SCName, "testProvisioner1", nil) })
+				AfterEach(func() { DeleteSC(SCName) })
+				It("Should fail", func() {
+					volumeGroupSnapshotClassName, err := getVGSC(metav1.LabelSelector{}, SCName)
+					Expect(volumeGroupSnapshotClassName).To(Equal(""))
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("unable to find matching volumegroupsnapshotclass"))
+				})
+			})
+			Context("storage class exists", func() {
+				BeforeEach(func() { CreateSC(SCName, "testProvisioner", nil) })
+				AfterEach(func() { DeleteSC(SCName) })
+				It("Should fail when no vgsc matches the selector", func() {
+					volumeGroupSnapshotClassName, err := getVGSC(
+						metav1.LabelSelector{MatchLabels: map[string]string{"test": "testxxxx"}}, SCName)
+					Expect(volumeGroupSnapshotClassName).To(Equal(""))
+					Expect(err).To(HaveOccurred())
+				})
+				It("Should return the vgsc with the matching driver", func() {
+					volumeGroupSnapshotClassName, err := getVGSC(metav1.LabelSelector{}, SCName)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
+
+					volumeGroupSnapshotClassName, err = getVGSC(vgscSelector, SCName)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
+				})
+			})
+			Context("storage class has a storageID", func() {
+				const (
+					vgscWithSIDName = "vgsc-sid"
+					storageID       = "sid1"
+				)
+
+				sidSelector := metav1.LabelSelector{MatchLabels: map[string]string{"test": "sid"}}
+
 				BeforeEach(func() {
-					CreateSC(SCName)
-					CreatePVC(PVCName, SCName)
+					Eventually(func() error {
+						err := k8sClient.Create(context.TODO(), &groupsnapv1beta1.VolumeGroupSnapshotClass{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:   vgscWithSIDName,
+								Labels: map[string]string{"test": "sid", util.StorageIDLabel: storageID},
+							},
+							Driver:         "testProvisioner",
+							DeletionPolicy: vsv1.VolumeSnapshotContentDelete,
+						})
+
+						return client.IgnoreAlreadyExists(err)
+					}, timeout, interval).Should(BeNil())
 				})
 				AfterEach(func() {
-					DeletePVC(PVCName)
 					DeleteSC(SCName)
+					Eventually(func() error {
+						err := k8sClient.Delete(context.TODO(), &groupsnapv1beta1.VolumeGroupSnapshotClass{
+							ObjectMeta: metav1.ObjectMeta{Name: vgscWithSIDName},
+						})
+
+						return client.IgnoreNotFound(err)
+					}, timeout, interval).Should(BeNil())
 				})
-				It("should be run as expected", func() {
-					volumeGroupSnapshotClassName, err := util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient,
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "testxxxx"}},
-						metav1.LabelSelector{}, []string{"default"}, testLogger)
+				It("Should return the vgsc with the same storageID", func() {
+					CreateSC(SCName, "testProvisioner", map[string]string{util.StorageIDLabel: storageID})
+
+					volumeGroupSnapshotClassName, err := getVGSC(sidSelector, SCName)
+					Expect(err).NotTo(HaveOccurred())
+					Expect(volumeGroupSnapshotClassName).To(Equal(vgscWithSIDName))
+				})
+				It("Should skip the vgsc with a different storageID", func() {
+					CreateSC(SCName, "testProvisioner", map[string]string{util.StorageIDLabel: "other"})
+
+					volumeGroupSnapshotClassName, err := getVGSC(sidSelector, SCName)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
-					Expect(err).NotTo(BeNil())
+					Expect(err).To(HaveOccurred())
+				})
+				It("Should skip the vgsc with a storageID when the storage class has none", func() {
+					CreateSC(SCName, "testProvisioner", nil)
 
-					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient,
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}}, []string{"default"}, testLogger)
+					volumeGroupSnapshotClassName, err := getVGSC(sidSelector, SCName)
 					Expect(volumeGroupSnapshotClassName).To(Equal(""))
-					Expect(err).NotTo(BeNil())
+					Expect(err).To(HaveOccurred())
+				})
+				It("Should not check the storageID when the vgsc has none", func() {
+					CreateSC(SCName, "testProvisioner", map[string]string{util.StorageIDLabel: storageID})
 
-					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient, metav1.LabelSelector{}, metav1.LabelSelector{}, []string{"default"}, testLogger)
+					volumeGroupSnapshotClassName, err := getVGSC(vgscSelector, SCName)
+					Expect(err).NotTo(HaveOccurred())
 					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
-					Expect(err).To(BeNil())
-
-					volumeGroupSnapshotClassName, err = util.GetVolumeGroupSnapshotClassFromPVCsStorageClass(
-						context.Background(), k8sClient,
-						metav1.LabelSelector{MatchLabels: map[string]string{"test": "test"}},
-						metav1.LabelSelector{MatchLabels: map[string]string{"testpvc": "testpvc"}}, []string{"default"}, testLogger)
-					Expect(volumeGroupSnapshotClassName).To(Equal("vgsc"))
-					Expect(err).To(BeNil())
 				})
 			})
 		})
@@ -304,39 +367,6 @@ var _ = Describe("CephfsCg", func() {
 			})
 		})
 	})
-	Describe("VolumeGroupSnapshotClassMatchStorageProviders", func() {
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}), nil,
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}), []string{"test1"},
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be false", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{}), []string{"test1"},
-			)
-			Expect(match).To(BeFalse())
-		})
-		It("Should be true", func() {
-			match := util.VolumeGroupSnapshotClassMatchStorageProviders(
-				util.NewPrivateVGSCWrapper(&groupsnapv1beta1.VolumeGroupSnapshotClass{
-					Driver: "test",
-				}), []string{"test"},
-			)
-			Expect(match).To(BeTrue())
-		})
-	})
-
 	Describe("IsRDExist", func() {
 		It("Should be false", func() {
 			exist := util.IsRDExist(v1alpha1.VolSyncReplicationDestinationSpec{},
@@ -546,64 +576,21 @@ var _ = Describe("CephfsCg", func() {
 	})
 })
 
-var (
-	PVCName = "pvc"
-	SCName  = "test"
-)
+const SCName = "test"
 
-func CreateSC(scName string) {
+func CreateSC(scName, provisioner string, labels map[string]string) {
 	sc := &storagev1.StorageClass{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: scName,
+			Name:   scName,
+			Labels: labels,
 		},
-		Provisioner: "testProvisioner",
+		Provisioner: provisioner,
 	}
 
 	Eventually(func() error {
 		err := k8sClient.Create(context.TODO(), sc)
 
 		return client.IgnoreAlreadyExists(err)
-	}, timeout, interval).Should(BeNil())
-}
-
-func CreatePVC(pvcName, scName string) {
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pvc",
-			Namespace: "default",
-			Labels:    map[string]string{"testpvc": "testpvc"},
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			StorageClassName: &scName,
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany},
-			Resources: corev1.VolumeResourceRequirements{
-				Limits: map[corev1.ResourceName]resource.Quantity{
-					corev1.ResourceStorage: *resource.NewQuantity(1, resource.BinarySI),
-				},
-				Requests: map[corev1.ResourceName]resource.Quantity{
-					corev1.ResourceStorage: *resource.NewQuantity(1, resource.BinarySI),
-				},
-			},
-		},
-	}
-
-	Eventually(func() error {
-		err := k8sClient.Create(context.TODO(), pvc)
-
-		return client.IgnoreAlreadyExists(err)
-	}, timeout, interval).Should(BeNil())
-}
-
-func DeletePVC(pvcName string) {
-	Eventually(func() error {
-		err := k8sClient.Delete(context.TODO(), &corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      pvcName,
-				Namespace: "default",
-			},
-		})
-
-		return client.IgnoreNotFound(err)
 	}, timeout, interval).Should(BeNil())
 }
 

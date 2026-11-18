@@ -359,20 +359,6 @@ func listVolumeGroupSnapshotClasses[L client.ObjectList](
 	return wrap(list), nil
 }
 
-// VolumeGroupSnapshotClassMatchStorageProviders checks if a VGS class matches any storage provider.
-func VolumeGroupSnapshotClassMatchStorageProviders(
-	volumeGroupSnapshotClass VolumeGroupSnapshotClassWrapper,
-	storageClassProviders []string,
-) bool {
-	for _, storageClassProvider := range storageClassProviders {
-		if storageClassProvider == volumeGroupSnapshotClass.GetDriver() {
-			return true
-		}
-	}
-
-	return false
-}
-
 // NewVolumeGroupSnapshotClassForGV returns an empty VGSC object and a wrapper over the same
 // instance. Callers that populate the object (e.g. via ManagedClusterView) can then read
 // fields through the wrapper without a second wrap step.
