@@ -1872,6 +1872,14 @@ func (v *VRGInstance) updateStatusState() {
 
 	StatusState := getStatusStateFromSpecState(v.instance.Spec.ReplicationState)
 	if v.instance.Spec.ReplicationState == ramendrv1alpha1.Primary {
+		// A Primary is not ready for use until its kube objects are restored as well, the hub waits for the
+		// Primary state to complete a failover or relocate
+		if !v.isConditionKubeObjectsReady() {
+			v.instance.Status.State = ramendrv1alpha1.UnknownState
+
+			return
+		}
+
 		v.instance.Status.State = StatusState
 
 		return
@@ -2007,6 +2015,14 @@ func (v *VRGInstance) isConditionDataReady() bool {
 	}
 
 	return false
+}
+
+func (v *VRGInstance) isConditionKubeObjectsReady() bool {
+	kubeObjectsReady := util.FindCondition(v.instance.Status.Conditions, VRGConditionTypeKubeObjectsReady)
+
+	return kubeObjectsReady != nil &&
+		kubeObjectsReady.Status == metav1.ConditionTrue &&
+		kubeObjectsReady.ObservedGeneration == v.instance.Generation
 }
 
 func (v *VRGInstance) updateVRGDataReadyCondition() {
