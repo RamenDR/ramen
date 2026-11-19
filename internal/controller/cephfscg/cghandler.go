@@ -5,6 +5,7 @@ package cephfscg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	volsyncv1alpha1 "github.com/backube/volsync/api/v1alpha1"
@@ -298,6 +299,7 @@ func (c *cgHandler) CreateOrUpdateReplicationGroupSource(
 
 		util.AddLabel(rgs, util.VRGOwnerNameLabel, c.instance.GetName())
 		util.AddLabel(rgs, util.VRGOwnerNamespaceLabel, c.instance.GetNamespace())
+		ctrlutil.AddFinalizer(rgs, RGSProtectionFinalizer)
 		util.AddAnnotation(rgs, volsync.OwnerNameAnnotation, c.instance.GetName())
 		util.AddAnnotation(rgs, volsync.OwnerNamespaceAnnotation, c.instance.GetNamespace())
 
@@ -599,7 +601,21 @@ func DeleteRGS(ctx context.Context, k8sClient client.Client, ownerName, ownerNam
 		return err
 	}
 
-	return DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgsList.Items), logger)
+	if err := DeleteTypedObjectList(ctx, k8sClient, ToPointerSlice(rgsList.Items), logger); err != nil {
+		return err
+	}
+
+	remaining := &ramendrv1alpha1.ReplicationGroupSourceList{}
+	if err := ListReplicationGroupByOwner(ctx, k8sClient, remaining, ownerName, ownerNamespace, logger); err != nil {
+		return err
+	}
+
+	if len(remaining.Items) > 0 {
+		return fmt.Errorf("%w: %d ReplicationGroupSource objects still present",
+			ErrReplicationGroupSourceDeleting, len(remaining.Items))
+	}
+
+	return nil
 }
 
 func DeleteRGD(ctx context.Context, k8sClient client.Client, ownerName, ownerNamespace string, logger logr.Logger,
@@ -635,13 +651,16 @@ func ListReplicationGroupByOwner(ctx context.Context, k8sClient client.Client, o
 
 func DeleteTypedObjectList[T client.Object](ctx context.Context, k8sClient client.Client, items []T, logger logr.Logger,
 ) error {
+	var deleteErrs []error
+
 	for _, obj := range items {
-		if err := k8sClient.Delete(ctx, obj); err != nil {
+		if err := k8sClient.Delete(ctx, obj); err != nil && !k8serrors.IsNotFound(err) {
 			logger.Error(err, "Error cleaning up object", "name", obj.GetName())
+			deleteErrs = append(deleteErrs, err)
 		}
 	}
 
-	return nil
+	return errors.Join(deleteErrs...)
 }
 
 func ToPointerSlice[T any](items []T) []*T {
