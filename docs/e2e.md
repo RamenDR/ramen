@@ -53,6 +53,13 @@ When the test passes:
 
 A failed or canceled test posts the same comment, with `failed` or `canceled`.
 
+If the pull request head changed after a passed or failed run, that comment
+includes this warning:
+
+> [!IMPORTANT]
+> The pull request head moved after starting e2e. Please add a new `/test e2e`
+> comment to test the current version.
+
 ## Running End to End tests locally
 
 > [!IMPORTANT]
