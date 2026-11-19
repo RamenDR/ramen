@@ -1113,6 +1113,8 @@ func (v *VRGInstance) doCleanupResources(name, namespace string) error {
 		return err
 	}
 
+	// DeleteRGS reports an error until the RGS finalizer is gone, so VRG
+	// finalization waits for in-flight VolumeGroupSnapshot cleanup.
 	if err := cephfscg.DeleteRGS(v.ctx, v.reconciler.Client, v.instance.Name, v.instance.Namespace, v.log); err != nil {
 		return err
 	}
