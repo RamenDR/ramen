@@ -272,6 +272,98 @@ func HasStatus(vgs client.Object) bool {
 	}
 }
 
+// BoundVolumeGroupSnapshotContentName returns the bound VolumeGroupSnapshotContent
+// name, or an empty string when the snapshot has no status yet.
+func BoundVolumeGroupSnapshotContentName(vgs client.Object) string {
+	switch obj := vgs.(type) {
+	case *publicgroupsnapv1.VolumeGroupSnapshot:
+		if obj == nil || obj.Status == nil || obj.Status.BoundVolumeGroupSnapshotContentName == nil {
+			return ""
+		}
+
+		return *obj.Status.BoundVolumeGroupSnapshotContentName
+	case *groupsnapv1beta1.VolumeGroupSnapshot:
+		if obj == nil || obj.Status == nil || obj.Status.BoundVolumeGroupSnapshotContentName == nil {
+			return ""
+		}
+
+		return *obj.Status.BoundVolumeGroupSnapshotContentName
+	default:
+		return ""
+	}
+}
+
+// NewVolumeGroupSnapshotContent returns an empty VolumeGroupSnapshotContent of the
+// appropriate API type. Requires a prior successful EnsureLocalVGSAPI.
+func NewVolumeGroupSnapshotContent(name string) client.Object {
+	if UsePublicVGSAPI() {
+		return &publicgroupsnapv1.VolumeGroupSnapshotContent{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+		}
+	}
+
+	return &groupsnapv1beta1.VolumeGroupSnapshotContent{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+	}
+}
+
+// VolumeGroupSnapshotContentRef identifies a group snapshot content and the
+// VolumeGroupSnapshot it is bound to.
+type VolumeGroupSnapshotContentRef struct {
+	Name                         string
+	VolumeGroupSnapshotName      string
+	VolumeGroupSnapshotNamespace string
+}
+
+// ListVolumeGroupSnapshotContentRefs lists VolumeGroupSnapshotContents using the
+// appropriate API. Requires a prior successful EnsureLocalVGSAPI.
+func ListVolumeGroupSnapshotContentRefs(
+	ctx context.Context,
+	k8sClient client.Client,
+) ([]VolumeGroupSnapshotContentRef, error) {
+	if UsePublicVGSAPI() {
+		list := &publicgroupsnapv1.VolumeGroupSnapshotContentList{}
+		if err := k8sClient.List(ctx, list); err != nil {
+			return nil, err
+		}
+
+		return publicContentRefs(list.Items), nil
+	}
+
+	list := &groupsnapv1beta1.VolumeGroupSnapshotContentList{}
+	if err := k8sClient.List(ctx, list); err != nil {
+		return nil, err
+	}
+
+	return privateContentRefs(list.Items), nil
+}
+
+func publicContentRefs(items []publicgroupsnapv1.VolumeGroupSnapshotContent) []VolumeGroupSnapshotContentRef {
+	refs := make([]VolumeGroupSnapshotContentRef, 0, len(items))
+	for i := range items {
+		refs = append(refs, VolumeGroupSnapshotContentRef{
+			Name:                         items[i].Name,
+			VolumeGroupSnapshotName:      items[i].Spec.VolumeGroupSnapshotRef.Name,
+			VolumeGroupSnapshotNamespace: items[i].Spec.VolumeGroupSnapshotRef.Namespace,
+		})
+	}
+
+	return refs
+}
+
+func privateContentRefs(items []groupsnapv1beta1.VolumeGroupSnapshotContent) []VolumeGroupSnapshotContentRef {
+	refs := make([]VolumeGroupSnapshotContentRef, 0, len(items))
+	for i := range items {
+		refs = append(refs, VolumeGroupSnapshotContentRef{
+			Name:                         items[i].Name,
+			VolumeGroupSnapshotName:      items[i].Spec.VolumeGroupSnapshotRef.Name,
+			VolumeGroupSnapshotNamespace: items[i].Spec.VolumeGroupSnapshotRef.Namespace,
+		})
+	}
+
+	return refs
+}
+
 // VolumeGroupSnapshotIsReady reports whether the VolumeGroupSnapshot is ready to use.
 func VolumeGroupSnapshotIsReady(vgs client.Object) bool {
 	switch obj := vgs.(type) {

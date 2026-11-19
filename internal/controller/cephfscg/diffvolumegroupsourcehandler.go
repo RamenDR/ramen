@@ -5,6 +5,7 @@ package cephfscg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -220,6 +221,10 @@ func (h *diffVolumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CreateOrUpdateVolumeGroupSnapshot")
 	logger.Info("Create or update volume group snapshot with status label tracking")
 
+	if !owner.GetDeletionTimestamp().IsZero() {
+		return false, fmt.Errorf("replication group source %s is being deleted", owner.GetName())
+	}
+
 	// Step 1: Look for existing VGS with status=current
 	currentVGS, err := h.findVGSWithStatus(ctx, VGSStatusCurrent)
 	if err != nil {
@@ -368,6 +373,33 @@ func (h *diffVolumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	logger.Info("Successfully transitioned current VGS to previous", "name", currentVGS.GetName())
 
 	return nil
+}
+
+// DeleteOwnedVolumeGroupSnapshots deletes every VolumeGroupSnapshot for this RGS,
+// including snapshots preserved as the base for the next diff sync.
+func (h *diffVolumeGroupSourceHandler) DeleteOwnedVolumeGroupSnapshots(ctx context.Context) error {
+	names, err := h.ownedGroupSnapshotNames(ctx, h.matchesOwnedGroup)
+	if err != nil {
+		return err
+	}
+
+	var pending error
+
+	for _, name := range names {
+		if err := h.cleanupNamedVolumeGroupSnapshot(ctx, name); err != nil {
+			if !errors.Is(err, ErrVolumeGroupSnapshotCleanupPending) {
+				return err
+			}
+
+			pending = err
+		}
+	}
+
+	return pending
+}
+
+func (h *diffVolumeGroupSourceHandler) matchesOwnedGroup(name string) bool {
+	return name == h.VolumeGroupSnapshotName || strings.HasPrefix(name, h.VolumeGroupSnapshotName+"-")
 }
 
 // RestoreVolumesFromVolumeGroupSnapshot restores VolumeGroupSnapshot to PVCs
