@@ -17,6 +17,13 @@ import (
 	"github.com/ramendr/ramen/internal/controller/util"
 )
 
+const (
+	// BackupSyncPeriodSecondary is the sync period for secondary BSLs.
+	// Set to 1 second for fast failover - Velero will sync backup CRs from S3
+	// every second, minimizing the time to detect new backups during restore.
+	BackupSyncPeriodSecondary = 1 * time.Second
+)
+
 func (w objectWriter) bslCreateOrUpdate(
 	loc kubeobjects.StorageLocation,
 	labels map[string]string,
@@ -52,7 +59,7 @@ func BSLSpec(loc kubeobjects.StorageLocation) velero.BackupStorageLocationSpec {
 
 	if loc.ReplicationState == "secondary" {
 		accessMode = velero.BackupStorageLocationAccessModeReadOnly
-		backupSyncPeriod = &metav1.Duration{Duration: 10 * time.Second}
+		backupSyncPeriod = &metav1.Duration{Duration: 1 * time.Second}
 	} else {
 		// Primary or unspecified (backward compatibility)
 		accessMode = velero.BackupStorageLocationAccessModeReadWrite
@@ -175,7 +182,7 @@ func (w objectWriter) ensureBSLReadyForPrimaryBackup(
 	if currentBSL.Spec.AccessMode == velero.BackupStorageLocationAccessModeReadWrite &&
 		currentBSL.Spec.BackupSyncPeriod != nil &&
 		currentBSL.Spec.BackupSyncPeriod.Duration == 0 {
-		w.log.V(1).Info("BSL already in Primary mode (ReadWrite, sync disabled)", "bsl", bsl.Name)
+		w.log.Info("BSL already in Primary mode (ReadWrite, sync disabled)", "bsl", bsl.Name)
 
 		return nil
 	}
@@ -183,18 +190,24 @@ func (w objectWriter) ensureBSLReadyForPrimaryBackup(
 	// BSL exists but not in Primary mode. This happens when transitioning from Secondary
 	// to Primary. We need to wait for the last sync to complete before switching modes.
 	if currentBSL.Status.LastSyncedTime == nil || currentBSL.Status.LastSyncedTime.IsZero() {
-		w.log.Info("Waiting for BSL sync to complete before switching to Primary mode",
-			"bsl", bsl.Name,
-			"currentAccessMode", currentBSL.Spec.AccessMode,
-			"lastSyncedTime", currentBSL.Status.LastSyncedTime)
-
-		return kubeobjects.RequestProcessingErrorCreate("waiting for BSL sync before Primary backup")
+		return w.waitForBSLSync(bsl.Name, currentBSL.Spec.AccessMode)
 	}
 
 	// Last sync has completed, safe to update BSL to Primary mode
 	w.log.Info("BSL sync completed, updating to Primary mode (ReadWrite, sync disabled)",
 		"bsl", bsl.Name,
-		"lastSyncedTime", currentBSL.Status.LastSyncedTime)
+		"lastSyncedTime", currentBSL.Status.LastSyncedTime.Time)
 
 	return w.bslCreateOrUpdate(loc, labels, bsl)
+}
+
+func (w objectWriter) waitForBSLSync(
+	bslName string,
+	currentAccessMode velero.BackupStorageLocationAccessMode,
+) error {
+	w.log.Info("Waiting for BSL sync to complete before switching to Primary mode",
+		"bsl", bslName,
+		"currentAccessMode", currentAccessMode)
+
+	return kubeobjects.RequestProcessingErrorCreate("waiting for BSL sync before Primary backup")
 }
