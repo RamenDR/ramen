@@ -517,14 +517,15 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 
 // kubeObjectsStorageLocation returns the location in this S3 store where kube
 // objects protect and recover requests are kept under keyPrefix.
-func (s s3StoreAccessor) kubeObjectsStorageLocation(keyPrefix string) kubeobjects.StorageLocation {
+func (s s3StoreAccessor) kubeObjectsStorageLocation(keyPrefix string, replicationState string) kubeobjects.StorageLocation {
 	return kubeobjects.StorageLocation{
-		S3URL:          s.S3CompatibleEndpoint,
-		Bucket:         s.S3Bucket,
-		Region:         s.S3Region,
-		KeyPrefix:      keyPrefix,
-		SecretKeyRef:   s.VeleroNamespaceSecretKeyRef,
-		CACertificates: s.CACertificates,
+		S3URL:            s.S3CompatibleEndpoint,
+		Bucket:           s.S3Bucket,
+		Region:           s.S3Region,
+		KeyPrefix:        keyPrefix,
+		SecretKeyRef:     s.VeleroNamespaceSecretKeyRef,
+		CACertificates:   s.CACertificates,
+		ReplicationState: replicationState,
 	}
 }
 
@@ -579,7 +580,7 @@ func (v *VRGInstance) createCaptureRequest(
 
 	if _, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 		v.ctx, v.reconciler.Client, v.log,
-		s3StoreAccessor.kubeObjectsStorageLocation(pathName),
+		s3StoreAccessor.kubeObjectsStorageLocation(pathName, string(v.instance.Spec.ReplicationState)),
 		captureSpec, veleroNamespaceName, requestName,
 		labels, annotations,
 	); err != nil {
@@ -895,7 +896,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 
 			return v.reconciler.kubeObjects.RecoverRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.kubeObjectsStorageLocation(pathName),
+				s3StoreAccessor.kubeObjectsStorageLocation(pathName, string(v.instance.Spec.ReplicationState)),
 				recoverGroup, v.veleroNamespaceName(),
 				captureName, captureRequest,
 				recoverName,
@@ -1330,6 +1331,82 @@ func (v *VRGInstance) deleteVeleroBackups(backupList *velero.BackupList) error {
 
 	if errorCount > 0 {
 		return fmt.Errorf("failed to delete %d out of %d backup CRs", errorCount, len(backupList.Items))
+	}
+
+	return nil
+}
+
+// ensureBSLForSecondary ensures BackupStorageLocation exists for secondary VRG to enable
+// Velero's backup-sync controller to sync backup CRs from S3. This allows the secondary
+// cluster to stay "warm" and ready for failover without actively performing restore operations.
+func (v *VRGInstance) ensureBSLForSecondary() error {
+	if v.kubeObjectProtectionDisabled("secondary-bsl") {
+		return nil
+	}
+
+	// Skip if no S3 stores configured
+	if len(v.s3StoreAccessors) == 0 {
+		return nil
+	}
+
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(v.instance)
+	vrg := v.instance
+
+	// Get the latest capture number to determine BSL name
+	captureToRecoverFrom := vrg.Status.KubeObjectProtection.CaptureToRecoverFrom
+	if captureToRecoverFrom == nil {
+		v.log.V(1).Info("No capture to recover from, skipping BSL creation for secondary")
+
+		return nil
+	}
+
+	number := 1 - captureToRecoverFrom.Number
+	pathName, _, namePrefix := kubeObjectsCapturePathNamesAndNamePrefix(
+		vrg.Namespace, vrg.Name, number, v.reconciler.kubeObjects)
+
+	v.log.Info("Ensuring BSL exists for secondary VRG",
+		"vrgNamespace", vrg.GetNamespace(),
+		"vrgName", vrg.GetName(),
+		"veleroNamespace", veleroNS,
+		"captureNumber", number)
+
+	// Create/update BSL for each S3 store accessor
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
+		bslName := namePrefix + "--" + s3StoreAccessor.S3ProfileName
+
+		backupLocation := &velero.BackupStorageLocation{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: veleroNS,
+				Name:      bslName,
+			},
+		}
+
+		loc := s3StoreAccessor.kubeObjectsStorageLocation(pathName, string(vrg.Spec.ReplicationState))
+
+		op, err := ctrl.CreateOrUpdate(v.ctx, v.reconciler.Client, backupLocation, func() error {
+			backupLocation.TypeMeta = metav1.TypeMeta{
+				APIVersion: velero.SchemeGroupVersion.String(),
+				Kind:       "BackupStorageLocation",
+			}
+			backupLocation.ObjectMeta.Labels = labels
+			backupLocation.Spec = veleroreq.BSLSpec(loc)
+			util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
+
+			return nil
+		})
+		if err != nil {
+			v.log.Error(err, "Failed to create/update BSL for secondary",
+				"bsl", bslName,
+				"s3Profile", s3StoreAccessor.S3ProfileName)
+
+			return fmt.Errorf("failed to create/update BSL %s for secondary: %w", bslName, err)
+		}
+
+		v.log.Info("BSL reconciled for secondary VRG",
+			"operation", op,
+			"bsl", bslName,
+			"s3Profile", s3StoreAccessor.S3ProfileName)
 	}
 
 	return nil
