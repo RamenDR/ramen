@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	internalController "github.com/ramendr/ramen/internal/controller"
@@ -204,7 +205,22 @@ var _ = Describe("Cghandler", func() {
 			Expect(finalSync).To(BeFalse())
 			Expect(rgs.Spec.Trigger.Schedule).NotTo(BeNil())
 			Expect(*rgs.Spec.Trigger.Schedule).NotTo(BeEmpty())
-			Expect(cephfscg.DeleteRGS(Ctx, k8sClient, vrgName, "default", testLogger)).To(BeNil())
+			Expect(rgs.GetFinalizers()).To(ContainElement(cephfscg.RGSProtectionFinalizer))
+			Expect(cephfscg.DeleteRGS(Ctx, k8sClient, vrgName, "default", testLogger)).To(
+				MatchError(ContainSubstring("still deleting")))
+			Eventually(func() error {
+				current := &ramendrv1alpha1.ReplicationGroupSource{}
+				if err := k8sClient.Get(Ctx, types.NamespacedName{
+					Name:      rgsName,
+					Namespace: "default",
+				}, current); err != nil {
+					return client.IgnoreNotFound(err)
+				}
+
+				controllerutil.RemoveFinalizer(current, cephfscg.RGSProtectionFinalizer)
+
+				return k8sClient.Update(Ctx, current)
+			}, timeout, interval).Should(Succeed())
 			Eventually(func() bool {
 				err := k8sClient.Get(Ctx, types.NamespacedName{
 					Name:      rgsName,

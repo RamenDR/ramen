@@ -262,10 +262,19 @@ rules:
   - groupsnapshot.storage.k8s.io
   resources:
   - volumegroupsnapshotclasses
-  - volumegroupsnapshotcontents
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - groupsnapshot.storage.k8s.io
+  resources:
+  - volumegroupsnapshotcontents
+  verbs:
+  - delete
+  - get
+  - list
+  - update
   - watch
 - apiGroups:
   - groupsnapshot.storage.k8s.io
@@ -425,6 +434,16 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshotcontents
+  verbs:
+  - delete
+  - get
+  - list
+  - update
   - watch
 - apiGroups:
   - snapshot.storage.k8s.io
