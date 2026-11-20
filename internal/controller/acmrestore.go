@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -28,13 +29,21 @@ const (
 	klusterletConfigGlobalName = "global"
 )
 
+// ErrNoManagedClustersRestore is returned by EnsureKlusterletConfigForRestore when there is no ACM
+// Restore of managed clusters (or the Restore CRD is not installed), so there was nothing to do.
+var ErrNoManagedClustersRestore = errors.New("no ACM Restore of managed clusters")
+
 // EnsureKlusterletConfigForRestore polls the ACM Restore resources and, when one restores managed
 // clusters, ensures the global KlusterletConfig exists and carries the AppliedManifestWork
 // eviction grace period, so that the work agents of the managed clusters do not evict applied
 // ManifestWorks while the hub is being recovered. The grace period is taken from the Ramen
-// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). It is invoked from the DRPC
+// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). A nil ramenConfig means the
+// configuration could not be retrieved: the default grace period is then used only to create a
+// missing KlusterletConfig, and an existing one is left untouched. It is invoked from the DRPC
 // reconciliation so that it is re-run on every reconcile (the DRPC requeues at least once every
-// StatusCheckDelay).
+// StatusCheckDelay). It returns nil when a Restore of managed clusters was found and the
+// KlusterletConfig was ensured, ErrNoManagedClustersRestore when there was nothing to do, and
+// another error on failure.
 func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig) error {
 	log := ctrl.Log.WithName("acmrestore")
 
@@ -44,7 +53,7 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 		if meta.IsNoMatchError(err) {
 			log.Info("Restore CRD is not installed", "groupVersion", restoresv1beta1.GroupVersion.String())
 
-			return nil
+			return ErrNoManagedClustersRestore
 		}
 
 		return fmt.Errorf("failed to list Restores: %w", err)
@@ -71,17 +80,28 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 	}
 
 	if !relevant {
-		return nil
+		return ErrNoManagedClustersRestore
 	}
 
 	log.Info("Restore of managed clusters detected, ensuring KlusterletConfig", "name", klusterletConfigGlobalName)
 
-	return ensureGlobalKlusterletConfig(ctx, c, appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig))
+	// A nil ramenConfig means the grace period is unknown: the default is only used to create a
+	// missing KlusterletConfig, and an existing one is left untouched.
+	gracePeriod := DefaultAppliedManifestWorkEvictionGracePeriod
+	if ramenConfig != nil {
+		gracePeriod = appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig)
+	}
+
+	return ensureGlobalKlusterletConfig(ctx, c, gracePeriod, ramenConfig == nil)
 }
 
-// ensureGlobalKlusterletConfig creates or updates the global KlusterletConfig so that its
-// spec.appliedManifestWorkEvictionGracePeriod equals gracePeriod.
-func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client, gracePeriod string) error {
+// ensureGlobalKlusterletConfig creates the global KlusterletConfig if it is missing, with
+// spec.appliedManifestWorkEvictionGracePeriod set to gracePeriod. If it already exists, it is
+// updated to gracePeriod unless createOnly is set, in which case it is left untouched (used when
+// gracePeriod is only a fallback and must not override an existing value).
+func ensureGlobalKlusterletConfig(
+	ctx context.Context, c client.Client, gracePeriod string, createOnly bool,
+) error {
 	kc := &klusterletconfigv1alpha1.KlusterletConfig{}
 	log := ctrl.Log.WithName("acmrestore")
 
@@ -102,6 +122,10 @@ func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client, gracePer
 
 	if err != nil {
 		return fmt.Errorf("failed to get KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
+	}
+
+	if createOnly {
+		return nil
 	}
 
 	if kc.Spec.AppliedManifestWorkEvictionGracePeriod == gracePeriod {
