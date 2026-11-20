@@ -49,9 +49,9 @@ func TestDR(dt *testing.T) {
 			panic("unknown pvcSpec")
 		}
 
-		workload, err := workloads.New(tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
+		workload, err := workloads.New(Ctx.Context(), tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
 		if err != nil {
-			panic(err)
+			t.Fatalf("Failed to create workload %q: %s", tc.Workload, err)
 		}
 
 		deployerSpec, ok := deploySpecs[tc.Deployer]
