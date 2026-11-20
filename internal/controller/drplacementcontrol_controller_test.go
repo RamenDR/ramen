@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -16,11 +18,14 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	. "github.com/onsi/gomega/gstruct"
+	restoresv1beta1 "github.com/stolostron/cluster-backup-operator/api/v1beta1"
+	klusterletconfigv1alpha1 "github.com/stolostron/cluster-lifecycle-api/klusterletconfig/v1alpha1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -30,6 +35,8 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -1864,6 +1871,76 @@ var _ = Describe("DRPlacementControl - EnableDiff Annotation Propagation", func(
 
 		deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
 		deleteDRPC()
+	})
+})
+
+var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
+	// Concurrent DRPC reconciles must create the global KlusterletConfig exactly once, and none of
+	// them may fail with AlreadyExists.
+	It("creates the global KlusterletConfig once for concurrent reconciles", func() {
+		scheme := k8sruntime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		ramenConfig := &rmn.RamenConfig{}
+		ramenConfig.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "36h"
+
+		configMap, err := controllers.ConfigMapNew(ramenNamespace, controllers.HubOperatorConfigMapName, ramenConfig)
+		Expect(err).NotTo(HaveOccurred())
+
+		backup := "latest"
+		restore := &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: "restore"},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+		}
+
+		var creates atomic.Int32
+
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore, configMap).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Create: func(ctx context.Context, cl client.WithWatch, obj client.Object,
+					opts ...client.CreateOption,
+				) error {
+					if _, ok := obj.(*klusterletconfigv1alpha1.KlusterletConfig); ok {
+						creates.Add(1)
+					}
+
+					return cl.Create(ctx, obj, opts...)
+				},
+			}).Build()
+
+		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
+
+		const workers = 20
+
+		var wg sync.WaitGroup
+
+		errs := make(chan error, workers)
+
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+
+				errs <- r.ReconcileKlusterletConfig(context.Background())
+			}()
+		}
+
+		wg.Wait()
+		close(errs)
+
+		for err := range errs {
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		Expect(creates.Load()).To(Equal(int32(1)))
+
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("36h"))
 	})
 })
 

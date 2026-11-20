@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -92,6 +93,30 @@ type DRPlacementControlReconciler struct {
 	ObjStoreGetter                 ObjectStoreGetter
 	RateLimiter                    *workqueue.TypedRateLimiter[reconcile.Request]
 	numClustersQueriedSuccessfully int
+
+	// kcMutex serializes the check for a Restore and the create or update of the global
+	// KlusterletConfig, as DRPC reconciles can run concurrently.
+	kcMutex sync.Mutex
+}
+
+// ReconcileKlusterletConfig ensures the global KlusterletConfig for hub recovery while holding
+// kcMutex, so that concurrent DRPC reconciles do not race to create or update it. The Ramen
+// configuration is read while holding the lock, so that the grace period applied reflects a
+// configuration observed inside the serialization boundary. When the configuration cannot be
+// retrieved or decoded, a nil config is used: the default grace period is then used only to
+// create a missing KlusterletConfig, and an existing one is not changed.
+func (r *DRPlacementControlReconciler) ReconcileKlusterletConfig(ctx context.Context) error {
+	r.kcMutex.Lock()
+	defer r.kcMutex.Unlock()
+
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	if err != nil {
+		r.Log.Info("Failed to get the ramen configMap for hub recovery", "error", err.Error())
+
+		ramenConfig = nil
+	}
+
+	return EnsureKlusterletConfigForRestore(ctx, r.Client, ramenConfig)
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -170,21 +195,16 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
-	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
-
 	// Hub recovery: when an ACM Restore restores managed clusters, ensure the global
 	// KlusterletConfig carries the configured AppliedManifestWork eviction grace period. This runs
-	// before the ConfigMap error is returned, so that a ConfigMap failure does not leave the hub
-	// unprotected. When the ConfigMap is unusable, the default grace period is used.
-	restoreConfig := ramenConfig
-	if err != nil || restoreConfig == nil {
-		restoreConfig = &rmn.RamenConfig{}
-	}
-
-	if restoreErr := EnsureKlusterletConfigForRestore(ctx, r.Client, restoreConfig); restoreErr != nil {
+	// before the ConfigMap read below can return an error, so that a ConfigMap failure does not
+	// leave the hub unprotected. It reads the Ramen configuration itself, under its own lock; the
+	// read below is the snapshot used by the rest of this reconcile.
+	if restoreErr := r.ReconcileKlusterletConfig(ctx); restoreErr != nil {
 		logger.Info("Failed to ensure KlusterletConfig for hub recovery", "error", restoreErr.Error())
 	}
 
+	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
 	if err != nil {
 		err = fmt.Errorf("failed to get the ramen configMap: %w", err)
 		r.recordFailure(ctx, drpc, nil, "Error", err.Error(), logger)
@@ -783,7 +803,7 @@ func GetDRClusters(ctx context.Context, client client.Client, drPolicy *rmn.DRPo
 }
 
 // updateObjectMetadata updates drpc labels, annotations and finalizer, and also updates placementObj finalizer
-func (r DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
+func (r *DRPlacementControlReconciler) updateObjectMetadata(ctx context.Context,
 	drpc *rmn.DRPlacementControl, placementObj client.Object, log logr.Logger,
 ) error {
 	var update bool

@@ -114,6 +114,35 @@ func TestEnsureKlusterletConfigForRestore(t *testing.T) {
 		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("24h"))
 	})
 
+	t.Run("nil Ramen config creates a missing KlusterletConfig with the default", func(t *testing.T) {
+		g := NewWithT(t)
+		c := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(newRestores("latest")...).Build()
+
+		g.Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, nil)).To(Succeed())
+
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		g.Expect(c.Get(ctx, client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("24h"))
+	})
+
+	t.Run("nil Ramen config leaves an existing KlusterletConfig untouched", func(t *testing.T) {
+		g := NewWithT(t)
+		existing := &klusterletconfigv1alpha1.KlusterletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "global"},
+			Spec: klusterletconfigv1alpha1.KlusterletConfigSpec{
+				AppliedManifestWorkEvictionGracePeriod: "48h",
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(newScheme()).
+			WithObjects(append(newRestores("latest"), existing)...).Build()
+
+		g.Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, nil)).To(Succeed())
+
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		g.Expect(c.Get(ctx, client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("48h"))
+	})
+
 	t.Run("configured, invalid and INFINITE grace periods", func(t *testing.T) {
 		tests := []struct {
 			name       string

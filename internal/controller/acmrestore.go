@@ -32,7 +32,9 @@ const (
 // clusters, ensures the global KlusterletConfig exists and carries the AppliedManifestWork
 // eviction grace period, so that the work agents of the managed clusters do not evict applied
 // ManifestWorks while the hub is being recovered. The grace period is taken from the Ramen
-// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). It is invoked from the DRPC
+// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). A nil ramenConfig means the
+// configuration could not be retrieved: the default grace period is then used only to create a
+// missing KlusterletConfig, and an existing one is left untouched. It is invoked from the DRPC
 // reconciliation so that it is re-run on every reconcile (the DRPC requeues at least once every
 // StatusCheckDelay).
 func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig) error {
@@ -76,12 +78,17 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 
 	log.Info("Restore of managed clusters detected, ensuring KlusterletConfig", "name", klusterletConfigGlobalName)
 
-	return ensureGlobalKlusterletConfig(ctx, c, appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig))
+	if ramenConfig == nil {
+		return ensureGlobalKlusterletConfig(ctx, c, DefaultAppliedManifestWorkEvictionGracePeriod, false)
+	}
+
+	return ensureGlobalKlusterletConfig(ctx, c, appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig), true)
 }
 
-// ensureGlobalKlusterletConfig creates or updates the global KlusterletConfig so that its
-// spec.appliedManifestWorkEvictionGracePeriod equals gracePeriod.
-func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client, gracePeriod string) error {
+// ensureGlobalKlusterletConfig creates the global KlusterletConfig when missing, with
+// spec.appliedManifestWorkEvictionGracePeriod set to gracePeriod. An existing KlusterletConfig is
+// updated to gracePeriod only when updateExisting is true.
+func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client, gracePeriod string, updateExisting bool) error {
 	kc := &klusterletconfigv1alpha1.KlusterletConfig{}
 	log := ctrl.Log.WithName("acmrestore")
 
@@ -104,7 +111,7 @@ func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client, gracePer
 		return fmt.Errorf("failed to get KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
 	}
 
-	if kc.Spec.AppliedManifestWorkEvictionGracePeriod == gracePeriod {
+	if !updateExisting || kc.Spec.AppliedManifestWorkEvictionGracePeriod == gracePeriod {
 		return nil
 	}
 
