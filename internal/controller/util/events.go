@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 // This implementation of events infrastructure is mainly based on
@@ -18,6 +20,19 @@ import (
 // https://github.com/openshift/ocs-operator/blob/master/controllers/util/events.go
 const (
 	LastEventValidDuration = 10
+)
+
+const (
+	// DepracatedWarningEventInterval is the minimum time between repeated
+	// deprecation warnings for the same object. The first warning is emitted
+	// when non-consistency-group VolumeReplication is first observed.
+	DepracatedWarningEventInterval = 12 * time.Hour
+
+	// VolumeReplicationDeprecatedMessage is the human-readable text recorded on
+	// status.warnings. It must not include values that change between reconciles.
+	VolumeReplicationDeprecatedMessage = "VolumeReplication without consistency groups is deprecated " +
+		"and will be removed in a future release. " +
+		"Use volume group replication for new and existing workloads."
 )
 
 const (
@@ -96,6 +111,11 @@ const (
 	// EventReasonSwitchFailed is generated when DRPC fails to switch the cluster
 	// where the app is placed
 	EventReasonSwitchFailed = "DRPCClusterSwitchFailed"
+
+	// EventReasonDeprecatedWarning is emitted while VolumeReplication
+	// is used without consistency groups. It matches the status warning name
+	// so users can filter on one identifier.
+	EventReasonDeprecatedWarning = rmn.WarningNonConsistencyGroupDeprecated
 )
 
 // EventReporter is custom events reporter type which allows user to limit the events
@@ -121,14 +141,21 @@ func NewEventReporter(recorder record.EventRecorder) *EventReporter {
 	}
 }
 
-// ReportIfNotPresent will report event if lastReportedEvent is not the same in last 10 minutes
-// TODO: The duration 10 minutes can be changed to some other value if necessary
+// ReportIfNotPresent will report event if lastReportedEvent is not the same
+// within the given interval. When interval is omitted, LastEventValidDuration
+// seconds is used. Pass DepracatedWarningEventInterval for deprecation warnings
+// so the event stays on the workload object in its namespace.
 func ReportIfNotPresent(recorder *EventReporter, instance runtime.Object,
-	eventType, eventReason, msg string,
+	eventType, eventReason, msg string, interval ...time.Duration,
 ) {
 	nameSpacedName, err := getNameSpacedName(instance)
 	if err != nil {
 		return
+	}
+
+	validDuration := time.Second * LastEventValidDuration
+	if len(interval) > 0 {
+		validDuration = interval[0]
 	}
 
 	eventKey := getEventKey(eventType, eventReason, msg)
@@ -137,7 +164,7 @@ func ReportIfNotPresent(recorder *EventReporter, instance runtime.Object,
 	defer recorder.mutex.Unlock()
 
 	if recorder.lastReportedEvent[nameSpacedName] != eventKey ||
-		recorder.lastReportedEventTime[nameSpacedName].Add(time.Second*LastEventValidDuration).Before(time.Now()) {
+		recorder.lastReportedEventTime[nameSpacedName].Add(validDuration).Before(time.Now()) {
 		recorder.lastReportedEvent[nameSpacedName] = eventKey
 		recorder.lastReportedEventTime[nameSpacedName] = time.Now()
 		recorder.recorder.Event(instance, eventType, eventReason, msg)

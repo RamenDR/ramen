@@ -2393,6 +2393,30 @@ spec:
                       type: object
                     type: array
                 type: object
+              warnings:
+                description: |-
+                  warnings lists deprecated features in use. Each entry has a stable name
+                  and a human-readable message, so more than one deprecation can be reported
+                  together. The list is empty when none apply.
+                items:
+                  description: |-
+                    Warning is one advisory recorded on a resource status.
+                    Name identifies the warning. Message explains it to a person.
+                    A resource may report more than one warning at a time.
+                  properties:
+                    message:
+                      description: message is the human-readable explanation.
+                      type: string
+                    name:
+                      description: |-
+                        name identifies this warning. It stays stable so a caller can match one
+                        deprecation when several are present.
+                      type: string
+                  required:
+                  - message
+                  - name
+                  type: object
+                type: array
             type: object
         type: object
     served: true
