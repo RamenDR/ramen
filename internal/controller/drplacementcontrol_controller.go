@@ -3028,6 +3028,8 @@ func constructVRGFromView(viewVRG *rmn.VolumeReplicationGroup) *rmn.VolumeReplic
 			fallthrough
 		case rmnutil.EnableDiffAnnotation:
 			fallthrough
+		case rmnutil.ResyncOnPrimaryAnnotation:
+			fallthrough
 		case DRPCUIDAnnotation:
 			rmnutil.AddAnnotation(vrg, k, v)
 		default:
