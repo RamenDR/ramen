@@ -68,7 +68,7 @@ func setupTest(
 		t.Fatalf("Unknown PVC spec %q", tc.PVCSpec)
 	}
 
-	workload, err := workloads.New(tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
+	workload, err := workloads.New(Ctx.Context(), tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
 	if err != nil {
 		t.Fatalf("Failed to create workload %q: %v", tc.Workload, err)
 	}

@@ -4,6 +4,7 @@
 package workloads
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -39,12 +40,12 @@ type Deployment struct {
 	PVCSpec config.PVCSpec
 }
 
-func NewDeployment(branch string, pvcSpec config.PVCSpec) types.Workload {
+func NewDeployment(_ context.Context, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
 	return &Deployment{
 		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
 		Branch:  branch,
 		PVCSpec: pvcSpec,
-	}
+	}, nil
 }
 
 func (w Deployment) GetAppName() string {
