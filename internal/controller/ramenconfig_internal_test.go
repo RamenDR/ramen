@@ -83,3 +83,30 @@ func TestApplyDrClusterOperatorFromSubscription(t *testing.T) {
 		})
 	}
 }
+
+func TestAppliedManifestWorkEvictionGracePeriodOrDefault(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		want       string
+	}{
+		{"unset gives default", "", DefaultAppliedManifestWorkEvictionGracePeriod},
+		{"configured value is used", "90m", "90m"},
+		{"combined units are accepted", "1h30m", "1h30m"},
+		{"INFINITE is accepted", "INFINITE", "INFINITE"},
+		{"number without unit falls back", "24", DefaultAppliedManifestWorkEvictionGracePeriod},
+		{"unsupported unit falls back", "1d", DefaultAppliedManifestWorkEvictionGracePeriod},
+		{"lowercase infinite falls back", "infinite", DefaultAppliedManifestWorkEvictionGracePeriod},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &ramendrv1alpha1.RamenConfig{}
+			cfg.HubRecovery.AppliedManifestWorkEvictionGracePeriod = tt.configured
+
+			if got := appliedManifestWorkEvictionGracePeriodOrDefault(cfg); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
