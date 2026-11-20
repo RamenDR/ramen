@@ -33,10 +33,10 @@ type VM struct {
 	PVCSpec config.PVCSpec
 }
 
-func NewVM(_ context.Context, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
+func NewVM(_ context.Context, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
 	return &VM{
 		Name:    fmt.Sprintf("%s-%s", vmName, pvcSpec.Name),
-		Branch:  branch,
+		Branch:  repo.Branch,
 		PVCSpec: pvcSpec,
 	}, nil
 }
