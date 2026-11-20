@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -16,11 +18,14 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
 	. "github.com/onsi/gomega/gstruct"
+	restoresv1beta1 "github.com/stolostron/cluster-backup-operator/api/v1beta1"
+	klusterletconfigv1alpha1 "github.com/stolostron/cluster-lifecycle-api/klusterletconfig/v1alpha1"
 	plrv1 "github.com/stolostron/multicloud-operators-placementrule/pkg/apis/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -30,6 +35,8 @@ import (
 	gppv1 "open-cluster-management.io/governance-policy-propagator/api/v1"
 	viewv1beta1 "open-cluster-management.io/multicloud-operators-subscription/pkg/apis/view/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -1864,6 +1871,196 @@ var _ = Describe("DRPlacementControl - EnableDiff Annotation Propagation", func(
 
 		deleteUserPlacementRule(UserPlacementRuleName, DefaultDRPCNamespace)
 		deleteDRPC()
+	})
+})
+
+var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
+	// Concurrent DRPC reconciles must create the global KlusterletConfig exactly once, and none of
+	// them may fail with AlreadyExists.
+	It("creates the global KlusterletConfig once for concurrent reconciles", func() {
+		scheme := k8sruntime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		ramenConfig := &rmn.RamenConfig{}
+		ramenConfig.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "36h"
+
+		configMap, err := controllers.ConfigMapNew(ramenNamespace, controllers.HubOperatorConfigMapName, ramenConfig)
+		Expect(err).NotTo(HaveOccurred())
+
+		backup := "latest"
+		restore := &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: "restore"},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+		}
+
+		var creates, restoreLists atomic.Int32
+
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore, configMap).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList,
+					opts ...client.ListOption,
+				) error {
+					if _, ok := list.(*restoresv1beta1.RestoreList); ok {
+						restoreLists.Add(1)
+					}
+
+					return cl.List(ctx, list, opts...)
+				},
+				Create: func(ctx context.Context, cl client.WithWatch, obj client.Object,
+					opts ...client.CreateOption,
+				) error {
+					if _, ok := obj.(*klusterletconfigv1alpha1.KlusterletConfig); ok {
+						creates.Add(1)
+					}
+
+					return cl.Create(ctx, obj, opts...)
+				},
+			}).Build()
+
+		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
+
+		const workers = 20
+
+		var wg sync.WaitGroup
+
+		errs := make(chan error, workers)
+
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+
+				errs <- r.ReconcileKlusterletConfig(context.Background(), ramenConfig)
+			}()
+		}
+
+		wg.Wait()
+		close(errs)
+
+		for err := range errs {
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		Expect(creates.Load()).To(Equal(int32(1)))
+
+		// The work is done once, whatever the number of callers.
+		Expect(restoreLists.Load()).To(Equal(int32(1)))
+
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("36h"))
+	})
+
+	// While no Restore of managed clusters exists, nothing is done, so every DRPC reconcile checks
+	// again until a Restore appears.
+	It("keeps checking until a Restore of managed clusters exists", func() {
+		scheme := k8sruntime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		var restoreLists atomic.Int32
+
+		c := fake.NewClientBuilder().WithScheme(scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList,
+					opts ...client.ListOption,
+				) error {
+					if _, ok := list.(*restoresv1beta1.RestoreList); ok {
+						restoreLists.Add(1)
+					}
+
+					return cl.List(ctx, list, opts...)
+				},
+			}).Build()
+
+		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
+		ramenConfig := &rmn.RamenConfig{}
+
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(restoreLists.Load()).To(Equal(int32(2)))
+
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		Expect(k8serrors.IsNotFound(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc))).To(BeTrue())
+
+		backup := "latest"
+		Expect(c.Create(context.Background(), &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: "restore"},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+		})).To(Succeed())
+
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+
+		// Once ensured, later calls do not check again.
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(restoreLists.Load()).To(Equal(int32(3)))
+	})
+
+	// A fallback with a nil configuration, used when the Ramen configMap cannot be read, must not
+	// mark the work done, so that a later reconcile applies the configured grace period.
+	It("retries after a fallback when the Ramen configMap could not be read", func() {
+		scheme := k8sruntime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		ramenConfig := &rmn.RamenConfig{}
+		ramenConfig.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "INFINITE"
+
+		backup := "latest"
+		restore := &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: "restore"},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+		}
+
+		var restoreLists atomic.Int32
+
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList,
+					opts ...client.ListOption,
+				) error {
+					if _, ok := list.(*restoresv1beta1.RestoreList); ok {
+						restoreLists.Add(1)
+					}
+
+					return cl.List(ctx, list, opts...)
+				},
+			}).Build()
+
+		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
+
+		// The fallback creates the missing KlusterletConfig with the default grace period.
+		Expect(r.ReconcileKlusterletConfig(context.Background(), nil)).To(Succeed())
+
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).
+			To(Equal(controllers.DefaultAppliedManifestWorkEvictionGracePeriod))
+
+		// Another fallback must not replace the existing KlusterletConfig's grace period.
+		kc.Spec.AppliedManifestWorkEvictionGracePeriod = "48h"
+		Expect(c.Update(context.Background(), kc)).To(Succeed())
+		Expect(r.ReconcileKlusterletConfig(context.Background(), nil)).To(Succeed())
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("48h"))
+
+		// The next call with the configuration applies the configured grace period.
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+		Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("INFINITE"))
+
+		// Once ensured with the configuration, the Restores are not listed again.
+		listsBefore := restoreLists.Load()
+
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(restoreLists.Load()).To(Equal(listsBefore))
 	})
 })
 
