@@ -1608,6 +1608,7 @@ func (v *VRGInstance) primaryReplicationState(currentState volrep.ReplicationSta
 	volRep *volrep.VolumeReplication, log logr.Logger,
 ) (retState volrep.ReplicationState) {
 	if !v.resyncOnPrimaryEnabled() {
+		// Primary, not currentState: removing the annotation must abort an in-progress Resync.
 		return volrep.Primary
 	}
 
@@ -1640,6 +1641,10 @@ func (v *VRGInstance) primaryReplicationState(currentState volrep.ReplicationSta
 
 		log.Info("VolumeReplication resync completed, returning to primary")
 	case volrep.Secondary:
+		// Only called when the VRG wants Primary; Secondary here means a future misuse.
+		log.Error(fmt.Errorf("unexpected Secondary currentState"),
+			"primaryReplicationState called with Secondary currentState",
+			"currentState", currentState)
 	}
 
 	return volrep.Primary

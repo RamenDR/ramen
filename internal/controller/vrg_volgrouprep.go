@@ -844,7 +844,12 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 	log.Info(fmt.Sprintf("Update VolumeGroupReplication %s/%s", volRep.Namespace, volRep.Name))
 
 	if state == volrep.Primary {
-		state = v.primaryVGRReplicationState(volRep, log)
+		var err error
+
+		state, err = v.primaryVGRReplicationState(volRep, log)
+		if err != nil {
+			return requeue, false, err
+		}
 	}
 
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
@@ -913,20 +918,26 @@ func (v *VRGInstance) updatePVCsConditionsAfterStateChange(pvcs []*corev1.Persis
 // with sibling VRGs and are always set to primary.
 func (v *VRGInstance) primaryVGRReplicationState(vgr *volrep.VolumeGroupReplication,
 	log logr.Logger,
-) volrep.ReplicationState {
+) (volrep.ReplicationState, error) {
 	if !v.resyncOnPrimaryEnabled() || v.hasGlobalVGRLabel() {
-		return volrep.Primary
+		return volrep.Primary, nil
 	}
 
-	return v.primaryReplicationState(vgr.Spec.ReplicationState, v.getVGRVolumeReplication(vgr, log), log)
+	backingVR, err := v.getVGRVolumeReplication(vgr, log)
+	if err != nil {
+		return volrep.Primary, err
+	}
+
+	return v.primaryReplicationState(vgr.Spec.ReplicationState, backingVR, log), nil
 }
 
-// getVGRVolumeReplication returns the VR backing a VGR, or nil if it is not yet known or cannot be fetched.
+// getVGRVolumeReplication returns the VR backing a VGR, or nil if it is not yet known (empty name / NotFound).
+// Other Get failures are returned so the caller can requeue instead of treating them as absence.
 func (v *VRGInstance) getVGRVolumeReplication(vgr *volrep.VolumeGroupReplication,
 	log logr.Logger,
-) *volrep.VolumeReplication {
+) (*volrep.VolumeReplication, error) {
 	if vgr.Spec.VolumeReplicationName == "" {
-		return nil
+		return nil, nil
 	}
 
 	volRep := &volrep.VolumeReplication{}
@@ -934,13 +945,18 @@ func (v *VRGInstance) getVGRVolumeReplication(vgr *volrep.VolumeGroupReplication
 	err := v.reconciler.Get(v.ctx,
 		types.NamespacedName{Name: vgr.Spec.VolumeReplicationName, Namespace: vgr.Namespace}, volRep)
 	if err != nil {
-		log.Info("Failed to get VolumeReplication backing VolumeGroupReplication",
-			"volumeReplication", vgr.Spec.VolumeReplicationName, "error", err)
+		if k8serrors.IsNotFound(err) {
+			return nil, nil
+		}
 
-		return nil
+		log.Error(err, "Failed to get VolumeReplication backing VolumeGroupReplication",
+			"volumeReplication", vgr.Spec.VolumeReplicationName)
+
+		return nil, fmt.Errorf("failed to get VolumeReplication (%s/%s) backing VolumeGroupReplication (%s/%s): %w",
+			vgr.Namespace, vgr.Spec.VolumeReplicationName, vgr.Namespace, vgr.Name, err)
 	}
 
-	return volRep
+	return volRep, nil
 }
 
 // createVGR creates a VolumeGroupReplication CR
