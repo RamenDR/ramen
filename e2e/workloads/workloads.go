@@ -4,6 +4,7 @@
 package workloads
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -13,17 +14,17 @@ import (
 )
 
 // factoryFunc is the new() function type for workloads
-type factoryFunc func(revision string, pvcSpec config.PVCSpec) types.Workload
+type factoryFunc func(ctx context.Context, revision string, pvcSpec config.PVCSpec) (types.Workload, error)
 
 var registry = map[string]factoryFunc{}
 
-func New(name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
+func New(ctx context.Context, name, branch string, pvcSpec config.PVCSpec) (types.Workload, error) {
 	factory := registry[name]
 	if factory == nil {
 		return nil, fmt.Errorf("unknown workload: %q (choose from %q)", name, AvailableNames())
 	}
 
-	return factory(branch, pvcSpec), nil
+	return factory(ctx, branch, pvcSpec)
 }
 
 func AvailableNames() []string {
