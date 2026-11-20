@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -50,6 +51,7 @@ const (
 	VeleroNamespaceNameDefault                        = "velero"
 	veleroNamespaceNameDefaultOCP                     = "openshift-adp"
 	DefaultVolSyncCopyMethod                          = "Snapshot"
+	DefaultAppliedManifestWorkEvictionGracePeriod     = "24h"
 	defaultMaxConcurrentReconciles                    = 50
 	openshiftOperatorsNamespace                       = "openshift-operators"
 	openshiftDRSystemNamespace                        = "openshift-dr-system"
@@ -652,4 +654,28 @@ func volSyncDestinationCopyMethodOrDefault(ramenConfig *ramendrv1alpha1.RamenCon
 	}
 
 	return ramenConfig.VolSync.DestinationCopyMethod
+}
+
+// appliedManifestWorkEvictionGracePeriodPattern is the validation pattern of the KlusterletConfig
+// spec.appliedManifestWorkEvictionGracePeriod field. It is case sensitive.
+var appliedManifestWorkEvictionGracePeriodPattern = regexp.MustCompile(`^(([0-9]+(s|m|h))+|INFINITE)$`)
+
+// appliedManifestWorkEvictionGracePeriodOrDefault returns the configured AppliedManifestWork eviction
+// grace period. The default is returned when the value is not set, or when it does not match the
+// KlusterletConfig validation pattern, as the KlusterletConfig would be rejected otherwise.
+func appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig *ramendrv1alpha1.RamenConfig) string {
+	period := ramenConfig.HubRecovery.AppliedManifestWorkEvictionGracePeriod
+	if period == "" {
+		return DefaultAppliedManifestWorkEvictionGracePeriod
+	}
+
+	if !appliedManifestWorkEvictionGracePeriodPattern.MatchString(period) {
+		ctrl.Log.WithName("ramenconfig").Error(
+			fmt.Errorf("invalid appliedManifestWorkEvictionGracePeriod %q", period),
+			"Using the default", "default", DefaultAppliedManifestWorkEvictionGracePeriod)
+
+		return DefaultAppliedManifestWorkEvictionGracePeriod
+	}
+
+	return period
 }
