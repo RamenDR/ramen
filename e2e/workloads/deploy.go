@@ -25,7 +25,6 @@ const (
 	deploymentName           = "deploy"
 	deploymentAppName        = "busybox"
 	deploymentPath           = "workloads/deployment/base"
-	deploymentPVCName        = "busybox-pvc"
 	deploymentSelectResource = "deployment"
 
 	//nolint:lll
@@ -35,16 +34,23 @@ const (
 )
 
 type Deployment struct {
-	Name    string
-	Branch  string
-	PVCSpec config.PVCSpec
+	Name     string
+	Branch   string
+	PVCSpec  config.PVCSpec
+	PVCNames []string
 }
 
-func NewDeployment(_ context.Context, repo config.Repo, pvcSpec config.PVCSpec) (*Deployment, error) {
+func NewDeployment(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec) (*Deployment, error) {
+	names, err := fetchPVCNames(ctx, repo, deploymentPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Deployment{
-		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
-		Branch:  repo.Branch,
-		PVCSpec: pvcSpec,
+		Name:     fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
+		Branch:   repo.Branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: names,
 	}, nil
 }
 
@@ -115,17 +121,21 @@ func (w Deployment) Kustomize() (string, error) {
 		return "", fmt.Errorf("failed to marshal PVC patch: %w", err)
 	}
 
-	kustomize := &argocd.ApplicationSourceKustomize{
-		Patches: argocd.KustomizePatches{{
+	patches := make(argocd.KustomizePatches, 0, len(w.PVCNames))
+
+	for _, pvcName := range w.PVCNames {
+		patches = append(patches, argocd.KustomizePatch{
 			Target: &argocd.KustomizeSelector{
 				KustomizeResId: argocd.KustomizeResId{
 					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
-					Name:         deploymentPVCName,
+					Name:         pvcName,
 				},
 			},
 			Patch: string(ops),
-		}},
+		})
 	}
+
+	kustomize := &argocd.ApplicationSourceKustomize{Patches: patches}
 
 	out, err := json.Marshal(kustomize)
 	if err != nil {
@@ -170,7 +180,13 @@ func (w Deployment) Health(ctx types.TestContext, cluster *types.Cluster) error 
 			condition.Reason, deploymentMinimumReplicasAvailable, cluster.Name)
 	}
 
-	return checkPVCHealth(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
+	for _, pvcName := range w.PVCNames {
+		if err := checkPVCHealth(ctx, cluster, ctx.AppNamespace(), pvcName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Status returns the deployment status across managed clusters.
@@ -198,17 +214,25 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), deploymentPVCName)
-	if err != nil {
-		return types.WorkloadStatus{}, err
+	pvcsFound := 0
+
+	for _, pvcName := range w.PVCNames {
+		pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
+		if err != nil {
+			return types.WorkloadStatus{}, err
+		}
+
+		if pvcExist {
+			pvcsFound++
+		}
 	}
 
 	var status types.ApplicationStatus
 
 	switch {
-	case deploymentExist && pvcExist:
+	case deploymentExist && pvcsFound == len(w.PVCNames):
 		status = types.ApplicationFound
-	case deploymentExist || pvcExist:
+	case deploymentExist || pvcsFound > 0:
 		status = types.ApplicationPartial
 	default:
 		status = types.ApplicationNotFound
