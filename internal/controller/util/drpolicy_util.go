@@ -91,9 +91,16 @@ func DRPolicyS3Profiles(drpolicy *rmn.DRPolicy, drclusters []rmn.DRCluster) sets
 	return mustHaveS3Profiles
 }
 
-//nolint:mnd
 func GetSecondsFromSchedulingInterval(drpolicy *rmn.DRPolicy) (float64, error) {
-	schedulingInterval := drpolicy.Spec.SchedulingInterval
+	return SecondsFromSchedulingInterval(drpolicy.Spec.SchedulingInterval)
+}
+
+// SecondsFromSchedulingInterval parses a scheduling interval such as "5m", "1h"
+// or "3d" into seconds. An empty interval is zero. A value that does not parse
+// returns the error, and callers that treat zero as meaningful must check it.
+//
+//nolint:mnd
+func SecondsFromSchedulingInterval(schedulingInterval string) (float64, error) {
 	if schedulingInterval == "" {
 		return 0, nil
 	}
