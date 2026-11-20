@@ -20,7 +20,13 @@ def start(cluster):
 def deploy(cluster):
     print("Deploying kubevirt operator")
     path = _cache.get(str(PACKAGE_DIR / "start-data" / "operator"), OPERATOR_CACHE_KEY)
-    kubectl.apply("--filename", path, context=cluster)
+    kubectl.apply(
+        "--filename",
+        path,
+        context=cluster,
+        server_side=True,
+        force_conflicts=True,
+    )
 
     print("Waiting until virt-operator is rolled out")
     kubectl.rollout(
