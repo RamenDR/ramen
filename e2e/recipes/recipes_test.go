@@ -239,12 +239,11 @@ func createWorkload(t *testing.T, cfg *config.Config) types.Workload {
 
 	pvcSpec := cfg.PVCSpecs[0]
 
-	workload, err := workloads.New("deploy", cfg.Repo.Branch, pvcSpec)
-	if err != nil {
-		t.Fatalf("error creating workload: %v", err)
+	return &workloads.Deployment{
+		Name:    "deploy-" + pvcSpec.Name,
+		Branch:  cfg.Repo.Branch,
+		PVCSpec: pvcSpec,
 	}
-
-	return workload
 }
 
 func createDeployer(t *testing.T, rc *config.Recipe) types.Deployer {

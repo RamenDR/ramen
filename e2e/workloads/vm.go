@@ -4,6 +4,7 @@
 package workloads
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -32,12 +33,12 @@ type VM struct {
 	PVCSpec config.PVCSpec
 }
 
-func NewVM(branch string, pvcSpec config.PVCSpec) types.Workload {
+func NewVM(_ context.Context, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
 	return &VM{
 		Name:    fmt.Sprintf("%s-%s", vmName, pvcSpec.Name),
-		Branch:  branch,
+		Branch:  repo.Branch,
 		PVCSpec: pvcSpec,
-	}
+	}, nil
 }
 
 func (w *VM) GetAppName() string {
