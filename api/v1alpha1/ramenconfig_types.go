@@ -188,6 +188,15 @@ type RamenConfig struct {
 		VolsyncSupported bool `json:"volsyncSupported,omitempty"`
 	} `json:"multiNamespace,omitempty"`
 
+	// HubRecovery configuration
+	HubRecovery struct {
+		// AppliedManifestWorkEvictionGracePeriod is the value set on the global
+		// KlusterletConfig while an ACM Restore of managed clusters is in progress.
+		// Same format as the KlusterletConfig field: a duration such as "24h" or
+		// "90m", or "INFINITE". Defaults to 24h.
+		AppliedManifestWorkEvictionGracePeriod string `json:"appliedManifestWorkEvictionGracePeriod,omitempty"`
+	} `json:"hubRecovery,omitempty"`
+
 	// Unprotect deleted or deselected PVCs
 	VolumeUnprotectionEnabled bool `json:"volumeUnprotectionEnabled,omitempty"`
 

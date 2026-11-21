@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
 const (
@@ -24,18 +26,18 @@ const (
 
 	// klusterletConfigGlobalName is the ACM wide default KlusterletConfig.
 	klusterletConfigGlobalName = "global"
-
-	// klusterletConfigEvictionGracePeriod is the AppliedManifestWork eviction grace period set on
-	// the global KlusterletConfig, so that the work agents of the managed clusters do not evict
-	// applied ManifestWorks while the hub is being recovered.
-	klusterletConfigEvictionGracePeriod = "24h"
 )
 
 // EnsureKlusterletConfigForRestore polls the ACM Restore resources and, when one restores managed
 // clusters, ensures the global KlusterletConfig exists and carries the AppliedManifestWork
-// eviction grace period. It is invoked from the DRPC reconciliation so that it is re-run on every
-// reconcile (the DRPC requeues at least once every StatusCheckDelay).
-func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client) error {
+// eviction grace period, so that the work agents of the managed clusters do not evict applied
+// ManifestWorks while the hub is being recovered. The grace period is taken from the Ramen
+// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). A nil ramenConfig means the
+// configuration could not be retrieved: the default grace period is then used only to create a
+// missing KlusterletConfig, and an existing one is left untouched. It is invoked from the DRPC
+// reconciliation so that it is re-run on every reconcile (the DRPC requeues at least once every
+// StatusCheckDelay).
+func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig) error {
 	log := ctrl.Log.WithName("acmrestore")
 
 	restoreList := &restoresv1beta1.RestoreList{}
@@ -76,22 +78,27 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client) erro
 
 	log.Info("Restore of managed clusters detected, ensuring KlusterletConfig", "name", klusterletConfigGlobalName)
 
-	return ensureGlobalKlusterletConfig(ctx, c)
+	if ramenConfig == nil {
+		return ensureGlobalKlusterletConfig(ctx, c, DefaultAppliedManifestWorkEvictionGracePeriod, false)
+	}
+
+	return ensureGlobalKlusterletConfig(ctx, c, appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig), true)
 }
 
-// ensureGlobalKlusterletConfig creates or updates the global KlusterletConfig so that its
-// spec.appliedManifestWorkEvictionGracePeriod equals klusterletConfigEvictionGracePeriod.
-func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client) error {
+// ensureGlobalKlusterletConfig creates the global KlusterletConfig when missing, with
+// spec.appliedManifestWorkEvictionGracePeriod set to gracePeriod. An existing KlusterletConfig is
+// updated to gracePeriod only when updateExisting is true.
+func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client, gracePeriod string, updateExisting bool) error {
 	kc := &klusterletconfigv1alpha1.KlusterletConfig{}
 	log := ctrl.Log.WithName("acmrestore")
 
 	err := c.Get(ctx, types.NamespacedName{Name: klusterletConfigGlobalName}, kc)
 	if k8serrors.IsNotFound(err) {
 		kc.SetName(klusterletConfigGlobalName)
-		kc.Spec.AppliedManifestWorkEvictionGracePeriod = klusterletConfigEvictionGracePeriod
+		kc.Spec.AppliedManifestWorkEvictionGracePeriod = gracePeriod
 
 		log.Info("Creating KlusterletConfig",
-			"name", klusterletConfigGlobalName, "evictionGracePeriod", klusterletConfigEvictionGracePeriod)
+			"name", klusterletConfigGlobalName, "evictionGracePeriod", gracePeriod)
 
 		if err := c.Create(ctx, kc); err != nil {
 			return fmt.Errorf("failed to create KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
@@ -104,14 +111,14 @@ func ensureGlobalKlusterletConfig(ctx context.Context, c client.Client) error {
 		return fmt.Errorf("failed to get KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
 	}
 
-	if kc.Spec.AppliedManifestWorkEvictionGracePeriod == klusterletConfigEvictionGracePeriod {
+	if !updateExisting || kc.Spec.AppliedManifestWorkEvictionGracePeriod == gracePeriod {
 		return nil
 	}
 
-	kc.Spec.AppliedManifestWorkEvictionGracePeriod = klusterletConfigEvictionGracePeriod
+	kc.Spec.AppliedManifestWorkEvictionGracePeriod = gracePeriod
 
 	log.Info("Updating KlusterletConfig eviction grace period",
-		"name", klusterletConfigGlobalName, "evictionGracePeriod", klusterletConfigEvictionGracePeriod)
+		"name", klusterletConfigGlobalName, "evictionGracePeriod", gracePeriod)
 
 	if err := c.Update(ctx, kc); err != nil {
 		return fmt.Errorf("failed to update KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
