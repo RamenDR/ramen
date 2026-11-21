@@ -164,12 +164,6 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to get DRPC object: %w", err)
 	}
 
-	// Hub recovery: when an ACM Restore restores managed clusters, ensure the global
-	// KlusterletConfig carries the AppliedManifestWork eviction grace period.
-	if err := EnsureKlusterletConfigForRestore(ctx, r.Client); err != nil {
-		logger.Info("Failed to ensure KlusterletConfig for hub recovery", "error", err.Error())
-	}
-
 	// Save a copy of the instance status to be used for the VRG status update comparison
 	drpc.Status.DeepCopyInto(&r.savedInstanceStatus)
 	r.savedDRActionCount = drpc.GetAnnotations()[DRActionCountAnnotation]
@@ -177,6 +171,20 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+
+	// Hub recovery: when an ACM Restore restores managed clusters, ensure the global
+	// KlusterletConfig carries the configured AppliedManifestWork eviction grace period. This runs
+	// before the ConfigMap error is returned, so that a ConfigMap failure does not leave the hub
+	// unprotected. When the ConfigMap is unusable, the default grace period is used.
+	restoreConfig := ramenConfig
+	if err != nil || restoreConfig == nil {
+		restoreConfig = &rmn.RamenConfig{}
+	}
+
+	if restoreErr := EnsureKlusterletConfigForRestore(ctx, r.Client, restoreConfig); restoreErr != nil {
+		logger.Info("Failed to ensure KlusterletConfig for hub recovery", "error", restoreErr.Error())
+	}
+
 	if err != nil {
 		err = fmt.Errorf("failed to get the ramen configMap: %w", err)
 		r.recordFailure(ctx, drpc, nil, "Error", err.Error(), logger)
