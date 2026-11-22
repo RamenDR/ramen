@@ -33,7 +33,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/vmware-tanzu/velero v1.18.4
 	go.uber.org/zap v1.28.0
-	golang.org/x/time v0.15.0
+	golang.org/x/time v0.16.0
 	k8s.io/api v0.37.2
 	k8s.io/apiextensions-apiserver v0.37.1
 	k8s.io/apimachinery v0.37.2
