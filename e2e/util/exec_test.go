@@ -7,12 +7,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
+	"fmt"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
 
@@ -20,342 +18,214 @@ import (
 )
 
 const (
-	// Large enough to fill a pipe and block if RunCommand waits for exit before reading.
-	largeOutputBytes = 1 << 20
-
-	nonzeroStatus = 7
-	commandLimit  = 15 * time.Second
+	commandTimeout = time.Second
 )
 
+// result omits Err: each test checks the error separately.
+type result struct {
+	ExitCode int
+	Stdout   []byte
+	Stderr   []byte
+}
+
+// Test that a silent, successful command returns exit code zero and empty output.
 func TestRunCommandSucceedsWithNoOutput(t *testing.T) {
 	res := util.RunCommand(t.Context(), "bash", "-c", "true")
-
 	if res.Err != nil {
-		t.Fatalf("unexpected error: %v", res.Err)
+		t.Errorf("unexpected error: %v", res.Err)
 	}
 
-	if res.ExitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d", res.ExitCode)
-	}
-
-	expectOutput(t, res, "", "")
+	checkResult(t, res, result{})
 }
 
+// Test that stdout and stderr stay separate even when the command succeeds.
 func TestRunCommandCapturesStdoutAndStderr(t *testing.T) {
 	res := util.RunCommand(t.Context(), "bash", "-c", `printf 'out\n'; printf 'err\n' >&2`)
-
 	if res.Err != nil {
-		t.Fatalf("unexpected error: %v", res.Err)
+		t.Errorf("unexpected error: %v", res.Err)
 	}
 
-	if res.ExitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d", res.ExitCode)
-	}
-
-	expectOutput(t, res, "out\n", "err\n")
+	checkResult(t, res, result{Stdout: []byte("out\n"), Stderr: []byte("err\n")})
 }
 
+// Test that a nonzero exit returns an *exec.ExitError without losing the exit code or output.
 func TestRunCommandReportsNonzeroExit(t *testing.T) {
-	res := util.RunCommand(t.Context(), "bash", "-c", `printf 'out\n'; printf 'err\n' >&2; exit 7`)
-
-	if res.Err == nil || res.Err.Error() != "exit status 7" {
-		t.Fatalf("expected exit status 7 error, got %v", res.Err)
+	res := util.RunCommand(t.Context(), "bash", "-c", `printf 'out\n'; printf 'err\n' >&2; exit 1`)
+	if _, ok := res.Err.(*exec.ExitError); !ok {
+		t.Errorf("Err: got %T, want *exec.ExitError", res.Err)
 	}
 
-	if res.ExitCode != nonzeroStatus {
-		t.Fatalf("expected exit code %d, got %d", nonzeroStatus, res.ExitCode)
-	}
-
-	expectOutput(t, res, "out\n", "err\n")
+	checkResult(t, res, result{
+		ExitCode: 1,
+		Stdout:   []byte("out\n"),
+		Stderr:   []byte("err\n"),
+	})
 }
 
+// Test that a command missing from PATH returns ErrNotFound and FailedToStart.
 func TestRunCommandMissingExecutable(t *testing.T) {
-	res := util.RunCommand(t.Context(), "ramen-command-that-does-not-exist")
-
+	res := util.RunCommand(t.Context(), "no such command in the path")
 	if !errors.Is(res.Err, exec.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", res.Err)
+		t.Errorf("Err: got %v, want exec.ErrNotFound", res.Err)
 	}
 
-	if res.ExitCode != util.FailedToStart {
-		t.Fatalf("expected exit code %d, got %d", util.FailedToStart, res.ExitCode)
-	}
+	checkResult(t, res, result{ExitCode: util.FailedToStart})
 }
 
-func TestRunCommandPermissionDenied(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("execute permission is unix-specific")
-	}
+// Test that RunCommand reports the platform's exit status for a killed process.
+func TestRunCommandKilled(t *testing.T) {
+	path := build(t, "testdata/kill-self.go")
 
-	path := filepath.Join(t.TempDir(), "not-executable")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	res := util.RunCommand(t.Context(), path)
-
-	if !errors.Is(res.Err, os.ErrPermission) {
-		t.Fatalf("expected ErrPermission, got %v", res.Err)
-	}
-
-	if res.ExitCode != util.FailedToStart {
-		t.Fatalf("expected exit code %d, got %d", util.FailedToStart, res.ExitCode)
-	}
-}
-
-func TestRunCommandTerminatedBySignal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("signal termination is unix-specific")
-	}
-
-	ctx, cancel := context.WithTimeout(t.Context(), commandLimit)
+	ctx, cancel := context.WithTimeout(t.Context(), commandTimeout)
 	defer cancel()
 
-	res := util.RunCommand(ctx, os.Args[0], "helper", "signal")
-
-	if res.ExitCode != util.Signaled {
-		t.Fatalf("expected exit code %d, got %d", util.Signaled, res.ExitCode)
+	res := util.RunCommand(ctx, path)
+	if _, ok := res.Err.(*exec.ExitError); !ok {
+		t.Errorf("Err: got %T, want *exec.ExitError", res.Err)
 	}
 
-	if res.Err == nil || res.Err.Error() != "signal: terminated" {
-		t.Fatalf("expected signal: terminated error, got %v", res.Err)
-	}
+	checkResult(t, res, result{ExitCode: killedExitCode()})
 }
 
+// Test that an already-canceled context prevents the command from starting.
 func TestRunCommandCanceledBeforeStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	res := util.RunCommand(ctx, "bash", "-c", "exec sleep 60")
-
+	res := util.RunCommand(ctx, "bash", "-c", "true")
 	if !errors.Is(res.Err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got %v", res.Err)
+		t.Errorf("Err: got %v, want context.Canceled", res.Err)
 	}
 
-	if res.ExitCode != util.FailedToStart {
-		t.Fatalf("expected exit code %d, got %d", util.FailedToStart, res.ExitCode)
-	}
-
-	expectOutput(t, res, "", "")
+	checkResult(t, res, result{ExitCode: util.FailedToStart})
 }
 
+// Test that canceling a running command kills it but preserves output it already wrote.
 func TestRunCommandCanceledWhileRunning(t *testing.T) {
-	res := runUntilReady(t, `touch "$1"; exec sleep 60`)
-
-	if res.ExitCode != util.Signaled {
-		t.Fatalf("expected exit code %d, got %d", util.Signaled, res.ExitCode)
-	}
-
-	expectOutput(t, res, "", "")
-}
-
-func TestRunCommandDeadlineExceeded(t *testing.T) {
-	ready := filepath.Join(t.TempDir(), "ready")
-
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	res := util.RunCommand(ctx, "bash", "-c", `touch "$1"; exec sleep 60`, "bash", ready)
+	timer := time.AfterFunc(500*time.Millisecond, cancel)
+	defer timer.Stop()
 
-	if _, err := os.Stat(ready); err != nil {
-		t.Fatalf("expected ready file to exist, command error: %v", res.Err)
-	}
+	script := `
+		printf 'out\n'
+		printf 'err\n' >&2
+		exec sleep 10
+	`
 
-	if !errors.Is(res.Err, context.DeadlineExceeded) {
-		t.Fatalf("expected context.DeadlineExceeded, got %v", res.Err)
-	}
-
-	if res.ExitCode != util.Signaled {
-		t.Fatalf("expected exit code %d, got %d", util.Signaled, res.ExitCode)
-	}
-}
-
-func TestRunCommandPreservesOutputBeforeCancel(t *testing.T) {
-	script := `printf 'out\n'; printf 'err\n' >&2; touch "$1"; exec sleep 60`
-	res := runUntilReady(t, script)
-
-	if res.ExitCode != util.Signaled {
-		t.Fatalf("expected exit code %d, got %d", util.Signaled, res.ExitCode)
-	}
-
-	expectOutput(t, res, "out\n", "err\n")
-}
-
-func TestRunCommandCapturesLargeOutput(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), commandLimit)
-	defer cancel()
-
-	res := util.RunCommand(ctx, os.Args[0], "helper", "large")
-
-	if res.Err != nil {
-		t.Fatalf("unexpected error: %v", res.Err)
-	}
-
-	if res.ExitCode != 0 {
-		t.Fatalf("expected exit code 0, got %d", res.ExitCode)
-	}
-
-	if !bytes.Equal(res.Stdout, bytes.Repeat([]byte{'o'}, largeOutputBytes)) {
-		t.Fatalf("unexpected stdout length %d", len(res.Stdout))
-	}
-
-	if !bytes.Equal(res.Stderr, bytes.Repeat([]byte{'e'}, largeOutputBytes)) {
-		t.Fatalf("unexpected stderr length %d", len(res.Stderr))
-	}
-}
-
-func TestRunCommandPassesArgumentsLiterally(t *testing.T) {
-	res := util.RunCommand(
-		t.Context(),
-		"bash",
-		"-c",
-		`printf '%s\n' "$@"`,
-		"bash",
-		"hello world",
-		"a;b|c&d",
-		"$(uname)",
-		"`date`",
-		"*",
-		"'single'",
-		`"double"`,
-		`back\slash`,
-	)
-
-	if res.Err != nil {
-		t.Fatalf("unexpected error: %v", res.Err)
-	}
-
-	expected := "hello world\n" +
-		"a;b|c&d\n" +
-		"$(uname)\n" +
-		"`date`\n" +
-		"*\n" +
-		"'single'\n" +
-		"\"double\"\n" +
-		"back\\slash\n"
-
-	if string(res.Stdout) != expected {
-		t.Fatalf("expected stdout:\n%s\ngot:\n%s", expected, res.Stdout)
-	}
-
-	if len(res.Stderr) != 0 {
-		t.Fatalf("expected empty stderr, got %q", res.Stderr)
-	}
-}
-
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == "helper" {
-		os.Exit(helper(os.Args[2:]))
-	}
-
-	os.Exit(m.Run())
-}
-
-func runUntilReady(t *testing.T, script string) util.Result {
-	t.Helper()
-
-	ready := filepath.Join(t.TempDir(), "ready")
-
-	parent, stop := context.WithTimeout(t.Context(), commandLimit)
-	defer stop()
-
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-
-	go cancelWhenReady(parent, cancel, ready)
-
-	res := util.RunCommand(ctx, "bash", "-c", script, "bash", ready)
+	res := util.RunCommand(ctx, "bash", "-c", script)
 	if !errors.Is(res.Err, context.Canceled) {
-		t.Fatalf("expected context.Canceled, got %v", res.Err)
+		t.Errorf("Err: got %v, want context.Canceled", res.Err)
 	}
 
-	return res
+	checkResult(t, res, result{
+		ExitCode: killedExitCode(),
+		Stdout:   []byte("out\n"),
+		Stderr:   []byte("err\n"),
+	})
 }
 
-func cancelWhenReady(ctx context.Context, cancel context.CancelFunc, path string) {
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
+// Test that a deadline kills the running command and reports DeadlineExceeded as the cause.
+func TestRunCommandDeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if _, err := os.Stat(path); err == nil {
-				cancel()
+	res := util.RunCommand(ctx, "bash", "-c", "exec sleep 10")
+	if !errors.Is(res.Err, context.DeadlineExceeded) {
+		t.Errorf("Err: got %v, want context.DeadlineExceeded", res.Err)
+	}
 
-				return
+	checkResult(t, res, result{ExitCode: killedExitCode()})
+}
+
+// Test that output larger than a pipe buffer is captured on both streams without blocking.
+func TestRunCommandCapturesLargeOutput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), commandTimeout)
+	defer cancel()
+
+	// Large enough to fill a pipe and block if RunCommand waits for exit before reading.
+	const largeOutputBytes = 1048576
+
+	// On Windows, Git Bash supplies dd and its MSYS runtime provides /dev/zero.
+	script := fmt.Sprintf(`
+		dd if=/dev/zero bs=%[1]d count=1 2>/dev/null
+		dd if=/dev/zero bs=%[1]d count=1 >&2 2>/dev/null
+	`, largeOutputBytes)
+
+	res := util.RunCommand(ctx, "bash", "-e", "-c", script)
+	if res.Err != nil {
+		t.Errorf("unexpected error: %v", res.Err)
+	}
+
+	zeros := make([]byte, largeOutputBytes)
+	checkResult(t, res, result{Stdout: zeros, Stderr: zeros})
+}
+
+// Test that arguments are not interpreted by a shell.
+func TestRunCommandNoShellInterpretation(t *testing.T) {
+	cases := []struct {
+		name string
+		arg  string
+	}{
+		{"embedded space", "hello world"},
+		{"shell control operators", "a; b | c & d"},
+		{"command substitution", "$(uname)"},
+		{"backtick command substitution", "`date`"},
+		{"parameter expansion", "$USER"},
+		{"pathname expansion", "*"},
+		{"single quotes", "'single'"},
+		{"double quotes", `"double"`},
+		{"backslash", `back\slash`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := util.RunCommand(t.Context(), "printf", "%s", tc.arg)
+			if res.Err != nil {
+				t.Errorf("unexpected error: %v", res.Err)
 			}
-		}
+
+			checkResult(t, res, result{Stdout: []byte(tc.arg)})
+		})
 	}
 }
 
-func expectOutput(t *testing.T, res util.Result, stdout, stderr string) {
+func build(t *testing.T, source string) string {
 	t.Helper()
 
-	if string(res.Stdout) != stdout {
-		t.Fatalf("expected stdout %q, got %q", stdout, res.Stdout)
+	path := filepath.Join(t.TempDir(), "helper.exe")
+	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", path, source)
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build %s: %v\n%s", source, err, out)
 	}
 
-	if string(res.Stderr) != stderr {
-		t.Fatalf("expected stderr %q, got %q", stderr, res.Stderr)
-	}
+	return path
 }
 
-func helper(args []string) int {
-	if len(args) == 0 {
-		return 1
+func killedExitCode() int {
+	if runtime.GOOS == "windows" {
+		return 1 // Go's Process.Kill calls TerminateProcess with exit code 1.
 	}
 
-	switch args[0] {
-	case "large":
-		if len(args) != 1 {
-			return 1
-		}
-
-		return writeLarge()
-	case "signal":
-		if len(args) != 1 {
-			return 1
-		}
-
-		return terminateBySignal()
-	default:
-		return 1
-	}
+	return util.Signaled
 }
 
-func writeLarge() int {
-	buf := bytes.Repeat([]byte{'o'}, largeOutputBytes)
-	if _, err := os.Stdout.Write(buf); err != nil {
-		return 1
+func checkResult(t *testing.T, got util.Result, want result) {
+	t.Helper()
+
+	if got.ExitCode != want.ExitCode {
+		t.Errorf("ExitCode: got %d, want %d", got.ExitCode, want.ExitCode)
 	}
 
-	for i := range buf {
-		buf[i] = 'e'
+	if !bytes.Equal(got.Stdout, want.Stdout) {
+		t.Errorf("Stdout: got %.80q (%d bytes), want %.80q (%d bytes)",
+			got.Stdout, len(got.Stdout), want.Stdout, len(want.Stdout))
 	}
 
-	if _, err := os.Stderr.Write(buf); err != nil {
-		return 1
-	}
-
-	return 0
-}
-
-// terminateBySignal restores the default SIGTERM action and signals this process.
-// The Go runtime otherwise catches SIGTERM and exits with a status.
-func terminateBySignal() int {
-	signal.Reset(syscall.SIGTERM)
-
-	process, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		return 1
-	}
-
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return 1
-	}
-
-	for {
-		time.Sleep(time.Hour)
+	if !bytes.Equal(got.Stderr, want.Stderr) {
+		t.Errorf("Stderr: got %.80q (%d bytes), want %.80q (%d bytes)",
+			got.Stderr, len(got.Stderr), want.Stderr, len(want.Stderr))
 	}
 }

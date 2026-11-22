@@ -13,14 +13,14 @@ const (
 	// FailedToStart is the exit code when the process failed to start.
 	FailedToStart = -2
 
-	// Signaled is the exit code when the process is terminated by a signal.
+	// Signaled indicates that a Unix process was terminated by a signal.
 	Signaled = -1
 )
 
 // Result holds the outcome of a command run by RunCommand.
 // Stdout and Stderr are what the process wrote.
 // ExitCode == 0 and Err == nil means the process exited successfully.
-// ExitCode == Signaled means the process was terminated by a signal.
+// ExitCode == Signaled if a signal terminated the process (Unix only)
 // ExitCode == FailedToStart means the process failed to start.
 // When ctx is canceled or its deadline is exceeded, Err is ctx.Err().
 // ExitCode still reports how the process ended.
@@ -31,8 +31,9 @@ type Result struct {
 	Err      error
 }
 
-// RunCommand runs a command. The process is killed when ctx is canceled or the deadline is exceeded.
-// Err is then ctx.Err(), and ExitCode reports how the process ended.
+// RunCommand runs a command. If ctx is canceled or its deadline expires,
+// RunCommand attempts to kill the process if it is running and reports ctx.Err()
+// in Result.Err. Cancellation does not override the platform-specific ExitCode.
 func RunCommand(ctx context.Context, name string, args ...string) Result {
 	cmd := exec.CommandContext(ctx, name, args...)
 
