@@ -7,7 +7,7 @@ go 1.26.0
 toolchain go1.27.2
 
 require (
-	github.com/aymanbagabas/go-udiff v0.4.1
+	github.com/aymanbagabas/go-udiff v0.4.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/ramendr/ramen/api v0.1.0
 	github.com/ramendr/recipe v0.0.0-20250507125257-0295a01da567
