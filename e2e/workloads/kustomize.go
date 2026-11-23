@@ -19,15 +19,10 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-const (
-	// Measured builds of this kustomization finish in about 2s.
-	// One minute is 3x that time, rounded up. The same duration is set on the
-	// kustomize URL because a remote git fetch otherwise stops after 27s.
-	kustomizeBuildTimeout = time.Minute
-
-	// kubectl StreamVisitor uses this buffer to tell a JSON stream from YAML.
-	yamlOrJSONBufferSize = 4096
-)
+// Measured builds of this kustomization finish in about 2s.
+// One minute is 3x that time, rounded up. The same duration is set on the
+// kustomize URL because a remote git fetch otherwise stops after 27s.
+const kustomizeBuildTimeout = time.Minute
 
 type jsonPatch struct {
 	Op    string `json:"op"`
@@ -53,10 +48,9 @@ func downloadKustomization(ctx context.Context, repo config.Repo, workloadPath s
 	return string(res.Stdout), nil
 }
 
-// pvcNames returns PersistentVolumeClaim names from a kubectl kustomize build.
-// The decoder is the one kubectl uses for multi-document YAML or JSON input.
+// pvcNames returns PersistentVolumeClaim names from the YAML stream emitted by kubectl kustomize.
 func pvcNames(kustomization string) ([]string, error) {
-	decoder := k8syaml.NewYAMLOrJSONDecoder(strings.NewReader(kustomization), yamlOrJSONBufferSize)
+	decoder := k8syaml.NewYAMLToJSONDecoder(strings.NewReader(kustomization))
 	names := make([]string, 0)
 
 	for {
