@@ -6,8 +6,39 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/helpers"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
+
+func TestNewDeployment(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("requires kubectl and access to GitHub")
+	}
+
+	repo := config.Repo{
+		URL:    "https://github.com/RamenDR/ocm-ramen-samples.git",
+		Branch: "7a778cca8005bd90da4188d7d3946c13d8ac359d", // Pin the manifests used by this test.
+	}
+	pvcSpec := config.PVCSpec{Name: "rbd", StorageClassName: "test-sc", AccessModes: "ReadWriteOnce"}
+
+	actual, err := workloads.NewDeployment(t.Context(), repo, pvcSpec)
+	if err != nil {
+		t.Fatalf("error creating deployment: %v", err)
+	}
+
+	expected := &workloads.Deployment{
+		Name:     "deploy-rbd",
+		Branch:   repo.Branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: []string{"busybox-pvc"},
+	}
+
+	if diff := helpers.UnifiedDiff(t, expected, actual); diff != "" {
+		t.Fatalf("deployment mismatch:\n%s", diff)
+	}
+}
 
 func TestNewDeploymentCanceledContext(t *testing.T) {
 	t.Parallel()
