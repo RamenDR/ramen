@@ -30,9 +30,10 @@ func TestNewVM(t *testing.T) {
 	}
 
 	expected := &workloads.VM{
-		Name:    "vm-pvc-rbd",
-		Branch:  repo.Branch,
-		PVCSpec: pvcSpec,
+		Name:     "vm-pvc-rbd",
+		Branch:   repo.Branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: []string{"root-disk"},
 	}
 
 	if diff := helpers.UnifiedDiff(t, expected, vm); diff != "" {
@@ -49,6 +50,7 @@ func TestVMKustomizePatches(t *testing.T) {
 			StorageClassName: "rook-ceph-block",
 			AccessModes:      "ReadWriteOnce",
 		},
+		PVCNames: []string{"os-disk", "data-disk"},
 	}
 
 	actualKustomize, err := vm.Kustomize()
@@ -76,7 +78,17 @@ func TestVMKustomizePatches(t *testing.T) {
 				Target: &argocd.KustomizeSelector{
 					KustomizeResId: argocd.KustomizeResId{
 						KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
-						Name:         "root-disk",
+						Name:         "os-disk",
+					},
+				},
+				Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
+					`{"op":"add","path":"/spec/accessModes","value":["ReadWriteOnce"]}]`,
+			},
+			{
+				Target: &argocd.KustomizeSelector{
+					KustomizeResId: argocd.KustomizeResId{
+						KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+						Name:         "data-disk",
 					},
 				},
 				Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
