@@ -84,7 +84,100 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 		return
 	}
 
+	// Safely update BSLs to ReadWrite mode, respecting sync safety checks.
+	// This handles BSLs that are ready to transition to Primary (synced or no sync needed).
+	// BSLs requiring sync will be handled per-backup by ensureBSLReadyForPrimaryBackup().
+	v.updateBSLsToPrimaryBestEffort()
 	v.kubeObjectsProtect(result)
+}
+
+func (v *VRGInstance) updateBSLsToPrimaryBestEffort() {
+	bslList, err := v.listBSLsOwnedByVRG()
+	if err != nil {
+		v.log.Error(err, "Failed to list BSLs for Primary update")
+
+		return
+	}
+
+	if len(bslList.Items) == 0 {
+		return
+	}
+
+	v.log.Info("Attempting to update BSLs to Primary mode (with sync safety checks)",
+		"count", len(bslList.Items))
+
+	updatedCount := 0
+
+	for i := range bslList.Items {
+		bsl := &bslList.Items[i]
+
+		// Skip if already in Primary mode
+		if bsl.Spec.AccessMode == velero.BackupStorageLocationAccessModeReadWrite &&
+			bsl.Spec.BackupSyncPeriod != nil &&
+			bsl.Spec.BackupSyncPeriod.Duration == 0 {
+			continue
+		}
+
+		// Only update if safe (no sync needed OR sync completed)
+		if v.canSafelyPromoteToPrimary(bsl) {
+			bsl.Spec.AccessMode = velero.BackupStorageLocationAccessModeReadWrite
+			bsl.Spec.BackupSyncPeriod = &metav1.Duration{} // 0s
+
+			if err := v.reconciler.Client.Update(v.ctx, bsl); err != nil {
+				v.log.Error(err, "Failed to update BSL to Primary mode", "bsl", bsl.Name)
+
+				continue
+			}
+
+			v.log.Info("Updated BSL to Primary mode", "bsl", bsl.Name)
+
+			updatedCount++
+		}
+	}
+
+	if updatedCount > 0 {
+		v.log.Info("Completed safe BSL updates to Primary mode",
+			"updated", updatedCount,
+			"total", len(bslList.Items))
+	}
+}
+
+func (v *VRGInstance) canSafelyPromoteToPrimary(bsl *velero.BackupStorageLocation) bool {
+	// Safe if no sync period configured (ReadOnly + 0s or already ReadWrite)
+	if bsl.Spec.BackupSyncPeriod == nil || bsl.Spec.BackupSyncPeriod.Duration == 0 {
+		return true
+	}
+
+	// If sync is enabled (1s), only promote if sync has completed
+	if bsl.Status.LastSyncedTime == nil || bsl.Status.LastSyncedTime.IsZero() {
+		v.log.Info("BSL not yet synced, waiting before promoting to Primary",
+			"bsl", bsl.Name)
+
+		return false
+	}
+
+	// Check if lastSyncedTime is after sync was enabled (avoid stale timestamps)
+	if syncEnabledTimeStr, ok := bsl.Annotations[veleroreq.LastSyncEnabledTimeAnnotation]; ok {
+		syncEnabledTime, err := time.Parse(time.RFC3339, syncEnabledTimeStr)
+		if err != nil {
+			v.log.Info("Failed to parse sync-enabled-time, promoting anyway",
+				"bsl", bsl.Name,
+				"error", err)
+
+			return true
+		}
+
+		if bsl.Status.LastSyncedTime.Time.Before(syncEnabledTime) {
+			v.log.Info("BSL lastSyncedTime is stale, waiting for fresh sync before promoting",
+				"bsl", bsl.Name,
+				"lastSyncedTime", bsl.Status.LastSyncedTime.Time,
+				"syncEnabledTime", syncEnabledTime)
+
+			return false
+		}
+	}
+
+	return true
 }
 
 func (v *VRGInstance) kubeObjectsProtect(
@@ -517,14 +610,17 @@ func (v *VRGInstance) executeCaptureSteps(result *ctrl.Result, pathName, capture
 
 // kubeObjectsStorageLocation returns the location in this S3 store where kube
 // objects protect and recover requests are kept under keyPrefix.
-func (s s3StoreAccessor) kubeObjectsStorageLocation(keyPrefix string) kubeobjects.StorageLocation {
+func (s s3StoreAccessor) kubeObjectsStorageLocation(keyPrefix string,
+	replicationState string,
+) kubeobjects.StorageLocation {
 	return kubeobjects.StorageLocation{
-		S3URL:          s.S3CompatibleEndpoint,
-		Bucket:         s.S3Bucket,
-		Region:         s.S3Region,
-		KeyPrefix:      keyPrefix,
-		SecretKeyRef:   s.VeleroNamespaceSecretKeyRef,
-		CACertificates: s.CACertificates,
+		S3URL:            s.S3CompatibleEndpoint,
+		Bucket:           s.S3Bucket,
+		Region:           s.S3Region,
+		KeyPrefix:        keyPrefix,
+		SecretKeyRef:     s.VeleroNamespaceSecretKeyRef,
+		CACertificates:   s.CACertificates,
+		ReplicationState: replicationState,
 	}
 }
 
@@ -579,7 +675,7 @@ func (v *VRGInstance) createCaptureRequest(
 
 	if _, err := v.reconciler.kubeObjects.ProtectRequestCreate(
 		v.ctx, v.reconciler.Client, v.log,
-		s3StoreAccessor.kubeObjectsStorageLocation(pathName),
+		s3StoreAccessor.kubeObjectsStorageLocation(pathName, string(v.instance.Spec.ReplicationState)),
 		captureSpec, veleroNamespaceName, requestName,
 		labels, annotations,
 	); err != nil {
@@ -895,7 +991,7 @@ func (v *VRGInstance) getRecoverOrProtectRequest(
 
 			return v.reconciler.kubeObjects.RecoverRequestCreate(
 				v.ctx, v.reconciler.Client, v.log,
-				s3StoreAccessor.kubeObjectsStorageLocation(pathName),
+				s3StoreAccessor.kubeObjectsStorageLocation(pathName, string(v.instance.Spec.ReplicationState)),
 				recoverGroup, v.veleroNamespaceName(),
 				captureName, captureRequest,
 				recoverName,
@@ -1335,6 +1431,82 @@ func (v *VRGInstance) deleteVeleroBackups(backupList *velero.BackupList) error {
 	return nil
 }
 
+// ensureBSLForSecondary ensures BackupStorageLocation exists for secondary VRG to enable
+// Velero's backup-sync controller to sync backup CRs from S3. This allows the secondary
+// cluster to stay "warm" and ready for failover without actively performing restore operations.
+//
+// This function ensures ALL BSLs owned by this VRG are in ReadOnly mode with sync enabled,
+// including BSLs from previous capture cycles and recipe groups that may have been created
+// when this cluster was Primary.
+func (v *VRGInstance) ensureBSLForSecondary() error {
+	if v.kubeObjectProtectionDisabled("secondary-bsl") || len(v.s3StoreAccessors) == 0 {
+		return nil
+	}
+
+	// Update all existing BSLs owned by this VRG to ReadOnly mode
+	v.updateExistingBSLsToReadOnlyBestEffort()
+	// Ensure BSLs exist for current capture cycle
+	return v.ensureCurrentCycleBSLs()
+}
+
+func (v *VRGInstance) updateExistingBSLsToReadOnlyBestEffort() {
+	if err := v.updateAllExistingBSLsToReadOnly(); err != nil {
+		v.log.Error(err, "Failed to update existing BSLs to ReadOnly, continuing with current cycle")
+		// Don't fail - continue to ensure current cycle BSLs exist
+	}
+}
+
+func (v *VRGInstance) ensureCurrentCycleBSLs() error {
+	pathName, namePrefix := v.getSecondaryBSLPathAndPrefix()
+
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(v.instance)
+
+	// Create/update BSL for each S3 store accessor
+	for _, s3StoreAccessor := range v.s3StoreAccessors {
+		if err := v.createOrUpdateSecondaryBSL(
+			s3StoreAccessor, pathName, namePrefix, veleroNS, labels,
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) getSecondaryBSLPathAndPrefix() (string, string) {
+	vrg := v.instance
+	captureToRecoverFrom := vrg.Status.KubeObjectProtection.CaptureToRecoverFrom
+
+	if captureToRecoverFrom == nil {
+		v.log.Error(nil, "Unexpected nil captureToRecoverFrom in getSecondaryBSLPathAndPrefix")
+
+		return "", ""
+	}
+
+	number := 1 - captureToRecoverFrom.Number
+	pathName, _, namePrefix := kubeObjectsCapturePathNamesAndNamePrefix(
+		vrg.Namespace, vrg.Name, number, v.reconciler.kubeObjects)
+
+	v.log.Info("Ensuring BSL exists for secondary VRG",
+		"vrgNamespace", vrg.GetNamespace(),
+		"vrgName", vrg.GetName(),
+		"veleroNamespace", v.veleroNamespaceName(),
+		"captureNumber", number)
+
+	return pathName, namePrefix
+}
+
+// updateAllExistingBSLsToReadOnly finds all BSLs owned by this VRG and updates them to
+// ReadOnly mode. This catches BSLs from previous capture cycles, recipe groups, and any
+// BSLs that may have been created when this cluster was Primary.
+func (v *VRGInstance) updateAllExistingBSLsToReadOnly() error {
+	return v.updateAllExistingBSLs(
+		velero.BackupStorageLocationAccessModeReadOnly,
+		&metav1.Duration{}, // 0s
+	)
+}
+
 // mergeExcludedResources merges ConfigMap default exclusions with recipe-level exclusions.
 // Returns a new Spec with the merged exclusions.
 func (v *VRGInstance) mergeExcludedResources(spec kubeobjects.Spec) kubeobjects.Spec {
@@ -1722,4 +1894,192 @@ func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
 
 func (v *VRGInstance) protectedVMsCacheKey(protectedNamespace string) string {
 	return v.instance.Namespace + "/" + v.instance.Name + "/" + protectedNamespace
+}
+
+func (v *VRGInstance) createOrUpdateSecondaryBSL(
+	s3StoreAccessor s3StoreAccessor,
+	pathName, namePrefix, veleroNS string,
+	labels map[string]string,
+) error {
+	// Also update any group-specific BSLs from recipe workflows (e.g., "vm-backup")
+	// These may have been created when this cluster was Primary and need to be
+	// updated to ReadOnly mode now that it's Secondary.
+	if err := v.updateRecipeGroupBSLs(namePrefix, s3StoreAccessor, pathName, veleroNS, labels); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) createOrUpdateSingleBSL(
+	bslName, veleroNS string,
+	loc kubeobjects.StorageLocation,
+	labels map[string]string,
+) error {
+	backupLocation := &velero.BackupStorageLocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: veleroNS,
+			Name:      bslName,
+		},
+	}
+
+	op, err := ctrl.CreateOrUpdate(v.ctx, v.reconciler.Client, backupLocation, func() error {
+		backupLocation.TypeMeta = metav1.TypeMeta{
+			APIVersion: velero.SchemeGroupVersion.String(),
+			Kind:       "BackupStorageLocation",
+		}
+		backupLocation.ObjectMeta.Labels = labels
+		backupLocation.Spec = veleroreq.BSLSpec(loc)
+		util.AddLabel(backupLocation, util.CreatedByRamenLabel, "true")
+
+		return nil
+	})
+	if err != nil {
+		v.log.Error(err, "Failed to create/update BSL for secondary",
+			"bsl", bslName)
+
+		return fmt.Errorf("failed to create/update BSL %s for secondary: %w", bslName, err)
+	}
+
+	v.log.Info("BSL reconciled for secondary VRG",
+		"operation", op,
+		"bsl", bslName)
+
+	return nil
+}
+
+func (v *VRGInstance) updateRecipeGroupBSLs(
+	namePrefix string,
+	s3StoreAccessor s3StoreAccessor,
+	pathName, veleroNS string,
+	labels map[string]string,
+) error {
+	// Get recipe groups from workflow
+	if v.recipeElements.CaptureWorkflow == nil || len(v.recipeElements.CaptureWorkflow) == 0 {
+		return nil
+	}
+
+	loc := s3StoreAccessor.kubeObjectsStorageLocation(pathName, string(v.instance.Spec.ReplicationState))
+
+	for _, captureGroup := range v.recipeElements.CaptureWorkflow {
+		if captureGroup.IsHook {
+			continue
+		}
+
+		// Create BSL name with group name (e.g., "vm-backup")
+		groupBSLName := kubeObjectsCaptureName(namePrefix, captureGroup.Name, s3StoreAccessor.S3ProfileName)
+
+		if err := v.createOrUpdateSingleBSL(groupBSLName, veleroNS, loc, labels); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// updateAllExistingBSLs is a common function to update all BSLs owned by this VRG
+// to a specific access mode and sync period.
+func (v *VRGInstance) updateAllExistingBSLs(
+	targetAccessMode velero.BackupStorageLocationAccessMode,
+	targetSyncPeriod *metav1.Duration,
+) error {
+	bslList, err := v.listBSLsOwnedByVRG()
+	if err != nil {
+		return err
+	}
+
+	if len(bslList.Items) == 0 {
+		return nil
+	}
+
+	v.log.Info("Updating existing BSLs",
+		"targetMode", targetAccessMode,
+		"targetSyncPeriod", targetSyncPeriod.Duration,
+		"count", len(bslList.Items),
+		"vrgName", v.instance.GetName())
+
+	updatedCount := v.updateBSLsToTargetMode(bslList, targetAccessMode, targetSyncPeriod)
+
+	if updatedCount > 0 {
+		v.log.Info("Completed updating existing BSLs",
+			"accessMode", targetAccessMode,
+			"updated", updatedCount,
+			"total", len(bslList.Items))
+	}
+
+	return nil
+}
+
+func (v *VRGInstance) listBSLsOwnedByVRG() (*velero.BackupStorageLocationList, error) {
+	veleroNS := v.veleroNamespaceName()
+	labels := util.OwnerLabels(v.instance)
+
+	bslList := &velero.BackupStorageLocationList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(veleroNS),
+		client.MatchingLabels(labels),
+	}
+
+	if err := v.reconciler.Client.List(v.ctx, bslList, listOpts...); err != nil {
+		return nil, fmt.Errorf("failed to list BSLs: %w", err)
+	}
+
+	return bslList, nil
+}
+
+func (v *VRGInstance) updateBSLsToTargetMode(
+	bslList *velero.BackupStorageLocationList,
+	targetAccessMode velero.BackupStorageLocationAccessMode,
+	targetSyncPeriod *metav1.Duration,
+) int {
+	updatedCount := 0
+
+	for i := range bslList.Items {
+		bsl := &bslList.Items[i]
+
+		if v.isBSLAlreadyInTargetMode(bsl, targetAccessMode, targetSyncPeriod) {
+			continue
+		}
+
+		if v.updateSingleBSL(bsl, targetAccessMode, targetSyncPeriod) {
+			updatedCount++
+		}
+	}
+
+	return updatedCount
+}
+
+func (v *VRGInstance) isBSLAlreadyInTargetMode(
+	bsl *velero.BackupStorageLocation,
+	targetAccessMode velero.BackupStorageLocationAccessMode,
+	targetSyncPeriod *metav1.Duration,
+) bool {
+	return bsl.Spec.AccessMode == targetAccessMode &&
+		bsl.Spec.BackupSyncPeriod != nil &&
+		bsl.Spec.BackupSyncPeriod.Duration == targetSyncPeriod.Duration
+}
+
+func (v *VRGInstance) updateSingleBSL(
+	bsl *velero.BackupStorageLocation,
+	targetAccessMode velero.BackupStorageLocationAccessMode,
+	targetSyncPeriod *metav1.Duration,
+) bool {
+	bsl.Spec.AccessMode = targetAccessMode
+	bsl.Spec.BackupSyncPeriod = targetSyncPeriod
+
+	if err := v.reconciler.Client.Update(v.ctx, bsl); err != nil {
+		v.log.Error(err, "Failed to update BSL",
+			"bsl", bsl.Name,
+			"targetAccessMode", targetAccessMode,
+			"targetSyncPeriod", targetSyncPeriod.Duration)
+
+		return false
+	}
+
+	v.log.Info("Updated BSL",
+		"bsl", bsl.Name,
+		"accessMode", targetAccessMode,
+		"syncPeriod", targetSyncPeriod.Duration)
+
+	return true
 }

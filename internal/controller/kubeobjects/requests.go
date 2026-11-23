@@ -45,6 +45,12 @@ func RequestsMapKeyedByName(requestsStruct Requests) map[string]Request {
 
 type RequestProcessingError struct{ string }
 
+const (
+	// ReplicationStateSecondaryRestore is used during restore operations to enable
+	// BSL sync. This is distinct from steady-state Secondary which has sync disabled.
+	ReplicationStateSecondaryRestore = "secondary-restore"
+)
+
 // StorageLocation identifies the S3 object store that protect and recover
 // requests read from and write to.
 type StorageLocation struct {
@@ -54,6 +60,9 @@ type StorageLocation struct {
 	KeyPrefix      string
 	SecretKeyRef   *corev1.SecretKeySelector
 	CACertificates []byte
+	// ReplicationState: "primary" (ramendrv1alpha1.Primary), "secondary" (ramendrv1alpha1.Secondary),
+	// or ReplicationStateSecondaryRestore
+	ReplicationState string
 }
 
 type CaptureSpec struct {
