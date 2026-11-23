@@ -56,7 +56,7 @@ func TestDeploymentKustomizeRejectsEmptyStorageClass(t *testing.T) {
 	deployment := workloads.Deployment{
 		PVCSpec: config.PVCSpec{
 			Name:        "rbd",
-			AccessModes: "ReadWriteMany",
+			AccessModes: "ReadWriteOnce",
 		},
 	}
 
@@ -72,7 +72,7 @@ func TestDeploymentKustomizeRejectsEmptyAccessModes(t *testing.T) {
 	deployment := workloads.Deployment{
 		PVCSpec: config.PVCSpec{
 			Name:             "rbd",
-			StorageClassName: "test-sc",
+			StorageClassName: "rook-ceph-block",
 		},
 	}
 

@@ -10,8 +10,8 @@ import (
 func TestVMKustomizePatches(t *testing.T) {
 	t.Parallel()
 
-	storageClassName := "test-sc"
-	accessMode := "ReadWriteMany"
+	storageClassName := "rook-ceph-block"
+	accessMode := "ReadWriteOnce"
 
 	vm := workloads.VM{
 		PVCSpec: config.PVCSpec{
@@ -33,8 +33,8 @@ func TestVMKustomizePatches(t *testing.T) {
 		`"target":{"kind":"VirtualMachine","name":"vm"}` +
 		`},{` +
 		`"patch":"[` +
-		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"test-sc\"},` +
-		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteMany\"]}` +
+		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"rook-ceph-block\"},` +
+		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteOnce\"]}` +
 		`]",` +
 		`"target":{"kind":"PersistentVolumeClaim","name":"root-disk"}` +
 		`}]}`
@@ -50,7 +50,7 @@ func TestVMKustomizeRejectsEmptyStorageClass(t *testing.T) {
 	vm := workloads.VM{
 		PVCSpec: config.PVCSpec{
 			Name:        "rbd",
-			AccessModes: "ReadWriteMany",
+			AccessModes: "ReadWriteOnce",
 		},
 	}
 
@@ -66,7 +66,7 @@ func TestVMKustomizeRejectsEmptyAccessModes(t *testing.T) {
 	vm := workloads.VM{
 		PVCSpec: config.PVCSpec{
 			Name:             "rbd",
-			StorageClassName: "test-sc",
+			StorageClassName: "rook-ceph-block",
 		},
 	}
 
