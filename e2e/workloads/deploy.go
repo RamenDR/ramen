@@ -214,31 +214,12 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcsFound := 0
-
-	for _, pvcName := range w.PVCNames {
-		pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
-		if err != nil {
-			return types.WorkloadStatus{}, err
-		}
-
-		if pvcExist {
-			pvcsFound++
-		}
+	pvcInfo, err := lookupPVCInfo(ctx, cluster, w.PVCNames)
+	if err != nil {
+		return types.WorkloadStatus{}, err
 	}
 
-	var status types.ApplicationStatus
-
-	switch {
-	case deploymentExist && pvcsFound == len(w.PVCNames):
-		status = types.ApplicationFound
-	case deploymentExist || pvcsFound > 0:
-		status = types.ApplicationPartial
-	default:
-		status = types.ApplicationNotFound
-	}
-
-	return types.WorkloadStatus{ClusterName: cluster.Name, Status: status}, nil
+	return newWorkloadStatus(cluster.Name, deploymentExist, pvcInfo), nil
 }
 
 func getDeployment(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
@@ -264,6 +245,26 @@ func findDeployment(ctx types.TestContext, cluster *types.Cluster, namespace, na
 	}
 
 	return true, nil
+}
+
+// lookupPVCInfo returns an entry for each requested PVC name. Its value is true if the claim exists on the cluster.
+func lookupPVCInfo(ctx types.TestContext, cluster *types.Cluster, pvcNames []string) (map[string]bool, error) {
+	pvcInfo := make(map[string]bool, len(pvcNames))
+
+	for _, name := range pvcNames {
+		_, err := getPVC(ctx, cluster, ctx.AppNamespace(), name)
+		if err != nil {
+			if !k8serrors.IsNotFound(err) {
+				return nil, err
+			}
+
+			pvcInfo[name] = false
+		} else {
+			pvcInfo[name] = true
+		}
+	}
+
+	return pvcInfo, nil
 }
 
 func getPVC(
@@ -318,19 +319,6 @@ func checkPVCHealth(
 		return fmt.Errorf("pvc \"%s/%s\" phase is %q, expected %q in cluster %q",
 			namespace, pvcName, pvc.Status.Phase, corev1.ClaimBound, cluster.Name)
 	}
-}
-
-func findPVC(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (bool, error) {
-	_, err := getPVC(ctx, cluster, namespace, name)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return false, err
-		}
-
-		return false, nil
-	}
-
-	return true, nil
 }
 
 func findDeploymentCondition(
