@@ -203,23 +203,12 @@ func (w *VM) statusForCluster(ctx types.TestContext, cluster *types.Cluster) (ty
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcsFound, err := countExistingPVCs(ctx, cluster, w.PVCNames)
+	pvcs, err := findPVCs(ctx, cluster, w.PVCNames)
 	if err != nil {
 		return types.WorkloadStatus{}, err
 	}
 
-	var status types.ApplicationStatus
-
-	switch {
-	case vmExist && pvcsFound == len(w.PVCNames):
-		status = types.ApplicationFound
-	case vmExist || pvcsFound > 0:
-		status = types.ApplicationPartial
-	default:
-		status = types.ApplicationNotFound
-	}
-
-	return types.WorkloadStatus{ClusterName: cluster.Name, Status: status}, nil
+	return newWorkloadStatus(cluster.Name, vmExist, pvcs), nil
 }
 
 func getVM(ctx types.TestContext, cluster *types.Cluster,

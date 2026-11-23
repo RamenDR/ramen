@@ -213,23 +213,12 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcsFound, err := countExistingPVCs(ctx, cluster, w.PVCNames)
+	pvcs, err := findPVCs(ctx, cluster, w.PVCNames)
 	if err != nil {
 		return types.WorkloadStatus{}, err
 	}
 
-	var status types.ApplicationStatus
-
-	switch {
-	case deploymentExist && pvcsFound == len(w.PVCNames):
-		status = types.ApplicationFound
-	case deploymentExist || pvcsFound > 0:
-		status = types.ApplicationPartial
-	default:
-		status = types.ApplicationNotFound
-	}
-
-	return types.WorkloadStatus{ClusterName: cluster.Name, Status: status}, nil
+	return newWorkloadStatus(cluster.Name, deploymentExist, pvcs), nil
 }
 
 func getDeployment(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (*appsv1.Deployment, error) {

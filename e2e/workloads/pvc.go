@@ -14,21 +14,24 @@ import (
 	"github.com/ramendr/ramen/e2e/util"
 )
 
-func countExistingPVCs(ctx types.TestContext, cluster *types.Cluster, pvcNames []string) (int, error) {
-	pvcsFound := 0
+// findPVCs reports whether each expected PVC exists, including missing PVCs as false.
+func findPVCs(ctx types.TestContext, cluster *types.Cluster, pvcNames []string) (map[string]bool, error) {
+	found := make(map[string]bool, len(pvcNames))
 
-	for _, pvcName := range pvcNames {
-		pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
+	for _, name := range pvcNames {
+		_, err := getPVC(ctx, cluster, ctx.AppNamespace(), name)
 		if err != nil {
-			return 0, err
-		}
+			if !k8serrors.IsNotFound(err) {
+				return nil, err
+			}
 
-		if pvcExist {
-			pvcsFound++
+			found[name] = false
+		} else {
+			found[name] = true
 		}
 	}
 
-	return pvcsFound, nil
+	return found, nil
 }
 
 func getPVC(
@@ -83,17 +86,4 @@ func checkPVCHealth(
 		return fmt.Errorf("pvc \"%s/%s\" phase is %q, expected %q in cluster %q",
 			namespace, pvcName, pvc.Status.Phase, corev1.ClaimBound, cluster.Name)
 	}
-}
-
-func findPVC(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (bool, error) {
-	_, err := getPVC(ctx, cluster, namespace, name)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return false, err
-		}
-
-		return false, nil
-	}
-
-	return true, nil
 }
