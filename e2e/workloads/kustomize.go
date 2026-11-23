@@ -30,6 +30,21 @@ type jsonPatch struct {
 	Value any    `json:"value"`
 }
 
+// fetchPVCNames returns the PersistentVolumeClaim names in the rendered workload manifests.
+func fetchPVCNames(ctx context.Context, repo config.Repo, workloadPath string) ([]string, error) {
+	kustomization, err := downloadKustomization(ctx, repo, workloadPath)
+	if err != nil {
+		return nil, err
+	}
+
+	names, err := pvcNames(kustomization)
+	if err != nil {
+		return nil, fmt.Errorf("kustomization %q path %q ref %q: %w", repo.URL, workloadPath, repo.Branch, err)
+	}
+
+	return names, nil
+}
+
 func downloadKustomization(ctx context.Context, repo config.Repo, workloadPath string) (string, error) {
 	buildCtx, cancel := context.WithTimeout(ctx, kustomizeBuildTimeout)
 	defer cancel()

@@ -18,7 +18,6 @@ import (
 	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 )
 
 const (
@@ -41,7 +40,7 @@ type Deployment struct {
 }
 
 func NewDeployment(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
-	pvcNames, err := fetchDeploymentPVCNames(ctx, repo)
+	pvcNames, err := fetchPVCNames(ctx, repo, deploymentPath)
 	if err != nil {
 		return nil, err
 	}
@@ -52,22 +51,6 @@ func NewDeployment(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec
 		PVCSpec:  pvcSpec,
 		PVCNames: pvcNames,
 	}, nil
-}
-
-// fetchDeploymentPVCNames builds the deployment kustomization from the git repo and returns the
-// PersistentVolumeClaim names in the rendered manifests.
-func fetchDeploymentPVCNames(ctx context.Context, repo config.Repo) ([]string, error) {
-	kustomization, err := downloadKustomization(ctx, repo, deploymentPath)
-	if err != nil {
-		return nil, err
-	}
-
-	names, err := pvcNames(kustomization)
-	if err != nil {
-		return nil, fmt.Errorf("kustomization %q ref %q: %w", repo.URL, repo.Branch, err)
-	}
-
-	return names, nil
 }
 
 func (w Deployment) GetAppName() string {
