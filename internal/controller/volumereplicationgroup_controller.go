@@ -628,12 +628,21 @@ const (
 	// VolumeGroupReplicationClass global label
 	GlobalReplicationLabel = "ramendr.openshift.io/global"
 
+	// VolumeGroupReplicationClass label. Value "true" enables resync-on-primary for VGRs
+	// that use the class. Grouping path only; VR-only is unsupported.
+	ResyncOnPrimaryLabel = "ramendr.openshift.io/resync-on-primary"
+
 	// Maintenance mode label
 	MModesLabel = util.MModesLabel
 
 	// VolumeReplicationClass and VolumeGroupReplicationClass schedule parameter key
 	ReplicationClassScheduleKey = "schedulingInterval"
 )
+
+// IsResyncOnPrimaryEnabled checks if the resync-on-primary label is set to "true" on the class.
+func IsResyncOnPrimaryEnabled(labels map[string]string) bool {
+	return labels[ResyncOnPrimaryLabel] == "true"
+}
 
 func (v *VRGInstance) requeue() {
 	v.result.Requeue = true

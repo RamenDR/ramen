@@ -844,7 +844,22 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 
 	log.Info(fmt.Sprintf("Update VolumeGroupReplication %s/%s", volRep.Namespace, volRep.Name))
 
+	if state == volrep.Primary {
+		var err error
+
+		state, err = v.primaryVGRReplicationState(volRep, log)
+		if err != nil {
+			return requeue, false, err
+		}
+	}
+
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
+		if state == volrep.Resync {
+			v.updatePVCsResyncingConditions(pvcs)
+
+			return !requeue, false, nil
+		}
+
 		log.Info("VolumeGroupReplication and VolumeReplicationGroup state match. Proceeding to status check")
 
 		return !requeue, v.checkVRStatus(pvcs, volRep, &volRep.Status.VolumeReplicationStatus), nil
@@ -876,16 +891,119 @@ func (v *VRGInstance) updateVGR(pvcs []*corev1.PersistentVolumeClaim,
 
 	log.Info(fmt.Sprintf("Updated VolumeGroupReplication resource (%s/%s) with state %s",
 		volRep.GetName(), volRep.GetNamespace(), state))
-	// Just updated the state of the VolRep. Mark it as progressing.
-	msg := "Updated VolumeGroupReplication resource"
+
+	v.updatePVCsConditionsAfterStateChange(pvcs, state, "Updated VolumeGroupReplication resource")
+
+	return !requeue, false, nil
+}
+
+// updatePVCsConditionsAfterStateChange updates PVC conditions after a VR or VGR Spec state change.
+func (v *VRGInstance) updatePVCsConditionsAfterStateChange(pvcs []*corev1.PersistentVolumeClaim,
+	state volrep.ReplicationState, msg string,
+) {
+	if state == volrep.Resync {
+		v.updatePVCsResyncingConditions(pvcs)
+
+		return
+	}
 
 	for idx := range pvcs {
 		pvc := pvcs[idx]
 
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
 	}
+}
 
-	return !requeue, false, nil
+// primaryVGRReplicationState returns the replication state to set on a VGR that the VRG wants as primary,
+// handling the resync-on-primary label using the status of the VR backing the VGR. Global VGRs are shared
+// with sibling VRGs and are always set to primary.
+func (v *VRGInstance) primaryVGRReplicationState(vgr *volrep.VolumeGroupReplication,
+	log logr.Logger,
+) (volrep.ReplicationState, error) {
+	if rmnutil.ResourceIsDeleted(v.instance) || v.hasGlobalVGRLabel() {
+		return volrep.Primary, nil
+	}
+
+	enabled, err := v.resyncOnPrimaryEnabled(vgr, log)
+	if err != nil {
+		return volrep.Primary, err
+	}
+
+	if !enabled {
+		// Primary, not currentState: removing the label must abort an in-progress Resync.
+		return volrep.Primary, nil
+	}
+
+	backingVR, err := v.getVGRVolumeReplication(vgr, log)
+	if err != nil {
+		return volrep.Primary, err
+	}
+
+	return v.primaryReplicationState(vgr.Spec.ReplicationState, backingVR, log), nil
+}
+
+// resyncOnPrimaryEnabled returns true if this VGR's VolumeGroupReplicationClass has the
+// resync-on-primary label set to "true".
+func (v *VRGInstance) resyncOnPrimaryEnabled(vgr *volrep.VolumeGroupReplication,
+	log logr.Logger,
+) (bool, error) {
+	className := vgr.Spec.VolumeGroupReplicationClassName
+	if className == "" {
+		return false, nil
+	}
+
+	if v.grpReplClassList != nil {
+		for i := range v.grpReplClassList.Items {
+			if v.grpReplClassList.Items[i].Name == className {
+				return IsResyncOnPrimaryEnabled(v.grpReplClassList.Items[i].GetLabels()), nil
+			}
+		}
+	}
+
+	vgrClass := &volrep.VolumeGroupReplicationClass{}
+
+	err := v.reconciler.Get(v.ctx, types.NamespacedName{Name: className}, vgrClass)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return false, nil
+		}
+
+		log.Error(err, "Failed to get VolumeGroupReplicationClass for resync-on-primary check",
+			"volumeGroupReplicationClass", className)
+
+		return false, fmt.Errorf("failed to get VolumeGroupReplicationClass (%s) for VGR (%s/%s): %w",
+			className, vgr.Namespace, vgr.Name, err)
+	}
+
+	return IsResyncOnPrimaryEnabled(vgrClass.GetLabels()), nil
+}
+
+// getVGRVolumeReplication returns the VR backing a VGR, or nil if it is not yet known (empty name / NotFound).
+// Other Get failures are returned so the caller can requeue instead of treating them as absence.
+func (v *VRGInstance) getVGRVolumeReplication(vgr *volrep.VolumeGroupReplication,
+	log logr.Logger,
+) (*volrep.VolumeReplication, error) {
+	if vgr.Spec.VolumeReplicationName == "" {
+		return nil, nil
+	}
+
+	volRep := &volrep.VolumeReplication{}
+
+	err := v.reconciler.Get(v.ctx,
+		types.NamespacedName{Name: vgr.Spec.VolumeReplicationName, Namespace: vgr.Namespace}, volRep)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil, nil
+		}
+
+		log.Error(err, "Failed to get VolumeReplication backing VolumeGroupReplication",
+			"volumeReplication", vgr.Spec.VolumeReplicationName)
+
+		return nil, fmt.Errorf("failed to get VolumeReplication (%s/%s) backing VolumeGroupReplication (%s/%s): %w",
+			vgr.Namespace, vgr.Spec.VolumeReplicationName, vgr.Namespace, vgr.Name, err)
+	}
+
+	return volRep, nil
 }
 
 func (v *VRGInstance) selectVolumeGroupReplicationClass(
