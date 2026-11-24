@@ -1545,6 +1545,9 @@ func (v *VRGInstance) updateVR(pvc *corev1.PersistentVolumeClaim, volRep *volrep
 ) (bool, bool, error) {
 	const requeue = true
 
+	// Resync-on-primary is grouping-only (VolumeGroupReplicationClass label). The VR-only
+	// path is unsupported, so a desired Primary stays Primary here.
+
 	// If state is already as desired, check the status
 	if volRep.Spec.ReplicationState == state && volRep.Spec.AutoResync == v.autoResync(state) {
 		log.Info("VolumeReplication and VolumeReplicationGroup state and autoresync match. Proceeding to status check")
@@ -1573,11 +1576,97 @@ func (v *VRGInstance) updateVR(pvc *corev1.PersistentVolumeClaim, volRep *volrep
 
 	log.Info(fmt.Sprintf("Updated VolumeReplication resource (%s/%s) with state %s",
 		volRep.GetName(), volRep.GetNamespace(), state))
-	// Just updated the state of the VolRep. Mark it as progressing.
-	msg := "Updated VolumeReplication resource for PVC"
-	v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
+
+	v.updatePVCsConditionsAfterStateChange([]*corev1.PersistentVolumeClaim{pvc}, state,
+		"Updated VolumeReplication resource for PVC")
 
 	return !requeue, false, nil
+}
+
+// primaryReplicationState returns the replication state to set on a VGR that the VRG wants as primary.
+// Callers must only invoke this when resync-on-primary is enabled for the VGR (VGRC label).
+//
+// currentState is the replication state currently in the Spec of the VGR. volRep is the backing VR whose
+// status is used to decide whether replication or resync is happening; csi-addons stamps VGR conditions
+// with the VGR generation, which would make promoted conditions look like a completed resync.
+//
+// Behavior when enabled:
+//   - A primary VGR that is not replicating to the secondary is moved to resync
+//   - A VGR in resync is kept in resync until the resync completes, then moved back to primary
+func (v *VRGInstance) primaryReplicationState(currentState volrep.ReplicationState,
+	volRep *volrep.VolumeReplication, log logr.Logger,
+) (retState volrep.ReplicationState) {
+	defer func() {
+		log.Info("primaryReplicationState",
+			"currentState", currentState, "state", retState)
+	}()
+
+	// Without a VR reporting status for the current state, keep the current state until it does.
+	if volRep == nil || volRep.Spec.ReplicationState != currentState {
+		if currentState == volrep.Resync {
+			return volrep.Resync
+		}
+
+		return volrep.Primary
+	}
+
+	switch currentState {
+	case volrep.Primary:
+		if vrNotReplicating(volRep) {
+			log.Info("VolumeReplication is primary and not replicating to secondary, resyncing")
+
+			return volrep.Resync
+		}
+	case volrep.Resync:
+		if !vrResyncCompleted(volRep) {
+			return volrep.Resync
+		}
+
+		log.Info("VolumeReplication resync completed, returning to primary")
+	case volrep.Secondary:
+		// Only called when the VRG wants Primary; Secondary here means a future misuse.
+		log.Error(fmt.Errorf("unexpected Secondary currentState"),
+			"primaryReplicationState called with Secondary currentState",
+			"currentState", currentState)
+	}
+
+	return volrep.Primary
+}
+
+// vrNotReplicating returns true if the VR reports, for its current generation, that it is not replicating.
+func vrNotReplicating(volRep *volrep.VolumeReplication) bool {
+	notReplicating, _, _ := isVRConditionMet(volRep, &volRep.Status, volrep.ConditionReplicating, metav1.ConditionFalse)
+
+	return notReplicating
+}
+
+// vrResyncCompleted returns true if the VR reports, for its current generation, that it is no longer degraded
+// or resyncing.
+func vrResyncCompleted(volRep *volrep.VolumeReplication) bool {
+	notDegraded, _, _ := isVRConditionMet(volRep, &volRep.Status, volrep.ConditionDegraded, metav1.ConditionFalse)
+	notResyncing, _, _ := isVRConditionMet(volRep, &volRep.Status, volrep.ConditionResyncing, metav1.ConditionFalse)
+
+	return notDegraded && notResyncing
+}
+
+// updatePVCsResyncingConditions updates the PVC conditions while their VR or VGR is resyncing as a result of
+// the resync-on-primary label.
+//
+// A VR or VGR is only moved to resync after it was promoted, so the volume is usable on this cluster and the PVC
+// is DataReady. Only protection is affected: DataProtected is progressing and ReplicationHealthy is False until
+// the resync completes. Keeping DataReady true allows kube objects (e.g. the workload pods) to be restored while
+// the resync to the secondary is in progress.
+func (v *VRGInstance) updatePVCsResyncingConditions(pvcs []*corev1.PersistentVolumeClaim) {
+	const readyMsg = "PVC in the VolumeReplicationGroup is ready for use, resyncing to secondary"
+
+	msg := "VolumeReplication resource for PVC is resyncing to secondary"
+
+	for _, pvc := range pvcs {
+		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, readyMsg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCReplicationHealthyCondition(pvc.Namespace, pvc.Name, metav1.ConditionFalse,
+			VRGConditionReasonProgressing, msg)
+	}
 }
 
 // createVR creates a VolumeReplication CR with a PVC as its data source.
