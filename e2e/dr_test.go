@@ -44,10 +44,12 @@ func TestDR(dt *testing.T) {
 	deploySpecs := config.DeployersMap(Ctx.Config())
 
 	for _, tc := range Ctx.Config().Tests {
-		ctx := setupTest(tc, pvcSpecs, deploySpecs)
-		t.Run(ctx.Name(), func(dt *testing.T) {
-			t := test.WithLog(dt, ctx.Logger())
+		name := tc.ContextName()
+		t.Run(name, func(dt *testing.T) {
+			t := test.WithLog(dt, Ctx.Logger().Named(name))
 			t.Parallel()
+
+			ctx := setupTest(tc, pvcSpecs, deploySpecs)
 			runTestFlow(t, ctx)
 		})
 	}
