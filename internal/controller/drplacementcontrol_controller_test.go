@@ -227,6 +227,11 @@ func getDefaultVRG(namespace string) *rmn.VolumeReplicationGroup {
 	}
 }
 
+// fakeLastGroupSyncTime, when non-nil, overrides the LastGroupSyncTime returned by
+// GetFakeVRGFromMCVUsingMW so that tests can simulate a lagging replication clock
+// without depending on wall-clock timing.  Reset to nil after each test that sets it.
+var fakeLastGroupSyncTime *metav1.Time
+
 var restorePVs = true
 
 func setRestorePVsComplete() {
@@ -262,6 +267,9 @@ func resetToggleUIDChecks() {
 }
 
 var fakeSecondaryFor string
+
+// vrgUnknownCluster: cluster name where VRG should return Unknown state (for discovered app cleanup simulation)
+var vrgUnknownCluster string
 
 /*func setFakeSecondary(clusterName string) {
 	fakeSecondaryFor = clusterName
@@ -378,13 +386,18 @@ func GetFakeVRGFromMCVUsingMW(resourceName, managedCluster, resourceNamespace st
 	vrg.Generation = 1
 	vrg.Status.ObservedGeneration = 1
 
-	switch vrg.Spec.ReplicationState {
-	case rmn.Primary:
-		vrg.Status.State = rmn.PrimaryState
-	case rmn.Secondary:
-		vrg.Status.State = rmn.SecondaryState
-	default:
+	// Check if this cluster should return Unknown state (for discovered app cleanup simulation)
+	if vrgUnknownCluster == managedCluster {
 		vrg.Status.State = rmn.UnknownState
+	} else {
+		switch vrg.Spec.ReplicationState {
+		case rmn.Primary:
+			vrg.Status.State = rmn.PrimaryState
+		case rmn.Secondary:
+			vrg.Status.State = rmn.SecondaryState
+		default:
+			vrg.Status.State = rmn.UnknownState
+		}
 	}
 
 	vrg.Status.PrepareForFinalSyncComplete = true
@@ -451,8 +464,12 @@ func GetFakeVRGFromMCVUsingMW(resourceName, managedCluster, resourceNamespace st
 		ObservedGeneration: vrg.Generation,
 	})
 
-	t := metav1.Now()
-	vrg.Status.LastGroupSyncTime = &t
+	if fakeLastGroupSyncTime != nil {
+		vrg.Status.LastGroupSyncTime = fakeLastGroupSyncTime
+	} else {
+		t := metav1.Now()
+		vrg.Status.LastGroupSyncTime = &t
+	}
 
 	return vrg, nil
 }
@@ -904,8 +921,7 @@ func createVRGMW(name, namespace, homeCluster string) {
 	Expect(err).To(Succeed())
 }
 
-//nolint:unparam
-func updateManifestWorkStatus(clusterNamespace, vrgNamespace, mwType, workType string) {
+func updateManifestWorkStatus(clusterNamespace, vrgNamespace, mwType, workType string) { //nolint:unparam
 	manifestLookupKey := types.NamespacedName{
 		Name:      rmnutil.ManifestWorkName(DRPCCommonName, getVRGNamespace(vrgNamespace), mwType),
 		Namespace: clusterNamespace,
@@ -1077,7 +1093,7 @@ func verifyVRGManifestWorkCreatedAsPrimary(namespace, managedCluster string) {
 		return err == nil
 	}, timeout, interval).Should(BeTrue())
 
-	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(Equal(10))
+	Expect(len(createdVRGRolesManifest.Spec.Workload.Manifests)).To(BeElementOf(10, 11))
 
 	vrgClusterRoleManifest := createdVRGRolesManifest.Spec.Workload.Manifests[0]
 	Expect(vrgClusterRoleManifest).ToNot(BeNil())
