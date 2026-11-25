@@ -5,6 +5,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	ramendrv1alpha1 "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/cephfscg"
@@ -65,10 +67,11 @@ type ReplicationGroupSourceReconciler struct {
 // +kubebuilder:rbac:groups=ramendr.openshift.io,resources=replicationgroupsources/finalizers,verbs=update
 // +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshots,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotclasses,verbs=get;list;watch
-// +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch
+// +kubebuilder:rbac:groups=groupsnapshot.storage.k8s.io,resources=volumegroupsnapshotcontents,verbs=get;list;watch;delete;update
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=volsync.backube,resources=replicationsources,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;watch;update;delete
+// +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshotcontents,verbs=get;list;watch;update;delete
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
 
 func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -82,10 +85,35 @@ func (r *ReplicationGroupSourceReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	if !controllerutil.ContainsFinalizer(rgs, cephfscg.RGSProtectionFinalizer) {
+		controllerutil.AddFinalizer(rgs, cephfscg.RGSProtectionFinalizer)
+
+		if err := r.Update(ctx, rgs); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	if rgsOrVRGDeleting(rgs, vrg) {
+		return r.cleanupOnDeletion(ctx, logger, rgs, vrg, ramenConfig)
+	}
+
 	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
 	vsHandler, vgsHandler := r.buildVGSHandler(ctx, logger, rgs, vrg, ramenConfig, defaultCephFSCSIDriverName)
 
 	return r.runRGSReconcile(ctx, logger, rgs, vrg, vsHandler, vgsHandler)
+}
+
+func rgsOrVRGDeleting(
+	rgs *ramendrv1alpha1.ReplicationGroupSource,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+) bool {
+	if util.ResourceIsDeleted(rgs) || vrg == nil {
+		return true
+	}
+
+	return util.ResourceIsDeleted(vrg)
 }
 
 // getRGSConfig fetches the RGS object, ramen config, and the owning VRG.
@@ -128,19 +156,61 @@ func (r *ReplicationGroupSourceReconciler) getRGSConfig(
 		Name:      rgs.GetLabels()[util.VRGOwnerNameLabel],
 		Namespace: rgs.GetLabels()[util.VRGOwnerNamespaceLabel],
 	}, vrg); err != nil {
-		return nil, nil, nil, true, err
-	}
+		if !k8serrors.IsNotFound(err) {
+			return nil, nil, nil, true, err
+		}
 
-	if util.ResourceIsDeleted(vrg) {
-		logger.Info("VRG is deleted, skipping RGSreconciliation", "vrg", types.NamespacedName{
-			Name:      vrg.GetName(),
-			Namespace: vrg.GetNamespace(),
-		})
+		logger.Info("Owning VRG not found, cleaning up ReplicationGroupSource")
 
-		return nil, nil, nil, true, nil
+		return rgs, nil, ramenConfig, false, nil
 	}
 
 	return rgs, vrg, ramenConfig, false, nil
+}
+
+// cleanupOnDeletion removes VolumeGroupSnapshots owned by the RGS. The RGS
+// finalizer is removed only after that cleanup finishes and the RGS itself is deleting.
+func (r *ReplicationGroupSourceReconciler) cleanupOnDeletion(
+	ctx context.Context,
+	logger logr.Logger,
+	rgs *ramendrv1alpha1.ReplicationGroupSource,
+	vrg *ramendrv1alpha1.VolumeReplicationGroup,
+	ramenConfig *ramendrv1alpha1.RamenConfig,
+) (ctrl.Result, error) {
+	logger.Info("Cleaning up ReplicationGroupSource for deletion")
+
+	defaultCephFSCSIDriverName := cephFSCSIDriverNameOrDefault(ramenConfig)
+	_, vgsHandler := r.buildVGSHandler(ctx, logger, rgs, vrg, ramenConfig, defaultCephFSCSIDriverName)
+
+	if err := vgsHandler.DeleteOwnedVolumeGroupSnapshots(ctx); err != nil {
+		if errors.Is(err, cephfscg.ErrVolumeGroupSnapshotCleanupPending) {
+			logger.Info("Volume group snapshot cleanup still in progress")
+
+			const retryDelay = 5 * time.Second
+
+			return ctrl.Result{RequeueAfter: retryDelay}, nil
+		}
+
+		logger.Error(err, "Failed to clean up volume group snapshots")
+
+		return ctrl.Result{}, err
+	}
+
+	if !util.ResourceIsDeleted(rgs) {
+		return ctrl.Result{}, nil
+	}
+
+	if controllerutil.ContainsFinalizer(rgs, cephfscg.RGSProtectionFinalizer) {
+		controllerutil.RemoveFinalizer(rgs, cephfscg.RGSProtectionFinalizer)
+
+		if err := r.Update(ctx, rgs); err != nil {
+			logger.Error(err, "Failed to remove ReplicationGroupSource finalizer")
+
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // buildVGSHandler constructs the VSHandler and VolumeGroupSource handler appropriate for this RGS.
@@ -152,9 +222,16 @@ func (r *ReplicationGroupSourceReconciler) buildVGSHandler(
 	ramenConfig *ramendrv1alpha1.RamenConfig,
 	defaultCephFSCSIDriverName string,
 ) (*volsync.VSHandler, cephfscg.VolumeGroupSourceHandler) {
-	adminNamespaceVRG := vrgInAdminNamespace(vrg, ramenConfig)
+	adminNamespaceVRG := false
 
-	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, vrg,
+	var owner client.Object = rgs
+
+	if vrg != nil {
+		adminNamespaceVRG = vrgInAdminNamespace(vrg, ramenConfig)
+		owner = vrg
+	}
+
+	vsHandler := volsync.NewVSHandler(ctx, r.Client, logger, owner,
 		&ramendrv1alpha1.VRGAsyncSpec{}, defaultCephFSCSIDriverName,
 		volSyncDestinationCopyMethodOrDefault(ramenConfig), adminNamespaceVRG,
 	)
@@ -221,4 +298,9 @@ func (r *ReplicationGroupSourceReconciler) SetupWithManager(mgr ctrl.Manager,
 	r.volumeGroupSnapshotCRsAreWatched = util.OwnsVolumeGroupSnapshot(builder)
 
 	return builder.Complete(r)
+}
+
+// SetVolumeGroupSnapshotCRsWatchedForTest marks VolumeGroupSnapshot CRDs as installed.
+func (r *ReplicationGroupSourceReconciler) SetVolumeGroupSnapshotCRsWatchedForTest(watched bool) {
+	r.volumeGroupSnapshotCRsAreWatched = watched
 }

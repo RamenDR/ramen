@@ -60,6 +60,11 @@ type VolumeGroupSourceHandler interface {
 		ctx context.Context,
 	) error
 
+	// DeleteOwnedVolumeGroupSnapshots deletes every VolumeGroupSnapshot owned by this
+	// RGS, including ones preserved for a later diff sync, and the member
+	// VolumeSnapshots left behind when a group snapshot never became ready.
+	DeleteOwnedVolumeGroupSnapshots(ctx context.Context) error
+
 	WaitIfPVCTooNew(
 		ctx context.Context,
 	) (bool, error)
@@ -124,6 +129,10 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	logger := h.Logger.WithName("CreateOrUpdateVolumeGroupSnapshot")
 	logger.Info("Create or update volume group snapshot")
 
+	if !owner.GetDeletionTimestamp().IsZero() {
+		return false, fmt.Errorf("replication group source %s is being deleted", owner.GetName())
+	}
+
 	// Create or update VGS using the appropriate API type.
 	volumeGroupSnapshot := util.NewVolumeGroupSnapshot(
 		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace,
@@ -166,54 +175,18 @@ func (h *volumeGroupSourceHandler) CreateOrUpdateVolumeGroupSnapshot(
 	return false, nil
 }
 
-// CleanVolumeGroupSnapshot delete restored pvc and VolumeGroupSnapshot
+// CleanVolumeGroupSnapshot deletes the restored PVCs and the VolumeGroupSnapshot
+// for this RGS, and waits until member VolumeSnapshots are gone.
 func (h *volumeGroupSourceHandler) CleanVolumeGroupSnapshot(
 	ctx context.Context,
 ) error {
-	logger := h.Logger.WithName("CleanVolumeGroupSnapshot")
-	logger.Info("Get volume group snapshot")
+	return h.DeleteOwnedVolumeGroupSnapshots(ctx)
+}
 
-	vgs, err := util.GetVolumeGroupSnapshot(ctx, h.Client,
-		h.VolumeGroupSnapshotName, h.VolumeGroupSnapshotNamespace)
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			logger.Info("Volume group snapshot was already deleted")
-
-			return nil
-		}
-
-		logger.Error(err, "Failed to get volume group snapshot")
-
-		return err
-	}
-
-	if util.HasStatus(vgs) {
-		volumeSnapshots, err := util.GetVolumeSnapshotsOwnedByVolumeGroupSnapshot(ctx, h.Client, vgs, logger)
-		if err != nil {
-			return err
-		}
-
-		logger.Info("Clean: Found VolumeSnapshots", "len", len(volumeSnapshots), "in group", vgs.GetName())
-
-		for idx := range volumeSnapshots {
-			vs := &volumeSnapshots[idx]
-
-			err := h.deleteRestoredPVC(ctx, vs)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := h.Client.Delete(ctx, vgs); err != nil && !k8serrors.IsNotFound(err) {
-		logger.Error(err, "Failed to delete volume group snapshot")
-
-		return err
-	}
-
-	logger.Info("Successfully clean volume group snapshot reh.VolumeGroupSnapshotSource")
-
-	return nil
+// DeleteOwnedVolumeGroupSnapshots deletes the single VolumeGroupSnapshot named for
+// this RGS. Diff sync overrides this to delete preserved snapshots as well.
+func (h *volumeGroupSourceHandler) DeleteOwnedVolumeGroupSnapshots(ctx context.Context) error {
+	return h.cleanupNamedVolumeGroupSnapshot(ctx, h.VolumeGroupSnapshotName)
 }
 
 func (h *volumeGroupSourceHandler) deleteRestoredPVC(ctx context.Context, vs *vsv1.VolumeSnapshot) error {
@@ -221,20 +194,12 @@ func (h *volumeGroupSourceHandler) deleteRestoredPVC(ctx context.Context, vs *vs
 		WithValues("VSName", vs.Name).
 		WithValues("VSNamespace", vs.Namespace)
 
-	logger.Info("Get PVCName from volume snapshot",
-		"vsName", vs.Spec.Source.PersistentVolumeClaimName, "vsNamespace", vs.Namespace)
-
-	pvc, err := util.GetPVC(ctx, h.Client,
-		types.NamespacedName{Name: *vs.Spec.Source.PersistentVolumeClaimName, Namespace: vs.Namespace})
-	if err != nil {
-		logger.Error(err, "Failed to get PVC name from volume snapshot",
-			"pvcName", vs.Spec.Source.PersistentVolumeClaimName, "vsNamespace", vs.Namespace)
-
-		return err
+	if vs.Spec.Source.PersistentVolumeClaimName == nil {
+		return nil
 	}
 
-	restoredPVCName := fmt.Sprintf(RestorePVCinCGNameFormat, pvc.Name)
-	restoredPVCNamespace := pvc.Namespace
+	restoredPVCName := fmt.Sprintf(RestorePVCinCGNameFormat, *vs.Spec.Source.PersistentVolumeClaimName)
+	restoredPVCNamespace := vs.Namespace
 
 	logger.Info("Delete restored PVC", "name", restoredPVCName, "namespace", restoredPVCNamespace)
 
@@ -250,7 +215,31 @@ func (h *volumeGroupSourceHandler) deleteRestoredPVC(ctx context.Context, vs *vs
 		return err
 	}
 
-	return nil
+	restoredPVC := &corev1.PersistentVolumeClaim{}
+
+	err := h.Client.Get(ctx, types.NamespacedName{
+		Name: restoredPVCName, Namespace: restoredPVCNamespace,
+	}, restoredPVC)
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	logger.Info("Restored PVC still present", "finalizers", restoredPVC.Finalizers,
+		"deletionTimestamp", deletionTimestampString(restoredPVC.DeletionTimestamp))
+
+	return ErrVolumeGroupSnapshotCleanupPending
+}
+
+func deletionTimestampString(ts *metav1.Time) string {
+	if ts == nil {
+		return ""
+	}
+
+	return ts.String()
 }
 
 // RestoreVolumesFromVolumeGroupSnapshot restores VolumeGroupSnapshot to PVCs
