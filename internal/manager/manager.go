@@ -22,17 +22,46 @@ import (
 
 // NewManager creates the manager for the selected Ramen controller type.
 func NewManager(config *rest.Config, options ctrl.Options,
-	controllerType ramendrv1alpha1.ControllerType,
+	controllerType ramendrv1alpha1.ControllerType, veleroNamespaceName string,
 ) (ctrl.Manager, error) {
 	switch controllerType {
 	case ramendrv1alpha1.DRHubType:
 		options.Cache = hubCacheOptions()
 	case ramendrv1alpha1.DRClusterType:
+		options.Cache = drClusterCacheOptions(veleroNamespaceName)
 	default:
 		return nil, fmt.Errorf("invalid controller type %q", controllerType)
 	}
 
 	return ctrl.NewManager(config, options)
+}
+
+// drClusterCacheOptions returns cache.Options that restrict the controller-runtime
+// cache for ConfigMap and Secret, which otherwise get fully listed/watched across every
+// namespace on the managed cluster and can exceed the dr-cluster operator's memory limit.
+//
+// veleroNamespaceName is included for ConfigMap because the VRG controller reads/deletes
+// its per-VRG ResourceModifier ConfigMap there (see deleteResourceModifierCM)
+func drClusterCacheOptions(veleroNamespaceName string) cache.Options {
+	ramenLabelSelector := labels.SelectorFromSet(labels.Set{rmnutil.CreatedByRamenLabel: "true"})
+	operatorNamespace := os.Getenv("POD_NAMESPACE")
+
+	return cache.Options{
+		ByObject: map[ctrlclient.Object]cache.ByObject{
+			&corev1.ConfigMap{}: {
+				Namespaces: map[string]cache.Config{
+					operatorNamespace:   {},
+					veleroNamespaceName: {},
+				},
+			},
+			&corev1.Secret{}: {
+				Namespaces: map[string]cache.Config{
+					operatorNamespace:   {},
+					cache.AllNamespaces: {LabelSelector: ramenLabelSelector},
+				},
+			},
+		},
+	}
 }
 
 func hubCacheOptions() cache.Options {
