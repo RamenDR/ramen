@@ -44,33 +44,41 @@ func TestDR(dt *testing.T) {
 	deploySpecs := config.DeployersMap(Ctx.Config())
 
 	for _, tc := range Ctx.Config().Tests {
-		pvcSpec, ok := pvcSpecs[tc.PVCSpec]
-		if !ok {
-			panic("unknown pvcSpec")
-		}
-
-		workload, err := workloads.New(tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
-		if err != nil {
-			panic(err)
-		}
-
-		deployerSpec, ok := deploySpecs[tc.Deployer]
-		if !ok {
-			panic("unknown deployer")
-		}
-
-		deployer, err := deployers.New(deployerSpec)
-		if err != nil {
-			panic(err)
-		}
-
-		ctx := test.NewContext(Ctx, tc.ContextName(), workload, deployer)
+		ctx := setupTest(tc, pvcSpecs, deploySpecs)
 		t.Run(ctx.Name(), func(dt *testing.T) {
 			t := test.WithLog(dt, ctx.Logger())
 			t.Parallel()
 			runTestFlow(t, ctx)
 		})
 	}
+}
+
+func setupTest(
+	tc config.Test,
+	pvcSpecs map[string]config.PVCSpec,
+	deploySpecs map[string]config.Deployer,
+) test.Context {
+	pvcSpec, ok := pvcSpecs[tc.PVCSpec]
+	if !ok {
+		panic("unknown pvcSpec")
+	}
+
+	workload, err := workloads.New(tc.Workload, Ctx.Config().Repo.Branch, pvcSpec)
+	if err != nil {
+		panic(err)
+	}
+
+	deployerSpec, ok := deploySpecs[tc.Deployer]
+	if !ok {
+		panic("unknown deployer")
+	}
+
+	deployer, err := deployers.New(deployerSpec)
+	if err != nil {
+		panic(err)
+	}
+
+	return test.NewContext(Ctx, tc.ContextName(), workload, deployer)
 }
 
 func runTestFlow(t *test.T, ctx test.Context) {
