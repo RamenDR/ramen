@@ -12,6 +12,7 @@ import (
 	veleroapi "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects/velero"
 )
@@ -21,34 +22,78 @@ func TestBSLSpec(t *testing.T) {
 		LocalObjectReference: corev1.LocalObjectReference{Name: "s3-secret"},
 		Key:                  "aws",
 	}
-	loc := kubeobjects.StorageLocation{
-		S3URL:          "https://s3.example.com",
-		Bucket:         "bucket",
-		Region:         "us-east-1",
-		KeyPrefix:      "ns/vrg/kube-objects/1/",
-		SecretKeyRef:   secretKeyRef,
-		CACertificates: []byte("ca-bundle"),
+
+	testCases := []struct {
+		name             string
+		replicationState string
+		expectedMode     veleroapi.BackupStorageLocationAccessMode
+		expectedSync     float64 // seconds
+		description      string
+	}{
+		{
+			name:             "Primary",
+			replicationState: string(ramen.Primary),
+			expectedMode:     veleroapi.BackupStorageLocationAccessModeReadWrite,
+			expectedSync:     0,
+			description:      "ReadWrite access, no backup sync (0s)",
+		},
+		{
+			name:             "Secondary",
+			replicationState: string(ramen.Secondary),
+			expectedMode:     veleroapi.BackupStorageLocationAccessModeReadOnly,
+			expectedSync:     0,
+			description:      "ReadOnly access, no sync in steady state (0s)",
+		},
+		{
+			name:             "SecondaryRestore",
+			replicationState: kubeobjects.ReplicationStateSecondaryRestore,
+			expectedMode:     veleroapi.BackupStorageLocationAccessModeReadOnly,
+			expectedSync:     1,
+			description:      "ReadOnly access, sync enabled during restore (1s)",
+		},
+		{
+			name:             "UnspecifiedReplicationState",
+			replicationState: "",
+			expectedMode:     veleroapi.BackupStorageLocationAccessModeReadWrite,
+			expectedSync:     0,
+			description:      "Defaults to Primary behavior",
+		},
 	}
 
-	spec := velero.BSLSpec(loc)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			loc := kubeobjects.StorageLocation{
+				S3URL:            "https://s3.example.com",
+				Bucket:           "bucket",
+				Region:           "us-east-1",
+				KeyPrefix:        "ns/vrg/kube-objects/1/",
+				SecretKeyRef:     secretKeyRef,
+				CACertificates:   []byte("ca-bundle"),
+				ReplicationState: tc.replicationState,
+			}
 
-	assert.Equal(t, "aws", spec.Provider)
-	require.NotNil(t, spec.ObjectStorage)
-	assert.Equal(t, "bucket", spec.ObjectStorage.Bucket)
-	assert.Equal(t, "ns/vrg/kube-objects/1/velero/", spec.ObjectStorage.Prefix)
-	assert.Equal(t, []byte("ca-bundle"), spec.ObjectStorage.CACert)
-	assert.Equal(t, map[string]string{
-		"region":            "us-east-1",
-		"s3ForcePathStyle":  "true",
-		"s3Url":             "https://s3.example.com",
-		"checksumAlgorithm": "",
-	}, spec.Config)
-	assert.Same(t, secretKeyRef, spec.Credential)
+			spec := velero.BSLSpec(loc)
 
-	// Backup sync must stay disabled so Velero does not re-create the Backup CRs
-	// that Ramen deletes after each capture.
-	require.NotNil(t, spec.BackupSyncPeriod)
-	assert.Zero(t, spec.BackupSyncPeriod.Duration)
+			// Common assertions
+			assert.Equal(t, "aws", spec.Provider)
+			require.NotNil(t, spec.ObjectStorage)
+			assert.Equal(t, "bucket", spec.ObjectStorage.Bucket)
+			assert.Equal(t, "ns/vrg/kube-objects/1/velero/", spec.ObjectStorage.Prefix)
+			assert.Equal(t, []byte("ca-bundle"), spec.ObjectStorage.CACert)
+			assert.Equal(t, map[string]string{
+				"region":            "us-east-1",
+				"s3ForcePathStyle":  "true",
+				"s3Url":             "https://s3.example.com",
+				"checksumAlgorithm": "",
+			}, spec.Config)
+			assert.Same(t, secretKeyRef, spec.Credential)
+
+			// Test-specific assertions
+			assert.Equal(t, tc.expectedMode, spec.AccessMode, tc.description)
+			require.NotNil(t, spec.BackupSyncPeriod)
+			assert.Equal(t, tc.expectedSync, spec.BackupSyncPeriod.Seconds(), tc.description)
+		})
+	}
 }
 
 type recordedLog struct {

@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 	velero "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
@@ -22,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	ramen "github.com/ramendr/ramen/api/v1alpha1"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 )
@@ -30,10 +30,6 @@ const (
 	path         = "velero/"
 	protectsPath = path + "backups/"
 	recoversPath = path + "restores/"
-
-	// backupAlreadyExistsError is the exact Velero failure reason emitted when a backup
-	// already exists in object storage. Such backups still contain valid backup data.
-	backupAlreadyExistsError = "backup execution failed: backup already exists in object storage"
 )
 
 // ErrRestoreCompletedWithZeroResources is returned when a restore completes successfully
@@ -247,21 +243,26 @@ func restoreRealCreate(
 	captureRequest kubeobjects.ProtectRequest,
 	restoreName string,
 	labels map[string]string,
-	annotations map[string]string,
+	_ map[string]string, // annotations unused - kept for interface compatibility
 ) (*velero.Restore, error) {
-	backupRequest, ok := captureRequest.(BackupRequest)
-	if !ok {
-		_, err := backupRequestCreate(
-			w, loc,
-			getBackupSpecFromObjectsSpec(recoverSpec.Spec),
-			requestNamespaceName, backupName,
-			labels,
-			annotations,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("backup dummy request create: %w", err)
-		}
+	// During restore on a transitioning-to-Primary cluster, keep the BSL in ReadOnly
+	// mode with sync enabled until we verify the backup is synced. This ensures we
+	// get the latest backup from S3 before switching to ReadWrite mode.
+	locForRestore := prepareLocationForRestore(loc)
 
+	backupLocation := &velero.BackupStorageLocation{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: requestNamespaceName,
+			Name:      backupName,
+		},
+	}
+
+	if err := w.ensureBSLForRestore(locForRestore, labels, backupLocation); err != nil {
+		return nil, err
+	}
+
+	backupRequest, err := w.getOrWaitForBackup(captureRequest, requestNamespaceName, backupName)
+	if err != nil {
 		return nil, err
 	}
 
@@ -274,15 +275,59 @@ func restoreRealCreate(
 	)
 }
 
-// shouldPatchFailedBackup checks if a failed backup should be patched to Completed.
-// Backups that fail with "backup execution failed: backup already exists in object
-// storage" still contain valid backup data, but Velero rejects restores from backups
-// that are not in a completed or partially failed phase. The restore-phase validation
-// was added in https://github.com/velero-io/velero/pull/9792
-// (commit dda779de6501412ecbf33249847f98d074a0543e).
-func shouldPatchFailedBackup(backup *velero.Backup) bool {
-	return backup.Status.Phase == velero.BackupPhaseFailed &&
-		strings.Contains(backup.Status.FailureReason, backupAlreadyExistsError)
+func prepareLocationForRestore(loc kubeobjects.StorageLocation) kubeobjects.StorageLocation {
+	locForRestore := loc
+
+	if loc.ReplicationState != kubeobjects.ReplicationStateSecondaryRestore {
+		locForRestore.ReplicationState = kubeobjects.ReplicationStateSecondaryRestore
+	}
+
+	return locForRestore
+}
+
+func (w objectWriter) ensureBSLForRestore(
+	loc kubeobjects.StorageLocation,
+	labels map[string]string,
+	backupLocation *velero.BackupStorageLocation,
+) error {
+	if err := w.bslCreateOrUpdate(loc, labels, backupLocation); err != nil {
+		w.log.Error(err, "Failed to create/update BSL during restore")
+
+		return err
+	}
+
+	if err := w.checkBSLAvailability(backupLocation); err != nil {
+		return fmt.Errorf("BSL %s/%s not available for restore: %w",
+			backupLocation.Namespace, backupLocation.Name, err)
+	}
+
+	return nil
+}
+
+func (w objectWriter) getOrWaitForBackup(
+	captureRequest kubeobjects.ProtectRequest,
+	namespace, name string,
+) (BackupRequest, error) {
+	if backupRequest, ok := captureRequest.(BackupRequest); ok {
+		return backupRequest, nil
+	}
+
+	// With backup sync enabled, Velero automatically syncs backup CRs from S3.
+	// Wait for the backup to be synced instead of creating a dummy backup CR.
+	backup := &velero.Backup{}
+	key := client.ObjectKey{Namespace: namespace, Name: name}
+
+	if err := w.Client.Get(w.ctx, key, backup); err != nil {
+		if k8serrors.IsNotFound(err) {
+			w.log.Info("Waiting for backup to be synced from S3", "backup", name)
+
+			return BackupRequest{}, kubeobjects.RequestProcessingErrorCreate("backup not yet synced from S3")
+		}
+
+		return BackupRequest{}, fmt.Errorf("failed to get backup: %w", err)
+	}
+
+	return BackupRequest{backup}, nil
 }
 
 func backupDummyStatusProcessAndRestore(
@@ -296,37 +341,8 @@ func backupDummyStatusProcessAndRestore(
 
 	switch backup.Status.Phase {
 	case velero.BackupPhaseCompleted,
-		velero.BackupPhasePartiallyFailed:
-		return backupRestore(
-			backup, w,
-			recoverSpec,
-			restoreName,
-			labels,
-		)
-	case velero.BackupPhaseFailed:
-		// Patch failed backups that still have valid data on S3. Backups can fail
-		// with "backup already exists in object storage" but still have valid backup
-		// data. We patch these to Completed so Velero allows restore from them.
-		if shouldPatchFailedBackup(backup) {
-			w.log.V(1).Info("Patching failed backup with valid data",
-				"backup", backup.Name,
-				"reason", backup.Status.FailureReason)
-
-			backupBaseline := backup.DeepCopy()
-			backup.Status.Phase = velero.BackupPhaseCompleted
-
-			// Patch the main resource, not the status subresource. Velero's Backup
-			// CRD does not declare a status subresource, so Status().Patch would
-			// target a non-existent /status endpoint and fail.
-			if err := w.Patch(w.ctx, backup, client.MergeFrom(backupBaseline)); err != nil {
-				backup.Status.Phase = backupBaseline.Status.Phase
-
-				return nil, fmt.Errorf("failed to patch backup status: %w", err)
-			}
-
-			w.log.V(1).Info("Patched backup status to Completed", "backup", backup.Name)
-		}
-
+		velero.BackupPhasePartiallyFailed,
+		velero.BackupPhaseFailed:
 		return backupRestore(
 			backup, w,
 			recoverSpec,
@@ -548,12 +564,24 @@ func backupRequestCreate(
 		},
 	}
 
-	err := w.bslCreateOrUpdate(loc, labels, backupLocation)
-	if err != nil {
-		w.log.Error(err, "")
+	// When creating a backup on Primary, we need to ensure the BSL is in ReadWrite
+	// mode with sync disabled. If the cluster recently transitioned from Secondary
+	// to Primary, the BSL may still be in ReadOnly mode with sync enabled from the
+	// restore phase. Update it now before creating the backup.
+	if loc.ReplicationState == string(ramen.Primary) {
+		// Check if BSL exists and verify last sync completed
+		if err := w.ensureBSLReadyForPrimaryBackup(backupLocation, loc, labels); err != nil {
+			return nil, err
+		}
+	} else {
+		// For secondary or unspecified state, just create/update normally
+		if err := w.bslCreateOrUpdate(loc, labels, backupLocation); err != nil {
+			w.log.Error(err, "Failed to create/update BSL")
 
-		return nil, err
+			return nil, err
+		}
 	}
+
 	// Check BSL availability before creating backup
 	if err := w.checkBSLAvailability(backupLocation); err != nil {
 		return nil, fmt.Errorf("BSL %s/%s not available for backup creation: %w",

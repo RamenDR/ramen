@@ -3764,6 +3764,13 @@ func replicationHealthyPVCMessage(protectedPVC *ramendrv1alpha1.ProtectedPVC, co
 // This wrapper function ensures proper requeue behavior for both velero backup cleanup and
 // VM-specific resource cleanup. Returns true if requeue is needed.
 func (v *VRGInstance) ensureSecondaryState() bool {
+	// Ensure BSL exists for secondary VRG to enable Velero's backup-sync from S3
+	if err := v.ensureBSLForSecondary(); err != nil {
+		v.log.Error(err, "Failed to ensure BSL for secondary, will requeue")
+
+		return true
+	}
+
 	// Clean up velero backup CRs owned by this VRG while preserving S3 backup data.
 	// This applies to ALL discovered apps (vm-recipe and others) to prevent stale backup
 	// CRs from accumulating on secondary clusters while ensuring the backup data remains

@@ -4,7 +4,6 @@
 package velero
 
 var (
-	BSLSpec          = bslSpec
 	BackupStatusLog  = backupStatusLog
 	RestoreStatusLog = restoreStatusLog
 )
