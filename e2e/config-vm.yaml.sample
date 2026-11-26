@@ -21,6 +21,19 @@ pvcspecs:
     storageclassname: rook-ceph-block
     accessmodes: ReadWriteOnce
 
+# List of Deployer specifications.
+# Available types: appset, subscr, disapp
+deployers:
+  - name: appset
+    type: appset
+    description: "ApplicationSet deployer for ArgoCD"
+  - name: subscr
+    type: subscr
+    description: "Subscription deployer for OCM subscriptions"
+  - name: disapp
+    type: disapp
+    description: "Discovered Application without recipe"
+
 # List to tests to run.
 # Available workloads: deploy
 # Available deployers: appset, subscr, disapp
