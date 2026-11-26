@@ -14,9 +14,9 @@ import (
 )
 
 // factoryFunc is the new() function type for workloads
-type factoryFunc func(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error)
+type factoryFunc[T types.Workload] func(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec) (T, error)
 
-var registry = map[string]factoryFunc{}
+var registry = map[string]factoryFunc[types.Workload]{}
 
 func New(ctx context.Context, name string, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
 	factory := registry[name]
@@ -33,10 +33,12 @@ func AvailableNames() []string {
 
 // register needs to be called by every workload in the init() function to
 // register itself with the workload registry.
-func register(workloadType string, f factoryFunc) {
+func register[T types.Workload](workloadType string, f factoryFunc[T]) {
 	if _, exists := registry[workloadType]; exists {
 		panic(fmt.Sprintf("workload %q already registered", workloadType))
 	}
 
-	registry[workloadType] = f
+	registry[workloadType] = func(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
+		return f(ctx, repo, pvcSpec)
+	}
 }
