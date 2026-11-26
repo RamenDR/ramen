@@ -4,6 +4,7 @@
 package v1alpha1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -46,6 +47,32 @@ type DRClusterSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="s3ProfileName is immutable"
 	S3ProfileName string `json:"s3ProfileName"`
+
+	// Operator holds settings for the dr-cluster operator deployed to this managed cluster.
+	// +optional
+	Operator DRClusterOperatorSpec `json:"operator,omitempty"`
+}
+
+// DRClusterOperatorSpec configures the dr-cluster operator on this managed cluster.
+type DRClusterOperatorSpec struct {
+	// SubscriptionConfig is applied to the OLM Subscription's spec.config.
+	// +optional
+	SubscriptionConfig *DRClusterSubscriptionConfig `json:"subscriptionConfig,omitempty"`
+}
+
+// DRClusterSubscriptionConfig holds the scheduling settings for the dr-cluster operator pod.
+type DRClusterSubscriptionConfig struct {
+	// NodeSelector constrains the operator pod to nodes with matching labels.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Tolerations are applied to the operator pod.
+	// +optional
+	Tolerations []v1.Toleration `json:"tolerations,omitempty"`
+
+	// Affinity is applied to the operator pod.
+	// +optional
+	Affinity *v1.Affinity `json:"affinity,omitempty"`
 }
 
 const (
