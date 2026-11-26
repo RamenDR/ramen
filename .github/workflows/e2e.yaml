@@ -415,6 +415,20 @@ jobs:
         esac
         body="$(printf 'Hey @%s, [e2e run %s#%s](%s) %s for %s.' \
             "$AUTHOR" "$RUN_NUMBER" "$RUN_ATTEMPT" "$RUN_URL" "$verb" "${HEAD_SHA:0:12}")"
+        # A canceled run usually means a newer run replaced it. Commenting that
+        # head moved would be too noisy.
+        if [ "$TEST_RESULT" != cancelled ]; then
+          if ! current_head="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)" ||
+              [ -z "$current_head" ]; then
+            echo "::warning::Failed to check the pull request head"
+          elif [ "$current_head" != "$HEAD_SHA" ]; then
+            warning="$(printf '%s\n' \
+                '> [!IMPORTANT]' \
+                '> The pull request head moved after starting e2e.' \
+                '> Please add a new `/test e2e` comment to test the current version.')"
+            body="$(printf '%s\n\n%s' "$body" "$warning")"
+          fi
+        fi
         echo "comment: $body"
         gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" \
             --raw-field body="$body"

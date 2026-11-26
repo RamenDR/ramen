@@ -39,19 +39,18 @@ Each pattern is matched against the full path of a changed file.
 
 The workflow comments on the pull request when the test starts:
 
-> Hey @commenter,
-> [e2e run 7791#1](https://github.com/RamenDR/ramen/actions/runs/41651171375/attempts/1)
-> started for
-> [62449075ee26](https://github.com/RamenDR/ramen/commit/62449075ee26).
+![e2e started comment](e2e-comment-started.png?raw=true)
 
 When the test passes:
 
-> Hey @commenter,
-> [e2e run 7791#1](https://github.com/RamenDR/ramen/actions/runs/41651171375/attempts/1)
-> passed for
-> [62449075ee26](https://github.com/RamenDR/ramen/commit/62449075ee26).
+![e2e passed comment](e2e-comment-passed.png?raw=true)
 
 A failed or canceled test posts the same comment, with `failed` or `canceled`.
+
+If the pull request head changed after a passed or failed run, that comment
+includes a warning that a new `/test e2e` comment can test the current version:
+
+![e2e comment warning that the pull request head moved](e2e-comment-head-moved.png?raw=true)
 
 ## Running End to End tests locally
 
