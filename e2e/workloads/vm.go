@@ -24,20 +24,26 @@ const (
 	vmName    = "vm-pvc"
 	vmAppName = "vm"
 	vmPath    = "workloads/kubevirt/vm-pvc/base"
-	vmPVCName = "root-disk"
 )
 
 type VM struct {
-	Name    string
-	Branch  string
-	PVCSpec config.PVCSpec
+	Name     string
+	Branch   string
+	PVCSpec  config.PVCSpec
+	PVCNames []string
 }
 
-func NewVM(_ context.Context, repo config.Repo, pvcSpec config.PVCSpec) (*VM, error) {
+func NewVM(ctx context.Context, repo config.Repo, pvcSpec config.PVCSpec) (*VM, error) {
+	pvcNames, err := fetchPVCNames(ctx, repo, vmPath)
+	if err != nil {
+		return nil, err
+	}
+
 	return &VM{
-		Name:    fmt.Sprintf("%s-%s", vmName, pvcSpec.Name),
-		Branch:  repo.Branch,
-		PVCSpec: pvcSpec,
+		Name:     fmt.Sprintf("%s-%s", vmName, pvcSpec.Name),
+		Branch:   repo.Branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: pvcNames,
 	}, nil
 }
 
@@ -110,15 +116,19 @@ func (w *VM) Kustomize() (string, error) {
 				},
 			},
 			Patch: string(vmOps),
-		}, {
+		}},
+	}
+
+	for _, pvcName := range w.PVCNames {
+		kustomize.Patches = append(kustomize.Patches, argocd.KustomizePatch{
 			Target: &argocd.KustomizeSelector{
 				KustomizeResId: argocd.KustomizeResId{
 					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
-					Name:         vmPVCName,
+					Name:         pvcName,
 				},
 			},
 			Patch: string(pvcOps),
-		}},
+		})
 	}
 
 	out, err := json.Marshal(kustomize)
@@ -159,7 +169,13 @@ func (w *VM) Health(ctx types.TestContext, cluster *types.Cluster) error {
 			condition.Status, cluster.Name, condition.Message)
 	}
 
-	return checkPVCHealth(ctx, cluster, ctx.AppNamespace(), vmPVCName)
+	for _, pvcName := range w.PVCNames {
+		if err := checkPVCHealth(ctx, cluster, ctx.AppNamespace(), pvcName); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Status returns the VM workload deployment status across managed clusters.
@@ -187,23 +203,12 @@ func (w *VM) statusForCluster(ctx types.TestContext, cluster *types.Cluster) (ty
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), vmPVCName)
+	pvcInfo, err := lookupPVCInfo(ctx, cluster, w.PVCNames)
 	if err != nil {
 		return types.WorkloadStatus{}, err
 	}
 
-	var status types.ApplicationStatus
-
-	switch {
-	case vmExist && pvcExist:
-		status = types.ApplicationFound
-	case vmExist || pvcExist:
-		status = types.ApplicationPartial
-	default:
-		status = types.ApplicationNotFound
-	}
-
-	return types.WorkloadStatus{ClusterName: cluster.Name, Status: status}, nil
+	return newWorkloadStatus(cluster.Name, vmExist, pvcInfo), nil
 }
 
 func getVM(ctx types.TestContext, cluster *types.Cluster,

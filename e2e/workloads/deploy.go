@@ -18,7 +18,6 @@ import (
 	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/types"
-	"github.com/ramendr/ramen/e2e/util"
 )
 
 const (
@@ -214,31 +213,12 @@ func (w Deployment) statusForCluster(ctx types.TestContext, cluster *types.Clust
 		return types.WorkloadStatus{}, err
 	}
 
-	pvcsFound := 0
-
-	for _, pvcName := range w.PVCNames {
-		pvcExist, err := findPVC(ctx, cluster, ctx.AppNamespace(), pvcName)
-		if err != nil {
-			return types.WorkloadStatus{}, err
-		}
-
-		if pvcExist {
-			pvcsFound++
-		}
+	pvcInfo, err := lookupPVCInfo(ctx, cluster, w.PVCNames)
+	if err != nil {
+		return types.WorkloadStatus{}, err
 	}
 
-	var status types.ApplicationStatus
-
-	switch {
-	case deploymentExist && pvcsFound == len(w.PVCNames):
-		status = types.ApplicationFound
-	case deploymentExist || pvcsFound > 0:
-		status = types.ApplicationPartial
-	default:
-		status = types.ApplicationNotFound
-	}
-
-	return types.WorkloadStatus{ClusterName: cluster.Name, Status: status}, nil
+	return newWorkloadStatus(cluster.Name, deploymentExist, pvcInfo), nil
 }
 
 func getDeployment(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (*appsv1.Deployment, error) {
@@ -255,73 +235,6 @@ func getDeployment(ctx types.TestContext, cluster *types.Cluster, namespace, nam
 
 func findDeployment(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (bool, error) {
 	_, err := getDeployment(ctx, cluster, namespace, name)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return false, err
-		}
-
-		return false, nil
-	}
-
-	return true, nil
-}
-
-func getPVC(
-	ctx types.TestContext,
-	cluster *types.Cluster,
-	namespace, name string,
-) (*corev1.PersistentVolumeClaim, error) {
-	pvc := &corev1.PersistentVolumeClaim{}
-	key := k8stypes.NamespacedName{Name: name, Namespace: namespace}
-
-	err := cluster.Client.Get(ctx.Context(), key, pvc)
-	if err != nil {
-		return nil, err
-	}
-
-	return pvc, nil
-}
-
-// checkPVCHealth verifies the application PVC is Bound and not being deleted.
-// Bound returns nil. Pending is retryable. NotFound, Lost, or a set
-// deletionTimestamp are unrecoverable so wait loops fail immediately.
-func checkPVCHealth(
-	ctx types.TestContext,
-	cluster *types.Cluster,
-	namespace, pvcName string,
-) error {
-	pvc, err := getPVC(ctx, cluster, namespace, pvcName)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return err
-		}
-
-		return fmt.Errorf("pvc \"%s/%s\" not found in cluster %q: %w",
-			namespace, pvcName, cluster.Name, util.ErrUnrecoverable)
-	}
-
-	if !pvc.GetDeletionTimestamp().IsZero() {
-		return fmt.Errorf("pvc \"%s/%s\" is being deleted in cluster %q: %w",
-			namespace, pvcName, cluster.Name, util.ErrUnrecoverable)
-	}
-
-	switch pvc.Status.Phase {
-	case corev1.ClaimBound:
-		return nil
-	case corev1.ClaimPending:
-		return fmt.Errorf("pvc \"%s/%s\" phase is %q, expected %q in cluster %q",
-			namespace, pvcName, pvc.Status.Phase, corev1.ClaimBound, cluster.Name)
-	case corev1.ClaimLost:
-		return fmt.Errorf("pvc \"%s/%s\" phase is %q in cluster %q: %w",
-			namespace, pvcName, pvc.Status.Phase, cluster.Name, util.ErrUnrecoverable)
-	default:
-		return fmt.Errorf("pvc \"%s/%s\" phase is %q, expected %q in cluster %q",
-			namespace, pvcName, pvc.Status.Phase, corev1.ClaimBound, cluster.Name)
-	}
-}
-
-func findPVC(ctx types.TestContext, cluster *types.Cluster, namespace, name string) (bool, error) {
-	_, err := getPVC(ctx, cluster, namespace, name)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return false, err

@@ -1,8 +1,10 @@
 package workloads_test
 
 import (
+	"encoding/json"
 	"testing"
 
+	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/helpers"
 	"github.com/ramendr/ramen/e2e/workloads"
@@ -28,9 +30,10 @@ func TestNewVM(t *testing.T) {
 	}
 
 	expected := &workloads.VM{
-		Name:    "vm-pvc-rbd",
-		Branch:  repo.Branch,
-		PVCSpec: pvcSpec,
+		Name:     "vm-pvc-rbd",
+		Branch:   repo.Branch,
+		PVCSpec:  pvcSpec,
+		PVCNames: []string{"root-disk"},
 	}
 
 	if diff := helpers.UnifiedDiff(t, expected, vm); diff != "" {
@@ -41,15 +44,13 @@ func TestNewVM(t *testing.T) {
 func TestVMKustomizePatches(t *testing.T) {
 	t.Parallel()
 
-	storageClassName := "rook-ceph-block"
-	accessMode := "ReadWriteOnce"
-
 	vm := workloads.VM{
 		PVCSpec: config.PVCSpec{
 			Name:             "rbd",
-			StorageClassName: storageClassName,
-			AccessModes:      accessMode,
+			StorageClassName: "rook-ceph-block",
+			AccessModes:      "ReadWriteOnce",
 		},
+		PVCNames: []string{"os-disk", "data-disk"},
 	}
 
 	actualKustomize, err := vm.Kustomize()
@@ -57,21 +58,47 @@ func TestVMKustomizePatches(t *testing.T) {
 		t.Fatalf("error generating kustomize: %v", err)
 	}
 
-	expectedKustomize := `{"patches":[{` +
-		`"patch":"[` +
-		`{\"op\":\"add\",\"path\":\"/spec/template/spec/domain/devices/interfaces/0/bridge\",\"value\":{}}` +
-		`]",` +
-		`"target":{"kind":"VirtualMachine","name":"vm"}` +
-		`},{` +
-		`"patch":"[` +
-		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"rook-ceph-block\"},` +
-		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteOnce\"]}` +
-		`]",` +
-		`"target":{"kind":"PersistentVolumeClaim","name":"root-disk"}` +
-		`}]}`
+	var actual argocd.ApplicationSourceKustomize
+	if err := json.Unmarshal([]byte(actualKustomize), &actual); err != nil {
+		t.Fatalf("decode Kustomize output: %v", err)
+	}
 
-	if actualKustomize != expectedKustomize {
-		t.Fatalf("expected:\n%s\ngot:\n%s", expectedKustomize, actualKustomize)
+	expected := argocd.ApplicationSourceKustomize{
+		Patches: argocd.KustomizePatches{
+			{
+				Target: &argocd.KustomizeSelector{
+					KustomizeResId: argocd.KustomizeResId{
+						KustomizeGvk: argocd.KustomizeGvk{Kind: "VirtualMachine"},
+						Name:         "vm",
+					},
+				},
+				Patch: `[{"op":"add","path":"/spec/template/spec/domain/devices/interfaces/0/bridge","value":{}}]`,
+			},
+			{
+				Target: &argocd.KustomizeSelector{
+					KustomizeResId: argocd.KustomizeResId{
+						KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+						Name:         "os-disk",
+					},
+				},
+				Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
+					`{"op":"add","path":"/spec/accessModes","value":["ReadWriteOnce"]}]`,
+			},
+			{
+				Target: &argocd.KustomizeSelector{
+					KustomizeResId: argocd.KustomizeResId{
+						KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+						Name:         "data-disk",
+					},
+				},
+				Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
+					`{"op":"add","path":"/spec/accessModes","value":["ReadWriteOnce"]}]`,
+			},
+		},
+	}
+
+	if diff := helpers.UnifiedDiff(t, expected, actual); diff != "" {
+		t.Fatalf("Kustomize output differs:\n%s", diff)
 	}
 }
 
