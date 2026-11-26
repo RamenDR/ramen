@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ramendr/ramen/e2e/config"
+	"github.com/ramendr/ramen/e2e/helpers"
 	"github.com/ramendr/ramen/e2e/workloads"
 )
 
@@ -34,8 +35,8 @@ func TestDeploymentKustomizePVCPatch(t *testing.T) {
 		`"target":{"kind":"PersistentVolumeClaim","name":"busybox-pvc"}` +
 		`}]}`
 
-	if actualKustomize != expectedKustomize {
-		t.Fatalf("expected:\n%s\ngot:\n%s", expectedKustomize, actualKustomize)
+	if diff := helpers.UnifiedDiff(t, expectedKustomize, actualKustomize); diff != "" {
+		t.Fatalf("kustomize mismatch:\n%s", diff)
 	}
 }
 
