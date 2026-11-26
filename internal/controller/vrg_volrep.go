@@ -1663,7 +1663,7 @@ func (v *VRGInstance) updatePVCsResyncingConditions(pvcs []*corev1.PersistentVol
 
 	for _, pvc := range pvcs {
 		v.updatePVCDataReadyCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReady, readyMsg)
-		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonProgressing, msg)
+		v.updatePVCDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonReplicating, msg)
 		v.updatePVCReplicationHealthyCondition(pvc.Namespace, pvc.Name, metav1.ConditionFalse,
 			VRGConditionReasonProgressing, msg)
 	}
