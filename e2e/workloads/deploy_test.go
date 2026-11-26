@@ -2,9 +2,11 @@ package workloads_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/ramendr/ramen/e2e/argocd"
 	"github.com/ramendr/ramen/e2e/config"
 	"github.com/ramendr/ramen/e2e/helpers"
 	"github.com/ramendr/ramen/e2e/workloads"
@@ -73,16 +75,26 @@ func TestDeploymentKustomizePVCPatch(t *testing.T) {
 		t.Fatalf("error generating kustomize: %v", err)
 	}
 
-	expectedKustomize := `{"patches":[{` +
-		`"patch":"[` +
-		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"rook-ceph-block\"},` +
-		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteOnce\"]}` +
-		`]",` +
-		`"target":{"kind":"PersistentVolumeClaim","name":"busybox-pvc"}` +
-		`}]}`
+	var actual argocd.ApplicationSourceKustomize
+	if err := json.Unmarshal([]byte(actualKustomize), &actual); err != nil {
+		t.Fatalf("decode Kustomize output: %v", err)
+	}
 
-	if diff := helpers.UnifiedDiff(t, expectedKustomize, actualKustomize); diff != "" {
-		t.Fatalf("kustomize mismatch:\n%s", diff)
+	expected := argocd.ApplicationSourceKustomize{
+		Patches: argocd.KustomizePatches{{
+			Target: &argocd.KustomizeSelector{
+				KustomizeResId: argocd.KustomizeResId{
+					KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+					Name:         "busybox-pvc",
+				},
+			},
+			Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
+				`{"op":"add","path":"/spec/accessModes","value":["ReadWriteOnce"]}]`,
+		}},
+	}
+
+	if diff := helpers.UnifiedDiff(t, expected, actual); diff != "" {
+		t.Fatalf("Kustomize output differs:\n%s", diff)
 	}
 }
 
@@ -103,22 +115,38 @@ func TestDeploymentKustomizeMultiplePVCs(t *testing.T) {
 		t.Fatalf("error generating kustomize: %v", err)
 	}
 
-	expectedKustomize := `{"patches":[{` +
-		`"patch":"[` +
-		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"rook-ceph-block\"},` +
-		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteOnce\"]}` +
-		`]",` +
-		`"target":{"kind":"PersistentVolumeClaim","name":"pvc-1"}` +
-		`},{` +
-		`"patch":"[` +
-		`{\"op\":\"add\",\"path\":\"/spec/storageClassName\",\"value\":\"rook-ceph-block\"},` +
-		`{\"op\":\"add\",\"path\":\"/spec/accessModes\",\"value\":[\"ReadWriteOnce\"]}` +
-		`]",` +
-		`"target":{"kind":"PersistentVolumeClaim","name":"pvc-2"}` +
-		`}]}`
+	var actual argocd.ApplicationSourceKustomize
+	if err := json.Unmarshal([]byte(actualKustomize), &actual); err != nil {
+		t.Fatalf("decode Kustomize output: %v", err)
+	}
 
-	if diff := helpers.UnifiedDiff(t, expectedKustomize, actualKustomize); diff != "" {
-		t.Fatalf("kustomize mismatch:\n%s", diff)
+	expected := argocd.ApplicationSourceKustomize{
+		Patches: argocd.KustomizePatches{
+			{
+				Target: &argocd.KustomizeSelector{
+					KustomizeResId: argocd.KustomizeResId{
+						KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+						Name:         "pvc-1",
+					},
+				},
+				Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
+					`{"op":"add","path":"/spec/accessModes","value":["ReadWriteOnce"]}]`,
+			},
+			{
+				Target: &argocd.KustomizeSelector{
+					KustomizeResId: argocd.KustomizeResId{
+						KustomizeGvk: argocd.KustomizeGvk{Kind: "PersistentVolumeClaim"},
+						Name:         "pvc-2",
+					},
+				},
+				Patch: `[{"op":"add","path":"/spec/storageClassName","value":"rook-ceph-block"},` +
+					`{"op":"add","path":"/spec/accessModes","value":["ReadWriteOnce"]}]`,
+			},
+		},
+	}
+
+	if diff := helpers.UnifiedDiff(t, expected, actual); diff != "" {
+		t.Fatalf("Kustomize output differs:\n%s", diff)
 	}
 }
 
