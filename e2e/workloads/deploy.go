@@ -40,7 +40,7 @@ type Deployment struct {
 	PVCSpec config.PVCSpec
 }
 
-func NewDeployment(_ context.Context, repo config.Repo, pvcSpec config.PVCSpec) (types.Workload, error) {
+func NewDeployment(_ context.Context, repo config.Repo, pvcSpec config.PVCSpec) (*Deployment, error) {
 	return &Deployment{
 		Name:    fmt.Sprintf("%s-%s", deploymentName, pvcSpec.Name),
 		Branch:  repo.Branch,
