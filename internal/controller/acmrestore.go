@@ -33,17 +33,94 @@ const (
 // Restore of managed clusters (or the Restore CRD is not installed), so there was nothing to do.
 var ErrNoManagedClustersRestore = errors.New("no ACM Restore of managed clusters")
 
-// EnsureKlusterletConfigForRestore polls the ACM Restore resources and, when one restores managed
-// clusters, ensures the global KlusterletConfig exists and carries the AppliedManifestWork
+// restoreState classifies the relevant ACM Restores by status.phase. The values are ordered so
+// that the aggregate state of several Restores is the largest one.
+type restoreState int
+
+const (
+	// restoreIgnored is a Restore that does not restore managed clusters.
+	restoreIgnored restoreState = iota
+	// restoreTerminal is a Restore that finished (with or without errors).
+	restoreTerminal
+	// restoreActive is a Restore that is in progress, or that is enabled for passive sync.
+	restoreActive
+	// restoreFailed is a Restore that could not run.
+	restoreFailed
+)
+
+// klusterletAction is what the caller has to do with the global KlusterletConfig.
+type klusterletAction int
+
+const (
+	actionNone   klusterletAction = iota // nothing to do
+	actionEnsure                         // create or update to the grace period
+	actionError                          // a Restore is in Error; report and change nothing
+)
+
+// restoreStateOf classifies a Restore. Any phase that is not known to be terminal or failed is
+// treated as active, so that an unknown phase keeps the protection in place.
+func restoreStateOf(restore *restoresv1beta1.Restore) restoreState {
+	if restore.Spec.VeleroManagedClustersBackupName == nil {
+		return restoreIgnored
+	}
+
+	// Same normalization as the Restore webhook.
+	backupName := strings.ToLower(strings.TrimSpace(*restore.Spec.VeleroManagedClustersBackupName))
+	if backupName == "" || backupName == acmRestoreVeleroManagedClustersBackupSkip {
+		return restoreIgnored
+	}
+
+	switch string(restore.Status.Phase) {
+	case restoresv1beta1.RestorePhaseFinished, restoresv1beta1.RestorePhaseFinishedWithErrors:
+		return restoreTerminal
+	case restoresv1beta1.RestorePhaseError:
+		return restoreFailed
+	default:
+		return restoreActive
+	}
+}
+
+// aggregateRestoreState returns Failed if any relevant Restore failed, otherwise Active if any is
+// active, otherwise Terminal if any is relevant, otherwise Ignored.
+func aggregateRestoreState(restores []restoresv1beta1.Restore) restoreState {
+	state := restoreIgnored
+
+	for i := range restores {
+		if s := restoreStateOf(&restores[i]); s > state {
+			state = s
+		}
+	}
+
+	return state
+}
+
+// decideKlusterletAction decides what to do with the global KlusterletConfig from the Restores.
+func decideKlusterletAction(restores []restoresv1beta1.Restore) klusterletAction {
+	switch aggregateRestoreState(restores) {
+	case restoreFailed:
+		return actionError
+	case restoreActive:
+		return actionEnsure
+	case restoreIgnored, restoreTerminal:
+	}
+
+	return actionNone
+}
+
+// EnsureKlusterletConfigForRestore polls the ACM Restore resources and, while a Restore of managed
+// clusters is active, ensures the global KlusterletConfig exists and carries the AppliedManifestWork
 // eviction grace period, so that the work agents of the managed clusters do not evict applied
-// ManifestWorks while the hub is being recovered. The grace period is taken from the Ramen
-// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). A nil ramenConfig means the
-// configuration could not be retrieved: the default grace period is then used only to create a
-// missing KlusterletConfig, and an existing one is left untouched. It is invoked from the DRPC
+// ManifestWorks while the hub is being recovered. A Restore that is terminal no longer raises the
+// grace period, so that it is not asserted again on every reconcile once the Restore is done. The
+// grace period is taken from the Ramen configuration
+// (hubRecovery.appliedManifestWorkEvictionGracePeriod). A nil ramenConfig means the configuration
+// could not be retrieved: the default grace period is then used only to create a missing
+// KlusterletConfig, and an existing one is left untouched. It is invoked from the DRPC
 // reconciliation so that it is re-run on every reconcile (the DRPC requeues at least once every
-// StatusCheckDelay). It returns nil when a Restore of managed clusters was found and the
-// KlusterletConfig was ensured, ErrNoManagedClustersRestore when there was nothing to do, and
-// another error on failure.
+// StatusCheckDelay). It returns nil when a Restore of managed clusters was found and nothing
+// failed, ErrNoManagedClustersRestore when there was nothing to do, and another error on failure,
+// including when a Restore is in the Error phase: the KlusterletConfig is then left unchanged so
+// that the protection stays in place.
 func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig) error {
 	log := ctrl.Log.WithName("acmrestore")
 
@@ -59,40 +136,47 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 		return fmt.Errorf("failed to list Restores: %w", err)
 	}
 
-	relevant := false
+	switch decideKlusterletAction(restoreList.Items) {
+	case actionError:
+		return fmt.Errorf("ACM Restore %s is in the %s phase, KlusterletConfig %s is left unchanged",
+			firstRestoreName(restoreList.Items, restoreFailed), restoresv1beta1.RestorePhaseError,
+			klusterletConfigGlobalName)
+	case actionEnsure:
+		log.Info("Restore of managed clusters is active, ensuring KlusterletConfig",
+			"name", klusterletConfigGlobalName)
 
-	for i := range restoreList.Items {
-		item := &restoreList.Items[i]
-
-		if item.Spec.VeleroManagedClustersBackupName == nil {
-			continue
-		}
-
-		// Same normalization as the Restore webhook.
-		backupName := strings.ToLower(strings.TrimSpace(*item.Spec.VeleroManagedClustersBackupName))
-		if backupName == "" || backupName == acmRestoreVeleroManagedClustersBackupSkip {
-			continue
-		}
-
-		relevant = true
-
-		break
+		// A nil ramenConfig means the grace period is unknown: the default is only used to create
+		// a missing KlusterletConfig, and an existing one is left untouched.
+		return ensureGlobalKlusterletConfig(ctx, c, gracePeriodOrDefault(ramenConfig), ramenConfig == nil)
+	case actionNone:
 	}
 
-	if !relevant {
+	if aggregateRestoreState(restoreList.Items) == restoreIgnored {
 		return ErrNoManagedClustersRestore
 	}
 
-	log.Info("Restore of managed clusters detected, ensuring KlusterletConfig", "name", klusterletConfigGlobalName)
+	return nil
+}
 
-	// A nil ramenConfig means the grace period is unknown: the default is only used to create a
-	// missing KlusterletConfig, and an existing one is left untouched.
-	gracePeriod := DefaultAppliedManifestWorkEvictionGracePeriod
-	if ramenConfig != nil {
-		gracePeriod = appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig)
+// gracePeriodOrDefault returns the configured grace period, or the default when the Ramen
+// configuration is unknown (nil).
+func gracePeriodOrDefault(ramenConfig *rmn.RamenConfig) string {
+	if ramenConfig == nil {
+		return DefaultAppliedManifestWorkEvictionGracePeriod
 	}
 
-	return ensureGlobalKlusterletConfig(ctx, c, gracePeriod, ramenConfig == nil)
+	return appliedManifestWorkEvictionGracePeriodOrDefault(ramenConfig)
+}
+
+// firstRestoreName returns the name of the first Restore in the given state.
+func firstRestoreName(restores []restoresv1beta1.Restore, state restoreState) string {
+	for i := range restores {
+		if restoreStateOf(&restores[i]) == state {
+			return restores[i].GetName()
+		}
+	}
+
+	return ""
 }
 
 // ensureGlobalKlusterletConfig creates the global KlusterletConfig if it is missing, with

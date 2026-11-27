@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	restoresv1beta1 "github.com/stolostron/cluster-backup-operator/api/v1beta1"
 	klusterletconfigv1alpha1 "github.com/stolostron/cluster-lifecycle-api/klusterletconfig/v1alpha1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -218,5 +219,127 @@ func TestEnsureKlusterletConfigForRestore(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithRESTMapper(restMapper).Build()
 
 		g.Expect(ensure(c, &rmn.RamenConfig{})).To(Succeed())
+	})
+}
+
+func TestKlusterletConfigRestorePhase(t *testing.T) {
+	ctx := context.Background()
+
+	build := func(objs ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		g := NewWithT(t)
+		g.Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		g.Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	}
+
+	restore := func(name, backup, phase string) *restoresv1beta1.Restore {
+		return &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+			Status:     restoresv1beta1.RestoreStatus{Phase: restoresv1beta1.RestorePhase(phase)},
+		}
+	}
+
+	run := func(c client.Client) error {
+		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
+		if errors.Is(err, controllers.ErrNoManagedClustersRestore) {
+			return nil
+		}
+
+		return err
+	}
+
+	getKC := func(c client.Client) (*klusterletconfigv1alpha1.KlusterletConfig, error) {
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		err := c.Get(ctx, client.ObjectKey{Name: "global"}, kc)
+
+		return kc, err
+	}
+
+	t.Run("phase matrix", func(t *testing.T) {
+		tests := []struct {
+			phase      string
+			wantCreate bool
+			wantErr    bool
+		}{
+			{"Started", true, false},
+			{"Running", true, false},
+			{"Unknown", true, false},
+			{"", true, false},
+			{"Enabled", true, false},
+			{"EnabledWithErrors", true, false},
+			{"Finished", false, false},
+			{"FinishedWithErrors", false, false},
+			{"Error", false, true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.phase, func(t *testing.T) {
+				g := NewWithT(t)
+				c := build(restore("r", "latest", tt.phase))
+
+				err := run(c)
+				if tt.wantErr {
+					g.Expect(err).To(HaveOccurred())
+				} else {
+					g.Expect(err).NotTo(HaveOccurred())
+				}
+
+				_, err = getKC(c)
+				g.Expect(err == nil).To(Equal(tt.wantCreate))
+			})
+		}
+	})
+
+	t.Run("a Restore with skip is ignored whatever its phase", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "skip", "Error"))
+
+		g.Expect(run(c)).To(Succeed())
+
+		_, err := getKC(c)
+		g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	t.Run("Error takes precedence and leaves the KlusterletConfig unchanged", func(t *testing.T) {
+		g := NewWithT(t)
+		existing := &klusterletconfigv1alpha1.KlusterletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "global"},
+			Spec:       klusterletconfigv1alpha1.KlusterletConfigSpec{AppliedManifestWorkEvictionGracePeriod: "1h"},
+		}
+		c := build(restore("a", "latest", "Error"), restore("b", "latest", "Running"), existing)
+
+		g.Expect(run(c)).NotTo(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("1h"))
+	})
+
+	t.Run("an active Restore among terminal ones keeps ensuring", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("a", "latest", "Running"), restore("b", "latest", "Finished"))
+
+		g.Expect(run(c)).To(Succeed())
+
+		_, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("a terminal Restore does not raise an existing KlusterletConfig again", func(t *testing.T) {
+		g := NewWithT(t)
+		existing := &klusterletconfigv1alpha1.KlusterletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "global"},
+			Spec:       klusterletconfigv1alpha1.KlusterletConfigSpec{AppliedManifestWorkEvictionGracePeriod: "1h"},
+		}
+		c := build(restore("r", "latest", "Finished"), existing)
+
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("1h"))
 	})
 }
