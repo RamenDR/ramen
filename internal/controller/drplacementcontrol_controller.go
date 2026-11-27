@@ -162,7 +162,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager, ramenC
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=restores,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,verbs=list;watch;create
-// +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,resourceNames=global,verbs=get;update
+// +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,resourceNames=global,verbs=get;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
