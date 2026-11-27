@@ -1886,9 +1886,6 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 		ramenConfig := &rmn.RamenConfig{}
 		ramenConfig.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "36h"
 
-		configMap, err := controllers.ConfigMapNew(ramenNamespace, controllers.HubOperatorConfigMapName, ramenConfig)
-		Expect(err).NotTo(HaveOccurred())
-
 		backup := "latest"
 		restore := &restoresv1beta1.Restore{
 			ObjectMeta: metav1.ObjectMeta{Name: "restore"},
@@ -1897,7 +1894,7 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 
 		var creates, restoreLists atomic.Int32
 
-		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore, configMap).
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore).
 			WithInterceptorFuncs(interceptor.Funcs{
 				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList,
 					opts ...client.ListOption,
@@ -1919,7 +1916,7 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 				},
 			}).Build()
 
-		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
+		r := &controllers.DRPlacementControlReconciler{Client: c}
 
 		const workers = 20
 
@@ -1947,8 +1944,8 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 
 		Expect(creates.Load()).To(Equal(int32(1)))
 
-		// The work is done once, whatever the number of callers.
-		Expect(restoreLists.Load()).To(Equal(int32(1)))
+		// The Restore is still active, so the work is not complete and each caller re-evaluates.
+		Expect(restoreLists.Load()).To(Equal(int32(workers)))
 
 		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
 		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
@@ -1962,6 +1959,8 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
 		Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		ramenConfig := &rmn.RamenConfig{}
 
 		var restoreLists atomic.Int32
 
@@ -1978,8 +1977,7 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 				},
 			}).Build()
 
-		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
-		ramenConfig := &rmn.RamenConfig{}
+		r := &controllers.DRPlacementControlReconciler{Client: c}
 
 		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
 		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
@@ -1997,14 +1995,82 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
 		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
 
-		// Once ensured, later calls do not check again.
+		// An active Restore is not complete work, so later calls check again.
 		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
-		Expect(restoreLists.Load()).To(Equal(int32(3)))
+		Expect(restoreLists.Load()).To(Equal(int32(4)))
 	})
 
-	// A fallback with a nil configuration, used when the Ramen configMap cannot be read, must not
-	// mark the work done, so that a later reconcile applies the configured grace period.
-	It("retries after a fallback when the Ramen configMap could not be read", func() {
+	// The work is complete only once the Restore is terminal and every DRPC is settled and the
+	// KlusterletConfig was reset. Until then each call re-evaluates, and after that later calls
+	// return immediately.
+	It("stops checking only after the Restore is terminal and the DRPCs are settled", func() {
+		scheme := k8sruntime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+		Expect(rmn.AddToScheme(scheme)).To(Succeed())
+
+		backup := "latest"
+		restore := &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: "restore"},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+			Status:     restoresv1beta1.RestoreStatus{Phase: restoresv1beta1.RestorePhaseFinished},
+		}
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "global",
+				Labels: map[string]string{"ramendr.openshift.io/created-by-ramen": "true"},
+			},
+			Spec: klusterletconfigv1alpha1.KlusterletConfigSpec{AppliedManifestWorkEvictionGracePeriod: "24h"},
+		}
+		drpc := &rmn.DRPlacementControl{
+			ObjectMeta: metav1.ObjectMeta{Name: "drpc", Namespace: "ns"},
+			Status:     rmn.DRPlacementControlStatus{Progression: rmn.ProgressionWaitOnUserToCleanUp},
+		}
+
+		var restoreLists atomic.Int32
+
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore, kc, drpc).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList,
+					opts ...client.ListOption,
+				) error {
+					if _, ok := list.(*restoresv1beta1.RestoreList); ok {
+						restoreLists.Add(1)
+					}
+
+					return cl.List(ctx, list, opts...)
+				},
+			}).Build()
+
+		r := &controllers.DRPlacementControlReconciler{Client: c}
+		ramenConfig := &rmn.RamenConfig{}
+
+		// The Restore is terminal but a DRPC is not settled: the reset waits and the work is not done.
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(restoreLists.Load()).To(Equal(int32(2)))
+		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+
+		// The DRPC settles: this call resets the KlusterletConfig, which is still not confirmed.
+		drpc.Status.Progression = rmn.ProgressionCompleted
+		Expect(c.Update(context.Background(), drpc)).To(Succeed())
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(k8serrors.IsNotFound(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc))).To(BeTrue())
+
+		// The next call confirms that nothing is left to do, and later calls return immediately.
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+
+		listsWhenDone := restoreLists.Load()
+
+		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
+		Expect(restoreLists.Load()).To(Equal(listsWhenDone))
+	})
+
+	// A fallback with a nil configuration, used when the Ramen configMap cannot be read, only
+	// creates a missing KlusterletConfig, so that a later reconcile applies the configured grace
+	// period.
+	It("applies the configured grace period after a fallback when the Ramen configMap could not be read", func() {
 		scheme := k8sruntime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
@@ -2019,22 +2085,9 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
 		}
 
-		var restoreLists atomic.Int32
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore).Build()
 
-		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore).
-			WithInterceptorFuncs(interceptor.Funcs{
-				List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList,
-					opts ...client.ListOption,
-				) error {
-					if _, ok := list.(*restoresv1beta1.RestoreList); ok {
-						restoreLists.Add(1)
-					}
-
-					return cl.List(ctx, list, opts...)
-				},
-			}).Build()
-
-		r := &controllers.DRPlacementControlReconciler{Client: c, APIReader: c}
+		r := &controllers.DRPlacementControlReconciler{Client: c}
 
 		// The fallback creates the missing KlusterletConfig with the default grace period.
 		Expect(r.ReconcileKlusterletConfig(context.Background(), nil)).To(Succeed())
@@ -2055,12 +2108,6 @@ var _ = Describe("DRPlacementControl KlusterletConfig serialization", func() {
 		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
 		Expect(c.Get(context.Background(), client.ObjectKey{Name: "global"}, kc)).To(Succeed())
 		Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("INFINITE"))
-
-		// Once ensured with the configuration, the Restores are not listed again.
-		listsBefore := restoreLists.Load()
-
-		Expect(r.ReconcileKlusterletConfig(context.Background(), ramenConfig)).To(Succeed())
-		Expect(restoreLists.Load()).To(Equal(listsBefore))
 	})
 })
 

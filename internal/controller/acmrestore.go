@@ -182,8 +182,13 @@ func unsettledDRPCs(drpcs []rmn.DRPlacementControl) int {
 // configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). It is invoked from the DRPC
 // reconciliation so that it is re-run on every reconcile (the DRPC requeues at least once every
 // StatusCheckDelay). It returns ErrNoManagedClustersRestore when there is no Restore of managed
-// clusters, and another error on failure, including when a Restore is in the Error phase.
-func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig) error {
+// clusters, and another error on failure, including when a Restore is in the Error phase. The
+// returned bool is true only once the work is complete: every Restore is terminal, every DRPC is
+// settled, and nothing is left to reset. It is false while a Restore is active, while the reset
+// is waiting for the DRPCs, and in the call that performs the reset, which the next call confirms.
+func EnsureKlusterletConfigForRestore(
+	ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig,
+) (bool, error) {
 	log := ctrl.Log.WithName("acmrestore")
 
 	restoreList := &restoresv1beta1.RestoreList{}
@@ -192,20 +197,20 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 		if meta.IsNoMatchError(err) {
 			log.Info("Restore CRD is not installed", "groupVersion", restoresv1beta1.GroupVersion.String())
 
-			return ErrNoManagedClustersRestore
+			return false, ErrNoManagedClustersRestore
 		}
 
-		return fmt.Errorf("failed to list Restores: %w", err)
+		return false, fmt.Errorf("failed to list Restores: %w", err)
 	}
 
 	kc, err := getGlobalKlusterletConfig(ctx, c)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	switch decideKlusterletAction(restoreList.Items, kc) {
 	case actionError:
-		return fmt.Errorf("ACM Restore %s is in the %s phase, KlusterletConfig %s is left unchanged",
+		return false, fmt.Errorf("ACM Restore %s is in the %s phase, KlusterletConfig %s is left unchanged",
 			firstRestoreName(restoreList.Items, restoreFailed), restoresv1beta1.RestorePhaseError,
 			klusterletConfigGlobalName)
 	case actionEnsure:
@@ -214,18 +219,19 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 
 		// A nil ramenConfig means the grace period is unknown: the default is only used to create
 		// a missing KlusterletConfig, and an existing one is left untouched.
-		return ensureGlobalKlusterletConfig(
+		return false, ensureGlobalKlusterletConfig(
 			ctx, c, kc, gracePeriodOrDefault(ramenConfig), ramenConfig == nil)
 	case actionVerify:
-		return resetGlobalKlusterletConfigIfSettled(ctx, c, kc)
+		return false, resetGlobalKlusterletConfigIfSettled(ctx, c, kc)
 	case actionNone:
 	}
 
 	if aggregateRestoreState(restoreList.Items) == restoreIgnored {
-		return ErrNoManagedClustersRestore
+		return false, ErrNoManagedClustersRestore
 	}
 
-	return nil
+	// Every Restore is terminal and no reset is pending: the work is complete.
+	return true, nil
 }
 
 // gracePeriodOrDefault returns the configured grace period, or the default when the Ramen

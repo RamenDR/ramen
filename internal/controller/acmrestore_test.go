@@ -38,7 +38,7 @@ func TestEnsureKlusterletConfigForRestore(t *testing.T) {
 
 	// ensure runs EnsureKlusterletConfigForRestore and ignores ErrNoManagedClustersRestore.
 	ensure := func(c client.Client, ramenConfig *rmn.RamenConfig) error {
-		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, ramenConfig)
+		_, err := controllers.EnsureKlusterletConfigForRestore(ctx, c, ramenConfig)
 		if errors.Is(err, controllers.ErrNoManagedClustersRestore) {
 			return nil
 		}
@@ -80,11 +80,14 @@ func TestEnsureKlusterletConfigForRestore(t *testing.T) {
 		g := NewWithT(t)
 
 		c := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(newRestores("skip", "")...).Build()
-		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
+		done, err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
 		g.Expect(err).To(MatchError(controllers.ErrNoManagedClustersRestore))
+		g.Expect(done).To(BeFalse())
 
 		c = fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(newRestores("latest")...).Build()
-		g.Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})).To(Succeed())
+		done, err = controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeFalse(), "a Restore that is not terminal is not complete")
 	})
 
 	t.Run("Restore with managed clusters creates global KlusterletConfig", func(t *testing.T) {
@@ -243,7 +246,7 @@ func TestKlusterletConfigRestorePhase(t *testing.T) {
 	}
 
 	run := func(c client.Client) error {
-		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
+		_, err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
 		if errors.Is(err, controllers.ErrNoManagedClustersRestore) {
 			return nil
 		}
@@ -379,7 +382,8 @@ func TestKlusterletConfigMarkers(t *testing.T) {
 	}
 
 	ensure := func(c client.Client, ramenConfig *rmn.RamenConfig) {
-		NewWithT(t).Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, ramenConfig)).To(Succeed())
+		_, err := controllers.EnsureKlusterletConfigForRestore(ctx, c, ramenConfig)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
 	}
 
 	getKC := func(c client.Client) *klusterletconfigv1alpha1.KlusterletConfig {
@@ -506,7 +510,7 @@ func TestKlusterletConfigReset(t *testing.T) {
 	}
 
 	run := func(c client.Client) error {
-		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
+		_, err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
 		if errors.Is(err, controllers.ErrNoManagedClustersRestore) {
 			return nil
 		}
@@ -680,13 +684,16 @@ func TestKlusterletConfigReset(t *testing.T) {
 
 		cfg := &rmn.RamenConfig{}
 		cfg.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "48h"
-		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, cfg)
+		done, err := controllers.EnsureKlusterletConfigForRestore(ctx, c, cfg)
 		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeFalse(), "the call that performs the reset is confirmed by the next one")
 
 		_, err = getKC(c)
 		g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
 
-		g.Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, cfg)).To(Succeed())
+		done, err = controllers.EnsureKlusterletConfigForRestore(ctx, c, cfg)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(done).To(BeTrue())
 	})
 
 	t.Run("a created config with extra spec fields keeps the object, drops the label", func(t *testing.T) {
