@@ -9,4 +9,4 @@ metadata:
 spec:
   source:
     registry:
-      url: "docker://quay.io/nirsof/cirros:0.6.2-1"
+      url: "docker://quay.io/prd/cirros:0.6.3-1"

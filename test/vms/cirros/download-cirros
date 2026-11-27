@@ -15,7 +15,7 @@ import time
 
 def main():
     p = argparse.ArgumentParser("download-cirros")
-    p.add_argument("--cirros-version", default="0.6.2", help="Cirros version")
+    p.add_argument("--cirros-version", default="0.6.3", help="Cirros version")
     p.add_argument("-o", "--output", help="Output filename")
     p.add_argument("-v", "--verbose", action="store_true", help="Be more verbose")
     args = p.parse_args()
@@ -85,8 +85,10 @@ def unpack_rootfs(boot_img, nocloud_img):
         "-drive",
         f"if=virtio,file={nocloud_img},format=raw",
         "-nographic",
-        "-net",
-        "none",
+        # Cirros 0.6.3 waits ~3 minutes for dhcpcd when there is no network
+        # interface. A user-mode nic gets a lease immediately.
+        "-nic",
+        "user,model=virtio-net-pci",
         "-monitor",
         "none",
         "-serial",
