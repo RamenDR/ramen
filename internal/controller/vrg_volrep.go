@@ -474,11 +474,8 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 		skip    bool = true
 	)
 
-	// if PVC protection is complete, return. Both the protected annotation and the protection
-	// finalizer are required, as the annotation alone can be inherited by a PVC that was cloned
-	// or restored (e.g. by KubeVirt/CDI) from another PVC that Ramen had already protected.
-	if pvc.Annotations[pvcVRAnnotationProtectedKey] == pvcVRAnnotationProtectedValue &&
-		slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
+	// if PVC protection is complete, return
+	if v.pvcProtectionComplete(pvc, log) {
 		return !requeue, !skip
 	}
 
@@ -498,6 +495,36 @@ func (v *VRGInstance) preparePVCForVRProtection(pvc *corev1.PersistentVolumeClai
 	}
 
 	return v.protectPVC(pvc, log), !skip
+}
+
+// pvcProtectionComplete returns true only if all the steps of protectPVC have been applied to the PVC and its PV.
+//
+// The protected annotation alone is not sufficient, as it can be inherited by a PVC that was cloned or restored
+// (e.g. by a KubeVirt VM snapshot restore) from another PVC that Ramen had already protected. The protection
+// finalizer is not sufficient either, as protectPVC adds it before retaining the PV, so a failure to retain the PV
+// after adding the finalizer to such a PVC would leave both in place. Hence the bound PV is also checked to have a
+// Retain reclaim policy, either set by Ramen (and annotated as such) or by the user.
+func (v *VRGInstance) pvcProtectionComplete(pvc *corev1.PersistentVolumeClaim, log logr.Logger) bool {
+	if pvc.Annotations[pvcVRAnnotationProtectedKey] != pvcVRAnnotationProtectedValue ||
+		!slices.Contains(pvc.Finalizers, PvcVRFinalizerProtected) {
+		return false
+	}
+
+	pv := &corev1.PersistentVolume{}
+	if err := v.reconciler.Get(v.ctx, client.ObjectKey{Name: pvc.Spec.VolumeName}, pv); err != nil {
+		log.Info("Failed to get PV to verify PVC protection", "volumeName", pvc.Spec.VolumeName, "error", err)
+
+		return false
+	}
+
+	if pv.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimRetain {
+		log.Info("PVC is annotated as protected but its PV is not retained, reprotecting",
+			"pv", pv.Name, "reclaimPolicy", pv.Spec.PersistentVolumeReclaimPolicy)
+
+		return false
+	}
+
+	return true
 }
 
 //nolint:funlen,cyclop

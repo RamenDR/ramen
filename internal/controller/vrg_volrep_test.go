@@ -1816,6 +1816,133 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(BeNil())
 		})
 	})
+
+	// PVCs restored from a snapshot of a protected PVC (e.g. KubeVirt VM snapshot restore) inherit the protected
+	// annotation, which must not be taken as proof that their PV is retained.
+	// https://github.com/RamenDR/ramen/issues/2959
+	const (
+		pvcProtectedAnnotation = "volumereplicationgroups.ramendr.openshift.io/vr-protected"
+		pvRetainedAnnotation   = "volumereplicationgroups.ramendr.openshift.io/vr-retained"
+	)
+
+	type inheritedProtectedCase struct {
+		pvcFinalizer    bool                                 // PVC also has the protection finalizer
+		pvPolicy        corev1.PersistentVolumeReclaimPolicy // PV reclaim policy before VRG reconciles
+		wantPVRetained  bool                                 // PV expected to have the vr-retained annotation
+		wantDescription string
+	}
+
+	inheritedProtectedCases := []inheritedProtectedCase{
+		{
+			pvPolicy: corev1.PersistentVolumeReclaimDelete, wantPVRetained: true,
+			wantDescription: "inherited annotation, PV Delete",
+		},
+		{
+			pvcFinalizer: true, pvPolicy: corev1.PersistentVolumeReclaimDelete, wantPVRetained: true,
+			wantDescription: "inherited annotation and finalizer added, PV retention failed",
+		},
+		{
+			pvcFinalizer: true, pvPolicy: corev1.PersistentVolumeReclaimRetain, wantPVRetained: false,
+			wantDescription: "PV retained by the user",
+		},
+	}
+
+	vrgInheritedProtectedTemplate := &template{
+		ClaimBindInfo:        corev1.ClaimBound,
+		VolumeBindInfo:       corev1.VolumeBound,
+		schedulingInterval:   "1h",
+		storageClassName:     "manual",
+		replicationClassName: "test-replicationclass",
+		vrcProvisioner:       "manual.storage.com",
+		scProvisioner:        "manual.storage.com",
+	}
+
+	Context("PVCs with an inherited protected annotation", Ordered, func() {
+		var vrgInheritedProtected *vrgTest
+
+		BeforeAll(func() {
+			vrgInheritedProtectedTemplate.s3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+			storageIDLabel := genStorageIDLabel(storageIDs[0])
+			storageID := storageIDLabel[vrgController.StorageIDLabel]
+			vrgInheritedProtectedTemplate.storageIDLabels = storageIDLabel
+			vrgInheritedProtectedTemplate.replicationClassLabels = genVRCLabels(replicationIDs[0], storageID, "ramen")
+
+			v := newVRGTestCaseCreate(len(inheritedProtectedCases), vrgInheritedProtectedTemplate, true, false)
+			v.asyncPeerClasses = []ramendrv1alpha1.PeerClass{
+				genPeerClass(replicationIDs[0], v.template.storageClassName, []string{storageID}, false),
+			}
+			v.skipCreationPVandPVC = true
+			v.createNamespace()
+
+			for i, tc := range inheritedProtectedCases {
+				By("creating PV and PVC: " + tc.wantDescription)
+
+				pvName := fmt.Sprintf("pv-%s-%d", v.uniqueID, i)
+				pvcName := fmt.Sprintf("pvc-%s-%d", v.uniqueID, i)
+
+				pv := v.generatePV(pvName, pvcName)
+				pv.Spec.PersistentVolumeReclaimPolicy = tc.pvPolicy
+
+				Expect(k8sClient.Create(context.TODO(), pv)).To(Succeed())
+				pv.Status.Phase = corev1.VolumeBound
+				Expect(k8sClient.Status().Update(context.TODO(), pv)).To(Succeed())
+
+				pvc := v.generatePVC(pvcName, v.namespace, pvName, v.pvcLabels)
+				pvc.Annotations = map[string]string{pvcProtectedAnnotation: "protected"}
+
+				if tc.pvcFinalizer {
+					pvc.Finalizers = []string{vrgController.PvcVRFinalizerProtected}
+				}
+
+				Expect(k8sClient.Create(context.TODO(), pvc)).To(Succeed())
+				pvc.Status.Phase = corev1.ClaimBound
+				pvc.Status.AccessModes = pvc.Spec.AccessModes
+				pvc.Status.Capacity = pvc.Spec.Resources.Requests
+				Expect(k8sClient.Status().Update(context.TODO(), pvc)).To(Succeed())
+
+				v.pvNames = append(v.pvNames, pvName)
+				v.pvcNames = append(v.pvcNames, client.ObjectKeyFromObject(pvc))
+			}
+
+			v.VRGTestCaseStart()
+			vrgInheritedProtected = v
+
+			v.waitForVRCountToMatch(v.pvcCount)
+			v.promoteVolReps()
+			v.verifyVRGStatusExpectation(true, vrgController.VRGConditionReasonReady)
+		})
+
+		AfterAll(func() {
+			v := vrgInheritedProtected
+			if v == nil {
+				return
+			}
+
+			// Do not require the PVCs to be protected, so cleanup also works after a failed setup
+			v.cleanup(func(ramendrv1alpha1.VolumeReplicationGroup, types.NamespacedName, string) {})
+			Expect((*vrgObjectStorer).DeleteObjectsWithKeyPrefix(v.s3KeyPrefix())).To(Succeed())
+		})
+
+		It("retains the PVs that are not retained", func() {
+			v := vrgInheritedProtected
+
+			for i, tc := range inheritedProtectedCases {
+				By("checking PV: " + tc.wantDescription)
+
+				annotationMatcher := Not(HaveKey(pvRetainedAnnotation))
+				if tc.wantPVRetained {
+					annotationMatcher = HaveKeyWithValue(pvRetainedAnnotation, "retained")
+				}
+
+				Eventually(func(g Gomega) {
+					pv := v.getPV(v.pvNames[i])
+					g.Expect(pv.Spec.PersistentVolumeReclaimPolicy).To(Equal(corev1.PersistentVolumeReclaimRetain))
+					g.Expect(pv.Annotations).To(annotationMatcher)
+				}, timeout, interval).Should(Succeed())
+			}
+		})
+	})
+
 	// TODO: Add tests to move VRG to Secondary
 	// TODO: Add tests to ensure delete as Secondary (check if delete as Primary is tested above)
 })
