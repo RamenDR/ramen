@@ -465,3 +465,269 @@ func TestKlusterletConfigMarkers(t *testing.T) {
 		g.Expect(kc.Annotations).To(BeEmpty())
 	})
 }
+
+const (
+	kcCreatedLabel = "ramendr.openshift.io/created-by-ramen"
+	kcOriginalAnn  = "ramendr.openshift.io/klusterletconfig-original"
+)
+
+//nolint:maintidx
+func TestKlusterletConfigReset(t *testing.T) {
+	ctx := context.Background()
+
+	newScheme := func() *runtime.Scheme {
+		scheme := runtime.NewScheme()
+		g := NewWithT(t)
+		g.Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		g.Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+		g.Expect(rmn.AddToScheme(scheme)).To(Succeed())
+
+		return scheme
+	}
+
+	restore := func(name, phase string) *restoresv1beta1.Restore {
+		backup := "latest"
+		if name == "skip" {
+			backup = "skip"
+		}
+
+		return &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+			Status:     restoresv1beta1.RestoreStatus{Phase: restoresv1beta1.RestorePhase(phase)},
+		}
+	}
+
+	drpc := func(name string, progression rmn.ProgressionStatus) *rmn.DRPlacementControl {
+		return &rmn.DRPlacementControl{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
+			Status:     rmn.DRPlacementControlStatus{Progression: progression},
+		}
+	}
+
+	run := func(c client.Client) error {
+		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, &rmn.RamenConfig{})
+		if errors.Is(err, controllers.ErrNoManagedClustersRestore) {
+			return nil
+		}
+
+		return err
+	}
+
+	getKC := func(c client.Client) (*klusterletconfigv1alpha1.KlusterletConfig, error) {
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		err := c.Get(ctx, client.ObjectKey{Name: "global"}, kc)
+
+		return kc, err
+	}
+
+	newKC := func(period string, labels, annotations map[string]string) *klusterletconfigv1alpha1.KlusterletConfig {
+		return &klusterletconfigv1alpha1.KlusterletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "global", Labels: labels, Annotations: annotations},
+			Spec:       klusterletconfigv1alpha1.KlusterletConfigSpec{AppliedManifestWorkEvictionGracePeriod: period},
+		}
+	}
+
+	build := func(objs ...client.Object) client.Client {
+		return fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(objs...).Build()
+	}
+
+	t.Run("modify keeps other labels and annotations", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Running"),
+			newKC("1h", map[string]string{"a": "b"}, map[string]string{"c": "d"}),
+			drpc("d", rmn.ProgressionCompleted))
+
+		g.Expect(run(c)).To(Succeed())
+		g.Expect(c.Update(ctx, withPhase(t, c, "Finished"))).To(Succeed())
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Labels).To(Equal(map[string]string{"a": "b"}))
+		g.Expect(kc.Annotations).To(Equal(map[string]string{"c": "d"}))
+	})
+
+	t.Run("original may be the empty string", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Running"), newKC("", nil, nil))
+
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Annotations).To(HaveKeyWithValue(kcOriginalAnn, ""))
+
+		g.Expect(c.Update(ctx, withPhase(t, c, "Finished"))).To(Succeed())
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err = getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(BeEmpty())
+		g.Expect(kc.Annotations).To(BeEmpty())
+		g.Expect(kc.Labels).To(BeEmpty())
+	})
+
+	t.Run("reset deletes a config Ramen created", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Running"), drpc("d", rmn.ProgressionCompleted))
+
+		g.Expect(run(c)).To(Succeed())
+		g.Expect(c.Update(ctx, withPhase(t, c, "Finished"))).To(Succeed())
+		g.Expect(run(c)).To(Succeed())
+
+		_, err := getKC(c)
+		g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+
+		// Idempotent.
+		g.Expect(run(c)).To(Succeed())
+	})
+
+	t.Run("reset restores the original of a modified config", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Running"), newKC("1h", nil, nil),
+			drpc("a", rmn.ProgressionCompleted), drpc("b", rmn.ProgressionCleaningUp))
+
+		g.Expect(run(c)).To(Succeed())
+		g.Expect(c.Update(ctx, withPhase(t, c, "FinishedWithErrors"))).To(Succeed())
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("1h"))
+		g.Expect(kc.Annotations).To(BeEmpty())
+		g.Expect(kc.Labels).To(BeEmpty())
+
+		// Nothing is pending afterwards.
+		g.Expect(run(c)).To(Succeed())
+	})
+
+	t.Run("reset waits for unsettled DRPCs", func(t *testing.T) {
+		unsettled := map[string]rmn.ProgressionStatus{
+			"empty":    "",
+			"paused":   rmn.ProgressionActionPaused,
+			"waituser": rmn.ProgressionWaitOnUserToCleanUp,
+		}
+
+		for name, progression := range unsettled {
+			t.Run(name, func(t *testing.T) {
+				g := NewWithT(t)
+				c := build(restore("r", "Finished"),
+					newKC("24h", map[string]string{kcCreatedLabel: "true"}, nil),
+					drpc("a", rmn.ProgressionCompleted), drpc("b", progression))
+
+				g.Expect(run(c)).To(Succeed())
+
+				_, err := getKC(c)
+				g.Expect(err).NotTo(HaveOccurred())
+			})
+		}
+	})
+
+	t.Run("a DRPC being deleted is ignored, an empty list passes", func(t *testing.T) {
+		g := NewWithT(t)
+		now := metav1.Now()
+		deleting := drpc("b", "")
+		deleting.DeletionTimestamp = &now
+		deleting.Finalizers = []string{"x"}
+
+		kcObj := func() *klusterletconfigv1alpha1.KlusterletConfig {
+			return newKC("24h", map[string]string{kcCreatedLabel: "true"}, nil)
+		}
+
+		c := build(restore("r", "Finished"), kcObj(), drpc("a", rmn.ProgressionCompleted), deleting)
+		g.Expect(run(c)).To(Succeed())
+
+		_, err := getKC(c)
+		g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+
+		c = build(restore("r", "Finished"), kcObj())
+		g.Expect(run(c)).To(Succeed())
+
+		_, err = getKC(c)
+		g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+	})
+
+	t.Run("a config without markers is never reset", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Finished"), newKC("24h", nil, nil), drpc("a", rmn.ProgressionCompleted))
+
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("24h"))
+	})
+
+	t.Run("an original annotation without the false label is never reset", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Finished"),
+			newKC("24h", nil, map[string]string{kcOriginalAnn: "1h"}),
+			drpc("a", rmn.ProgressionCompleted))
+
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("24h"))
+	})
+
+	t.Run("reset does not depend on the configured value", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Finished"),
+			newKC("36h", map[string]string{kcCreatedLabel: "true"}, nil),
+			drpc("a", rmn.ProgressionCompleted))
+
+		cfg := &rmn.RamenConfig{}
+		cfg.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "48h"
+		err := controllers.EnsureKlusterletConfigForRestore(ctx, c, cfg)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		_, err = getKC(c)
+		g.Expect(k8serrors.IsNotFound(err)).To(BeTrue())
+
+		g.Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, cfg)).To(Succeed())
+	})
+
+	t.Run("a created config with extra spec fields keeps the object, drops the label", func(t *testing.T) {
+		g := NewWithT(t)
+		kcObj := newKC("24h", map[string]string{kcCreatedLabel: "true"}, nil)
+		kcObj.Spec.HubKubeAPIServerURL = "https://hub"
+		c := build(restore("r", "Finished"), kcObj, drpc("a", rmn.ProgressionCompleted))
+
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(BeEmpty())
+		g.Expect(kc.Spec.HubKubeAPIServerURL).To(Equal("https://hub"))
+		g.Expect(kc.Labels).NotTo(HaveKey(kcCreatedLabel))
+
+		// Nothing is pending afterwards.
+		g.Expect(run(c)).To(Succeed())
+	})
+
+	t.Run("a new active Restore during verification ensures again", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(restore("r", "Finished"), restore("r2", "Running"),
+			newKC("", map[string]string{kcCreatedLabel: "false"}, map[string]string{kcOriginalAnn: ""}))
+
+		g.Expect(run(c)).To(Succeed())
+
+		kc, err := getKC(c)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("24h"))
+	})
+}
+
+// withPhase returns the Restore "r" with its status.phase set to phase.
+func withPhase(t *testing.T, c client.Client, phase string) *restoresv1beta1.Restore {
+	t.Helper()
+
+	r := &restoresv1beta1.Restore{}
+	NewWithT(t).Expect(c.Get(context.Background(), client.ObjectKey{Name: "r"}, r)).To(Succeed())
+
+	r.Status.Phase = restoresv1beta1.RestorePhase(phase)
+
+	return r
+}

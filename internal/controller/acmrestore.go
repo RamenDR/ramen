@@ -11,6 +11,7 @@ import (
 
 	restoresv1beta1 "github.com/stolostron/cluster-backup-operator/api/v1beta1"
 	klusterletconfigv1alpha1 "github.com/stolostron/cluster-lifecycle-api/klusterletconfig/v1alpha1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,6 +66,7 @@ type klusterletAction int
 const (
 	actionNone   klusterletAction = iota // nothing to do
 	actionEnsure                         // create or update to the grace period
+	actionVerify                         // a reset is pending; reset if the DRPCs are settled
 	actionError                          // a Restore is in Error; report and change nothing
 )
 
@@ -110,8 +112,33 @@ func klusterletConfigCreated(kc *klusterletconfigv1alpha1.KlusterletConfig) bool
 	return kc.GetLabels()[rmnutil.CreatedByRamenLabel] == klusterletConfigCreatedByRamen
 }
 
-// decideKlusterletAction decides what to do with the global KlusterletConfig from the Restores.
-func decideKlusterletAction(restores []restoresv1beta1.Restore) klusterletAction {
+// klusterletConfigResetPending tells whether Ramen changed the KlusterletConfig and has not reset it:
+// Ramen created it, or modified it and recorded the original value. A config with neither marker is
+// never reset.
+func klusterletConfigResetPending(kc *klusterletconfigv1alpha1.KlusterletConfig) bool {
+	if kc == nil {
+		return false
+	}
+
+	if klusterletConfigCreated(kc) {
+		return true
+	}
+
+	if kc.GetLabels()[rmnutil.CreatedByRamenLabel] != klusterletConfigModifiedByRamen {
+		return false
+	}
+
+	_, ok := kc.GetAnnotations()[klusterletConfigOriginalAnnotation]
+
+	return ok
+}
+
+// decideKlusterletAction decides what to do with the global KlusterletConfig from the Restores and
+// the KlusterletConfig (nil if absent). The DRPCs are not an input: they are only listed when this
+// returns actionVerify, so that the common path does not list them on every DRPC reconcile.
+func decideKlusterletAction(
+	restores []restoresv1beta1.Restore, kc *klusterletconfigv1alpha1.KlusterletConfig,
+) klusterletAction {
 	switch aggregateRestoreState(restores) {
 	case restoreFailed:
 		return actionError
@@ -120,23 +147,42 @@ func decideKlusterletAction(restores []restoresv1beta1.Restore) klusterletAction
 	case restoreIgnored, restoreTerminal:
 	}
 
+	if klusterletConfigResetPending(kc) {
+		return actionVerify
+	}
+
 	return actionNone
 }
 
-// EnsureKlusterletConfigForRestore polls the ACM Restore resources and, while a Restore of managed
-// clusters is active, ensures the global KlusterletConfig exists and carries the AppliedManifestWork
-// eviction grace period, so that the work agents of the managed clusters do not evict applied
-// ManifestWorks while the hub is being recovered. A Restore that is terminal no longer raises the
-// grace period, so that it is not asserted again on every reconcile once the Restore is done. The
-// grace period is taken from the Ramen configuration
-// (hubRecovery.appliedManifestWorkEvictionGracePeriod). A nil ramenConfig means the configuration
-// could not be retrieved: the default grace period is then used only to create a missing
-// KlusterletConfig, and an existing one is left untouched. It is invoked from the DRPC
+// unsettledDRPCs returns the number of DRPCs, not being deleted, whose progression is not
+// Completed or Cleaning Up.
+func unsettledDRPCs(drpcs []rmn.DRPlacementControl) int {
+	unsettled := 0
+
+	for i := range drpcs {
+		if !drpcs[i].GetDeletionTimestamp().IsZero() {
+			continue
+		}
+
+		if progression := drpcs[i].Status.Progression; progression != rmn.ProgressionCompleted &&
+			progression != rmn.ProgressionCleaningUp {
+			unsettled++
+		}
+	}
+
+	return unsettled
+}
+
+// EnsureKlusterletConfigForRestore polls the ACM Restore resources and manages the global
+// KlusterletConfig for hub recovery. While a Restore of managed clusters is active, it ensures the
+// KlusterletConfig exists and carries the AppliedManifestWork eviction grace period, so that the
+// work agents of the managed clusters do not evict applied ManifestWorks while the hub is being
+// recovered. Once every relevant Restore is terminal and every DRPC is settled, it resets the
+// KlusterletConfig to its state before Ramen changed it. The grace period is taken from the Ramen
+// configuration (hubRecovery.appliedManifestWorkEvictionGracePeriod). It is invoked from the DRPC
 // reconciliation so that it is re-run on every reconcile (the DRPC requeues at least once every
-// StatusCheckDelay). It returns nil when a Restore of managed clusters was found and nothing
-// failed, ErrNoManagedClustersRestore when there was nothing to do, and another error on failure,
-// including when a Restore is in the Error phase: the KlusterletConfig is then left unchanged so
-// that the protection stays in place.
+// StatusCheckDelay). It returns ErrNoManagedClustersRestore when there is no Restore of managed
+// clusters, and another error on failure, including when a Restore is in the Error phase.
 func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, ramenConfig *rmn.RamenConfig) error {
 	log := ctrl.Log.WithName("acmrestore")
 
@@ -157,7 +203,7 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 		return err
 	}
 
-	switch decideKlusterletAction(restoreList.Items) {
+	switch decideKlusterletAction(restoreList.Items, kc) {
 	case actionError:
 		return fmt.Errorf("ACM Restore %s is in the %s phase, KlusterletConfig %s is left unchanged",
 			firstRestoreName(restoreList.Items, restoreFailed), restoresv1beta1.RestorePhaseError,
@@ -170,6 +216,8 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 		// a missing KlusterletConfig, and an existing one is left untouched.
 		return ensureGlobalKlusterletConfig(
 			ctx, c, kc, gracePeriodOrDefault(ramenConfig), ramenConfig == nil)
+	case actionVerify:
+		return resetGlobalKlusterletConfigIfSettled(ctx, c, kc)
 	case actionNone:
 	}
 
@@ -294,4 +342,77 @@ func setAnnotation(obj client.Object, key, value string) {
 	annotations[key] = value
 
 	obj.SetAnnotations(annotations)
+}
+
+// resetGlobalKlusterletConfigIfSettled resets the KlusterletConfig only if every DRPC is settled.
+func resetGlobalKlusterletConfigIfSettled(
+	ctx context.Context, c client.Client, kc *klusterletconfigv1alpha1.KlusterletConfig,
+) error {
+	drpcList := &rmn.DRPlacementControlList{}
+	if err := c.List(ctx, drpcList); err != nil {
+		return fmt.Errorf("failed to list DRPCs: %w", err)
+	}
+
+	if unsettled := unsettledDRPCs(drpcList.Items); unsettled > 0 {
+		ctrl.Log.WithName("acmrestore").V(1).Info("KlusterletConfig reset is waiting for DRPCs to settle",
+			"name", klusterletConfigGlobalName, "unsettledDRPCs", unsettled)
+
+		return nil
+	}
+
+	return resetGlobalKlusterletConfig(ctx, c, kc)
+}
+
+// resetGlobalKlusterletConfig undoes what ensureGlobalKlusterletConfig did. A Ramen-created object
+// is deleted if the grace period is the only field set, and has the grace period cleared if not.
+// A modified object gets its original grace period back. The label and the original annotation are
+// removed from every object that is kept, so that no reset is pending afterwards.
+func resetGlobalKlusterletConfig(
+	ctx context.Context, c client.Client, kc *klusterletconfigv1alpha1.KlusterletConfig,
+) error {
+	log := ctrl.Log.WithName("acmrestore")
+	annotations := kc.GetAnnotations()
+	original := annotations[klusterletConfigOriginalAnnotation]
+	created := klusterletConfigCreated(kc)
+
+	delete(annotations, klusterletConfigOriginalAnnotation)
+	rmnutil.RemoveLabel(kc, rmnutil.CreatedByRamenLabel, nil)
+
+	switch {
+	case created:
+		kc.Spec.AppliedManifestWorkEvictionGracePeriod = ""
+
+		if apiequality.Semantic.DeepEqual(kc.Spec, klusterletconfigv1alpha1.KlusterletConfigSpec{}) {
+			log.Info("Deleting KlusterletConfig created by Ramen", "name", klusterletConfigGlobalName)
+
+			uid, resourceVersion := kc.GetUID(), kc.GetResourceVersion()
+
+			err := c.Delete(ctx, kc, client.Preconditions{UID: &uid, ResourceVersion: &resourceVersion})
+			if err != nil && !k8serrors.IsNotFound(err) && !k8serrors.IsConflict(err) {
+				return fmt.Errorf("failed to delete KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
+			}
+
+			return nil
+		}
+
+		log.Info("KlusterletConfig has other fields set, clearing only the grace period",
+			"name", klusterletConfigGlobalName)
+	default:
+		log.Info("Restoring KlusterletConfig eviction grace period",
+			"name", klusterletConfigGlobalName, "evictionGracePeriod", original)
+
+		kc.Spec.AppliedManifestWorkEvictionGracePeriod = original
+	}
+
+	kc.SetAnnotations(annotations)
+
+	if err := c.Update(ctx, kc); err != nil {
+		if k8serrors.IsConflict(err) {
+			return nil // another writer got there first; the next reconcile re-evaluates
+		}
+
+		return fmt.Errorf("failed to update KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
+	}
+
+	return nil
 }
