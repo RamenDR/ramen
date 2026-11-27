@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
+	rmnutil "github.com/ramendr/ramen/internal/controller/util"
 )
 
 const (
@@ -27,6 +28,16 @@ const (
 
 	// klusterletConfigGlobalName is the ACM wide default KlusterletConfig.
 	klusterletConfigGlobalName = "global"
+
+	// klusterletConfigOriginalAnnotation records the grace period the KlusterletConfig had before
+	// Ramen modified it. It is only written on an object Ramen did not create (created-by-ramen
+	// label "false"), and the empty string is a valid value.
+	klusterletConfigOriginalAnnotation = "ramendr.openshift.io/klusterletconfig-original"
+
+	// The created-by-ramen label marks the KlusterletConfig as changed by Ramen, and a reset as
+	// pending: "true" when Ramen created the object, "false" when it modified an existing one.
+	klusterletConfigCreatedByRamen  = "true"
+	klusterletConfigModifiedByRamen = "false"
 )
 
 // ErrNoManagedClustersRestore is returned by EnsureKlusterletConfigForRestore when there is no ACM
@@ -94,6 +105,11 @@ func aggregateRestoreState(restores []restoresv1beta1.Restore) restoreState {
 	return state
 }
 
+// klusterletConfigCreated tells whether Ramen created the KlusterletConfig.
+func klusterletConfigCreated(kc *klusterletconfigv1alpha1.KlusterletConfig) bool {
+	return kc.GetLabels()[rmnutil.CreatedByRamenLabel] == klusterletConfigCreatedByRamen
+}
+
 // decideKlusterletAction decides what to do with the global KlusterletConfig from the Restores.
 func decideKlusterletAction(restores []restoresv1beta1.Restore) klusterletAction {
 	switch aggregateRestoreState(restores) {
@@ -136,6 +152,11 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 		return fmt.Errorf("failed to list Restores: %w", err)
 	}
 
+	kc, err := getGlobalKlusterletConfig(ctx, c)
+	if err != nil {
+		return err
+	}
+
 	switch decideKlusterletAction(restoreList.Items) {
 	case actionError:
 		return fmt.Errorf("ACM Restore %s is in the %s phase, KlusterletConfig %s is left unchanged",
@@ -147,7 +168,8 @@ func EnsureKlusterletConfigForRestore(ctx context.Context, c client.Client, rame
 
 		// A nil ramenConfig means the grace period is unknown: the default is only used to create
 		// a missing KlusterletConfig, and an existing one is left untouched.
-		return ensureGlobalKlusterletConfig(ctx, c, gracePeriodOrDefault(ramenConfig), ramenConfig == nil)
+		return ensureGlobalKlusterletConfig(
+			ctx, c, kc, gracePeriodOrDefault(ramenConfig), ramenConfig == nil)
 	case actionNone:
 	}
 
@@ -179,33 +201,55 @@ func firstRestoreName(restores []restoresv1beta1.Restore, state restoreState) st
 	return ""
 }
 
-// ensureGlobalKlusterletConfig creates the global KlusterletConfig if it is missing, with
-// spec.appliedManifestWorkEvictionGracePeriod set to gracePeriod. If it already exists, it is
-// updated to gracePeriod unless createOnly is set, in which case it is left untouched (used when
-// gracePeriod is only a fallback and must not override an existing value).
-func ensureGlobalKlusterletConfig(
-	ctx context.Context, c client.Client, gracePeriod string, createOnly bool,
-) error {
+// getGlobalKlusterletConfig returns the global KlusterletConfig, or nil if it does not exist or
+// the KlusterletConfig CRD is not installed.
+func getGlobalKlusterletConfig(
+	ctx context.Context, c client.Client,
+) (*klusterletconfigv1alpha1.KlusterletConfig, error) {
 	kc := &klusterletconfigv1alpha1.KlusterletConfig{}
-	log := ctrl.Log.WithName("acmrestore")
 
 	err := c.Get(ctx, types.NamespacedName{Name: klusterletConfigGlobalName}, kc)
-	if k8serrors.IsNotFound(err) {
+	if k8serrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
+	}
+
+	return kc, nil
+}
+
+// ensureGlobalKlusterletConfig creates or updates the global KlusterletConfig (kc is nil if it does
+// not exist) so that its spec.appliedManifestWorkEvictionGracePeriod equals gracePeriod, and records
+// what a later reset needs. A created object gets the created-by-ramen label "true". A modified
+// object gets the label "false" and the original grace period recorded once. If createOnly is set,
+// an existing object is left untouched: gracePeriod is then only a fallback and must not override
+// an existing value.
+func ensureGlobalKlusterletConfig(
+	ctx context.Context, c client.Client, kc *klusterletconfigv1alpha1.KlusterletConfig, gracePeriod string,
+	createOnly bool,
+) error {
+	log := ctrl.Log.WithName("acmrestore")
+
+	if kc == nil {
+		kc = &klusterletconfigv1alpha1.KlusterletConfig{}
 		kc.SetName(klusterletConfigGlobalName)
+		rmnutil.AddLabel(kc, rmnutil.CreatedByRamenLabel, klusterletConfigCreatedByRamen)
 		kc.Spec.AppliedManifestWorkEvictionGracePeriod = gracePeriod
 
 		log.Info("Creating KlusterletConfig",
 			"name", klusterletConfigGlobalName, "evictionGracePeriod", gracePeriod)
 
 		if err := c.Create(ctx, kc); err != nil {
+			if k8serrors.IsAlreadyExists(err) {
+				return nil // another writer got there first; the next reconcile re-evaluates
+			}
+
 			return fmt.Errorf("failed to create KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
 		}
 
 		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to get KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
 	}
 
 	if createOnly {
@@ -216,14 +260,38 @@ func ensureGlobalKlusterletConfig(
 		return nil
 	}
 
+	if !klusterletConfigCreated(kc) {
+		rmnutil.AddLabel(kc, rmnutil.CreatedByRamenLabel, klusterletConfigModifiedByRamen)
+
+		// Recorded once: a later pass would record the value Ramen wrote as the original.
+		if _, recorded := kc.GetAnnotations()[klusterletConfigOriginalAnnotation]; !recorded {
+			setAnnotation(kc, klusterletConfigOriginalAnnotation, kc.Spec.AppliedManifestWorkEvictionGracePeriod)
+		}
+	}
+
 	kc.Spec.AppliedManifestWorkEvictionGracePeriod = gracePeriod
 
 	log.Info("Updating KlusterletConfig eviction grace period",
 		"name", klusterletConfigGlobalName, "evictionGracePeriod", gracePeriod)
 
 	if err := c.Update(ctx, kc); err != nil {
+		if k8serrors.IsConflict(err) {
+			return nil // another writer got there first; the next reconcile re-evaluates
+		}
+
 		return fmt.Errorf("failed to update KlusterletConfig %s: %w", klusterletConfigGlobalName, err)
 	}
 
 	return nil
+}
+
+func setAnnotation(obj client.Object, key, value string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	annotations[key] = value
+
+	obj.SetAnnotations(annotations)
 }

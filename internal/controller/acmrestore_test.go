@@ -343,3 +343,125 @@ func TestKlusterletConfigRestorePhase(t *testing.T) {
 		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("1h"))
 	})
 }
+
+func TestKlusterletConfigMarkers(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		createdLabel = "ramendr.openshift.io/created-by-ramen"
+		originalAnn  = "ramendr.openshift.io/klusterletconfig-original"
+	)
+
+	build := func(objs ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		g := NewWithT(t)
+		g.Expect(klusterletconfigv1alpha1.AddToScheme(scheme)).To(Succeed())
+		g.Expect(restoresv1beta1.AddToScheme(scheme)).To(Succeed())
+
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	}
+
+	running := func() *restoresv1beta1.Restore {
+		backup := "latest"
+
+		return &restoresv1beta1.Restore{
+			ObjectMeta: metav1.ObjectMeta{Name: "r"},
+			Spec:       restoresv1beta1.RestoreSpec{VeleroManagedClustersBackupName: &backup},
+			Status:     restoresv1beta1.RestoreStatus{Phase: restoresv1beta1.RestorePhaseStarted},
+		}
+	}
+
+	existing := func(period string, labels, annotations map[string]string) *klusterletconfigv1alpha1.KlusterletConfig {
+		return &klusterletconfigv1alpha1.KlusterletConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "global", Labels: labels, Annotations: annotations},
+			Spec:       klusterletconfigv1alpha1.KlusterletConfigSpec{AppliedManifestWorkEvictionGracePeriod: period},
+		}
+	}
+
+	ensure := func(c client.Client, ramenConfig *rmn.RamenConfig) {
+		NewWithT(t).Expect(controllers.EnsureKlusterletConfigForRestore(ctx, c, ramenConfig)).To(Succeed())
+	}
+
+	getKC := func(c client.Client) *klusterletconfigv1alpha1.KlusterletConfig {
+		kc := &klusterletconfigv1alpha1.KlusterletConfig{}
+		NewWithT(t).Expect(c.Get(ctx, client.ObjectKey{Name: "global"}, kc)).To(Succeed())
+
+		return kc
+	}
+
+	t.Run("create sets the label to true and no original", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(running())
+
+		ensure(c, &rmn.RamenConfig{})
+
+		kc := getKC(c)
+		g.Expect(kc.Labels).To(HaveKeyWithValue(createdLabel, "true"))
+		g.Expect(kc.Annotations).NotTo(HaveKey(originalAnn))
+	})
+
+	t.Run("modify sets the label to false and records original", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(running(), existing("1h", map[string]string{"a": "b"}, map[string]string{"c": "d"}))
+
+		ensure(c, &rmn.RamenConfig{})
+
+		kc := getKC(c)
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("24h"))
+		g.Expect(kc.Labels).To(Equal(map[string]string{"a": "b", createdLabel: "false"}))
+		g.Expect(kc.Annotations).To(Equal(map[string]string{"c": "d", originalAnn: "1h"}))
+	})
+
+	t.Run("original is written once", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(running(), existing("1h", nil, nil))
+
+		ensure(c, &rmn.RamenConfig{})
+
+		cfg := &rmn.RamenConfig{}
+		cfg.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "48h"
+		ensure(c, cfg)
+
+		kc := getKC(c)
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("48h"))
+		g.Expect(kc.Labels).To(HaveKeyWithValue(createdLabel, "false"))
+		g.Expect(kc.Annotations).To(HaveKeyWithValue(originalAnn, "1h"))
+	})
+
+	t.Run("original may be the empty string", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(running(), existing("", nil, nil))
+
+		ensure(c, &rmn.RamenConfig{})
+
+		kc := getKC(c)
+		g.Expect(kc.Annotations).To(HaveKeyWithValue(originalAnn, ""))
+	})
+
+	t.Run("a created config keeps the true label when the value changes", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(running())
+
+		ensure(c, &rmn.RamenConfig{})
+
+		cfg := &rmn.RamenConfig{}
+		cfg.HubRecovery.AppliedManifestWorkEvictionGracePeriod = "48h"
+		ensure(c, cfg)
+
+		kc := getKC(c)
+		g.Expect(kc.Spec.AppliedManifestWorkEvictionGracePeriod).To(Equal("48h"))
+		g.Expect(kc.Labels).To(HaveKeyWithValue(createdLabel, "true"))
+		g.Expect(kc.Annotations).NotTo(HaveKey(originalAnn))
+	})
+
+	t.Run("an unchanged config is not marked", func(t *testing.T) {
+		g := NewWithT(t)
+		c := build(running(), existing("24h", nil, nil))
+
+		ensure(c, &rmn.RamenConfig{})
+
+		kc := getKC(c)
+		g.Expect(kc.Labels).To(BeEmpty())
+		g.Expect(kc.Annotations).To(BeEmpty())
+	})
+}
