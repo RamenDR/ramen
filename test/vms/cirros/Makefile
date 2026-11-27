@@ -4,7 +4,7 @@
 REGISTRY ?= quay.io
 REPOSITORY ?= nirsof
 NAME ?= cirros
-VERSION ?= 0.6.2
+VERSION ?= 0.6.3
 RELEASE ?= 1
 
 work := work.qcow2

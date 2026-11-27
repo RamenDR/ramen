@@ -122,13 +122,13 @@ $ curl --fail --silent --show-error http://host.minikube.internal:5050/v2/_catal
 1. Pull the image from a remote registry
 
    ```
-   podman pull quay.io/nirsof/cirros:0.6.2-1
+   podman pull quay.io/prd/cirros:0.6.3-1
    ```
 
 1. Push to the local registry
 
    ```
-   podman push quay.io/nirsof/cirros:0.6.2-1 localhost:5050/nirsof/cirros:0.6.2-1
+   podman push quay.io/prd/cirros:0.6.3-1 localhost:5050/prd/cirros:0.6.3-1
    ```
 
 ## Using images from the local registry
@@ -144,7 +144,7 @@ metadata:
 spec:
   source:
     registry:
-      url: "docker://host.minikube.internal:5050/nirsof/cirros:0.6.2-1"
+      url: "docker://host.minikube.internal:5050/prd/cirros:0.6.3-1"
 ```
 
 ## Managing the local registry container
