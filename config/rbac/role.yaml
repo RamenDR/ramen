@@ -237,6 +237,7 @@ rules:
   resources:
   - klusterletconfigs
   verbs:
+  - delete
   - get
   - update
 - apiGroups:

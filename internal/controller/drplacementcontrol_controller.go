@@ -94,24 +94,27 @@ type DRPlacementControlReconciler struct {
 	RateLimiter                    *workqueue.TypedRateLimiter[reconcile.Request]
 	numClustersQueriedSuccessfully int
 
-	// kcMutex serializes the check for a Restore and the create or update of the global
-	// KlusterletConfig, as DRPC reconciles can run concurrently. done is guarded by the mutex and
-	// is set once the KlusterletConfig was ensured for a Restore, so that the work is not repeated
-	// by the reconciles of the other DRPCs.
+	// kcMutex serializes the check for a Restore and the create, update or reset of the global
+	// KlusterletConfig, as DRPC reconciles can run concurrently. restoreReconciled is guarded by
+	// the mutex and is set once the work is complete: every Restore is terminal, every DRPC is
+	// settled and the KlusterletConfig was reset. Until then each call re-evaluates.
 	kcMutex struct {
 		sync.Mutex
 		restoreReconciled bool
 	}
 }
 
-// ReconcileKlusterletConfig ensures the global KlusterletConfig for hub recovery. The
-// KlusterletConfig is global, not per DRPC, so once it was ensured for a Restore using the Ramen
-// configuration, every later call returns immediately. While no Restore of managed clusters
-// exists, or when ensuring it fails, done stays false and the next DRPC reconcile checks again.
-// Concurrent callers wait on kcMutex and then see done. The Ramen configuration is read by the
-// caller. When it cannot be retrieved or decoded, ramenConfig is nil: the default grace period is
-// then used only to create a missing KlusterletConfig, and an existing one is not changed. Such a
-// fallback does not mark the work done, so a later call retries with the configuration.
+// ReconcileKlusterletConfig manages the global KlusterletConfig for hub recovery, using the grace
+// period from the given Ramen configuration: it raises the AppliedManifestWork eviction grace
+// period while an ACM Restore of managed clusters is active, and resets it once the Restores are
+// terminal and the DRPCs are settled. The KlusterletConfig is global, not per DRPC, so once the
+// work is complete using the Ramen configuration, every later call returns immediately. While no
+// Restore of managed clusters exists, while a Restore is active, while the DRPCs are not settled,
+// or when a step fails, restoreReconciled stays false and the next DRPC reconcile checks again.
+// Concurrent callers wait on kcMutex and then see restoreReconciled. A nil ramenConfig means the
+// configuration could not be retrieved: the default grace period is then used only to create a
+// missing KlusterletConfig, and an existing one is not changed. Such a fallback does not mark the
+// work done, so a later call retries with the configuration.
 func (r *DRPlacementControlReconciler) ReconcileKlusterletConfig(
 	ctx context.Context, ramenConfig *rmn.RamenConfig,
 ) error {
@@ -122,12 +125,12 @@ func (r *DRPlacementControlReconciler) ReconcileKlusterletConfig(
 		return nil
 	}
 
-	err := EnsureKlusterletConfigForRestore(ctx, r.Client, ramenConfig)
+	done, err := EnsureKlusterletConfigForRestore(ctx, r.Client, ramenConfig)
 	if errors.Is(err, ErrNoManagedClustersRestore) {
 		return nil
 	}
 
-	r.kcMutex.restoreReconciled = err == nil && ramenConfig != nil
+	r.kcMutex.restoreReconciled = err == nil && done && ramenConfig != nil
 
 	return err
 }
@@ -162,7 +165,7 @@ func (r *DRPlacementControlReconciler) SetupWithManager(mgr ctrl.Manager, ramenC
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=restores,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,verbs=list;watch;create
-// +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,resourceNames=global,verbs=get;update
+// +kubebuilder:rbac:groups=config.open-cluster-management.io,resources=klusterletconfigs,resourceNames=global,verbs=get;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -209,15 +212,17 @@ func (r *DRPlacementControlReconciler) Reconcile(ctx context.Context, req ctrl.R
 	ensureDRPCConditionsInited(&drpc.Status.Conditions, drpc.Generation, "Initialization")
 
 	_, ramenConfig, err := ConfigMapGet(ctx, r.APIReader)
+	// Hub recovery: when an ACM Restore restores managed clusters, ensure the global
+	// KlusterletConfig carries the configured AppliedManifestWork eviction grace period. This runs
+	// before any DRPC processing, so that the grace period is raised before a rebuild decision, and
+	// before the configMap error below is returned, so that a configMap failure does not leave the
+	// hub unprotected: a nil configuration then only creates a missing KlusterletConfig.
 	if err != nil {
-		logger.Info("Failed to get the ramen configMap for hub recovery",
-			"error", err.Error())
+		logger.Info("Failed to get the ramen configMap for hub recovery", "error", err.Error())
 
 		ramenConfig = nil
 	}
 
-	// Hub recovery: when an ACM Restore restores managed clusters, ensure the global
-	// KlusterletConfig carries the configured AppliedManifestWork eviction grace period.
 	if restoreErr := r.ReconcileKlusterletConfig(ctx, ramenConfig); restoreErr != nil {
 		logger.Info("Failed to ensure KlusterletConfig for hub recovery", "error", restoreErr.Error())
 	}
